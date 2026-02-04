@@ -9,11 +9,11 @@ import { ImageUploader } from "@/components/ui/image-uploader"
 import { Save, ArrowLeft } from "lucide-react"
 import { TicketTypeManager } from "@/components/admin/TicketTypeManager"
 import { EventDaysManager } from "@/components/admin/EventDaysManager"
-import type { EventWithDetails } from "@/types"
+import type { EventWithDetails, EventWithDetailsSerialized } from "@/types"
 import { formatDateInput } from "@/lib/utils"
 
 interface EventFormProps {
-    initialData?: EventWithDetails
+    initialData?: EventWithDetails | EventWithDetailsSerialized
     isEditing?: boolean
     showBack?: boolean
 }

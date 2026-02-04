@@ -43,6 +43,22 @@ export type EventWithDetails = Event & {
     }
 }
 
+export type EventWithDetailsSerialized = Omit<
+    EventWithDetails,
+    "startDate" | "endDate" | "createdAt" | "updatedAt" | "ticketTypes" | "eventDays"
+> & {
+    startDate: string
+    endDate: string
+    createdAt: string
+    updatedAt: string
+    ticketTypes: (Omit<TicketType, "price" | "createdAt" | "updatedAt"> & {
+        price: number
+        createdAt: string
+        updatedAt: string
+    })[]
+    eventDays: (Omit<EventDay, "date"> & { date: string })[]
+}
+
 export type TicketWithDetails = Ticket & {
     event: Event
     ticketType: TicketType

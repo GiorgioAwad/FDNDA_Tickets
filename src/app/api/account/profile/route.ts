@@ -22,7 +22,7 @@ export async function PUT(request: NextRequest) {
 
         const existing = await prisma.user.findUnique({ where: { email } })
         if (existing && existing.id !== user.id) {
-            return NextResponse.json({ success: false, error: "El email ya est· registrado" }, { status: 400 })
+            return NextResponse.json({ success: false, error: "El email ya est√° registrado" }, { status: 400 })
         }
 
         const emailChanged = email !== user.email.toLowerCase()
@@ -44,7 +44,7 @@ export async function PUT(request: NextRequest) {
             const result = await sendVerificationEmail(email, name, verifyToken)
             verificationSent = result.success
             if (!result.success) {
-                warning = result.error || "No se pudo enviar el correo de verificaciÛn"
+                warning = result.error || "No se pudo enviar el correo de verificaci√≥n"
             }
         }
 
