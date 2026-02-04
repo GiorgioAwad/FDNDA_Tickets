@@ -6,6 +6,7 @@ import { EventDashboard } from "@/components/admin/EventDashboard"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
+import type { TicketType } from "@prisma/client"
 export const dynamic = "force-dynamic"
 
 interface EditEventPageProps {
@@ -32,7 +33,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
         notFound()
     }
 
-    const ticketTypeOptions = event.ticketTypes.map((ticketType) => ({
+    const ticketTypeOptions = event.ticketTypes.map((ticketType: TicketType) => ({
         id: ticketType.id,
         name: ticketType.name,
     }))
