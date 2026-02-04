@@ -1,0 +1,372 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  USER
+  ADMIN
+  STAFF
+}
+
+enum EventMode {
+  RANGE
+  DAYS
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum TicketStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+enum EntitlementStatus {
+  AVAILABLE
+  USED
+}
+
+enum ScanResult {
+  VALID
+  INVALID
+  ALREADY_USED
+  WRONG_DAY
+  WRONG_EVENT
+  EXPIRED
+}
+
+enum CourtesyStatus {
+  PENDING
+  CLAIMED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  PENDING
+  ISSUED
+  FAILED
+}
+
+// ==================== MODELS ====================
+
+model User {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  passwordHash    String
+  role            UserRole  @default(USER)
+  emailVerifiedAt DateTime?
+  verifyToken     String?
+  resetToken      String?
+  resetTokenExp   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  orders           Order[]
+  tickets          Ticket[]
+  scans            Scan[]           @relation("StaffScans")
+  createdEvents    Event[]          @relation("EventCreator")
+  courtesyBatches  CourtesyBatch[]
+  claimedCourtesy  CourtesyTicket[] @relation("ClaimedBy")
+  discountCodes    DiscountCode[]   @relation("DiscountCreator")
+
+  @@map("users")
+}
+
+model Event {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  description String    @db.Text
+  location    String
+  venue       String
+  bannerUrl   String?
+  startDate   DateTime
+  endDate     DateTime
+  mode        EventMode @default(RANGE)
+  isPublished Boolean   @default(false)
+  discipline  String?   // e.g., "Natación", "Waterpolo", etc.
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  createdBy       String
+  creator         User            @relation("EventCreator", fields: [createdBy], references: [id])
+  eventDays       EventDay[]
+  ticketTypes     TicketType[]
+  tickets         Ticket[]
+  scans           Scan[]
+  courtesyBatches CourtesyBatch[]
+  discountCodes   DiscountCode[]
+
+  @@map("events")
+}
+
+model EventDay {
+  id        String   @id @default(cuid())
+  eventId   String
+  date      DateTime @db.Date
+  openTime  String   // "08:00"
+  closeTime String   // "18:00"
+  capacity  Int      @default(0) // 0 = unlimited
+
+  // Relations
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, date])
+  @@map("event_days")
+}
+
+model TicketType {
+  id               String   @id @default(cuid())
+  eventId          String
+  name             String   // "General", "VIP", "Full Day 3 días"
+  description      String?
+  price            Decimal  @db.Decimal(10, 2)
+  currency         String   @default("PEN")
+  capacity         Int      @default(0) // 0 = unlimited
+  sold             Int      @default(0)
+  isPackage        Boolean  @default(false)
+  packageDaysCount Int?     // Number of days for package tickets
+  validDays        Json?    // Array of dates ["2024-03-15", "2024-03-16"]
+  isActive         Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  event           Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  orderItems      OrderItem[]
+  tickets         Ticket[]
+  courtesyBatches CourtesyBatch[]
+
+  @@index([eventId])
+  @@index([isActive])
+  @@map("ticket_types")
+}
+
+model Order {
+  id               String      @id @default(cuid())
+  userId           String
+  status           OrderStatus @default(PENDING)
+  totalAmount      Decimal     @db.Decimal(10, 2)
+  currency         String      @default("PEN")
+  provider         String      @default("IZIPAY")
+  providerRef      String?     // Payment reference from provider
+  providerResponse Json?       // Full response from provider
+  paidAt           DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  // Relations
+  user       User        @relation(fields: [userId], references: [id])
+  orderItems OrderItem[]
+  tickets    Ticket[]
+  invoice    Invoice?
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String  @id @default(cuid())
+  orderId      String
+  ticketTypeId String
+  quantity     Int
+  unitPrice    Decimal @db.Decimal(10, 2)
+  subtotal     Decimal @db.Decimal(10, 2)
+  attendeeData Json?   // [{name, dni}, {name, dni}] for each ticket
+
+  // Relations
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+
+  @@map("order_items")
+}
+
+model Ticket {
+  id           String       @id @default(cuid())
+  orderId      String
+  userId       String
+  eventId      String
+  ticketTypeId String
+  ticketCode   String       @unique // Unique code for QR
+  attendeeName String?
+  attendeeDni  String?
+  status       TicketStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  // Relations
+  order         Order                  @relation(fields: [orderId], references: [id])
+  user          User                   @relation(fields: [userId], references: [id])
+  event         Event                  @relation(fields: [eventId], references: [id])
+  ticketType    TicketType             @relation(fields: [ticketTypeId], references: [id])
+  entitlements  TicketDayEntitlement[]
+  scans         Scan[]
+  courtesyInfo  CourtesyTicket?
+
+  @@index([eventId])
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@map("tickets")
+}
+
+model TicketDayEntitlement {
+  id       String            @id @default(cuid())
+  ticketId String
+  date     DateTime          @db.Date
+  status   EntitlementStatus @default(AVAILABLE)
+  usedAt   DateTime?
+
+  // Relations
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, date])
+  @@map("ticket_day_entitlements")
+}
+
+model Scan {
+  id        String     @id @default(cuid())
+  ticketId  String
+  staffId   String
+  eventId   String
+  date      DateTime   @db.Date
+  scannedAt DateTime   @default(now())
+  result    ScanResult
+  notes     String?
+
+  // Relations
+  ticket Ticket @relation(fields: [ticketId], references: [id])
+  staff  User   @relation("StaffScans", fields: [staffId], references: [id])
+  event  Event  @relation(fields: [eventId], references: [id])
+
+  @@index([eventId, date])
+  @@index([ticketId])
+  @@index([staffId])
+  @@index([scannedAt])
+  @@map("scans")
+}
+
+// ==================== DISCOUNT CODES ====================
+
+enum DiscountType {
+  PERCENTAGE  // 20% off
+  FIXED       // S/ 10 off
+}
+
+model DiscountCode {
+  id            String       @id @default(cuid())
+  code          String       @unique  // "FDNDA20", "PROMO2026"
+  description   String?      // "Descuento para auspiciadores"
+  type          DiscountType @default(PERCENTAGE)
+  value         Decimal      @db.Decimal(10, 2) // 20 for 20%, or 10 for S/10
+  eventId       String?      // null = applies to all events
+  minPurchase   Decimal?     @db.Decimal(10, 2) // Minimum purchase amount
+  maxUses       Int?         // null = unlimited
+  usedCount     Int          @default(0)
+  maxUsesPerUser Int?        @default(1)  // How many times same user can use
+  validFrom     DateTime     @default(now())
+  validUntil    DateTime?
+  isActive      Boolean      @default(true)
+  createdBy     String
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relations
+  event   Event?        @relation(fields: [eventId], references: [id])
+  creator User          @relation("DiscountCreator", fields: [createdBy], references: [id])
+  usages  DiscountUsage[]
+
+  @@map("discount_codes")
+}
+
+model DiscountUsage {
+  id             String   @id @default(cuid())
+  discountCodeId String
+  orderId        String
+  userId         String
+  amountSaved    Decimal  @db.Decimal(10, 2)
+  usedAt         DateTime @default(now())
+
+  // Relations
+  discountCode DiscountCode @relation(fields: [discountCodeId], references: [id])
+
+  @@unique([discountCodeId, orderId])
+  @@map("discount_usages")
+}
+
+// ==================== COURTESY SYSTEM ====================
+
+model CourtesyBatch {
+  id           String   @id @default(cuid())
+  eventId      String
+  ticketTypeId String
+  createdBy    String
+  quantity     Int
+  reason       String?
+  createdAt    DateTime @default(now())
+
+  // Relations
+  event           Event            @relation(fields: [eventId], references: [id])
+  ticketType      TicketType       @relation(fields: [ticketTypeId], references: [id])
+  creator         User             @relation(fields: [createdBy], references: [id])
+  courtesyTickets CourtesyTicket[]
+
+  @@map("courtesy_batches")
+}
+
+model CourtesyTicket {
+  id              String         @id @default(cuid())
+  ticketId        String?        @unique
+  batchId         String
+  claimCode       String         @unique
+  claimedByUserId String?
+  status          CourtesyStatus @default(PENDING)
+  expiresAt       DateTime?
+  claimedAt       DateTime?
+  
+  // Pre-assigned attendee data (optional)
+  assignedName    String?
+  assignedDni     String?
+
+  // Relations
+  ticket    Ticket?        @relation(fields: [ticketId], references: [id])
+  batch     CourtesyBatch  @relation(fields: [batchId], references: [id])
+  claimedBy User?          @relation("ClaimedBy", fields: [claimedByUserId], references: [id])
+
+  @@map("courtesy_tickets")
+}
+
+model Invoice {
+  id               String        @id @default(cuid())
+  orderId          String        @unique
+  status           InvoiceStatus @default(PENDING)
+  invoiceNumber    String?
+  providerResponse Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("invoices")
+}

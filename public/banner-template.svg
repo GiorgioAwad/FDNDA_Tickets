@@ -1,0 +1,77 @@
+<!-- 
+  PLANTILLA DE BANNER PARA EVENTOS FDNDA
+  ======================================
+  
+  Dimensiones recomendadas: 1200 x 630 píxeles
+  Proporción: 1.9:1 (similar a imágenes de redes sociales)
+  
+  Formatos aceptados: JPG, PNG, WebP, GIF
+  Tamaño máximo: 5MB
+  
+  TIPS:
+  - Usa imágenes de alta resolución
+  - Evita texto pequeño (se verá mal en móviles)
+  - Deja un margen de 10% en los bordes para recortes
+  - El título del evento se mostrará sobre la imagen
+  - Usa colores que contrasten con texto blanco superpuesto
+-->
+
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#003366"/>
+  
+  <!-- Grid pattern -->
+  <defs>
+    <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#grid)"/>
+  
+  <!-- Safe zone (10% margin) -->
+  <rect x="120" y="63" width="960" height="504" fill="none" stroke="#00ccff" stroke-width="2" stroke-dasharray="10,5"/>
+  
+  <!-- Center crosshair -->
+  <line x1="600" y1="265" x2="600" y2="365" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1"/>
+  <line x1="550" y1="315" x2="650" y2="315" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1"/>
+  
+  <!-- Dimensions text -->
+  <text x="600" y="50" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="24" font-weight="bold">
+    1200 × 630 px
+  </text>
+  
+  <!-- Width arrow -->
+  <line x1="50" y1="315" x2="1150" y2="315" stroke="#ffffff" stroke-opacity="0.3" stroke-width="1"/>
+  <polygon points="50,310 50,320 35,315" fill="#ffffff" fill-opacity="0.5"/>
+  <polygon points="1150,310 1150,320 1165,315" fill="#ffffff" fill-opacity="0.5"/>
+  
+  <!-- Height arrow -->
+  <line x1="600" y1="80" x2="600" y2="550" stroke="#ffffff" stroke-opacity="0.3" stroke-width="1"/>
+  <polygon points="595,80 605,80 600,65" fill="#ffffff" fill-opacity="0.5"/>
+  <polygon points="595,550 605,550 600,565" fill="#ffffff" fill-opacity="0.5"/>
+  
+  <!-- Logo placeholder -->
+  <circle cx="600" cy="280" r="60" fill="#0066cc"/>
+  <text x="600" y="290" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="20" font-weight="bold">
+    FDNDA
+  </text>
+  
+  <!-- Instructions -->
+  <text x="600" y="380" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="16">
+    Zona segura: área punteada (margen 10%)
+  </text>
+  <text x="600" y="410" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="14" fill-opacity="0.7">
+    Coloca el contenido importante dentro del área punteada
+  </text>
+  
+  <!-- Aspect ratio -->
+  <text x="600" y="600" text-anchor="middle" fill="#00ccff" font-family="Arial, sans-serif" font-size="14">
+    Proporción: 1.9:1 (similar a Open Graph / Facebook / Twitter)
+  </text>
+  
+  <!-- Corner markers -->
+  <rect x="0" y="0" width="30" height="30" fill="none" stroke="#00ccff" stroke-width="3"/>
+  <rect x="1170" y="0" width="30" height="30" fill="none" stroke="#00ccff" stroke-width="3"/>
+  <rect x="0" y="600" width="30" height="30" fill="none" stroke="#00ccff" stroke-width="3"/>
+  <rect x="1170" y="600" width="30" height="30" fill="none" stroke="#00ccff" stroke-width="3"/>
+</svg>

@@ -1,26 +1,305 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* FDNDA Brand Colors */
+  --fdnda-primary: 210 100% 25%; /* Dark Blue #003366 */
+  --fdnda-secondary: 210 100% 40%; /* Medium Blue #0066cc */
+  --fdnda-accent: 188 85% 48%; /* Aqua/teal accent */
+  --fdnda-light: 210 40% 96%; /* Light Blue Background */
+  
+  /* Design System */
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 210 100% 25%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 188 85% 48%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 210 100% 25%;
+  --radius: 0.5rem;
+  
+  /* Success/Warning colors */
+  --success: 142 76% 36%;
+  --success-foreground: 0 0% 100%;
+  --warning: 28 92% 52%;
+  --warning-foreground: 0 0% 100%;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 210 100% 40%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 188 85% 48%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 210 100% 40%;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Gradient backgrounds */
+  .bg-gradient-fdnda {
+    @apply bg-gradient-to-br from-[hsl(var(--fdnda-primary))] to-[hsl(var(--fdnda-secondary))];
+  }
+  
+  .bg-gradient-fdnda-light {
+    @apply bg-gradient-to-br from-[hsl(var(--fdnda-light))] to-white;
+  }
+  
+  /* Card with hover effect */
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
+  }
+  
+  /* Button variants */
+  .btn-fdnda {
+    @apply bg-gradient-fdnda text-white font-semibold py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105;
+  }
+  
+  .btn-fdnda-outline {
+    @apply border-2 border-[hsl(var(--fdnda-primary))] text-[hsl(var(--fdnda-primary))] font-semibold py-3 px-6 rounded-lg hover:bg-[hsl(var(--fdnda-primary))] hover:text-white transition-all duration-300;
+  }
+  
+  /* Glass effect */
+  .glass {
+    @apply bg-white/80 backdrop-blur-md border border-white/20;
+  }
+  
+  /* Ticket styling */
+  .ticket-container {
+    @apply relative overflow-hidden rounded-2xl shadow-2xl;
+    background: linear-gradient(135deg, #003366 0%, #0066cc 50%, #003366 100%);
+  }
+  
+  .ticket-content {
+    @apply relative z-10 p-6 text-white;
+  }
+  
+  .ticket-pattern {
+    @apply absolute inset-0 opacity-10;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+  
+  /* Scanner result */
+  .scan-valid {
+    @apply bg-green-500 text-white;
+    animation: pulse-success 0.5s ease-out;
+  }
+  
+  .scan-invalid {
+    @apply bg-red-500 text-white;
+    animation: shake 0.5s ease-out;
+  }
+  
+  @keyframes pulse-success {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-5px); }
+    40%, 80% { transform: translateX(5px); }
+  }
+  
+  /* Loading spinner */
+  .spinner {
+    @apply inline-block w-6 h-6 border-2 border-current border-t-transparent rounded-full;
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Scanner animations */
+  @keyframes scan-line {
+    0%, 100% { top: 0.5rem; }
+    50% { top: calc(100% - 0.5rem); }
+  }
+  
+  .animate-scan {
+    animation: scan-line 2s ease-in-out infinite;
+  }
+
+  /* Pulse animation for valid scans */
+  @keyframes pulse-valid {
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+  }
+
+  .pulse-valid {
+    animation: pulse-valid 1s ease-out;
+  }
+
+  /* Shake animation for invalid scans */
+  @keyframes shake-invalid {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+    20%, 40%, 60%, 80% { transform: translateX(5px); }
+  }
+
+  .shake-invalid {
+    animation: shake-invalid 0.5s ease-out;
+  }
+}
+
+@layer utilities {
+  /* Text gradient */
+  .text-gradient-fdnda {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-[hsl(var(--fdnda-primary))] to-[hsl(var(--fdnda-secondary))];
+  }
+  
+  /* Hide scrollbar */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  header,
+  nav,
+  footer {
+    display: none !important;
+  }
+
+  .print-hidden {
+    display: none !important;
+  }
+
+  .print-page {
+    min-height: auto !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  .print-container {
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .ticket-container {
+    box-shadow: none !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print-carnet-section {
+    padding: 12px !important;
+  }
+
+  .print-carnet-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .print-qr {
+    width: 180px !important;
+    height: 180px !important;
+  }
+
+  .print-qr-section {
+    padding: 12px !important;
+  }
+
+  .carnet-card {
+    padding: 6px !important;
+    font-size: 10px !important;
+  }
+
+  .carnet-card .text-sm {
+    font-size: 10px !important;
+  }
+
+  .carnet-card .text-\[10px\] {
+    font-size: 9px !important;
+  }
+}
+
+/* ==================== QR SCANNER STYLES ==================== */
+
+/* Forzar centrado del video del scanner */
+#qr-reader video,
+[id^="qr-reader"] video {
+  object-fit: cover !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Ocultar elementos internos del scanner que no necesitamos */
+#qr-reader__scan_region,
+[id^="qr-reader"] > div:first-child {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Ocultar el borde del área de escaneo de html5-qrcode */
+#qr-reader__scan_region > img,
+#qr-shaded-region,
+[id$="__scan_region"] > img {
+  display: none !important;
+}
+
+/* Contenedor del scanner debe ocupar todo el espacio */
+[id^="qr-reader-"] {
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute !important;
+  inset: 0 !important;
+}
+
+[id^="qr-reader-"] > div {
+  width: 100% !important;
+  height: 100% !important;
 }
