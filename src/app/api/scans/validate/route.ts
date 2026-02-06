@@ -132,21 +132,23 @@ export async function POST(request: NextRequest) {
         }
 
 
-        const isPackage = Boolean(ticket.ticketType.isPackage)
         const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
-        const packageLimit = isPackage
+        const isPackageLike = Boolean(
+            ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || nameMatch
+        )
+        const packageLimit = isPackageLike
             ? (ticket.ticketType.packageDaysCount ?? (nameMatch ? Number(nameMatch[1]) : null))
             : null
 
         let scanCount = 0
-        if (isPackage) {
+        if (isPackageLike) {
             scanCount = await prisma.scan.count({
                 where: { ticketId: ticket.id, result: "VALID" },
             })
         }
 
         const computeAttendance = () => {
-            if (isPackage && packageLimit) {
+            if (isPackageLike && packageLimit) {
                 const usedEntitlements = ticket.entitlements.filter((item) => item.status === "USED").length
                 const used = Math.max(usedEntitlements, scanCount)
                 return { total: packageLimit, used, remaining: Math.max(packageLimit - used, 0) }
@@ -180,7 +182,7 @@ export async function POST(request: NextRequest) {
         }
 
 
-        if (!entitlement && isPackage) {
+        if (!entitlement && isPackageLike) {
             const attendance = computeAttendance()
             if (packageLimit && attendance.remaining <= 0) {
                 await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")

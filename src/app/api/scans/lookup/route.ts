@@ -96,16 +96,62 @@ export async function POST(request: NextRequest) {
             })
         }
 
+
         const today = getTodayDateString()
-        const withinRange = checkWithinEventRange(ticket, today)
-        const packageLimitReached = isPackageLimitReached(ticket)
+        const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
+        const isPackageLike = Boolean(
+            ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || nameMatch
+        )
+        const packageLimit = isPackageLike
+            ? (ticket.ticketType.packageDaysCount ?? (nameMatch ? Number(nameMatch[1]) : null))
+            : null
+
+        let scanCount = 0
+        if (isPackageLike) {
+            scanCount = await prisma.scan.count({
+                where: { ticketId: ticket.id, result: "VALID" },
+            })
+        }
+
+        const computeAttendance = () => {
+            if (isPackageLike && packageLimit) {
+                const usedEntitlements = ticket.entitlements.filter((item) => item.status === "USED").length
+                const used = Math.max(usedEntitlements, scanCount)
+                return { total: packageLimit, used, remaining: Math.max(packageLimit - used, 0) }
+            }
+            return buildAttendanceSummary(ticket)
+        }
 
         let entitlement = ticket.entitlements.find(
             (item) => matchesToday(item.date, today)
         )
 
-        // Create entitlement if within range and package limit not reached
-        if (!entitlement && withinRange && !packageLimitReached) {
+        if (!entitlement) {
+            const availableEntitlement = ticket.entitlements.find((item) => item.status === "AVAILABLE")
+            if (availableEntitlement) {
+                entitlement = await prisma.ticketDayEntitlement.update({
+                    where: { id: availableEntitlement.id },
+                    data: { date: new Date(`${today}T00:00:00`) },
+                })
+                const idx = ticket.entitlements.findIndex((item) => item.id === availableEntitlement.id)
+                if (idx >= 0) ticket.entitlements[idx] = entitlement
+            }
+        }
+
+        if (!entitlement && isPackageLike) {
+            const attendance = computeAttendance()
+            if (packageLimit && attendance.remaining <= 0) {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "NO_CLASSES",
+                    message: "No tiene clases disponibles",
+                    scannedAt: new Date().toISOString(),
+                    attendance,
+                })
+            }
+
             entitlement = await prisma.ticketDayEntitlement.create({
                 data: {
                     ticketId: ticket.id,
@@ -124,7 +170,7 @@ export async function POST(request: NextRequest) {
                 reason: "WRONG_DAY",
                 message: "Este ticket no es válido para hoy",
                 scannedAt: new Date().toISOString(),
-                attendance: buildAttendanceSummary(ticket),
+                attendance: computeAttendance(),
             })
         }
 
@@ -146,7 +192,7 @@ export async function POST(request: NextRequest) {
                     usedAt: entitlement.usedAt,
                 },
                 scannedAt: (entitlement.usedAt ?? new Date()).toISOString(),
-                attendance: buildAttendanceSummary(ticket),
+                attendance: computeAttendance(),
             })
         }
 
@@ -179,7 +225,7 @@ export async function POST(request: NextRequest) {
                 entryDate: today,
             },
             scannedAt: usedAt.toISOString(),
-            attendance: buildAttendanceSummary(ticket),
+            attendance: computeAttendance(),
         })
     } catch (error) {
         console.error("Manual scan lookup error:", error)
