@@ -131,6 +131,29 @@ export async function POST(request: NextRequest) {
             })
         }
 
+
+        const isPackage = Boolean(ticket.ticketType.isPackage)
+        const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
+        const packageLimit = isPackage
+            ? (ticket.ticketType.packageDaysCount ?? (nameMatch ? Number(nameMatch[1]) : null))
+            : null
+
+        let scanCount = 0
+        if (isPackage) {
+            scanCount = await prisma.scan.count({
+                where: { ticketId: ticket.id, result: "VALID" },
+            })
+        }
+
+        const computeAttendance = () => {
+            if (isPackage && packageLimit) {
+                const usedEntitlements = ticket.entitlements.filter((item) => item.status === "USED").length
+                const used = Math.max(usedEntitlements, scanCount)
+                return { total: packageLimit, used, remaining: Math.max(packageLimit - used, 0) }
+            }
+            return buildAttendanceSummary(ticket)
+        }
+
         // NOTA: Se eliminó validación estricta de días para permitir RECUPERACIONES
         // El asistente puede venir cualquier día mientras tenga clases disponibles
         const today = getTodayDateString()
@@ -156,6 +179,31 @@ export async function POST(request: NextRequest) {
             }
         }
 
+
+        if (!entitlement && isPackage) {
+            const attendance = computeAttendance()
+            if (packageLimit && attendance.remaining <= 0) {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "NO_CLASSES",
+                    message: "No tiene clases disponibles",
+                    scannedAt: new Date().toISOString(),
+                    attendance,
+                })
+            }
+
+            entitlement = await prisma.ticketDayEntitlement.create({
+                data: {
+                    ticketId: ticket.id,
+                    date: new Date(`${today}T00:00:00`),
+                    status: "AVAILABLE",
+                },
+            })
+            ticket.entitlements.push(entitlement)
+        }
+
         if (!entitlement) {
             await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")
             return NextResponse.json({
@@ -164,7 +212,7 @@ export async function POST(request: NextRequest) {
                 reason: "NO_CLASSES",
                 message: "No tiene clases disponibles",
                 scannedAt: new Date().toISOString(),
-                attendance: buildAttendanceSummary(ticket),
+                attendance: computeAttendance(),
             })
         }
 
@@ -186,7 +234,7 @@ export async function POST(request: NextRequest) {
                     usedAt: entitlement.usedAt,
                 },
                 scannedAt: (entitlement.usedAt ?? new Date()).toISOString(),
-                attendance: buildAttendanceSummary(ticket),
+                attendance: computeAttendance(),
             })
         }
 
@@ -220,7 +268,7 @@ export async function POST(request: NextRequest) {
                 entryDate: today,
             },
             scannedAt: usedAt.toISOString(),
-            attendance: buildAttendanceSummary(ticket),
+            attendance: computeAttendance(),
         })
     } catch (error) {
         console.error("Scan validation error:", error)
