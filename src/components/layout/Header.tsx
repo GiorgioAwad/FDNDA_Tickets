@@ -90,8 +90,8 @@ export function Header() {
                                 <Image src="/logo.png" alt="FDNDA" width={32} height={32} className="h-8 w-8 object-contain" priority />
                             </div>
                             <div className="hidden sm:block">
-                                <span className="font-bold text-lg text-[hsl(210,100%,25%)]">FDNDA</span>
-                                <span className="hidden lg:inline text-sm text-gray-500 ml-2">Tickets</span>
+                                <span className="font-bold text-lg text-[hsl(210,100%,25%)]">Ticketing</span>
+                                <span className="ml-2 text-sm text-gray-500">FDNDA</span>
                             </div>
                         </Link>
 

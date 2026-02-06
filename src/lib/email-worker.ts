@@ -15,7 +15,8 @@ const resend = process.env.RESEND_API_KEY
 
 const FROM_EMAIL = process.env.EMAIL_FROM || "Ticketing FDNDA <tickets@fdnda.org.pe>"
 const BASE_URL = process.env.NEXTAUTH_URL || "http://localhost:3000"
-const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || "Ticketing FDNDA"
+const RAW_APP_NAME = (process.env.NEXT_PUBLIC_APP_NAME || "Ticketing FDNDA").trim()
+const APP_NAME = RAW_APP_NAME.toLowerCase() === "fdnda tickets" ? "Ticketing FDNDA" : RAW_APP_NAME
 const BRAND_TAGLINE = "Federaci&oacute;n Deportiva Nacional de Deportes Acu&aacute;ticos"
 
 // ==================== EMAIL TEMPLATES ====================
