@@ -103,10 +103,13 @@ export async function GET(
         }
 
         let entitlements = ticket.entitlements
-        const isPackageTicket = ticket.ticketType.isPackage
-        const packageDaysCount = ticket.ticketType.packageDaysCount ?? null
+        const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
+        const isPackageLike = Boolean(
+            ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || nameMatch
+        )
+        const packageDaysCount = ticket.ticketType.packageDaysCount ?? (nameMatch ? Number(nameMatch[1]) : null)
 
-        if (!ticket.ticketType.isPackage && entitlements.length === 0 && ticket.event?.startDate && ticket.event?.endDate) {
+        if (!isPackageLike && entitlements.length === 0 && ticket.event?.startDate && ticket.event?.endDate) {
             let validDays: Date[] = []
 
             if (Array.isArray(ticket.ticketType.validDays)) {
@@ -192,13 +195,13 @@ export async function GET(
         // Check if this date is valid for the ticket
         let dateStr = formatDateLocal(qrDate)
         const usedCount = entitlements.filter((item) => item.status === "USED").length
-        const isPackage = isPackageTicket && packageDaysCount
+        const isPackage = isPackageLike && packageDaysCount
         const eventStart = ticket.event?.startDate ? formatDateLocal(ticket.event.startDate) : null
         const eventEnd = ticket.event?.endDate ? formatDateLocal(ticket.event.endDate) : null
         const isWithinEventRange = eventStart && eventEnd ? dateStr >= eventStart && dateStr <= eventEnd : true
         let hasEntitlement = isPackage
-            ? isWithinEventRange && usedCount < packageDaysCount!
-            : entitlementDates.includes(dateStr)
+            ? usedCount < packageDaysCount!
+            : (isWithinEventRange && entitlementDates.includes(dateStr))
 
         if (!isPackage && !hasEntitlement && !dateParam && entitlementDates.length > 0) {
             const nextEntitlement =

@@ -158,9 +158,12 @@ export default function TicketDetailPage() {
     }
 
     const entitlements = ticket.entitlements || []
-    const isPackage = Boolean(ticket.ticketType.isPackage && ticket.ticketType.packageDaysCount)
+    const classCount = extractClassCount(ticket.ticketType.name)
+    const isPackageLike = Boolean(
+        ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || classCount
+    )
     const label = extractDaysLabel(ticket.ticketType.name)
-    const scheduleDays = !isPackage && ticket.event?.startDate && ticket.event?.endDate
+    const scheduleDays = !isPackageLike && ticket.event?.startDate && ticket.event?.endDate
         ? (label
             ? buildValidDaysFromLabel(new Date(ticket.event.startDate), new Date(ticket.event.endDate), label)
             : getDaysBetween(new Date(ticket.event.startDate), new Date(ticket.event.endDate)))
@@ -171,10 +174,10 @@ export default function TicketDetailPage() {
     const usedCount = entitlements.filter((item) => item.status === "USED").length
     const scanUsedCount = ticket.scanCount ?? 0
     const effectiveUsedCount = Math.max(usedCount, scanUsedCount)
-    const totalCount = isPackage
-        ? (ticket.ticketType.packageDaysCount ?? extractClassCount(ticket.ticketType.name) ?? 0)
+    const totalCount = isPackageLike
+        ? (ticket.ticketType.packageDaysCount ?? classCount ?? 0)
         : (scheduleDays.length > 0 ? scheduleDays.length : entitlements.length)
-    const displayEntitlements = isPackage
+    const displayEntitlements = isPackageLike
         ? Array.from({ length: totalCount }, (_, index) => ({
             date: `slot-${index + 1}`,
             status: index < effectiveUsedCount ? ("USED" as const) : ("AVAILABLE" as const),
@@ -191,7 +194,7 @@ export default function TicketDetailPage() {
                 }
             })
             : entitlements)
-    const usedDisplayCount = isPackage
+    const usedDisplayCount = isPackageLike
         ? effectiveUsedCount
         : displayEntitlements.filter((item) => item.status === "USED").length
     const remainingCount = Math.max(totalCount - usedDisplayCount, 0)

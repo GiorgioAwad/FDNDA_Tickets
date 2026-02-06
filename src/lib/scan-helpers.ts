@@ -133,10 +133,18 @@ export const buildAttendanceSummary = (ticket: ScanTicket): AttendanceSummary =>
 }
 
 /**
+ * Determine if ticket should behave like a package (sequential classes)
+ */
+export const isPackageLike = (ticket: ScanTicket): boolean => {
+    const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
+    return Boolean(ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || nameMatch)
+}
+
+/**
  * Generate entitlements for a ticket if missing
  */
 export const generateEntitlements = (ticket: ScanTicket): Date[] => {
-    if (ticket.ticketType.isPackage || ticket.entitlements.length > 0) {
+    if (isPackageLike(ticket) || ticket.entitlements.length > 0) {
         return []
     }
 
@@ -158,11 +166,13 @@ export const generateEntitlements = (ticket: ScanTicket): Date[] => {
  * Check if package limit has been reached
  */
 export const isPackageLimitReached = (ticket: ScanTicket): boolean => {
-    if (!ticket.ticketType.isPackage || !ticket.ticketType.packageDaysCount) {
+    const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
+    const packageLimit = ticket.ticketType.packageDaysCount ?? (nameMatch ? Number(nameMatch[1]) : null)
+    if (!isPackageLike(ticket) || !packageLimit) {
         return false
     }
     const usedCount = ticket.entitlements.filter((e) => e.status === "USED").length
-    return usedCount >= ticket.ticketType.packageDaysCount
+    return usedCount >= packageLimit
 }
 
 /**

@@ -8,8 +8,6 @@ import {
     matchesToday,
     buildAttendanceSummary,
     generateEntitlements,
-    isPackageLimitReached,
-    isWithinEventRange as checkWithinEventRange,
 } from "@/lib/scan-helpers"
 
 export const runtime = "nodejs"
