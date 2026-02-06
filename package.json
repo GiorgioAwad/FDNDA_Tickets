@@ -20,6 +20,7 @@
     "@sentry/nextjs": "^10.38.0",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.1",
+    "@vercel/blob": "^2.1.0",
     "@zxing/browser": "^0.1.5",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",

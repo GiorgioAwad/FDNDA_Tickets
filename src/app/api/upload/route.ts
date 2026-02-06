@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { writeFile, mkdir } from "fs/promises"
-import { existsSync } from "fs"
-import path from "path"
+import { put, del } from "@vercel/blob"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import crypto from "crypto"
 
@@ -19,7 +17,7 @@ export const BANNER_DIMENSIONS = {
 }
 
 /**
- * POST /api/upload - Upload an image file
+ * POST /api/upload - Upload an image file to Vercel Blob
  */
 export async function POST(request: NextRequest) {
     try {
@@ -65,31 +63,22 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // Create upload directory if it doesn't exist
-        const uploadDir = path.join(process.cwd(), "public", "uploads", type || "images")
-        if (!existsSync(uploadDir)) {
-            await mkdir(uploadDir, { recursive: true })
-        }
-
         // Generate unique filename
         const ext = file.name.split(".").pop()?.toLowerCase() || "jpg"
         const hash = crypto.randomBytes(8).toString("hex")
         const timestamp = Date.now()
-        const filename = `${timestamp}-${hash}.${ext}`
-        const filepath = path.join(uploadDir, filename)
+        const filename = `${type || "images"}/${timestamp}-${hash}.${ext}`
 
-        // Convert file to buffer and write
-        const bytes = await file.arrayBuffer()
-        const buffer = Buffer.from(bytes)
-        await writeFile(filepath, buffer)
-
-        // Generate public URL
-        const publicUrl = `/uploads/${type || "images"}/${filename}`
+        // Upload to Vercel Blob
+        const blob = await put(filename, file, {
+            access: "public",
+            addRandomSuffix: false,
+        })
 
         return NextResponse.json({
             success: true,
-            url: publicUrl,
-            filename,
+            url: blob.url,
+            filename: blob.pathname,
             size: file.size,
             type: file.type,
             dimensions: type === "banner" ? BANNER_DIMENSIONS : undefined,
@@ -124,4 +113,43 @@ export async function GET() {
             ],
         },
     })
+}
+
+/**
+ * DELETE /api/upload - Delete an uploaded file from Vercel Blob
+ */
+export async function DELETE(request: NextRequest) {
+    try {
+        const user = await getCurrentUser()
+
+        if (!user || !hasRole(user.role, "ADMIN")) {
+            return NextResponse.json(
+                { success: false, error: "No autorizado" },
+                { status: 401 }
+            )
+        }
+
+        const { url } = await request.json()
+
+        if (!url) {
+            return NextResponse.json(
+                { success: false, error: "URL del archivo requerida" },
+                { status: 400 }
+            )
+        }
+
+        await del(url)
+
+        return NextResponse.json({
+            success: true,
+            message: "Archivo eliminado correctamente",
+        })
+
+    } catch (error) {
+        console.error("Delete error:", error)
+        return NextResponse.json(
+            { success: false, error: "Error al eliminar archivo" },
+            { status: 500 }
+        )
+    }
 }
