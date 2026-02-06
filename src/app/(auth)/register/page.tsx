@@ -166,9 +166,7 @@ export default function RegisterPage() {
                             </div>
 
                             <div className="space-y-2">
-                                <label htmlFor="password" className="text-sm font-medium text-gray-700">
-                                    contraseña
-                                </label>
+                                <label htmlFor="password" className="text-sm font-medium text-gray-700">{"Contrase\u00f1a"}</label>
                                 <div className="relative">
                                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                                     <Input
@@ -186,9 +184,7 @@ export default function RegisterPage() {
                             </div>
 
                             <div className="space-y-2">
-                                <label htmlFor="confirmPassword" className="text-sm font-medium text-gray-700">
-                                    Confirmar contraseña
-                                </label>
+                                <label htmlFor="confirmPassword" className="text-sm font-medium text-gray-700">{"Confirmar contrase\u00f1a"}</label>
                                 <div className="relative">
                                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                                     <Input

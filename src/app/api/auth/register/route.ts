@@ -20,7 +20,9 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json()
-        const { name, email, password } = body
+        const name = String(body.name || "").trim()
+        const email = String(body.email || "").trim().toLowerCase()
+        const password = String(body.password || "")
 
         if (!name || !email || !password) {
             return NextResponse.json(
@@ -30,15 +32,55 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if user exists
-        const existingUser = await prisma.user.findUnique({
-            where: { email },
+        const existingUser = await prisma.user.findFirst({
+            where: { email: { equals: email, mode: "insensitive" } },
         })
 
         if (existingUser) {
-            return NextResponse.json(
-                { success: false, error: "El email ya está registrado" },
-                { status: 400 }
-            )
+            if (existingUser.emailVerifiedAt) {
+                return NextResponse.json(
+                    { success: false, error: "El email ya está registrado" },
+                    { status: 400 }
+                )
+            }
+
+            // Allow re-registering when email is not verified: update credentials and resend verification
+            const passwordHash = await hash(password, 12)
+            const verifyToken = randomBytes(32).toString("hex")
+
+            const updatedUser = await prisma.user.update({
+                where: { id: existingUser.id },
+                data: {
+                    name,
+                    email,
+                    passwordHash,
+                    verifyToken,
+                    emailVerifiedAt: null,
+                    resetToken: null,
+                    resetTokenExp: null,
+                },
+            })
+
+            const emailResult = await sendVerificationEmail(email, name, verifyToken)
+            if (!emailResult.success) {
+                console.error("Verification email failed:", emailResult.error)
+                return NextResponse.json(
+                    {
+                        success: false,
+                        error: `No se pudo enviar el correo de verificación. ${emailResult.error ?? ""}`.trim(),
+                    },
+                    { status: 500 }
+                )
+            }
+
+            return NextResponse.json({
+                success: true,
+                data: {
+                    id: updatedUser.id,
+                    name: updatedUser.name,
+                    email: updatedUser.email,
+                },
+            })
         }
 
         // Hash password
