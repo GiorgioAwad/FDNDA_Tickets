@@ -13,56 +13,71 @@ const resend = process.env.RESEND_API_KEY
     ? new Resend(process.env.RESEND_API_KEY)
     : null
 
-const FROM_EMAIL = process.env.EMAIL_FROM || "FDNDA Tickets <tickets@fdnda.org.pe>"
+const FROM_EMAIL = process.env.EMAIL_FROM || "Ticketing FDNDA <tickets@fdnda.org.pe>"
 const BASE_URL = process.env.NEXTAUTH_URL || "http://localhost:3000"
+const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || "Ticketing FDNDA"
+const BRAND_TAGLINE = "Federaci&oacute;n Deportiva Nacional de Deportes Acu&aacute;ticos"
 
 // ==================== EMAIL TEMPLATES ====================
 
 function getPurchaseConfirmationTemplate(data: Record<string, unknown>): { subject: string; html: string } {
     const { userName, orderId, eventTitle, ticketCount, totalAmount } = data
+    const orderCode = String(orderId || "").slice(-8).toUpperCase()
     
     return {
-        subject: `✅ Compra confirmada - ${eventTitle}`,
+        subject: `Compra confirmada - ${eventTitle}`,
         html: `
             <!DOCTYPE html>
-            <html>
+            <html lang="es">
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Compra confirmada</title>
             </head>
-            <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f5; margin: 0; padding: 20px;">
-                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    <div style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); padding: 32px; text-align: center;">
-                        <h1 style="color: white; margin: 0; font-size: 24px;">¡Compra Exitosa!</h1>
-                    </div>
-                    <div style="padding: 32px;">
-                        <p style="color: #374151; font-size: 16px; margin-bottom: 24px;">
-                            Hola <strong>${userName}</strong>,
-                        </p>
-                        <p style="color: #374151; font-size: 16px; margin-bottom: 24px;">
-                            Tu compra ha sido procesada correctamente. Aquí están los detalles:
-                        </p>
-                        <div style="background: #f9fafb; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-                            <p style="margin: 0 0 12px 0;"><strong>Evento:</strong> ${eventTitle}</p>
-                            <p style="margin: 0 0 12px 0;"><strong>Entradas:</strong> ${ticketCount}</p>
-                            <p style="margin: 0 0 12px 0;"><strong>Total:</strong> ${totalAmount}</p>
-                            <p style="margin: 0; color: #6b7280; font-size: 14px;"><strong>Orden:</strong> ${orderId}</p>
-                        </div>
-                        <div style="text-align: center; margin-bottom: 24px;">
-                            <a href="${BASE_URL}/mi-cuenta/entradas" style="display: inline-block; background: #2563eb; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                                Ver mis entradas
-                            </a>
-                        </div>
-                        <p style="color: #6b7280; font-size: 14px; text-align: center;">
-                            Presenta el código QR de tu entrada en el evento.
-                        </p>
-                    </div>
-                    <div style="background: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
-                        <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                            © ${new Date().getFullYear()} FDNDA. Todos los derechos reservados.
-                        </p>
-                    </div>
-                </div>
+            <body style="margin:0; padding:0; background-color:#eef2f7;">
+                <span style="display:none; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden;">
+                    Tu compra fue confirmada y tus entradas ya estan disponibles.
+                </span>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#eef2f7; padding:24px 12px;">
+                    <tr>
+                        <td align="center">
+                            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%; max-width:600px; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 10px 24px rgba(15,23,42,0.08);">
+                                <tr>
+                                    <td style="padding:28px 32px; background:linear-gradient(135deg, #0b3d91 0%, #0b6bd3 100%); color:#ffffff;">
+                                        <div style="font-size:12px; letter-spacing:2px; text-transform:uppercase; font-weight:600;">${APP_NAME}</div>
+                                        <div style="font-size:26px; font-weight:700; margin-top:6px;">Compra confirmada</div>
+                                        <div style="font-size:12px; opacity:0.85; margin-top:6px;">${BRAND_TAGLINE}</div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:32px; color:#1f2937; font-size:16px; line-height:1.6;">
+                                        <p style="margin:0 0 12px;">Hola <strong>${userName}</strong>,</p>
+                                        <p style="margin:0 0 24px;">Gracias por tu compra. Tus entradas ya est&aacute;n disponibles.</p>
+                                        <div style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px; padding:16px 18px; margin-bottom:24px;">
+                                            <p style="margin:0 0 10px;"><strong>Evento:</strong> ${eventTitle}</p>
+                                            <p style="margin:0 0 10px;"><strong>Orden:</strong> #${orderCode}</p>
+                                            <p style="margin:0 0 10px;"><strong>Entradas:</strong> ${ticketCount}</p>
+                                            <p style="margin:0;"><strong>Total pagado:</strong> ${totalAmount}</p>
+                                        </div>
+                                        <div style="text-align:center; margin:24px 0 28px;">
+                                            <a href="${BASE_URL}/mi-cuenta/entradas" style="background:#0b5fff; color:#ffffff; padding:14px 32px; text-decoration:none; border-radius:8px; font-weight:600; display:inline-block;">
+                                                Ver mis entradas
+                                            </a>
+                                        </div>
+                                        <div style="margin-top:8px; padding:12px 14px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; font-size:12px; color:#065f46;">
+                                            Recuerda presentar tu c&oacute;digo QR en el ingreso. El QR se renueva diariamente para eventos de varios d&iacute;as.
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:16px 32px 24px; background:#f8fafc; font-size:12px; color:#94a3b8; text-align:center;">
+                                        &copy; ${new Date().getFullYear()} ${APP_NAME}. Todos los derechos reservados.
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </body>
             </html>
         `,
@@ -73,41 +88,57 @@ function getWelcomeTemplate(data: Record<string, unknown>): { subject: string; h
     const { userName, verifyUrl } = data
     
     return {
-        subject: "🎉 Bienvenido a FDNDA Tickets",
+        subject: `Verifica tu cuenta en ${APP_NAME}`,
         html: `
             <!DOCTYPE html>
-            <html>
+            <html lang="es">
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Verifica tu cuenta</title>
             </head>
-            <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f5; margin: 0; padding: 20px;">
-                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    <div style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); padding: 32px; text-align: center;">
-                        <h1 style="color: white; margin: 0; font-size: 24px;">¡Bienvenido a FDNDA!</h1>
-                    </div>
-                    <div style="padding: 32px;">
-                        <p style="color: #374151; font-size: 16px; margin-bottom: 24px;">
-                            Hola <strong>${userName}</strong>,
-                        </p>
-                        <p style="color: #374151; font-size: 16px; margin-bottom: 24px;">
-                            Gracias por registrarte. Para completar tu registro, verifica tu correo electrónico:
-                        </p>
-                        <div style="text-align: center; margin-bottom: 24px;">
-                            <a href="${verifyUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                                Verificar mi correo
-                            </a>
-                        </div>
-                        <p style="color: #6b7280; font-size: 14px; text-align: center;">
-                            Si no creaste esta cuenta, puedes ignorar este correo.
-                        </p>
-                    </div>
-                    <div style="background: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
-                        <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                            © ${new Date().getFullYear()} FDNDA. Todos los derechos reservados.
-                        </p>
-                    </div>
-                </div>
+            <body style="margin:0; padding:0; background-color:#eef2f7;">
+                <span style="display:none; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden;">
+                    Verifica tu correo para activar tu cuenta en ${APP_NAME}.
+                </span>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#eef2f7; padding:24px 12px;">
+                    <tr>
+                        <td align="center">
+                            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%; max-width:600px; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 10px 24px rgba(15,23,42,0.08);">
+                                <tr>
+                                    <td style="padding:28px 32px; background:linear-gradient(135deg, #0b3d91 0%, #0b6bd3 100%); color:#ffffff;">
+                                        <div style="font-size:12px; letter-spacing:2px; text-transform:uppercase; font-weight:600;">${APP_NAME}</div>
+                                        <div style="font-size:26px; font-weight:700; margin-top:6px;">Verifica tu cuenta</div>
+                                        <div style="font-size:12px; opacity:0.85; margin-top:6px;">${BRAND_TAGLINE}</div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:32px; color:#1f2937; font-size:16px; line-height:1.6;">
+                                        <p style="margin:0 0 12px;">Hola <strong>${userName}</strong>,</p>
+                                        <p style="margin:0 0 24px;">Gracias por registrarte en ${APP_NAME}. Para completar tu registro y poder comprar entradas, verifica tu correo electr&oacute;nico.</p>
+                                        <div style="text-align:center; margin:24px 0 28px;">
+                                            <a href="${verifyUrl}" style="background:#0b5fff; color:#ffffff; padding:14px 32px; text-decoration:none; border-radius:8px; font-weight:600; display:inline-block;">
+                                                Verificar mi cuenta
+                                            </a>
+                                        </div>
+                                        <p style="margin:0 0 8px; font-size:13px; color:#6b7280;">Si el bot&oacute;n no funciona, copia y pega este enlace en tu navegador:</p>
+                                        <p style="margin:0; font-size:12px;">
+                                            <a href="${verifyUrl}" style="color:#0b5fff; word-break:break-all;">${verifyUrl}</a>
+                                        </p>
+                                        <div style="margin-top:24px; padding:12px 14px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px; font-size:12px; color:#6b7280;">
+                                            Si no creaste esta cuenta, puedes ignorar este correo.
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:16px 32px 24px; background:#f8fafc; font-size:12px; color:#94a3b8; text-align:center;">
+                                        &copy; ${new Date().getFullYear()} ${APP_NAME}. Todos los derechos reservados.
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </body>
             </html>
         `,
@@ -118,41 +149,53 @@ function getPasswordResetTemplate(data: Record<string, unknown>): { subject: str
     const { userName, resetUrl } = data
     
     return {
-        subject: "🔐 Restablecer contraseña - FDNDA",
+        subject: `Restablecer contraseña - ${APP_NAME}`,
         html: `
             <!DOCTYPE html>
-            <html>
+            <html lang="es">
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Restablecer contrase&ntilde;a</title>
             </head>
-            <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f5; margin: 0; padding: 20px;">
-                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    <div style="background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); padding: 32px; text-align: center;">
-                        <h1 style="color: white; margin: 0; font-size: 24px;">Restablecer Contraseña</h1>
-                    </div>
-                    <div style="padding: 32px;">
-                        <p style="color: #374151; font-size: 16px; margin-bottom: 24px;">
-                            Hola <strong>${userName}</strong>,
-                        </p>
-                        <p style="color: #374151; font-size: 16px; margin-bottom: 24px;">
-                            Recibimos una solicitud para restablecer tu contraseña. Haz clic en el botón para continuar:
-                        </p>
-                        <div style="text-align: center; margin-bottom: 24px;">
-                            <a href="${resetUrl}" style="display: inline-block; background: #dc2626; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                                Restablecer contraseña
-                            </a>
-                        </div>
-                        <p style="color: #6b7280; font-size: 14px; text-align: center;">
-                            Este enlace expira en 1 hora. Si no solicitaste esto, ignora este correo.
-                        </p>
-                    </div>
-                    <div style="background: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
-                        <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                            © ${new Date().getFullYear()} FDNDA. Todos los derechos reservados.
-                        </p>
-                    </div>
-                </div>
+            <body style="margin:0; padding:0; background-color:#eef2f7;">
+                <span style="display:none; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden;">
+                    Restablece tu contrase&ntilde;a de forma segura en ${APP_NAME}.
+                </span>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#eef2f7; padding:24px 12px;">
+                    <tr>
+                        <td align="center">
+                            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%; max-width:600px; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 10px 24px rgba(15,23,42,0.08);">
+                                <tr>
+                                    <td style="padding:28px 32px; background:linear-gradient(135deg, #0b3d91 0%, #0b6bd3 100%); color:#ffffff;">
+                                        <div style="font-size:12px; letter-spacing:2px; text-transform:uppercase; font-weight:600;">${APP_NAME}</div>
+                                        <div style="font-size:26px; font-weight:700; margin-top:6px;">Restablecer contrase&ntilde;a</div>
+                                        <div style="font-size:12px; opacity:0.85; margin-top:6px;">${BRAND_TAGLINE}</div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:32px; color:#1f2937; font-size:16px; line-height:1.6;">
+                                        <p style="margin:0 0 12px;">Hola <strong>${userName}</strong>,</p>
+                                        <p style="margin:0 0 24px;">Recibimos una solicitud para restablecer tu contrase&ntilde;a. Haz clic en el bot&oacute;n para continuar:</p>
+                                        <div style="text-align:center; margin:24px 0 28px;">
+                                            <a href="${resetUrl}" style="background:#dc2626; color:#ffffff; padding:14px 32px; text-decoration:none; border-radius:8px; font-weight:600; display:inline-block;">
+                                                Restablecer contrase&ntilde;a
+                                            </a>
+                                        </div>
+                                        <div style="margin-top:8px; padding:12px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; font-size:12px; color:#991b1b;">
+                                            Este enlace expira en 1 hora. Si no solicitaste esto, ignora este correo.
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:16px 32px 24px; background:#f8fafc; font-size:12px; color:#94a3b8; text-align:center;">
+                                        &copy; ${new Date().getFullYear()} ${APP_NAME}. Todos los derechos reservados.
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </body>
             </html>
         `,
@@ -163,42 +206,54 @@ function getCourtesyClaimedTemplate(data: Record<string, unknown>): { subject: s
     const { userName, eventTitle, ticketTypeName } = data
     
     return {
-        subject: `🎁 Cortesía reclamada - ${eventTitle}`,
+        subject: `Cortesía reclamada - ${eventTitle}`,
         html: `
             <!DOCTYPE html>
-            <html>
+            <html lang="es">
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Cortes&iacute;a reclamada</title>
             </head>
-            <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f5; margin: 0; padding: 20px;">
-                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    <div style="background: linear-gradient(135deg, #059669 0%, #047857 100%); padding: 32px; text-align: center;">
-                        <h1 style="color: white; margin: 0; font-size: 24px;">¡Cortesía Reclamada!</h1>
-                    </div>
-                    <div style="padding: 32px;">
-                        <p style="color: #374151; font-size: 16px; margin-bottom: 24px;">
-                            Hola <strong>${userName}</strong>,
-                        </p>
-                        <p style="color: #374151; font-size: 16px; margin-bottom: 24px;">
-                            Has reclamado exitosamente tu entrada de cortesía:
-                        </p>
-                        <div style="background: #f9fafb; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-                            <p style="margin: 0 0 12px 0;"><strong>Evento:</strong> ${eventTitle}</p>
-                            <p style="margin: 0;"><strong>Tipo:</strong> ${ticketTypeName}</p>
-                        </div>
-                        <div style="text-align: center; margin-bottom: 24px;">
-                            <a href="${BASE_URL}/mi-cuenta/entradas" style="display: inline-block; background: #059669; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                                Ver mi entrada
-                            </a>
-                        </div>
-                    </div>
-                    <div style="background: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
-                        <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                            © ${new Date().getFullYear()} FDNDA. Todos los derechos reservados.
-                        </p>
-                    </div>
-                </div>
+            <body style="margin:0; padding:0; background-color:#eef2f7;">
+                <span style="display:none; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden;">
+                    Tu cortes&iacute;a ha sido registrada en ${APP_NAME}.
+                </span>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#eef2f7; padding:24px 12px;">
+                    <tr>
+                        <td align="center">
+                            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%; max-width:600px; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 10px 24px rgba(15,23,42,0.08);">
+                                <tr>
+                                    <td style="padding:28px 32px; background:linear-gradient(135deg, #0b3d91 0%, #0b6bd3 100%); color:#ffffff;">
+                                        <div style="font-size:12px; letter-spacing:2px; text-transform:uppercase; font-weight:600;">${APP_NAME}</div>
+                                        <div style="font-size:26px; font-weight:700; margin-top:6px;">Cortes&iacute;a reclamada</div>
+                                        <div style="font-size:12px; opacity:0.85; margin-top:6px;">${BRAND_TAGLINE}</div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:32px; color:#1f2937; font-size:16px; line-height:1.6;">
+                                        <p style="margin:0 0 12px;">Hola <strong>${userName}</strong>,</p>
+                                        <p style="margin:0 0 24px;">Has reclamado exitosamente tu entrada de cortes&iacute;a:</p>
+                                        <div style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px; padding:16px 18px; margin-bottom:24px;">
+                                            <p style="margin:0 0 10px;"><strong>Evento:</strong> ${eventTitle}</p>
+                                            <p style="margin:0;"><strong>Tipo:</strong> ${ticketTypeName}</p>
+                                        </div>
+                                        <div style="text-align:center; margin:24px 0 28px;">
+                                            <a href="${BASE_URL}/mi-cuenta/entradas" style="background:#0b5fff; color:#ffffff; padding:14px 32px; text-decoration:none; border-radius:8px; font-weight:600; display:inline-block;">
+                                                Ver mi entrada
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:16px 32px 24px; background:#f8fafc; font-size:12px; color:#94a3b8; text-align:center;">
+                                        &copy; ${new Date().getFullYear()} ${APP_NAME}. Todos los derechos reservados.
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </body>
             </html>
         `,

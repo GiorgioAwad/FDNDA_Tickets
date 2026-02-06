@@ -121,8 +121,8 @@ export default function ConfiguracionPage() {
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-gray-700">Nombre de envío</label>
                             <Input 
-                                placeholder="FDNDA Tickets"
-                                defaultValue="FDNDA Tickets"
+                                placeholder="Ticketing FDNDA"
+                                defaultValue="Ticketing FDNDA"
                             />
                         </div>
                     </div>
@@ -193,8 +193,8 @@ export default function ConfiguracionPage() {
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-gray-700">Nombre del sitio</label>
                             <Input 
-                                placeholder="FDNDA Tickets"
-                                defaultValue="FDNDA Tickets"
+                                placeholder="Ticketing FDNDA"
+                                defaultValue="Ticketing FDNDA"
                             />
                         </div>
                         <div className="space-y-2">

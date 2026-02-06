@@ -107,7 +107,7 @@ export default function RegisterPage() {
                         priority
                     />
                 </div>
-                    <h1 className="text-2xl font-bold text-gray-900">FDNDA Tickets</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">Ticketing FDNDA</h1>
                 </div>
 
                 <Card className="shadow-xl border-0">

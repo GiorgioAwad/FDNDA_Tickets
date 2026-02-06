@@ -153,7 +153,7 @@ UPSTASH_REDIS_REST_TOKEN="xxx"
 
 # === APP ===
 NEXT_PUBLIC_APP_URL="https://tu-dominio.com"
-NEXT_PUBLIC_APP_NAME="FDNDA Tickets"
+NEXT_PUBLIC_APP_NAME="Ticketing FDNDA"
 ```
 
 ---

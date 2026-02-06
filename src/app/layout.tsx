@@ -8,12 +8,12 @@ import { MainLayoutWrapper } from "@/components/layout/MainLayoutWrapper"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "FDNDA Tickets - Federación Deportiva Nacional de Deportes Acuáticos",
+  title: "Ticketing FDNDA - Federación Deportiva Nacional de Deportes Acuáticos",
   description: "Compra tus entradas para los mejores eventos de deportes acuáticos en Perú. Natación, Waterpolo, Clavados y más.",
   keywords: ["deportes acuáticos", "natación", "waterpolo", "clavados", "tickets", "entradas", "FDNDA", "Perú"],
   authors: [{ name: "FDNDA" }],
   openGraph: {
-    title: "FDNDA Tickets",
+    title: "Ticketing FDNDA",
     description: "Entradas oficiales para eventos de deportes acuáticos",
     type: "website",
     locale: "es_PE",
