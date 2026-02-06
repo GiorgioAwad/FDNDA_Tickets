@@ -5,6 +5,20 @@ import { getQueueStats } from "@/lib/email-queue"
 export const runtime = "nodejs"
 export const maxDuration = 60 // 60 segundos máximo
 
+
+function isCronAuthorized(request: NextRequest): boolean {
+    const cronSecret = process.env.CRON_SECRET
+    if (!cronSecret) return true
+
+    const authHeader = request.headers.get("authorization")
+    if (authHeader === `Bearer ${cronSecret}`) return true
+
+    const vercelCron = request.headers.get("x-vercel-cron")
+    if (vercelCron === "1" || vercelCron === "true") return true
+
+    return false
+}
+
 /**
  * POST /api/cron/process-emails
  * Procesa la cola de emails pendientes
@@ -16,10 +30,7 @@ export const maxDuration = 60 // 60 segundos máximo
  */
 export async function POST(request: NextRequest) {
     // Verificar token de autorización para cron jobs
-    const authHeader = request.headers.get("authorization")
-    const cronSecret = process.env.CRON_SECRET
-    
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    if (!isCronAuthorized(request)) {
         return NextResponse.json(
             { error: "Unauthorized" },
             { status: 401 }
@@ -49,10 +60,7 @@ export async function POST(request: NextRequest) {
  * Obtiene estadísticas de la cola
  */
 export async function GET(request: NextRequest) {
-    const authHeader = request.headers.get("authorization")
-    const cronSecret = process.env.CRON_SECRET
-    
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    if (!isCronAuthorized(request)) {
         return NextResponse.json(
             { error: "Unauthorized" },
             { status: 401 }
