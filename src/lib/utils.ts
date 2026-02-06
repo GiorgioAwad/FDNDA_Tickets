@@ -16,24 +16,36 @@ export function formatPrice(amount: number | string, currency: string = "PEN"): 
 function parseDateInput(date: Date | string): Date {
     if (date instanceof Date) return date
     if (typeof date === "string") {
+        // Handle ISO date strings (YYYY-MM-DD) - create date at noon UTC to avoid timezone issues
         const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
         if (match) {
             const [, year, month, day] = match
-            return new Date(Number(year), Number(month) - 1, Number(day))
+            // Use noon UTC to avoid day shifting due to timezone conversions
+            return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12, 0, 0))
+        }
+        // Handle ISO datetime strings (from database)
+        const isoMatch = /^(\d{4})-(\d{2})-(\d{2})T/.exec(date)
+        if (isoMatch) {
+            const d = new Date(date)
+            // Return date at noon UTC of that day to avoid timezone issues
+            return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0))
         }
     }
     return new Date(date)
 }
 
 export function parseDateOnly(date: Date | string): Date {
-    return parseDateInput(date)
+    const d = parseDateInput(date)
+    // For storing in DB, use midnight UTC
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0))
 }
 
 export function formatDateInput(date: Date | string): string {
     const d = parseDateInput(date)
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, "0")
-    const day = String(d.getDate()).padStart(2, "0")
+    // Use UTC values to format, avoiding timezone shifts
+    const year = d.getUTCFullYear()
+    const month = String(d.getUTCMonth() + 1).padStart(2, "0")
+    const day = String(d.getUTCDate()).padStart(2, "0")
     return `${year}-${month}-${day}`
 }
 
@@ -41,6 +53,7 @@ export function formatDate(date: Date | string, options?: Intl.DateTimeFormatOpt
     const d = parseDateInput(date)
     return new Intl.DateTimeFormat("es-PE", {
         dateStyle: "long",
+        timeZone: "UTC",
         ...options,
     }).format(d)
 }
@@ -50,6 +63,7 @@ export function formatDateTime(date: Date | string): string {
     return new Intl.DateTimeFormat("es-PE", {
         dateStyle: "medium",
         timeStyle: "short",
+        timeZone: "America/Lima",
     }).format(d)
 }
 
