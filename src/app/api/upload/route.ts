@@ -86,8 +86,22 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
         console.error("Upload error:", error)
+        
+        // Provide more specific error messages
+        let errorMessage = "Error al subir archivo"
+        
+        if (error instanceof Error) {
+            if (error.message.includes("BLOB_READ_WRITE_TOKEN")) {
+                errorMessage = "Configuración de almacenamiento incompleta. Contacta al administrador."
+            } else if (error.message.includes("rate limit")) {
+                errorMessage = "Demasiadas solicitudes. Intenta de nuevo en unos segundos."
+            } else {
+                errorMessage = error.message
+            }
+        }
+        
         return NextResponse.json(
-            { success: false, error: "Error al subir archivo" },
+            { success: false, error: errorMessage },
             { status: 500 }
         )
     }
