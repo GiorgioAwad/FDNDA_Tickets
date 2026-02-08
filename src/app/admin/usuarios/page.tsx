@@ -26,10 +26,7 @@ import {
 
 // Modal component that renders via portal
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-    const [mounted, setMounted] = useState(false)
-
     useEffect(() => {
-        setMounted(true)
         // Prevent body scroll when modal is open
         document.body.style.overflow = 'hidden'
         return () => {
@@ -37,7 +34,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
         }
     }, [])
 
-    if (!mounted) return null
+    if (typeof document === "undefined") return null
 
     return createPortal(
         <div 

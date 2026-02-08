@@ -81,6 +81,46 @@ export default function CheckoutPage() {
     
     const finalTotal = Math.max(0, total - discountAmount)
 
+    const redirectToIzipayCheckout = (paymentData: {
+        paymentUrl?: string | null
+        formToken?: string | null
+        sessionToken?: string | null
+        checkoutUrl?: string | null
+    }) => {
+        if (paymentData.paymentUrl) {
+            window.location.assign(paymentData.paymentUrl)
+            return
+        }
+
+        if (paymentData.formToken && paymentData.checkoutUrl) {
+            const form = document.createElement("form")
+            form.method = "POST"
+            form.action = paymentData.checkoutUrl
+            form.style.display = "none"
+
+            const formTokenInput = document.createElement("input")
+            formTokenInput.type = "hidden"
+            formTokenInput.name = "formToken"
+            formTokenInput.value = paymentData.formToken
+            form.appendChild(formTokenInput)
+
+            document.body.appendChild(form)
+            form.submit()
+            return
+        }
+
+        if (paymentData.sessionToken && paymentData.checkoutUrl) {
+            const separator = paymentData.checkoutUrl.includes("?") ? "&" : "?"
+            const url = `${paymentData.checkoutUrl}${separator}sessionToken=${encodeURIComponent(paymentData.sessionToken)}`
+            window.location.assign(url)
+            return
+        }
+
+        throw new Error(
+            "IZIPAY no devolvio una URL/token de checkout utilizable. Revisa IZIPAY_CHECKOUT_URL y credenciales."
+        )
+    }
+
     const handlePayment = async () => {
         if (status !== "authenticated") {
             router.push("/login?callbackUrl=/checkout")
@@ -117,24 +157,44 @@ export default function CheckoutPage() {
                 throw new Error(orderData.error || "Error al crear la orden")
             }
 
-            if (paymentsMode !== "mock") {
-                throw new Error("Pago IZIPAY no configurado para este entorno")
+            if (paymentsMode === "mock") {
+                const paymentResponse = await fetch("/api/payments/mock", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ orderId: orderData.data.orderId }),
+                })
+
+                const paymentData = await paymentResponse.json()
+
+                if (!paymentResponse.ok) {
+                    throw new Error(paymentData.error || "Error al procesar el pago")
+                }
+
+                clearCart()
+                router.push(`/checkout/success?orderId=${orderData.data.orderId}`)
+                return
             }
 
-            const paymentResponse = await fetch("/api/payments/mock", {
+            const sessionResponse = await fetch("/api/payments/izipay/session", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ orderId: orderData.data.orderId }),
             })
 
-            const paymentData = await paymentResponse.json()
+            const sessionData = await sessionResponse.json()
 
-            if (!paymentResponse.ok) {
-                throw new Error(paymentData.error || "Error al procesar el pago")
+            if (!sessionResponse.ok || !sessionData.success) {
+                throw new Error(sessionData.error || "No se pudo iniciar el pago con IZIPAY")
             }
 
-            router.push(`/checkout/success?orderId=${orderData.data.orderId}`)
+            if (sessionData.data?.alreadyPaid) {
+                clearCart()
+                router.push(`/checkout/success?orderId=${orderData.data.orderId}`)
+                return
+            }
+
             clearCart()
+            redirectToIzipayCheckout(sessionData.data || {})
 
         } catch (err) {
             setError((err as Error).message)

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import { generateTicketCode, getDaysBetween, formatPrice } from "@/lib/utils"
-import { sendPurchaseConfirmationEmail, sendPurchaseEmail } from "@/lib/email"
+import { sendPurchaseEmail } from "@/lib/email"
 import { onTicketSold } from "@/lib/cached-queries"
 import type { Prisma } from "@prisma/client"
 
@@ -46,10 +46,7 @@ export async function fulfillPaidOrder({
         return { success: false, error: "Order has no items" }
     }
 
-    const hasTickets = order.tickets.length > 0
-    const alreadyPaid = order.status === "PAID" && hasTickets
-
-    if (alreadyPaid) {
+    if (order.status === "PAID" && order.tickets.length > 0) {
         return { success: true, alreadyPaid: true }
     }
 
@@ -57,7 +54,7 @@ export async function fulfillPaidOrder({
         return { success: false, error: "Order not payable" }
     }
 
-    const updateData: Prisma.OrderUpdateInput = {
+    const updateData: Prisma.OrderUpdateManyMutationInput = {
         status: "PAID",
     }
 
@@ -73,68 +70,109 @@ export async function fulfillPaidOrder({
         updateData.providerResponse = providerResponse
     }
 
-    await prisma.$transaction(async (tx) => {
-        await tx.order.update({
-            where: { id: order.id },
+    const cacheToInvalidate = new Map<string, Set<string>>()
+    const fulfillmentResult = await prisma.$transaction(async (tx) => {
+        const transition = await tx.order.updateMany({
+            where: {
+                id: order.id,
+                status: "PENDING",
+            },
             data: updateData,
         })
 
-        if (!hasTickets) {
-            for (const item of order.orderItems) {
-                const event = item.ticketType.event
-                const attendeeData = Array.isArray(item.attendeeData)
-                    ? (item.attendeeData as { name: string; dni: string }[])
-                    : []
-
-                let validDays: Date[] = []
-
-                if (item.ticketType.isPackage && item.ticketType.packageDaysCount) {
-                    const allDays = getDaysBetween(event.startDate, event.endDate)
-                    validDays = allDays.slice(0, item.ticketType.packageDaysCount)
-                } else if (item.ticketType.validDays) {
-                    validDays = (item.ticketType.validDays as string[]).map((d) => new Date(d))
-                } else {
-                    validDays = getDaysBetween(event.startDate, event.endDate)
-                }
-
-                for (let i = 0; i < item.quantity; i++) {
-                    const attendee = attendeeData[i] || { name: null, dni: null }
-                    const ticketCode = generateTicketCode()
-
-                    await tx.ticket.create({
-                        data: {
-                            orderId: order.id,
-                            userId: order.userId,
-                            eventId: event.id,
-                            ticketTypeId: item.ticketTypeId,
-                            ticketCode,
-                            attendeeName: attendee.name || order.user.name,
-                            attendeeDni: attendee.dni || null,
-                            status: "ACTIVE",
-                            entitlements: {
-                                create: validDays.map((date) => ({
-                                    date,
-                                    status: "AVAILABLE",
-                                })),
-                            },
-                        },
-                    })
-                }
-
-                await tx.ticketType.update({
-                    where: { id: item.ticketTypeId },
-                    data: {
-                        sold: { increment: item.quantity },
+        if (transition.count === 0) {
+            const currentOrder = await tx.order.findUnique({
+                where: { id: order.id },
+                select: {
+                    status: true,
+                    _count: {
+                        select: { tickets: true },
                     },
-                })
+                },
+            })
 
-                // Invalidar cache de stock
-                await onTicketSold(item.ticketType.eventId, item.ticketTypeId)
+            if (!currentOrder) {
+                throw new Error("Order not found")
+            }
+
+            if (currentOrder.status === "PAID" && currentOrder._count.tickets > 0) {
+                return { alreadyPaid: true }
+            }
+
+            if (currentOrder.status === "CANCELLED" || currentOrder.status === "REFUNDED") {
+                throw new Error("Order not payable")
             }
         }
+
+        const existingTickets = await tx.ticket.count({
+            where: { orderId: order.id },
+        })
+
+        if (existingTickets > 0) {
+            return { alreadyPaid: true }
+        }
+
+        for (const item of order.orderItems) {
+            const event = item.ticketType.event
+            const attendeeData = Array.isArray(item.attendeeData)
+                ? (item.attendeeData as { name: string; dni: string }[])
+                : []
+
+            let validDays: Date[] = []
+
+            if (item.ticketType.isPackage && item.ticketType.packageDaysCount) {
+                const allDays = getDaysBetween(event.startDate, event.endDate)
+                validDays = allDays.slice(0, item.ticketType.packageDaysCount)
+            } else if (item.ticketType.validDays) {
+                validDays = (item.ticketType.validDays as string[]).map((d) => new Date(d))
+            } else {
+                validDays = getDaysBetween(event.startDate, event.endDate)
+            }
+
+            for (let i = 0; i < item.quantity; i++) {
+                const attendee = attendeeData[i] || { name: null, dni: null }
+                const ticketCode = generateTicketCode()
+
+                await tx.ticket.create({
+                    data: {
+                        orderId: order.id,
+                        userId: order.userId,
+                        eventId: event.id,
+                        ticketTypeId: item.ticketTypeId,
+                        ticketCode,
+                        attendeeName: attendee.name || order.user.name,
+                        attendeeDni: attendee.dni || null,
+                        status: "ACTIVE",
+                        entitlements: {
+                            create: validDays.map((date) => ({
+                                date,
+                                status: "AVAILABLE",
+                            })),
+                        },
+                    },
+                })
+            }
+
+            if (!cacheToInvalidate.has(item.ticketType.eventId)) {
+                cacheToInvalidate.set(item.ticketType.eventId, new Set())
+            }
+            cacheToInvalidate.get(item.ticketType.eventId)?.add(item.ticketTypeId)
+        }
+
+        return { alreadyPaid: false }
     })
 
-    if (!hasTickets) {
+    if (fulfillmentResult.alreadyPaid) {
+        return { success: true, alreadyPaid: true }
+    }
+
+    for (const [eventId, ticketTypeIds] of cacheToInvalidate) {
+        for (const ticketTypeId of ticketTypeIds) {
+            await onTicketSold(eventId, ticketTypeId)
+        }
+    }
+
+    if (order.orderItems.length > 0) {
         const eventTitle = order.orderItems[0]?.ticketType.event.title || "Evento FDNDA"
         const eventId = order.orderItems[0]?.ticketType.eventId
         const ticketCount = order.orderItems.reduce(

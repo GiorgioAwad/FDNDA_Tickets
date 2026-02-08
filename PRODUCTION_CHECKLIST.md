@@ -94,7 +94,7 @@
 ### 🔴 Alta Prioridad
 | Item | Descripción | Impacto |
 |------|-------------|---------|
-| Integración Izipay real | Solo hay webhook, falta form de pago | Producción |
+| Integración Izipay real | Flujo de sesión + redirección implementado; falta configurar credenciales/URL final | Producción |
 | Manejo de órdenes pendientes | Limpiar órdenes PENDING antiguas | Integridad datos |
 | Reenvío de tickets por email | Botón para reenviar confirmación | UX |
 
@@ -130,8 +130,12 @@ NEXTAUTH_URL="https://tu-dominio.com"
 AUTH_TRUST_HOST=true
 
 # === EMAIL ===
+EMAIL_PROVIDER="ses" # "ses" | "resend"
 RESEND_API_KEY="re_xxxxx"
 EMAIL_FROM="Eventos <tickets@tu-dominio.com>"
+AWS_REGION="us-east-1"
+AWS_ACCESS_KEY_ID="..."
+AWS_SECRET_ACCESS_KEY="..."
 
 # === IZIPAY ===
 IZIPAY_MERCHANT_CODE="tu-merchant"
@@ -139,6 +143,7 @@ IZIPAY_API_KEY="tu-api-key"
 IZIPAY_HASH_KEY="tu-hash-key"
 IZIPAY_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----..."
 IZIPAY_ENDPOINT="https://api.izipay.pe"  # Producción
+IZIPAY_CHECKOUT_URL="" # Opcional según modalidad de checkout
 
 # === PAGOS ===
 PAYMENTS_MODE="izipay"  # o "mock" para dev

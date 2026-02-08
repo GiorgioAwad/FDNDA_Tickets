@@ -23,6 +23,7 @@ export interface CachedEvent {
     mode: string
     isPublished: boolean
     discipline: string | null
+    minTicketPrice?: number | null
 }
 
 export interface CachedTicketType {
@@ -74,6 +75,7 @@ export async function getCachedEvent(eventId: string): Promise<CachedEvent | nul
                 mode: event.mode,
                 isPublished: event.isPublished,
                 discipline: event.discipline,
+                minTicketPrice: null,
             }
         },
         CacheTTL.MEDIUM
@@ -106,6 +108,7 @@ export async function getCachedEventBySlug(slug: string): Promise<CachedEvent | 
                 mode: event.mode,
                 isPublished: event.isPublished,
                 discipline: event.discipline,
+                minTicketPrice: null,
             }
         },
         CacheTTL.MEDIUM
@@ -160,6 +163,14 @@ export async function getCachedPublishedEvents(): Promise<CachedEvent[]> {
                     isPublished: true,
                     endDate: { gte: new Date() },
                 },
+                include: {
+                    ticketTypes: {
+                        where: { isActive: true },
+                        select: { price: true },
+                        orderBy: { price: "asc" },
+                        take: 1,
+                    },
+                },
                 orderBy: { startDate: "asc" },
             })
             
@@ -176,6 +187,7 @@ export async function getCachedPublishedEvents(): Promise<CachedEvent[]> {
                 mode: event.mode,
                 isPublished: event.isPublished,
                 discipline: event.discipline,
+                minTicketPrice: event.ticketTypes[0] ? Number(event.ticketTypes[0].price) : null,
             }))
         },
         CacheTTL.MEDIUM

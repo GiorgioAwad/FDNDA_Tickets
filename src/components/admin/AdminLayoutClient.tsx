@@ -281,12 +281,6 @@ interface AdminLayoutClientProps {
 export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
     const [sidebarOpen, setSidebarOpen] = useState(false)
 
-    // Close sidebar on route change (mobile)
-    const pathname = usePathname()
-    useEffect(() => {
-        setSidebarOpen(false)
-    }, [pathname])
-
     // Close sidebar on escape key
     useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {

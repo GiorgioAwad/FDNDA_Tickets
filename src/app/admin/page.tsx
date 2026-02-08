@@ -22,11 +22,6 @@ export const dynamic = "force-dynamic"
 
 // ==================== TYPES ====================
 
-type RevenueOrder = {
-    totalAmount: Prisma.Decimal
-    createdAt: Date
-}
-
 type RecentOrder = {
     id: string
     totalAmount: Prisma.Decimal
@@ -60,13 +55,22 @@ const TOTAL_COMMISSION_RATE = IZIPAY_COMMISSION_RATE * (1 + IGV_RATE) // ~4.71%
 // ==================== PAGE ====================
 
 export default async function AdminDashboardPage() {
+    const thisMonth = new Date()
+    thisMonth.setDate(1)
+    thisMonth.setHours(0, 0, 0, 0)
+
+    const lastMonth = new Date(thisMonth)
+    lastMonth.setMonth(lastMonth.getMonth() - 1)
+
     // Fetch all stats in parallel
     const [
         totalUsers,
         totalEvents,
         activeEvents,
         totalTickets,
-        orders,
+        paidSummary,
+        thisMonthSummary,
+        lastMonthSummary,
         recentOrders,
         upcomingEvents,
         todayScans,
@@ -77,10 +81,28 @@ export default async function AdminDashboardPage() {
             where: { endDate: { gte: new Date() }, isPublished: true }
         }),
         prisma.ticket.count({ where: { status: "ACTIVE" } }),
-        prisma.order.findMany({
+        prisma.order.aggregate({
             where: { status: "PAID" },
-            select: { totalAmount: true, createdAt: true }
-        }) as Promise<RevenueOrder[]>,
+            _sum: { totalAmount: true },
+            _count: { _all: true },
+        }),
+        prisma.order.aggregate({
+            where: {
+                status: "PAID",
+                createdAt: { gte: thisMonth },
+            },
+            _sum: { totalAmount: true },
+        }),
+        prisma.order.aggregate({
+            where: {
+                status: "PAID",
+                createdAt: {
+                    gte: lastMonth,
+                    lt: thisMonth,
+                },
+            },
+            _sum: { totalAmount: true },
+        }),
         prisma.order.findMany({
             where: { status: "PAID" },
             take: 5,
@@ -109,34 +131,13 @@ export default async function AdminDashboardPage() {
     ])
 
     // Calculate revenue metrics
-    const grossRevenue = orders.reduce(
-        (sum, order) => sum + Number(order.totalAmount),
-        0
-    )
+    const grossRevenue = Number(paidSummary._sum.totalAmount ?? 0)
     const izipayCommission = grossRevenue * TOTAL_COMMISSION_RATE
     const netRevenue = grossRevenue - izipayCommission
 
-    // Calculate this month's revenue
-    const thisMonth = new Date()
-    thisMonth.setDate(1)
-    thisMonth.setHours(0, 0, 0, 0)
-    const thisMonthOrders = orders.filter(o => new Date(o.createdAt) >= thisMonth)
-    const thisMonthRevenue = thisMonthOrders.reduce(
-        (sum, order) => sum + Number(order.totalAmount),
-        0
-    )
-
-    // Calculate last month's revenue for comparison
-    const lastMonth = new Date(thisMonth)
-    lastMonth.setMonth(lastMonth.getMonth() - 1)
-    const lastMonthOrders = orders.filter(o => {
-        const date = new Date(o.createdAt)
-        return date >= lastMonth && date < thisMonth
-    })
-    const lastMonthRevenue = lastMonthOrders.reduce(
-        (sum, order) => sum + Number(order.totalAmount),
-        0
-    )
+    const thisMonthRevenue = Number(thisMonthSummary._sum.totalAmount ?? 0)
+    const lastMonthRevenue = Number(lastMonthSummary._sum.totalAmount ?? 0)
+    const completedOrdersCount = paidSummary._count._all
 
     const revenueChange = lastMonthRevenue > 0
         ? ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
@@ -253,7 +254,7 @@ export default async function AdminDashboardPage() {
                 </Card>
                 <Card className="bg-gray-50">
                     <CardContent className="p-4 text-center">
-                        <p className="text-2xl font-bold text-gray-900">{orders.length}</p>
+                        <p className="text-2xl font-bold text-gray-900">{completedOrdersCount}</p>
                         <p className="text-xs text-gray-500">Órdenes Completadas</p>
                     </CardContent>
                 </Card>

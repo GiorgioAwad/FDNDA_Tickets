@@ -4,18 +4,13 @@
     {
       "path": "/api/cron/process-emails",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/expire-orders",
+      "schedule": "*/5 * * * *"
     }
   ],
   "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "no-store, max-age=0"
-        }
-      ]
-    },
     {
       "source": "/eventos/(.*)",
       "headers": [

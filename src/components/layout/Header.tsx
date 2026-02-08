@@ -53,10 +53,6 @@ export function Header() {
     }, [lastScrollY])
 
     useEffect(() => {
-        setMobileMenuOpen(false)
-    }, [pathname])
-
-    useEffect(() => {
         if (mobileMenuOpen) {
             document.body.style.overflow = 'hidden'
         } else {

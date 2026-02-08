@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
-import { getCachedPublishedEvents, onEventUpdated } from "@/lib/cached-queries"
+import { getCachedPublishedEvents } from "@/lib/cached-queries"
 import slugify from "slugify"
 export const runtime = "nodejs"
+
+const PUBLIC_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=300"
 
 type TicketTypePayload = {
     name: string
@@ -76,6 +78,10 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
             success: true,
             data: cachedEvents,
+        }, {
+            headers: {
+                "Cache-Control": PUBLIC_CACHE_CONTROL,
+            },
         })
     } catch (error) {
         console.error("Error fetching events:", error)

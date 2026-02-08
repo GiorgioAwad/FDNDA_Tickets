@@ -18,7 +18,7 @@ import {
   Shield,
 } from "lucide-react"
 
-export const dynamic = "force-dynamic"
+export const revalidate = 60
 
 type HomeEvent = {
   id: string
@@ -178,7 +178,6 @@ export default async function HomePage() {
                           alt={event.title}
                           fill
                           sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                          unoptimized
                           className="object-cover group-hover:scale-105 transition-transform duration-500"
                         />
                       ) : (

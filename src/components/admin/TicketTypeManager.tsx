@@ -381,7 +381,7 @@ export function TicketTypeManager({
                             </div>
                             {!autoName && (
                                 <div className="mt-3 text-xs text-gray-500">
-                                    Activa "Nombre automatico" para generar el titulo del turno.
+                                    Activa &quot;Nombre automatico&quot; para generar el titulo del turno.
                                 </div>
                             )}
                         </div>

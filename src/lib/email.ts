@@ -1,13 +1,10 @@
-import { Resend } from "resend"
 import { 
     queuePurchaseConfirmation, 
     queueWelcomeEmail, 
     queuePasswordResetEmail,
     queueCourtesyClaimedEmail 
 } from "./email-queue"
-
-const resendApiKey = process.env.RESEND_API_KEY
-const resend = resendApiKey ? new Resend(resendApiKey) : null
+import { sendTransactionalEmail } from "./email-provider"
 
 const FROM_EMAIL = process.env.EMAIL_FROM || "Ticketing FDNDA <tickets@fdnda.org.pe>"
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
@@ -24,13 +21,6 @@ export interface EmailResult {
     error?: string
 }
 
-function getResendClient(): Resend {
-    if (!resend) {
-        throw new Error("RESEND_API_KEY is not set")
-    }
-    return resend
-}
-
 /**
  * Send email verification link
  */
@@ -42,7 +32,7 @@ export async function sendVerificationEmail(
     const verifyUrl = `${APP_URL}/verify-email?token=${token}`
 
     try {
-        const { data, error } = await getResendClient().emails.send({
+        const result = await sendTransactionalEmail({
             from: FROM_EMAIL,
             to: email,
             subject: `Verifica tu cuenta en ${APP_NAME}`,
@@ -101,17 +91,12 @@ export async function sendVerificationEmail(
       `,
         })
 
-        if (error) {
-            console.error("Resend verification email error:", error)
-            return { success: false, error: error.message }
+        if (result.messageId) {
+            console.info("Verification email sent:", result.messageId)
         }
-
-        if (data?.id) {
-            console.info("Resend verification email sent:", data.id)
-        }
-        return { success: true, messageId: data?.id }
+        return { success: true, messageId: result.messageId }
     } catch (err) {
-        console.error("Resend verification email exception:", err)
+        console.error("Verification email exception:", err)
         return { success: false, error: (err as Error).message }
     }
 }
@@ -127,7 +112,7 @@ export async function sendPasswordResetEmail(
     const resetUrl = `${APP_URL}/reset-password?token=${token}`
 
     try {
-        const { data, error } = await getResendClient().emails.send({
+        const result = await sendTransactionalEmail({
             from: FROM_EMAIL,
             to: email,
             subject: `Restablecer contraseña - ${APP_NAME}`,
@@ -182,17 +167,12 @@ export async function sendPasswordResetEmail(
       `,
         })
 
-        if (error) {
-            console.error("Resend password reset email error:", error)
-            return { success: false, error: error.message }
+        if (result.messageId) {
+            console.info("Email sent:", result.messageId)
         }
-
-        if (data?.id) {
-            console.info("Resend password reset email sent:", data.id)
-        }
-        return { success: true, messageId: data?.id }
+        return { success: true, messageId: result.messageId }
     } catch (err) {
-        console.error("Resend password reset email exception:", err)
+        console.error("Password reset email exception:", err)
         return { success: false, error: (err as Error).message }
     }
 }
@@ -211,7 +191,7 @@ export async function sendPurchaseConfirmationEmail(
     const ticketsUrl = `${APP_URL}/mi-cuenta/entradas`
 
     try {
-        const { data, error } = await getResendClient().emails.send({
+        const result = await sendTransactionalEmail({
             from: FROM_EMAIL,
             to: email,
             subject: `Compra confirmada - ${eventTitle}`,
@@ -272,17 +252,12 @@ export async function sendPurchaseConfirmationEmail(
       `,
         })
 
-        if (error) {
-            console.error("Resend purchase email error:", error)
-            return { success: false, error: error.message }
+        if (result.messageId) {
+            console.info("Email sent:", result.messageId)
         }
-
-        if (data?.id) {
-            console.info("Resend purchase email sent:", data.id)
-        }
-        return { success: true, messageId: data?.id }
+        return { success: true, messageId: result.messageId }
     } catch (err) {
-        console.error("Resend purchase email exception:", err)
+        console.error("Purchase email exception:", err)
         return { success: false, error: (err as Error).message }
     }
 }
@@ -379,7 +354,7 @@ export async function sendCourtesyClaimedEmail(
     // Direct send fallback
     try {
         const ticketsUrl = `${APP_URL}/mi-cuenta/entradas`
-        const { data, error } = await getResendClient().emails.send({
+        const result = await sendTransactionalEmail({
             from: FROM_EMAIL,
             to: email,
             subject: `Cortesía reclamada - ${eventTitle}`,
@@ -434,9 +409,12 @@ export async function sendCourtesyClaimedEmail(
                 </html>
             `,
         })
-        if (error) return { success: false, error: error.message }
-        return { success: true, messageId: data?.id }
+        if (result.messageId) {
+            console.info("Email sent:", result.messageId)
+        }
+        return { success: true, messageId: result.messageId }
     } catch (err) {
         return { success: false, error: (err as Error).message }
     }
 }
+

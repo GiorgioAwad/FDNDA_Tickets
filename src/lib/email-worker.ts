@@ -1,17 +1,13 @@
-import { Resend } from "resend"
-import { 
-    dequeueEmail, 
-    completeJob, 
-    failJob, 
+import {
+    dequeueEmail,
+    completeJob,
+    failJob,
     getQueueStats,
-    type EmailJob 
+    type EmailJob,
 } from "./email-queue"
+import { sendTransactionalEmail } from "./email-provider"
 
 // ==================== EMAIL CLIENT ====================
-
-const resend = process.env.RESEND_API_KEY 
-    ? new Resend(process.env.RESEND_API_KEY)
-    : null
 
 const FROM_EMAIL = process.env.EMAIL_FROM || "Ticketing FDNDA <tickets@fdnda.org.pe>"
 const BASE_URL = process.env.NEXTAUTH_URL || "http://localhost:3000"
@@ -264,11 +260,6 @@ function getCourtesyClaimedTemplate(data: Record<string, unknown>): { subject: s
 // ==================== SEND EMAIL ====================
 
 async function sendEmail(job: EmailJob): Promise<void> {
-    if (!resend) {
-        console.log(`📧 [DEV] Email simulado: ${job.type} -> ${job.to}`)
-        return
-    }
-
     let template: { subject: string; html: string }
 
     switch (job.type) {
@@ -288,16 +279,12 @@ async function sendEmail(job: EmailJob): Promise<void> {
             throw new Error(`Unknown email type: ${job.type}`)
     }
 
-    const { error } = await resend.emails.send({
+    await sendTransactionalEmail({
         from: FROM_EMAIL,
         to: job.to,
         subject: template.subject,
         html: template.html,
     })
-
-    if (error) {
-        throw new Error(error.message)
-    }
 }
 
 // ==================== PROCESS QUEUE ====================
@@ -312,36 +299,46 @@ export async function processEmailQueue(maxJobs: number = 10): Promise<{
     failed: number
 }> {
     if (isProcessing) {
-        console.log("⏳ Queue ya está siendo procesada")
+        console.log("Queue ya esta siendo procesada")
         return { processed: 0, failed: 0 }
     }
 
     isProcessing = true
     let processed = 0
     let failed = 0
+    const concurrency = 5
 
     try {
+        const jobs: EmailJob[] = []
+
         for (let i = 0; i < maxJobs; i++) {
             const job = await dequeueEmail()
-            
-            if (!job) {
-                break // No más jobs en la cola
-            }
+            if (!job) break
+            jobs.push(job)
+        }
 
-            try {
-                await sendEmail(job)
-                await completeJob(job.id)
-                processed++
-            } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : "Unknown error"
+        for (let i = 0; i < jobs.length; i += concurrency) {
+            const batch = jobs.slice(i, i + concurrency)
+            const results = await Promise.allSettled(batch.map((job) => sendEmail(job)))
+
+            await Promise.all(results.map(async (result, index) => {
+                const job = batch[index]
+                if (result.status === "fulfilled") {
+                    await completeJob(job.id)
+                    processed++
+                    return
+                }
+
+                const errorMessage = result.reason instanceof Error
+                    ? result.reason.message
+                    : "Unknown error"
                 await failJob(job, errorMessage)
                 failed++
-            }
+            }))
         }
 
         const stats = await getQueueStats()
-        console.log(`📊 Queue stats - Pending: ${stats.pending}, Processing: ${stats.processing}, Failed: ${stats.failed}`)
-
+        console.log(`Queue stats - Pending: ${stats.pending}, Processing: ${stats.processing}, Failed: ${stats.failed}`)
     } finally {
         isProcessing = false
     }
@@ -375,3 +372,4 @@ export async function sendEmailNow(
         return false
     }
 }
+

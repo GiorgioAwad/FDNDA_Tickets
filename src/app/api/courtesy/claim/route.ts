@@ -1,23 +1,22 @@
 import { NextRequest, NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 import crypto from "crypto"
 
 export const runtime = "nodejs"
 
-// Generar código único para el ticket
 function generateTicketCode(): string {
     return crypto.randomBytes(8).toString("hex").toUpperCase()
 }
 
-// POST - Canjear código de cortesía
 export async function POST(request: NextRequest) {
     try {
         const session = await auth()
-        
+
         if (!session?.user) {
             return NextResponse.json(
-                { success: false, error: "Debes iniciar sesión para canjear tu cortesía" },
+                { success: false, error: "Debes iniciar sesion para canjear tu cortesia" },
                 { status: 401 }
             )
         }
@@ -27,12 +26,11 @@ export async function POST(request: NextRequest) {
 
         if (!code) {
             return NextResponse.json(
-                { success: false, error: "Código requerido" },
+                { success: false, error: "Codigo requerido" },
                 { status: 400 }
             )
         }
 
-        // Buscar el código de cortesía
         const courtesyTicket = await prisma.courtesyTicket.findUnique({
             where: { claimCode: code.toUpperCase() },
             include: {
@@ -48,27 +46,25 @@ export async function POST(request: NextRequest) {
 
         if (!courtesyTicket) {
             return NextResponse.json(
-                { success: false, error: "Código no válido" },
+                { success: false, error: "Codigo no valido" },
                 { status: 404 }
             )
         }
 
         if (courtesyTicket.status !== "PENDING") {
             return NextResponse.json(
-                { success: false, error: "Este código ya fue canjeado" },
+                { success: false, error: "Este codigo ya fue canjeado" },
                 { status: 400 }
             )
         }
 
         if (courtesyTicket.expiresAt && new Date() > courtesyTicket.expiresAt) {
             return NextResponse.json(
-                { success: false, error: "Este código ha expirado" },
+                { success: false, error: "Este codigo ha expirado" },
                 { status: 400 }
             )
         }
 
-        // Determinar datos del asistente:
-        // Si hay datos pre-asignados, usarlos; si no, usar los proporcionados
         const finalAttendeeName = courtesyTicket.assignedName || attendeeName
         const finalAttendeeDni = courtesyTicket.assignedDni || attendeeDni
 
@@ -79,9 +75,42 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // Crear una orden de cortesía y el ticket en una transacción
         const result = await prisma.$transaction(async (tx) => {
-            // Crear una orden especial para cortesías (con monto 0)
+            const now = new Date()
+
+            const claimed = await tx.courtesyTicket.updateMany({
+                where: {
+                    id: courtesyTicket.id,
+                    status: "PENDING",
+                    OR: [
+                        { expiresAt: null },
+                        { expiresAt: { gt: now } },
+                    ],
+                },
+                data: {
+                    status: "CLAIMED",
+                    claimedByUserId: session.user.id,
+                    claimedAt: now,
+                },
+            })
+
+            if (claimed.count === 0) {
+                throw new Error("Este codigo ya fue canjeado o expiro")
+            }
+
+            const stockReservation = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+                UPDATE "ticket_types"
+                SET "sold" = "sold" + 1
+                WHERE "id" = ${courtesyTicket.batch.ticketTypeId}
+                  AND "isActive" = true
+                  AND ("capacity" = 0 OR "sold" + 1 <= "capacity")
+                RETURNING "id"
+            `)
+
+            if (!stockReservation[0]) {
+                throw new Error("No hay stock disponible para este tipo de entrada")
+            }
+
             const courtesyOrder = await tx.order.create({
                 data: {
                     userId: session.user.id,
@@ -92,7 +121,6 @@ export async function POST(request: NextRequest) {
                 },
             })
 
-            // Crear el ticket
             const ticket = await tx.ticket.create({
                 data: {
                     orderId: courtesyOrder.id,
@@ -110,13 +138,9 @@ export async function POST(request: NextRequest) {
                 },
             })
 
-            // Actualizar la cortesía
             await tx.courtesyTicket.update({
                 where: { id: courtesyTicket.id },
                 data: {
-                    status: "CLAIMED",
-                    claimedByUserId: session.user.id,
-                    claimedAt: new Date(),
                     ticketId: ticket.id,
                 },
             })
@@ -126,7 +150,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: "¡Cortesía canjeada exitosamente!",
+            message: "Cortesia canjeada exitosamente",
             data: {
                 ticketId: result.id,
                 eventTitle: result.event.title,
@@ -138,13 +162,12 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         console.error("Error claiming courtesy ticket:", error)
         return NextResponse.json(
-            { success: false, error: "Error al canjear cortesía" },
+            { success: false, error: (error as Error).message || "Error al canjear cortesia" },
             { status: 500 }
         )
     }
 }
 
-// GET - Verificar un código sin canjearlo
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url)
@@ -152,7 +175,7 @@ export async function GET(request: NextRequest) {
 
         if (!code) {
             return NextResponse.json(
-                { success: false, error: "Código requerido" },
+                { success: false, error: "Codigo requerido" },
                 { status: 400 }
             )
         }
@@ -170,15 +193,15 @@ export async function GET(request: NextRequest) {
         })
 
         if (!courtesyTicket) {
-            return NextResponse.json({ valid: false, error: "Código no válido" })
+            return NextResponse.json({ valid: false, error: "Codigo no valido" })
         }
 
         if (courtesyTicket.status !== "PENDING") {
-            return NextResponse.json({ valid: false, error: "Este código ya fue canjeado" })
+            return NextResponse.json({ valid: false, error: "Este codigo ya fue canjeado" })
         }
 
         if (courtesyTicket.expiresAt && new Date() > courtesyTicket.expiresAt) {
-            return NextResponse.json({ valid: false, error: "Este código ha expirado" })
+            return NextResponse.json({ valid: false, error: "Este codigo ha expirado" })
         }
 
         return NextResponse.json({
@@ -188,14 +211,13 @@ export async function GET(request: NextRequest) {
                 ticketType: courtesyTicket.batch.ticketType.name,
                 hasAssignedAttendee: !!(courtesyTicket.assignedName && courtesyTicket.assignedDni),
                 assignedName: courtesyTicket.assignedName,
-                // No mostrar el DNI completo por privacidad
-                assignedDniMasked: courtesyTicket.assignedDni 
-                    ? `****${courtesyTicket.assignedDni.slice(-4)}` 
+                assignedDniMasked: courtesyTicket.assignedDni
+                    ? `****${courtesyTicket.assignedDni.slice(-4)}`
                     : null,
             },
         })
     } catch (error) {
         console.error("Error verifying courtesy code:", error)
-        return NextResponse.json({ valid: false, error: "Error al verificar código" }, { status: 500 })
+        return NextResponse.json({ valid: false, error: "Error al verificar codigo" }, { status: 500 })
     }
 }

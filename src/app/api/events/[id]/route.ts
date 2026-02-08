@@ -5,6 +5,8 @@ import { parseDateOnly } from "@/lib/utils"
 import { getCachedEventWithTicketTypes, onEventUpdated } from "@/lib/cached-queries"
 export const runtime = "nodejs"
 
+const PUBLIC_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=300"
+
 // GET /api/events/[id] - Get event details
 export async function GET(
     request: NextRequest,
@@ -22,6 +24,10 @@ export async function GET(
                 return NextResponse.json({
                     success: true,
                     data: cachedEvent,
+                }, {
+                    headers: {
+                        "Cache-Control": PUBLIC_CACHE_CONTROL,
+                    },
                 })
             }
         }
@@ -50,6 +56,10 @@ export async function GET(
         return NextResponse.json({
             success: true,
             data: event,
+        }, {
+            headers: {
+                "Cache-Control": PUBLIC_CACHE_CONTROL,
+            },
         })
     } catch (error) {
         console.error("Error fetching event:", error)

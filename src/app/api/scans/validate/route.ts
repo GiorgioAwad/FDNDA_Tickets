@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
-import { parseQRPayload, verifySignature, getTodayDateString, formatDateUTC } from "@/lib/qr"
+import { parseQRPayload, verifySignature, getTodayDateString } from "@/lib/qr"
 import { rateLimit } from "@/lib/rate-limit"
 import {
     type ScanResultType,
@@ -12,8 +12,6 @@ import {
 } from "@/lib/scan-helpers"
 
 export const runtime = "nodejs"
-
-// ==================== MAIN HANDLER ====================
 
 export async function POST(request: NextRequest) {
     try {
@@ -45,31 +43,28 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // Parse QR payload
         const payload = parseQRPayload(qrData)
 
         if (!payload) {
-            await logScan(null, user.id, eventId, "INVALID", "QR inválido o mal formado")
+            await logScan(null, user.id, eventId, "INVALID", "QR invalido o mal formado")
             return NextResponse.json({
                 success: false,
                 valid: false,
                 reason: "INVALID",
-                message: "Código QR inválido",
+                message: "Codigo QR invalido",
             })
         }
 
-        // Verify signature
         if (!verifySignature(payload)) {
-            await logScan(payload.ticketId, user.id, eventId, "INVALID", "Firma inválida")
+            await logScan(payload.ticketId, user.id, eventId, "INVALID", "Firma invalida")
             return NextResponse.json({
                 success: false,
                 valid: false,
                 reason: "INVALID_SIGNATURE",
-                message: "Código QR manipulado o inválido",
+                message: "Codigo QR manipulado o invalido",
             })
         }
 
-        // Check if ticket exists
         const ticket = await prisma.ticket.findUnique({
             where: { id: payload.ticketId },
             include: {
@@ -89,7 +84,6 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        // Generate entitlements if missing
         const validDays = generateEntitlements(ticket)
         if (validDays.length > 0) {
             await prisma.ticketDayEntitlement.createMany({
@@ -107,7 +101,6 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        // Check ticket status
         if (ticket.status !== "ACTIVE") {
             await logScan(ticket.id, user.id, eventId, "EXPIRED", `Estado: ${ticket.status}`)
             return NextResponse.json({
@@ -118,7 +111,6 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        // Check if correct event
         if (ticket.eventId !== eventId) {
             await logScan(ticket.id, user.id, eventId, "WRONG_EVENT", "Evento incorrecto")
             return NextResponse.json({
@@ -128,7 +120,6 @@ export async function POST(request: NextRequest) {
                 message: "Este ticket es para otro evento",
             })
         }
-
 
         const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
         const isPackageLike = Boolean(
@@ -154,31 +145,43 @@ export async function POST(request: NextRequest) {
             return buildAttendanceSummary(ticket)
         }
 
-        // NOTA: Se eliminó validación estricta de días para permitir RECUPERACIONES
-        // El asistente puede venir cualquier día mientras tenga clases disponibles
+        // Se permite recuperacion: se usa cualquier entitlement disponible.
         const today = getTodayDateString()
 
-        // Check entitlement for today (or create one if has available classes)
-        let entitlement = ticket.entitlements.find(
-            (e) => matchesToday(e.date, today)
-        )
+        let entitlement = ticket.entitlements.find((e) => matchesToday(e.date, today))
 
-        // Si no tiene entitlement para hoy, buscar uno disponible (para recuperación)
         if (!entitlement) {
-            const availableEntitlement = ticket.entitlements.find(e => e.status === "AVAILABLE")
-            
+            const availableEntitlement = ticket.entitlements.find((e) => e.status === "AVAILABLE")
+
             if (availableEntitlement) {
-                // Usar el entitlement disponible para hoy (recuperación)
-                entitlement = await prisma.ticketDayEntitlement.update({
-                    where: { id: availableEntitlement.id },
-                    data: { date: new Date(`${today}T00:00:00`) },
+                const reassignedDate = new Date(`${today}T00:00:00`)
+                const moved = await prisma.ticketDayEntitlement.updateMany({
+                    where: {
+                        id: availableEntitlement.id,
+                        status: "AVAILABLE",
+                    },
+                    data: { date: reassignedDate },
                 })
-                // Actualizar en memoria
-                const idx = ticket.entitlements.findIndex(e => e.id === availableEntitlement.id)
-                if (idx >= 0) ticket.entitlements[idx] = entitlement
+
+                if (moved.count > 0) {
+                    entitlement = {
+                        ...availableEntitlement,
+                        date: reassignedDate,
+                    }
+                    const idx = ticket.entitlements.findIndex((e) => e.id === availableEntitlement.id)
+                    if (idx >= 0) {
+                        ticket.entitlements[idx] = entitlement
+                    }
+                } else {
+                    const latestEntitlement = await prisma.ticketDayEntitlement.findUnique({
+                        where: { id: availableEntitlement.id },
+                    })
+                    if (latestEntitlement) {
+                        entitlement = latestEntitlement
+                    }
+                }
             }
         }
-
 
         if (!entitlement && isPackageLike) {
             const attendance = computeAttendance()
@@ -216,7 +219,6 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        // Check if already used today
         if (entitlement.status === "USED") {
             await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Ya usado hoy")
             return NextResponse.json({
@@ -238,19 +240,47 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        // Mark as used
         const usedAt = new Date()
-        await prisma.ticketDayEntitlement.update({
-            where: { id: entitlement.id },
+        const markUsed = await prisma.ticketDayEntitlement.updateMany({
+            where: {
+                id: entitlement.id,
+                status: "AVAILABLE",
+            },
             data: {
                 status: "USED",
                 usedAt,
             },
         })
+
+        if (markUsed.count === 0) {
+            const latest = await prisma.ticketDayEntitlement.findUnique({
+                where: { id: entitlement.id },
+                select: { usedAt: true },
+            })
+
+            await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Ya usado por otro scanner")
+            return NextResponse.json({
+                success: false,
+                valid: false,
+                reason: "ALREADY_USED",
+                message: "Asistencia ya registrada hoy",
+                ticket: {
+                    id: ticket.id,
+                    ticketCode: ticket.ticketCode,
+                    attendeeName: ticket.attendeeName,
+                    attendeeDni: ticket.attendeeDni,
+                    eventTitle: ticket.event.title,
+                    ticketTypeName: ticket.ticketType.name,
+                    usedAt: latest?.usedAt ?? null,
+                },
+                scannedAt: (latest?.usedAt ?? new Date()).toISOString(),
+                attendance: computeAttendance(),
+            })
+        }
+
         entitlement.status = "USED"
         entitlement.usedAt = usedAt
 
-        // Log successful scan
         await logScan(ticket.id, user.id, eventId, "VALID")
 
         return NextResponse.json({
@@ -278,8 +308,6 @@ export async function POST(request: NextRequest) {
         )
     }
 }
-
-// ==================== HELPER FUNCTIONS ====================
 
 async function logScan(
     ticketId: string | null,

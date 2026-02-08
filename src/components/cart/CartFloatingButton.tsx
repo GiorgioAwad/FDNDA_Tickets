@@ -13,6 +13,7 @@ export default function CartFloatingButton() {
     const { items, total, itemCount } = useCart()
     const isActive = itemCount > 0
     const [open, setOpen] = useState(false)
+    const isPanelOpen = open && isActive
     const wrapperRef = useRef<HTMLDivElement | null>(null)
     const closeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
     const hoverRef = useRef(false)
@@ -44,13 +45,7 @@ export default function CartFloatingButton() {
     }
 
     useEffect(() => {
-        if (!isActive) {
-            setOpen(false)
-        }
-    }, [isActive])
-
-    useEffect(() => {
-        if (!open) return
+        if (!isPanelOpen) return
 
         const handlePointerDown = (event: PointerEvent) => {
             const target = event.target as Node
@@ -71,7 +66,7 @@ export default function CartFloatingButton() {
             window.removeEventListener("pointerdown", handlePointerDown)
             window.removeEventListener("keydown", handleKeyDown)
         }
-    }, [open])
+    }, [isPanelOpen])
 
     // Don't show cart if not authenticated
     if (status !== "authenticated") {
@@ -89,7 +84,7 @@ export default function CartFloatingButton() {
         >
             <div
                 className={`absolute bottom-full right-0 mb-3 w-80 origin-bottom-right transition-all duration-200 ${
-                    open
+                    isPanelOpen
                         ? "opacity-100 translate-y-0 pointer-events-auto"
                         : "opacity-0 translate-y-2 pointer-events-none"
                 }`}
@@ -140,8 +135,11 @@ export default function CartFloatingButton() {
                 type="button"
                 className="inline-flex items-center gap-2 rounded-full bg-gradient-fdnda px-5 py-3 text-sm font-semibold text-white shadow-lg hover:shadow-xl transition-shadow"
                 aria-label="Ver carrito"
-                aria-expanded={open}
-                onClick={() => setOpen((prev) => !prev)}
+                aria-expanded={isPanelOpen}
+                onClick={() => {
+                    if (!isActive) return
+                    setOpen((prev) => !prev)
+                }}
                 onPointerEnter={() => handleHoverChange(true)}
                 onPointerLeave={() => handleHoverChange(false)}
             >

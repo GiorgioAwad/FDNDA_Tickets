@@ -12,8 +12,6 @@ import {
 
 export const runtime = "nodejs"
 
-// ==================== MAIN HANDLER ====================
-
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -54,7 +52,6 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        // Generate entitlements if missing
         const validDays = generateEntitlements(ticket)
         if (validDays.length > 0) {
             await prisma.ticketDayEntitlement.createMany({
@@ -72,7 +69,6 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        // Check ticket status
         if (ticket.status !== "ACTIVE") {
             await logScan(ticket.id, user.id, eventId, "EXPIRED", `Estado: ${ticket.status}`)
             return NextResponse.json({
@@ -83,7 +79,6 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        // Check if correct event
         if (ticket.eventId !== eventId) {
             await logScan(ticket.id, user.id, eventId, "WRONG_EVENT", "Evento incorrecto")
             return NextResponse.json({
@@ -93,7 +88,6 @@ export async function POST(request: NextRequest) {
                 message: "Este ticket es para otro evento",
             })
         }
-
 
         const today = getTodayDateString()
         const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
@@ -120,19 +114,35 @@ export async function POST(request: NextRequest) {
             return buildAttendanceSummary(ticket)
         }
 
-        let entitlement = ticket.entitlements.find(
-            (item) => matchesToday(item.date, today)
-        )
+        let entitlement = ticket.entitlements.find((item) => matchesToday(item.date, today))
 
         if (!entitlement) {
             const availableEntitlement = ticket.entitlements.find((item) => item.status === "AVAILABLE")
             if (availableEntitlement) {
-                entitlement = await prisma.ticketDayEntitlement.update({
-                    where: { id: availableEntitlement.id },
-                    data: { date: new Date(`${today}T00:00:00`) },
+                const reassignedDate = new Date(`${today}T00:00:00`)
+                const moved = await prisma.ticketDayEntitlement.updateMany({
+                    where: {
+                        id: availableEntitlement.id,
+                        status: "AVAILABLE",
+                    },
+                    data: { date: reassignedDate },
                 })
-                const idx = ticket.entitlements.findIndex((item) => item.id === availableEntitlement.id)
-                if (idx >= 0) ticket.entitlements[idx] = entitlement
+
+                if (moved.count > 0) {
+                    entitlement = {
+                        ...availableEntitlement,
+                        date: reassignedDate,
+                    }
+                    const idx = ticket.entitlements.findIndex((item) => item.id === availableEntitlement.id)
+                    if (idx >= 0) ticket.entitlements[idx] = entitlement
+                } else {
+                    const latestEntitlement = await prisma.ticketDayEntitlement.findUnique({
+                        where: { id: availableEntitlement.id },
+                    })
+                    if (latestEntitlement) {
+                        entitlement = latestEntitlement
+                    }
+                }
             }
         }
 
@@ -166,13 +176,12 @@ export async function POST(request: NextRequest) {
                 success: false,
                 valid: false,
                 reason: "WRONG_DAY",
-                message: "Este ticket no es válido para hoy",
+                message: "Este ticket no es valido para hoy",
                 scannedAt: new Date().toISOString(),
                 attendance: computeAttendance(),
             })
         }
 
-        // Check if already used today
         if (entitlement.status === "USED") {
             await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Ya usado hoy")
             return NextResponse.json({
@@ -194,15 +203,44 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        // Mark as used
         const usedAt = new Date()
-        await prisma.ticketDayEntitlement.update({
-            where: { id: entitlement.id },
+        const markUsed = await prisma.ticketDayEntitlement.updateMany({
+            where: {
+                id: entitlement.id,
+                status: "AVAILABLE",
+            },
             data: {
                 status: "USED",
                 usedAt,
             },
         })
+
+        if (markUsed.count === 0) {
+            const latest = await prisma.ticketDayEntitlement.findUnique({
+                where: { id: entitlement.id },
+                select: { usedAt: true },
+            })
+
+            await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Ya usado por otro scanner")
+            return NextResponse.json({
+                success: false,
+                valid: false,
+                reason: "ALREADY_USED",
+                message: "Asistencia ya registrada hoy",
+                ticket: {
+                    id: ticket.id,
+                    ticketCode: ticket.ticketCode,
+                    attendeeName: ticket.attendeeName,
+                    attendeeDni: ticket.attendeeDni,
+                    eventTitle: ticket.event.title,
+                    ticketTypeName: ticket.ticketType.name,
+                    usedAt: latest?.usedAt ?? null,
+                },
+                scannedAt: (latest?.usedAt ?? new Date()).toISOString(),
+                attendance: computeAttendance(),
+            })
+        }
+
         entitlement.status = "USED"
         entitlement.usedAt = usedAt
 
@@ -233,8 +271,6 @@ export async function POST(request: NextRequest) {
         )
     }
 }
-
-// ==================== HELPER FUNCTIONS ====================
 
 async function logScan(
     ticketId: string,

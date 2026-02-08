@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
 import { useSession } from "next-auth/react"
 
 export interface CartItem {
@@ -49,21 +49,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const { data: session, status } = useSession()
     const userKey = session?.user?.id || session?.user?.email || null
     const cartKey = userKey ? `fdnda-cart:${userKey}` : null
-    const cartKeyRef = useRef(cartKey)
-    cartKeyRef.current = cartKey
 
-    const getSnapshot = () => {
+    const getSnapshot = useCallback(() => {
         if (typeof window === "undefined") return "[]"
-        if (!cartKeyRef.current) return "[]"
-        return window.localStorage.getItem(cartKeyRef.current) ?? "[]"
-    }
+        if (!cartKey) return "[]"
+        return window.localStorage.getItem(cartKey) ?? "[]"
+    }, [cartKey])
 
-    const subscribe = (listener: CartListener) => {
+    const subscribe = useCallback((listener: CartListener) => {
         cartListeners.add(listener)
 
         if (typeof window !== "undefined") {
             const handler = (event: StorageEvent) => {
-                if (event.key === cartKeyRef.current) {
+                if (event.key === cartKey) {
                     listener()
                 }
             }
@@ -77,7 +75,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return () => {
             cartListeners.delete(listener)
         }
-    }
+    }, [cartKey])
 
     const rawItems = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
     const items = useMemo(() => parseCartItems(rawItems), [rawItems])

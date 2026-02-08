@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
-import { rateLimit, getClientIP } from "@/lib/rate-limit"
+import { rateLimit } from "@/lib/rate-limit"
+import { createOrderSchema } from "@/lib/validations"
+import { onTicketSold } from "@/lib/cached-queries"
+import { z } from "zod"
+
 export const runtime = "nodejs"
+
+const orderRequestSchema = createOrderSchema.extend({
+    discountCodeId: z.string().optional().nullable(),
+})
 
 export async function POST(request: NextRequest) {
     try {
@@ -24,24 +33,34 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        const body = await request.json()
-        const { eventId, items, discountCodeId } = body
+        const rawBody = await request.json()
+        const parsedBody = orderRequestSchema.safeParse(rawBody)
 
-        if (!eventId || !items || !Array.isArray(items) || items.length === 0) {
+        if (!parsedBody.success) {
             return NextResponse.json(
-                { success: false, error: "Datos de orden inválidos" },
+                {
+                    success: false,
+                    error: parsedBody.error.issues[0]?.message || "Datos de orden invalidos",
+                },
                 { status: 400 }
             )
         }
 
-        // Usar transacción para evitar race conditions y sobreventa
+        const { eventId, items, discountCodeId } = parsedBody.data
+        const cacheInvalidations = new Set<string>()
+
+        // Transaccion con reserva atomica de stock para evitar sobreventa.
         const order = await prisma.$transaction(async (tx) => {
             let totalAmount = 0
             let discountAmount = 0
-            let validatedDiscountCode = null
-            const orderItemsData = []
+            let validatedDiscountCode: {
+                id: string
+                minPurchase: Prisma.Decimal | null
+                value: Prisma.Decimal
+                type: "PERCENTAGE" | "FIXED"
+            } | null = null
+            const orderItemsData: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] = []
 
-            // Validar código de descuento si se proporciona
             if (discountCodeId) {
                 const discountCode = await tx.discountCode.findUnique({
                     where: { id: discountCodeId },
@@ -49,85 +68,120 @@ export async function POST(request: NextRequest) {
                 })
 
                 if (!discountCode || !discountCode.isActive) {
-                    throw new Error("Código de descuento no válido")
+                    throw new Error("Codigo de descuento no valido")
                 }
 
                 const now = new Date()
                 if (discountCode.validFrom && now < discountCode.validFrom) {
-                    throw new Error("Código de descuento aún no vigente")
+                    throw new Error("Codigo de descuento aun no vigente")
                 }
                 if (discountCode.validUntil && now > discountCode.validUntil) {
-                    throw new Error("Código de descuento expirado")
+                    throw new Error("Codigo de descuento expirado")
                 }
                 if (discountCode.maxUses && discountCode._count.usages >= discountCode.maxUses) {
-                    throw new Error("Código de descuento agotado")
+                    throw new Error("Codigo de descuento agotado")
                 }
                 if (discountCode.eventId && discountCode.eventId !== eventId) {
-                    throw new Error("Código de descuento no válido para este evento")
+                    throw new Error("Codigo de descuento no valido para este evento")
                 }
 
-                // Verificar usos por usuario
                 if (discountCode.maxUsesPerUser) {
                     const userUsages = await tx.discountUsage.count({
                         where: { discountCodeId, userId: user.id },
                     })
                     if (userUsages >= discountCode.maxUsesPerUser) {
-                        throw new Error("Ya usaste este código el máximo permitido")
+                        throw new Error("Ya usaste este codigo el maximo permitido")
                     }
                 }
 
-                validatedDiscountCode = discountCode
+                validatedDiscountCode = {
+                    id: discountCode.id,
+                    minPurchase: discountCode.minPurchase,
+                    value: discountCode.value,
+                    type: discountCode.type,
+                }
             }
 
             for (const item of items) {
-                // Bloqueo optimista: verificar disponibilidad dentro de la transacción
-                const ticketType = await tx.ticketType.findUnique({
-                    where: { id: item.ticketTypeId },
-                })
-
-                if (!ticketType) {
-                    throw new Error(`Tipo de entrada no encontrado: ${item.ticketTypeId}`)
+                if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+                    throw new Error("La cantidad debe ser un entero mayor que cero")
                 }
 
-                if (!ticketType.isActive) {
-                    throw new Error(`El tipo de entrada "${ticketType.name}" no está disponible`)
-                }
+                const reservedRows = await tx.$queryRaw<
+                    Array<{
+                        id: string
+                        name: string
+                        price: Prisma.Decimal
+                        eventId: string
+                    }>
+                >(Prisma.sql`
+                    UPDATE "ticket_types"
+                    SET "sold" = "sold" + ${item.quantity}
+                    WHERE "id" = ${item.ticketTypeId}
+                      AND "eventId" = ${eventId}
+                      AND "isActive" = true
+                      AND ("capacity" = 0 OR "sold" + ${item.quantity} <= "capacity")
+                    RETURNING "id", "name", "price", "eventId"
+                `)
 
-                const available = ticketType.capacity === 0 
-                    ? Infinity 
-                    : ticketType.capacity - ticketType.sold
+                const reservedTicketType = reservedRows[0]
 
-                if (item.quantity > available) {
+                if (!reservedTicketType) {
+                    const ticketType = await tx.ticketType.findUnique({
+                        where: { id: item.ticketTypeId },
+                        select: {
+                            id: true,
+                            name: true,
+                            eventId: true,
+                            isActive: true,
+                            capacity: true,
+                            sold: true,
+                        },
+                    })
+
+                    if (!ticketType) {
+                        throw new Error(`Tipo de entrada no encontrado: ${item.ticketTypeId}`)
+                    }
+
+                    if (ticketType.eventId !== eventId) {
+                        throw new Error(`El tipo de entrada "${ticketType.name}" no pertenece a este evento`)
+                    }
+
+                    if (!ticketType.isActive) {
+                        throw new Error(`El tipo de entrada "${ticketType.name}" no esta disponible`)
+                    }
+
+                    const available = ticketType.capacity === 0
+                        ? Infinity
+                        : Math.max(ticketType.capacity - ticketType.sold, 0)
+
                     throw new Error(
                         `Solo quedan ${available} entradas disponibles para "${ticketType.name}"`
                     )
                 }
 
-                // Reservar inmediatamente las entradas (incrementar sold)
-                await tx.ticketType.update({
-                    where: { id: item.ticketTypeId },
-                    data: { sold: { increment: item.quantity } },
-                })
-
-                const subtotal = Number(ticketType.price) * item.quantity
+                const subtotal = Number(reservedTicketType.price) * item.quantity
                 totalAmount += subtotal
 
                 orderItemsData.push({
                     ticketTypeId: item.ticketTypeId,
                     quantity: item.quantity,
-                    unitPrice: ticketType.price,
+                    unitPrice: reservedTicketType.price,
                     subtotal,
-                    attendeeData: item.attendees || [],
+                    attendeeData: (item.attendees || []) as Prisma.InputJsonValue,
                 })
+
+                cacheInvalidations.add(`${eventId}:${item.ticketTypeId}`)
             }
 
-            // Aplicar descuento si hay código válido
             if (validatedDiscountCode) {
-                const minPurchase = validatedDiscountCode.minPurchase ? Number(validatedDiscountCode.minPurchase) : 0
+                const minPurchase = validatedDiscountCode.minPurchase
+                    ? Number(validatedDiscountCode.minPurchase)
+                    : 0
                 const discountValue = Number(validatedDiscountCode.value)
-                
+
                 if (minPurchase > 0 && totalAmount < minPurchase) {
-                    throw new Error(`Compra mínima requerida: S/ ${minPurchase.toFixed(2)}`)
+                    throw new Error(`Compra minima requerida: S/ ${minPurchase.toFixed(2)}`)
                 }
 
                 if (validatedDiscountCode.type === "PERCENTAGE") {
@@ -139,7 +193,6 @@ export async function POST(request: NextRequest) {
 
             const finalAmount = Math.max(0, totalAmount - discountAmount)
 
-            // Crear orden
             const newOrder = await tx.order.create({
                 data: {
                     userId: user.id,
@@ -156,7 +209,6 @@ export async function POST(request: NextRequest) {
                 },
             })
 
-            // Registrar uso del código de descuento
             if (validatedDiscountCode) {
                 await tx.discountUsage.create({
                     data: {
@@ -170,9 +222,15 @@ export async function POST(request: NextRequest) {
 
             return { order: newOrder, discountAmount }
         }, {
-            // Timeout de 10 segundos para la transacción
             timeout: 10000,
         })
+
+        await Promise.all(
+            Array.from(cacheInvalidations).map((entry) => {
+                const [cacheEventId, cacheTicketTypeId] = entry.split(":")
+                return onTicketSold(cacheEventId, cacheTicketTypeId)
+            })
+        )
 
         return NextResponse.json({
             success: true,
@@ -185,10 +243,20 @@ export async function POST(request: NextRequest) {
         })
     } catch (error) {
         console.error("Error creating order:", error)
+        const message = (error as Error).message || "Error al crear orden"
+        const isValidationError =
+            message.includes("no valido") ||
+            message.includes("invalid") ||
+            message.includes("agotad") ||
+            message.includes("disponible") ||
+            message.includes("minima") ||
+            message.includes("maximo") ||
+            message.includes("entero") ||
+            message.includes("pertenece")
+
         return NextResponse.json(
-            { success: false, error: (error as Error).message || "Error al crear orden" },
-            { status: 500 }
+            { success: false, error: message },
+            { status: isValidationError ? 400 : 500 }
         )
     }
 }
-

@@ -15,7 +15,7 @@ import {
     ArrowLeft,
 } from "lucide-react"
 
-export const dynamic = "force-dynamic"
+export const revalidate = 30
 
 interface EventPageProps {
     params: Promise<{ slug: string }>
@@ -60,6 +60,7 @@ export default async function EventDetailPage({ params }: EventPageProps) {
         price: Number(ticket.price),
         capacity: ticket.capacity,
         sold: ticket.sold,
+        isActive: ticket.isActive,
         isPackage: ticket.isPackage,
         packageDaysCount: ticket.packageDaysCount,
     }))
@@ -86,7 +87,6 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                         fill
                         priority
                         sizes="100vw"
-                        unoptimized
                         className="object-cover opacity-80"
                     />
                 ) : (

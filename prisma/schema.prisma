@@ -114,6 +114,7 @@ model Event {
   courtesyBatches CourtesyBatch[]
   discountCodes   DiscountCode[]
 
+  @@index([isPublished, endDate])
   @@map("events")
 }
 
@@ -181,6 +182,7 @@ model Order {
 
   @@index([userId])
   @@index([status])
+  @@index([userId, status])
   @@index([createdAt])
   @@map("orders")
 }
@@ -241,6 +243,7 @@ model TicketDayEntitlement {
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@unique([ticketId, date])
+  @@index([ticketId, status])
   @@map("ticket_day_entitlements")
 }
 
@@ -261,6 +264,7 @@ model Scan {
 
   @@index([eventId, date])
   @@index([ticketId])
+  @@index([ticketId, result])
   @@index([staffId])
   @@index([scannedAt])
   @@map("scans")

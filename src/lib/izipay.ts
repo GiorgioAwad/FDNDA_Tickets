@@ -19,6 +19,8 @@ export interface IzipaySessionResponse {
     success: boolean
     sessionToken?: string
     formToken?: string
+    paymentUrl?: string
+    raw?: unknown
     error?: string
 }
 
@@ -115,12 +117,30 @@ export async function createIzipaySession(
             }
         }
 
-        const data = await response.json()
+        const data = await response.json() as Record<string, unknown>
+        const answer = (data.answer as Record<string, unknown> | undefined) || undefined
+        const sessionToken =
+            (data.sessionToken as string | undefined) ||
+            (answer?.sessionToken as string | undefined) ||
+            (data.token as string | undefined)
+        const formToken =
+            (data.formToken as string | undefined) ||
+            (answer?.formToken as string | undefined)
+        const paymentUrl =
+            (data.paymentUrl as string | undefined) ||
+            (data.redirectUrl as string | undefined) ||
+            (data.checkoutUrl as string | undefined) ||
+            (data.url as string | undefined) ||
+            (answer?.paymentUrl as string | undefined) ||
+            (answer?.redirectUrl as string | undefined) ||
+            (answer?.url as string | undefined)
 
         return {
             success: true,
-            sessionToken: data.sessionToken,
-            formToken: data.formToken,
+            sessionToken,
+            formToken,
+            paymentUrl,
+            raw: data,
         }
     } catch (error) {
         console.error("IZIPAY session creation error:", error)

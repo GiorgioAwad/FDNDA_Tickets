@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
@@ -19,6 +19,7 @@ export type TicketTypeClient = {
     price: number
     capacity: number
     sold: number
+    isActive?: boolean
     isPackage?: boolean | null
     packageDaysCount?: number | null
 }
@@ -55,14 +56,74 @@ export default function TicketPurchaseCard({
     const [attendeeName, setAttendeeName] = useState("")
     const [attendeeDni, setAttendeeDni] = useState("")
 
-    const ticketMeta = useMemo(() => {
+    const [liveStockById, setLiveStockById] = useState<
+        Record<string, { sold: number; capacity: number; isActive: boolean }>
+    >({})
+
+    useEffect(() => {
+        let cancelled = false
+
+        const fetchStock = async () => {
+            try {
+                const response = await fetch(`/api/events/${eventId}/stock`, {
+                    cache: "no-store",
+                })
+                if (!response.ok) return
+
+                const payload = await response.json() as {
+                    success?: boolean
+                    data?: Array<{ id: string; sold: number; capacity: number; isActive: boolean }>
+                }
+
+                if (!payload.success || !Array.isArray(payload.data) || cancelled) return
+
+                const nextState: Record<string, { sold: number; capacity: number; isActive: boolean }> = {}
+                for (const item of payload.data) {
+                    nextState[item.id] = {
+                        sold: item.sold,
+                        capacity: item.capacity,
+                        isActive: item.isActive,
+                    }
+                }
+
+                setLiveStockById(nextState)
+            } catch {
+                // Mantener ultimo valor conocido si falla el polling.
+            }
+        }
+
+        void fetchStock()
+        const interval = window.setInterval(() => {
+            void fetchStock()
+        }, 10000)
+
+        return () => {
+            cancelled = true
+            window.clearInterval(interval)
+        }
+    }, [eventId])
+
+    const ticketTypesWithLiveStock = useMemo(() => {
         return ticketTypes.map((ticket) => {
+            const live = liveStockById[ticket.id]
+            if (!live) return ticket
+            return {
+                ...ticket,
+                sold: live.sold,
+                capacity: live.capacity,
+                isActive: live.isActive,
+            }
+        })
+    }, [ticketTypes, liveStockById])
+
+    const ticketMeta = useMemo(() => {
+        return ticketTypesWithLiveStock.map((ticket) => {
             const available = ticket.capacity === 0 ? null : ticket.capacity - ticket.sold
             const maxQty = available === null ? MAX_UNLIMITED_QTY : Math.max(0, available)
-            const soldOut = available !== null && available <= 0
+            const soldOut = ticket.isActive === false || (available !== null && available <= 0)
             return { ticket, available, maxQty, soldOut }
         })
-    }, [ticketTypes])
+    }, [ticketTypesWithLiveStock])
 
     const getCartQuantity = (ticketId: string) => {
         const found = items.find((item) => item.ticketTypeId === ticketId)
@@ -70,7 +131,7 @@ export default function TicketPurchaseCard({
     }
 
     const handleIncrement = (ticketId: string, maxQty: number) => {
-        const ticket = ticketTypes.find((item) => item.id === ticketId)
+        const ticket = ticketTypesWithLiveStock.find((item) => item.id === ticketId)
         if (!ticket) return
         if (maxQty <= 0) return
 

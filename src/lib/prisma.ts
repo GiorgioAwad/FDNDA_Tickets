@@ -8,26 +8,38 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 const databaseUrl = process.env.DATABASE_URL
+const isProduction = process.env.NODE_ENV === "production"
 
-// Solo crear el cliente si hay DATABASE_URL (evita errores en build de Vercel)
+function parsePoolValue(value: string | undefined, fallback: number): number {
+  if (!value) return fallback
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback
+  return Math.floor(parsed)
+}
+
 function createPrismaClient(): PrismaClient {
   if (!databaseUrl) {
-    // Durante build, retornar un cliente mock que será reemplazado en runtime
+    // Durante build, retornar cliente sin adapter para evitar romper el build.
     return new PrismaClient()
   }
 
-  // Pool de conexiones optimizado para producción
-  const pool = globalForPrisma.pool ?? new Pool({ 
+  const poolMax = parsePoolValue(process.env.DB_POOL_MAX, isProduction ? 5 : 10)
+  const poolMin = Math.min(
+    parsePoolValue(process.env.DB_POOL_MIN, isProduction ? 0 : 2),
+    poolMax
+  )
+
+  const pool = globalForPrisma.pool ?? new Pool({
     connectionString: databaseUrl,
-    // Configuración para alta concurrencia
-    max: process.env.NODE_ENV === "production" ? 20 : 10,  // Máximo de conexiones
-    min: process.env.NODE_ENV === "production" ? 5 : 2,    // Mínimo de conexiones
-    idleTimeoutMillis: 30000,        // Cerrar conexiones idle después de 30s
-    connectionTimeoutMillis: 5000,   // Timeout para obtener conexión
-    maxUses: 7500,                   // Reciclar conexión después de N usos
+    // En serverless cada invocacion puede crear su propio pool.
+    max: poolMax,
+    min: poolMin,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    maxUses: 7500,
   })
 
-  if (process.env.NODE_ENV !== "production") {
+  if (!isProduction) {
     globalForPrisma.pool = pool
   }
 
@@ -41,7 +53,7 @@ function createPrismaClient(): PrismaClient {
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient()
 
-if (process.env.NODE_ENV !== "production") {
+if (!isProduction) {
   globalForPrisma.prisma = prisma
 }
 
