@@ -64,6 +64,205 @@ const SCAN_DEBOUNCE_MS = 300 // Ultra-fast response between scans
 const MAX_HISTORY_ITEMS = 50
 const STORAGE_KEY_HISTORY = "scan-history"
 const STORAGE_KEY_SOUND = "scan-sound-enabled"
+const TICKET_CODE_REGEX = /^[A-Z2-9]{4}(?:-[A-Z2-9]{4}){2}$/
+const TICKET_CODE_COMPACT_REGEX = /^[A-Z2-9]{12}$/
+const TICKET_CODE_GROUP_FINDER_REGEX = /([A-Z2-9]{4}(?:-[A-Z2-9]{4}){2})/i
+const TICKET_CODE_COMPACT_FINDER_REGEX = /([A-Z2-9]{12})/i
+const CUID_REGEX = /^c[a-z0-9]{24}$/i
+const SIGNED_QR_FIELDS = ["ticketId", "eventId", "userId", "date", "ticketCode", "nonce", "signature"] as const
+
+type ParsedScanPayload =
+    | {
+          kind: "signed-qr"
+          qrData: string
+          displayCode: string
+      }
+    | {
+          kind: "lookup"
+          ticketCode?: string
+          ticketId?: string
+          displayCode: string
+      }
+
+function normalizeTicketCode(value?: string | null): string | null {
+    if (!value) return null
+    const upper = value.trim().toUpperCase()
+    if (!upper) return null
+    if (TICKET_CODE_REGEX.test(upper)) return upper
+
+    const compact = upper.replace(/[^A-Z2-9]/g, "")
+    if (!TICKET_CODE_COMPACT_REGEX.test(compact)) return null
+
+    return `${compact.slice(0, 4)}-${compact.slice(4, 8)}-${compact.slice(8, 12)}`
+}
+
+function extractTicketCodeCandidate(value?: string | null): string | null {
+    if (!value) return null
+    const direct = normalizeTicketCode(value)
+    if (direct) return direct
+
+    const upper = value.toUpperCase()
+    const grouped = upper.match(TICKET_CODE_GROUP_FINDER_REGEX)?.[1]
+    if (grouped) {
+        const normalized = normalizeTicketCode(grouped)
+        if (normalized) return normalized
+    }
+
+    const compact = upper.match(TICKET_CODE_COMPACT_FINDER_REGEX)?.[1]
+    if (compact) {
+        const normalized = normalizeTicketCode(compact)
+        if (normalized) return normalized
+    }
+
+    return null
+}
+
+function normalizeTicketId(value: unknown): string | null {
+    if (typeof value !== "string") return null
+    const trimmed = value.trim()
+    if (!trimmed || !CUID_REGEX.test(trimmed)) return null
+    return trimmed
+}
+
+function parseJsonObject(input: string): Record<string, unknown> | null {
+    const trimmed = input.trim()
+    if (!trimmed) return null
+
+    const candidates = [trimmed]
+    const firstBrace = trimmed.indexOf("{")
+    const lastBrace = trimmed.lastIndexOf("}")
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
+    }
+
+    for (const candidate of candidates) {
+        try {
+            const parsed = JSON.parse(candidate) as unknown
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                return parsed as Record<string, unknown>
+            }
+        } catch {
+            // Ignore invalid JSON candidate
+        }
+    }
+
+    return null
+}
+
+function parseSignedQrPayload(input: string): { qrData: string; displayCode: string } | null {
+    const parsed = parseJsonObject(input)
+    if (!parsed) return null
+
+    const hasRequiredFields = SIGNED_QR_FIELDS.every((field) => {
+        const value = parsed[field]
+        return typeof value === "string" && value.trim().length > 0
+    })
+    if (!hasRequiredFields) return null
+
+    const normalizedTicketCode = normalizeTicketCode(String(parsed.ticketCode)) ?? String(parsed.ticketCode).trim()
+    return {
+        qrData: JSON.stringify(parsed),
+        displayCode: normalizedTicketCode.slice(0, 20),
+    }
+}
+
+function extractLookupFromUrl(input: string): { ticketCode?: string; ticketId?: string } | null {
+    try {
+        const url = new URL(input)
+        const queryCode =
+            extractTicketCodeCandidate(url.searchParams.get("ticketCode")) ??
+            extractTicketCodeCandidate(url.searchParams.get("code")) ??
+            extractTicketCodeCandidate(url.searchParams.get("ticket"))
+
+        const queryId =
+            normalizeTicketId(url.searchParams.get("ticketId")) ??
+            normalizeTicketId(url.searchParams.get("id")) ??
+            normalizeTicketId(url.searchParams.get("ticket"))
+
+        if (queryCode || queryId) {
+            return { ticketCode: queryCode ?? undefined, ticketId: queryId ?? undefined }
+        }
+
+        const pathSegments = url.pathname
+            .split("/")
+            .map((part) => decodeURIComponent(part))
+            .filter(Boolean)
+        const lastSegment = pathSegments[pathSegments.length - 1]
+        const pathCode = extractTicketCodeCandidate(lastSegment)
+        const pathId = normalizeTicketId(lastSegment)
+        if (pathCode || pathId) {
+            return { ticketCode: pathCode ?? undefined, ticketId: pathId ?? undefined }
+        }
+    } catch {
+        // Not a URL
+    }
+
+    return null
+}
+
+function parseLookupPayload(input: string): ParsedScanPayload | null {
+    const ticketCodeFromText = extractTicketCodeCandidate(input)
+    const ticketIdFromText = normalizeTicketId(input)
+    if (ticketCodeFromText || ticketIdFromText) {
+        const displayCode = ticketCodeFromText ?? ticketIdFromText ?? input.slice(0, 20)
+        return {
+            kind: "lookup",
+            ticketCode: ticketCodeFromText ?? undefined,
+            ticketId: ticketIdFromText ?? undefined,
+            displayCode,
+        }
+    }
+
+    const fromUrl = extractLookupFromUrl(input)
+    if (fromUrl?.ticketCode || fromUrl?.ticketId) {
+        return {
+            kind: "lookup",
+            ticketCode: fromUrl.ticketCode,
+            ticketId: fromUrl.ticketId,
+            displayCode: fromUrl.ticketCode ?? fromUrl.ticketId ?? input.slice(0, 20),
+        }
+    }
+
+    const parsedJson = parseJsonObject(input)
+    if (parsedJson) {
+        const jsonCode =
+            extractTicketCodeCandidate(String(parsedJson.ticketCode ?? "")) ??
+            extractTicketCodeCandidate(String(parsedJson.code ?? "")) ??
+            extractTicketCodeCandidate(String(parsedJson.ticket ?? ""))
+
+        const jsonId =
+            normalizeTicketId(parsedJson.ticketId) ??
+            normalizeTicketId(parsedJson.id) ??
+            normalizeTicketId(parsedJson.ticket)
+
+        if (jsonCode || jsonId) {
+            return {
+                kind: "lookup",
+                ticketCode: jsonCode ?? undefined,
+                ticketId: jsonId ?? undefined,
+                displayCode: jsonCode ?? jsonId ?? input.slice(0, 20),
+            }
+        }
+    }
+
+    return null
+}
+
+function parseScannedPayload(rawData: string): ParsedScanPayload | null {
+    const trimmed = rawData.trim()
+    if (!trimmed) return null
+
+    const signedPayload = parseSignedQrPayload(trimmed)
+    if (signedPayload) {
+        return {
+            kind: "signed-qr",
+            qrData: signedPayload.qrData,
+            displayCode: signedPayload.displayCode,
+        }
+    }
+
+    return parseLookupPayload(trimmed)
+}
 
 // ==================== COMPONENT ====================
 
@@ -343,7 +542,7 @@ export default function EventScannerPage() {
                 throw new Error("Tu navegador no permite acceso a la cámara.")
             }
 
-            const { Html5Qrcode } = await import("html5-qrcode")
+            const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode")
             
             // Clear previous instance if exists
             if (scannerRef.current) {
@@ -359,8 +558,9 @@ export default function EventScannerPage() {
             
             scannerRef.current = new Html5Qrcode(scannerId, { 
                 verbose: false,
+                formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
                 experimentalFeatures: {
-                    useBarCodeDetectorIfSupported: true // Use native barcode detector for faster scanning
+                    useBarCodeDetectorIfSupported: false,
                 }
             })
 
@@ -436,10 +636,16 @@ export default function EventScannerPage() {
     
     // Fallback camera start without exact constraint
     const startCameraFallback = useCallback(async () => {
-        const { Html5Qrcode } = await import("html5-qrcode")
+        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode")
         
         if (!scannerRef.current) {
-            scannerRef.current = new Html5Qrcode(scannerId, { verbose: false })
+            scannerRef.current = new Html5Qrcode(scannerId, {
+                verbose: false,
+                formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+                experimentalFeatures: {
+                    useBarCodeDetectorIfSupported: false,
+                },
+            })
         }
         
         const config: Html5QrcodeCameraScanConfig = {
@@ -477,8 +683,13 @@ export default function EventScannerPage() {
         if (scanLockedRef.current || isProcessing) {
             return
         }
+
+        const parsedPayload = parseScannedPayload(qrData)
+        if (!parsedPayload) {
+            return
+        }
         
-        lastScannedCodeRef.current = qrData
+        lastScannedCodeRef.current = parsedPayload.displayCode
         setScanning(false)
         scanLockedRef.current = true
         setIsProcessing(true)
@@ -488,12 +699,16 @@ export default function EventScannerPage() {
         vibrate(50)
 
         try {
-            const trimmed = qrData.trim()
-            const isJsonPayload = trimmed.startsWith("{") && trimmed.endsWith("}")
-            const endpoint = isJsonPayload ? "/api/scans/validate" : "/api/scans/lookup"
-            const body = isJsonPayload
-                ? { qrData: trimmed, eventId }
-                : { ticketCode: trimmed, eventId }
+            const endpoint = parsedPayload.kind === "signed-qr" ? "/api/scans/validate" : "/api/scans/lookup"
+            const body =
+                parsedPayload.kind === "signed-qr"
+                    ? { qrData: parsedPayload.qrData, eventId }
+                    : {
+                          ticketCode: parsedPayload.ticketCode,
+                          ticketId: parsedPayload.ticketId,
+                          rawInput: qrData,
+                          eventId,
+                      }
 
             const response = await fetch(endpoint, {
                 method: "POST",
@@ -503,7 +718,7 @@ export default function EventScannerPage() {
 
             const data = await response.json() as ScanResult
             setScanResult(data)
-            addToHistory(data, trimmed)
+            addToHistory(data, parsedPayload.displayCode)
 
             // Result feedback
             if (data.valid) {
@@ -530,11 +745,18 @@ export default function EventScannerPage() {
 
     const handleManualSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault()
-        const ticketCode = manualCode.trim().toUpperCase()
-        if (!ticketCode) return
+        const parsedManual = parseLookupPayload(manualCode)
+        if (!parsedManual || parsedManual.kind !== "lookup") {
+            setScanResult({
+                valid: false,
+                reason: "INVALID",
+                message: "Codigo invalido",
+            })
+            return
+        }
 
         setScanning(false)
-        lastScannedCodeRef.current = ticketCode
+        lastScannedCodeRef.current = parsedManual.displayCode
         scanLockedRef.current = true
         setIsProcessing(true)
 
@@ -542,12 +764,17 @@ export default function EventScannerPage() {
             const response = await fetch("/api/scans/lookup", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ticketCode, eventId }),
+                body: JSON.stringify({
+                    ticketCode: parsedManual.ticketCode,
+                    ticketId: parsedManual.ticketId,
+                    rawInput: manualCode,
+                    eventId,
+                }),
             })
 
             const data = await response.json() as ScanResult
             setScanResult(data)
-            addToHistory(data, ticketCode)
+            addToHistory(data, parsedManual.displayCode)
             setManualCode("")
 
             if (data.valid) {

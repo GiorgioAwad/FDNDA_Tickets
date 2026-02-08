@@ -12,6 +12,160 @@ import {
 
 export const runtime = "nodejs"
 
+const TICKET_CODE_REGEX = /^[A-Z2-9]{4}(?:-[A-Z2-9]{4}){2}$/
+const TICKET_CODE_COMPACT_REGEX = /^[A-Z2-9]{12}$/
+const TICKET_CODE_GROUP_FINDER_REGEX = /([A-Z2-9]{4}(?:-[A-Z2-9]{4}){2})/i
+const TICKET_CODE_COMPACT_FINDER_REGEX = /([A-Z2-9]{12})/i
+const CUID_REGEX = /^c[a-z0-9]{24}$/i
+
+function normalizeTicketCode(value?: string | null): string | null {
+    if (!value) return null
+    const upper = value.trim().toUpperCase()
+    if (!upper) return null
+    if (TICKET_CODE_REGEX.test(upper)) return upper
+
+    const compact = upper.replace(/[^A-Z2-9]/g, "")
+    if (!TICKET_CODE_COMPACT_REGEX.test(compact)) return null
+
+    return `${compact.slice(0, 4)}-${compact.slice(4, 8)}-${compact.slice(8, 12)}`
+}
+
+function extractTicketCodeCandidate(value?: string | null): string | null {
+    if (!value) return null
+    const direct = normalizeTicketCode(value)
+    if (direct) return direct
+
+    const upper = value.toUpperCase()
+    const grouped = upper.match(TICKET_CODE_GROUP_FINDER_REGEX)?.[1]
+    if (grouped) {
+        const normalized = normalizeTicketCode(grouped)
+        if (normalized) return normalized
+    }
+
+    const compact = upper.match(TICKET_CODE_COMPACT_FINDER_REGEX)?.[1]
+    if (compact) {
+        const normalized = normalizeTicketCode(compact)
+        if (normalized) return normalized
+    }
+
+    return null
+}
+
+function normalizeTicketId(value: unknown): string | null {
+    if (typeof value !== "string") return null
+    const trimmed = value.trim()
+    if (!trimmed || !CUID_REGEX.test(trimmed)) return null
+    return trimmed
+}
+
+function parseJsonObject(input: string): Record<string, unknown> | null {
+    const trimmed = input.trim()
+    if (!trimmed) return null
+
+    const candidates = [trimmed]
+    const firstBrace = trimmed.indexOf("{")
+    const lastBrace = trimmed.lastIndexOf("}")
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
+    }
+
+    for (const candidate of candidates) {
+        try {
+            const parsed = JSON.parse(candidate) as unknown
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                return parsed as Record<string, unknown>
+            }
+        } catch {
+            // Ignore invalid JSON candidate
+        }
+    }
+
+    return null
+}
+
+function extractLookupFromUrl(input: string): { ticketCode?: string; ticketId?: string } | null {
+    try {
+        const url = new URL(input)
+        const queryCode =
+            extractTicketCodeCandidate(url.searchParams.get("ticketCode")) ??
+            extractTicketCodeCandidate(url.searchParams.get("code")) ??
+            extractTicketCodeCandidate(url.searchParams.get("ticket"))
+
+        const queryId =
+            normalizeTicketId(url.searchParams.get("ticketId")) ??
+            normalizeTicketId(url.searchParams.get("id")) ??
+            normalizeTicketId(url.searchParams.get("ticket"))
+
+        if (queryCode || queryId) {
+            return { ticketCode: queryCode ?? undefined, ticketId: queryId ?? undefined }
+        }
+
+        const pathSegments = url.pathname
+            .split("/")
+            .map((part) => decodeURIComponent(part))
+            .filter(Boolean)
+        const lastSegment = pathSegments[pathSegments.length - 1]
+        const pathCode = extractTicketCodeCandidate(lastSegment)
+        const pathId = normalizeTicketId(lastSegment)
+        if (pathCode || pathId) {
+            return { ticketCode: pathCode ?? undefined, ticketId: pathId ?? undefined }
+        }
+    } catch {
+        // Not a URL
+    }
+
+    return null
+}
+
+function parseLookupCandidates(
+    ticketCodeInput?: string,
+    ticketIdInput?: string,
+    rawInput?: string
+): { ticketCodes: string[]; ticketId: string | null } {
+    const ticketCodeSet = new Set<string>()
+    let ticketId: string | null = normalizeTicketId(ticketIdInput)
+
+    const addTicketCode = (value?: string | null) => {
+        const normalized = extractTicketCodeCandidate(value)
+        if (normalized) {
+            ticketCodeSet.add(normalized)
+        }
+    }
+
+    addTicketCode(ticketCodeInput)
+
+    if (rawInput) {
+        addTicketCode(rawInput)
+
+        const fromUrl = extractLookupFromUrl(rawInput)
+        if (fromUrl?.ticketCode) ticketCodeSet.add(fromUrl.ticketCode)
+        if (!ticketId && fromUrl?.ticketId) ticketId = fromUrl.ticketId
+
+        const parsedJson = parseJsonObject(rawInput)
+        if (parsedJson) {
+            addTicketCode(String(parsedJson.ticketCode ?? ""))
+            addTicketCode(String(parsedJson.code ?? ""))
+            addTicketCode(String(parsedJson.ticket ?? ""))
+
+            if (!ticketId) {
+                ticketId =
+                    normalizeTicketId(parsedJson.ticketId) ??
+                    normalizeTicketId(parsedJson.id) ??
+                    normalizeTicketId(parsedJson.ticket)
+            }
+        }
+    }
+
+    if (!ticketId) {
+        ticketId = normalizeTicketId(ticketCodeInput)
+    }
+
+    return {
+        ticketCodes: Array.from(ticketCodeSet),
+        ticketId,
+    }
+}
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -24,18 +178,37 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json()
-        const ticketCode = (body.ticketCode as string | undefined)?.trim()
+        const ticketCodeInput = typeof body.ticketCode === "string" ? body.ticketCode : undefined
+        const ticketIdInput = typeof body.ticketId === "string" ? body.ticketId : undefined
+        const rawInput = typeof body.rawInput === "string" ? body.rawInput : undefined
         const eventId = body.eventId as string | undefined
 
-        if (!ticketCode || !eventId) {
+        if (!eventId) {
             return NextResponse.json(
                 { success: false, error: "Datos incompletos" },
                 { status: 400 }
             )
         }
 
-        const ticket = await prisma.ticket.findUnique({
-            where: { ticketCode },
+        const { ticketCodes, ticketId } = parseLookupCandidates(ticketCodeInput, ticketIdInput, rawInput)
+        if (!ticketId && ticketCodes.length === 0) {
+            return NextResponse.json({
+                success: false,
+                valid: false,
+                reason: "TICKET_NOT_FOUND",
+                message: "Ticket no encontrado",
+            })
+        }
+
+        const whereConditions = [
+            ...(ticketId ? [{ id: ticketId }] : []),
+            ...ticketCodes.map((ticketCode) => ({ ticketCode })),
+        ]
+
+        const ticket = await prisma.ticket.findFirst({
+            where: {
+                OR: whereConditions,
+            },
             include: {
                 event: true,
                 ticketType: true,
