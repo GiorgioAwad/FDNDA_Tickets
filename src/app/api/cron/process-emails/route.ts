@@ -3,8 +3,7 @@ import { processEmailQueue } from "@/lib/email-worker"
 import { getQueueStats } from "@/lib/email-queue"
 
 export const runtime = "nodejs"
-export const maxDuration = 60 // 60 segundos máximo
-
+export const maxDuration = 60
 
 function isCronAuthorized(request: NextRequest): boolean {
     const cronSecret = process.env.CRON_SECRET
@@ -19,17 +18,17 @@ function isCronAuthorized(request: NextRequest): boolean {
     return false
 }
 
+async function runQueueAndGetStats() {
+    const { processed, failed } = await processEmailQueue(20)
+    const stats = await getQueueStats()
+    return { processed, failed, stats }
+}
+
 /**
  * POST /api/cron/process-emails
- * Procesa la cola de emails pendientes
- * 
- * Llamar desde:
- * - Vercel Cron Jobs (vercel.json)
- * - External cron service
- * - Manual trigger
+ * Manual/externo: procesa cola de emails.
  */
 export async function POST(request: NextRequest) {
-    // Verificar token de autorización para cron jobs
     if (!isCronAuthorized(request)) {
         return NextResponse.json(
             { error: "Unauthorized" },
@@ -38,12 +37,11 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const { processed, failed } = await processEmailQueue(20) // Procesar hasta 20 emails
+        const result = await runQueueAndGetStats()
 
         return NextResponse.json({
             success: true,
-            processed,
-            failed,
+            ...result,
             timestamp: new Date().toISOString(),
         })
     } catch (error) {
@@ -57,7 +55,8 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/cron/process-emails
- * Obtiene estadísticas de la cola
+ * En Vercel Cron (GET) procesa cola.
+ * Manualmente devuelve stats; puedes forzar ejecucion con ?run=1.
  */
 export async function GET(request: NextRequest) {
     if (!isCronAuthorized(request)) {
@@ -68,17 +67,32 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-        const stats = await getQueueStats()
+        const isVercelCron = request.headers.get("x-vercel-cron") === "1" ||
+            request.headers.get("x-vercel-cron") === "true" ||
+            request.headers.get("user-agent")?.includes("vercel-cron/1.0")
+        const forceRun = request.nextUrl.searchParams.get("run") === "1"
 
+        if (isVercelCron || forceRun) {
+            const result = await runQueueAndGetStats()
+            return NextResponse.json({
+                success: true,
+                mode: "process",
+                ...result,
+                timestamp: new Date().toISOString(),
+            })
+        }
+
+        const stats = await getQueueStats()
         return NextResponse.json({
             success: true,
+            mode: "stats",
             stats,
             timestamp: new Date().toISOString(),
         })
     } catch (error) {
-        console.error("Error getting queue stats:", error)
+        console.error("Error in process-emails GET:", error)
         return NextResponse.json(
-            { error: "Failed to get stats" },
+            { error: "Failed to process queue" },
             { status: 500 }
         )
     }

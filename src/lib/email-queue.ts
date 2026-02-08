@@ -27,7 +27,7 @@ const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_RE
     })
     : null
 
-// Cola en memoria para desarrollo
+// In-memory queue fallback for local development.
 const memoryQueue: QueuedEmail[] = []
 const processingJobs = new Set<string>()
 
@@ -42,7 +42,7 @@ const RETRY_DELAYS = [60, 300, 900] // 1min, 5min, 15min
 // ==================== QUEUE FUNCTIONS ====================
 
 /**
- * Agregar email a la cola
+ * Add email job to queue.
  */
 export async function queueEmail(
     type: EmailJob["type"],
@@ -51,7 +51,7 @@ export async function queueEmail(
     options?: { priority?: number; delay?: number }
 ): Promise<string> {
     const jobId = `email_${Date.now()}_${Math.random().toString(36).substring(7)}`
-    
+
     const job: EmailJob = {
         id: jobId,
         type,
@@ -60,25 +60,24 @@ export async function queueEmail(
         attempts: 0,
         maxAttempts: MAX_ATTEMPTS,
         createdAt: new Date().toISOString(),
-        scheduledFor: options?.delay 
+        scheduledFor: options?.delay
             ? new Date(Date.now() + options.delay * 1000).toISOString()
             : undefined,
     }
-    
-    const priority = options?.priority ?? 5 // 1-10, menor = mayor prioridad
+
+    const priority = options?.priority ?? 5 // 1-10, lower = higher priority
 
     try {
         if (redis) {
-            // Usar sorted set para prioridad
+            // Use sorted set for priority.
             const score = priority * 1000000000000 + Date.now()
             await redis.zadd(QUEUE_KEY, { score, member: JSON.stringify(job) })
         } else {
-            // Fallback a memoria
             memoryQueue.push({ job, priority })
             memoryQueue.sort((a, b) => a.priority - b.priority)
         }
-        
-        console.log(`📧 Email encolado: ${type} para ${to} (ID: ${jobId})`)
+
+        console.log(`Email queued: ${type} -> ${to} (ID: ${jobId})`)
         return jobId
     } catch (error) {
         console.error("Error enqueueing email:", error)
@@ -86,45 +85,94 @@ export async function queueEmail(
     }
 }
 
+function isEmailJob(value: unknown): value is EmailJob {
+    if (!value || typeof value !== "object") return false
+    const job = value as Partial<EmailJob>
+    return typeof job.id === "string" &&
+        typeof job.type === "string" &&
+        typeof job.to === "string" &&
+        typeof job.attempts === "number" &&
+        typeof job.maxAttempts === "number" &&
+        typeof job.createdAt === "string" &&
+        !!job.data &&
+        typeof job.data === "object"
+}
+
 /**
- * Obtener siguiente email de la cola
+ * Extract job payload from Upstash zpopmin response.
+ * Upstash client can return:
+ * - ["{...job...}", "score"]
+ * - [{ member: "{...job...}", score: 123 }]
+ * - [{...job...}, score]
+ */
+function extractJobFromZpop(result: unknown): EmailJob | null {
+    if (!Array.isArray(result) || result.length === 0) return null
+
+    const first = result[0]
+    if (typeof first === "string") {
+        try {
+            const parsed = JSON.parse(first) as unknown
+            return isEmailJob(parsed) ? parsed : null
+        } catch {
+            return null
+        }
+    }
+
+    if (first && typeof first === "object" && "member" in first) {
+        const member = (first as { member?: unknown }).member
+        if (typeof member === "string") {
+            try {
+                const parsed = JSON.parse(member) as unknown
+                return isEmailJob(parsed) ? parsed : null
+            } catch {
+                return null
+            }
+        }
+    }
+
+    if (isEmailJob(first)) {
+        return first
+    }
+
+    return null
+}
+
+/**
+ * Get next email job from queue.
  */
 export async function dequeueEmail(): Promise<EmailJob | null> {
     try {
         if (redis) {
-            // Obtener el elemento con menor score (mayor prioridad)
-            const result = await redis.zpopmin(QUEUE_KEY, 1) as Array<{ member: string; score: number }> | null
-            if (result && result.length > 0) {
-                const jobData = result[0].member
-                const job = JSON.parse(jobData) as EmailJob
-                
-                // Verificar si está programado para después
-                if (job.scheduledFor && new Date(job.scheduledFor) > new Date()) {
-                    // Re-encolar con el mismo score
-                    await redis.zadd(QUEUE_KEY, { 
-                        score: new Date(job.scheduledFor).getTime(), 
-                        member: JSON.stringify(job) 
-                    })
-                    return null
+            const result = await redis.zpopmin(QUEUE_KEY, 1) as unknown
+            const job = extractJobFromZpop(result)
+
+            if (!job) {
+                if (Array.isArray(result) && result.length > 0) {
+                    console.error("Unexpected zpopmin payload format:", result)
                 }
-                
-                // Marcar como procesando
-                await redis.hset(PROCESSING_KEY, { [job.id]: JSON.stringify(job) })
-                return job
+                return null
             }
-            return null
+
+            if (job.scheduledFor && new Date(job.scheduledFor) > new Date()) {
+                await redis.zadd(QUEUE_KEY, {
+                    score: new Date(job.scheduledFor).getTime(),
+                    member: JSON.stringify(job),
+                })
+                return null
+            }
+
+            await redis.hset(PROCESSING_KEY, { [job.id]: JSON.stringify(job) })
+            return job
         }
-        
-        // Fallback a memoria
+
         if (memoryQueue.length === 0) return null
-        
+
         const { job } = memoryQueue.shift()!
-        
         if (job.scheduledFor && new Date(job.scheduledFor) > new Date()) {
             memoryQueue.push({ job, priority: 10 })
             return null
         }
-        
+
         processingJobs.add(job.id)
         return job
     } catch (error) {
@@ -134,7 +182,7 @@ export async function dequeueEmail(): Promise<EmailJob | null> {
 }
 
 /**
- * Marcar job como completado
+ * Mark job as completed.
  */
 export async function completeJob(jobId: string): Promise<void> {
     try {
@@ -143,48 +191,46 @@ export async function completeJob(jobId: string): Promise<void> {
         } else {
             processingJobs.delete(jobId)
         }
-        console.log(`✅ Email completado: ${jobId}`)
+        console.log(`Email completed: ${jobId}`)
     } catch (error) {
         console.error("Error completing job:", error)
     }
 }
 
 /**
- * Marcar job como fallido y re-encolar si hay intentos restantes
+ * Mark job as failed and requeue if attempts remain.
  */
 export async function failJob(job: EmailJob, error: string): Promise<void> {
     try {
         job.attempts++
-        
+
         if (job.attempts < job.maxAttempts) {
-            // Re-encolar con delay
             const delaySeconds = RETRY_DELAYS[job.attempts - 1] || 900
             job.scheduledFor = new Date(Date.now() + delaySeconds * 1000).toISOString()
-            
+
             if (redis) {
                 await redis.hdel(PROCESSING_KEY, job.id)
-                await redis.zadd(QUEUE_KEY, { 
-                    score: Date.now() + delaySeconds * 1000, 
-                    member: JSON.stringify(job) 
+                await redis.zadd(QUEUE_KEY, {
+                    score: Date.now() + delaySeconds * 1000,
+                    member: JSON.stringify(job),
                 })
             } else {
                 processingJobs.delete(job.id)
                 memoryQueue.push({ job, priority: 10 })
             }
-            
-            console.log(`🔄 Email reintentará en ${delaySeconds}s: ${job.id} (intento ${job.attempts}/${job.maxAttempts})`)
+
+            console.log(`Email retry in ${delaySeconds}s: ${job.id} (${job.attempts}/${job.maxAttempts})`)
         } else {
-            // Mover a fallidos
             if (redis) {
                 await redis.hdel(PROCESSING_KEY, job.id)
-                await redis.hset(FAILED_KEY, { 
-                    [job.id]: JSON.stringify({ ...job, error, failedAt: new Date().toISOString() }) 
+                await redis.hset(FAILED_KEY, {
+                    [job.id]: JSON.stringify({ ...job, error, failedAt: new Date().toISOString() }),
                 })
             } else {
                 processingJobs.delete(job.id)
             }
-            
-            console.error(`❌ Email falló permanentemente: ${job.id} - ${error}`)
+
+            console.error(`Email failed permanently: ${job.id} - ${error}`)
         }
     } catch (err) {
         console.error("Error failing job:", err)
@@ -192,7 +238,7 @@ export async function failJob(job: EmailJob, error: string): Promise<void> {
 }
 
 /**
- * Obtener estadísticas de la cola
+ * Get queue stats.
  */
 export async function getQueueStats(): Promise<{
     pending: number
@@ -208,7 +254,7 @@ export async function getQueueStats(): Promise<{
             ])
             return { pending, processing, failed }
         }
-        
+
         return {
             pending: memoryQueue.length,
             processing: processingJobs.size,
@@ -223,7 +269,7 @@ export async function getQueueStats(): Promise<{
 // ==================== CONVENIENCE FUNCTIONS ====================
 
 /**
- * Encolar email de confirmación de compra
+ * Queue purchase confirmation email.
  */
 export async function queuePurchaseConfirmation(
     email: string,
@@ -239,11 +285,11 @@ export async function queuePurchaseConfirmation(
         eventTitle,
         ticketCount,
         totalAmount,
-    }, { priority: 1 }) // Alta prioridad
+    }, { priority: 1 })
 }
 
 /**
- * Encolar email de bienvenida
+ * Queue welcome email.
  */
 export async function queueWelcomeEmail(
     email: string,
@@ -257,7 +303,7 @@ export async function queueWelcomeEmail(
 }
 
 /**
- * Encolar email de reset de contraseña
+ * Queue password reset email.
  */
 export async function queuePasswordResetEmail(
     email: string,
@@ -271,7 +317,7 @@ export async function queuePasswordResetEmail(
 }
 
 /**
- * Encolar email de cortesía reclamada
+ * Queue courtesy claimed email.
  */
 export async function queueCourtesyClaimedEmail(
     email: string,
