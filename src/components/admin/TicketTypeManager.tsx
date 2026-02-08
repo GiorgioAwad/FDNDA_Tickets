@@ -6,17 +6,21 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Trash2, Edit, Save, Power } from "lucide-react"
-import { formatPrice } from "@/lib/utils"
+import { formatDate, formatPrice } from "@/lib/utils"
+import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 
 interface TicketType {
     id?: string
     name: string
+    description?: string | null
     price: number
     capacity: number
     sold?: number
     isActive?: boolean
     isPackage?: boolean
     packageDaysCount?: number
+    validDays?: unknown
+    sortOrder?: number
 }
 
 interface TicketTypeManagerProps {
@@ -43,13 +47,18 @@ export function TicketTypeManager({
     const [startTime, setStartTime] = useState("09:00")
     const [endTime, setEndTime] = useState("10:00")
     const [customLabel, setCustomLabel] = useState("")
+    const [useSpecificDays, setUseSpecificDays] = useState(false)
+    const [selectedValidDays, setSelectedValidDays] = useState<string[]>([])
+    const [shiftsInput, setShiftsInput] = useState("")
 
     const [formData, setFormData] = useState<Partial<TicketType>>({
         name: "",
+        description: "",
         price: 0,
         capacity: 100,
         isPackage: false,
         packageDaysCount: 0,
+        sortOrder: 0,
     })
     const [capacityInput, setCapacityInput] = useState("100")
 
@@ -66,6 +75,26 @@ export function TicketTypeManager({
         ],
         []
     )
+
+    const dateOptions = useMemo(() => {
+        if (!eventStartDate || !eventEndDate) return []
+        const start = new Date(eventStartDate)
+        const end = new Date(eventEndDate)
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return []
+
+        start.setHours(0, 0, 0, 0)
+        end.setHours(0, 0, 0, 0)
+        const options: string[] = []
+        const current = new Date(start)
+        while (current <= end) {
+            const year = current.getFullYear()
+            const month = String(current.getMonth() + 1).padStart(2, "0")
+            const day = String(current.getDate()).padStart(2, "0")
+            options.push(`${year}-${month}-${day}`)
+            current.setDate(current.getDate() + 1)
+        }
+        return options
+    }, [eventStartDate, eventEndDate])
 
     const formatTimeLabel = (timeValue: string) => {
         if (!timeValue) return ""
@@ -139,10 +168,12 @@ export function TicketTypeManager({
     const resetForm = () => {
         setFormData({
             name: "",
+            description: "",
             price: 0,
             capacity: 100,
             isPackage: false,
             packageDaysCount: 0,
+            sortOrder: 0,
         })
         setCapacityInput("100")
         setAutoName(true)
@@ -151,6 +182,9 @@ export function TicketTypeManager({
         setStartTime("09:00")
         setEndTime("10:00")
         setCustomLabel("")
+        setUseSpecificDays(false)
+        setSelectedValidDays([])
+        setShiftsInput("")
         setIsAdding(false)
         setEditingId(null)
     }
@@ -165,13 +199,39 @@ export function TicketTypeManager({
             return
         }
 
+        const shifts = shiftsInput
+            .split(",")
+            .map((shift) => shift.trim())
+            .filter(Boolean)
+        const selectedDays = Array.from(new Set(selectedValidDays)).sort((a, b) => a.localeCompare(b))
+
+        if (useSpecificDays && selectedDays.length === 0) {
+            alert("Selecciona al menos un dia valido")
+            return
+        }
+
+        if (
+            formData.isPackage &&
+            formData.packageDaysCount &&
+            useSpecificDays &&
+            selectedDays.length > 0 &&
+            formData.packageDaysCount > selectedDays.length
+        ) {
+            alert("El paquete no puede tener mas dias que los dias validos seleccionados")
+            return
+        }
+
+        const validDaysPayload = useSpecificDays
+            ? buildTicketValidDaysPayload({ dates: selectedDays, shifts })
+            : []
+
         setLoading(true)
         try {
             const url = "/api/ticket-types"
             const method = editingId ? "PUT" : "POST"
             const body = editingId
-                ? { ...formData, id: editingId, capacity: capacityNumber }
-                : { ...formData, eventId, capacity: capacityNumber }
+                ? { ...formData, id: editingId, capacity: capacityNumber, validDays: validDaysPayload }
+                : { ...formData, eventId, capacity: capacityNumber, validDays: validDaysPayload }
 
             const response = await fetch(url, {
                 method,
@@ -277,6 +337,14 @@ export function TicketTypeManager({
                                 </div>
                             </div>
                             <div className="space-y-2">
+                                <label className="text-xs font-medium">Descripcion (opcional)</label>
+                                <Input
+                                    value={formData.description || ""}
+                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                    placeholder="Detalle corto para el comprador"
+                                />
+                            </div>
+                            <div className="space-y-2">
                                 <label className="text-xs font-medium">Precio (S/)</label>
                                 <Input
                                     type="number"
@@ -314,6 +382,7 @@ export function TicketTypeManager({
                                         placeholder="Dias"
                                         className="w-20 h-8"
                                         value={formData.packageDaysCount || ""}
+                                        min={1}
                                         onChange={(e) => setFormData({ ...formData, packageDaysCount: Number(e.target.value) })}
                                     />
                                 )}
@@ -386,6 +455,71 @@ export function TicketTypeManager({
                             )}
                         </div>
 
+                        <div className="rounded-lg border bg-white p-3 space-y-3">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="useSpecificDays"
+                                    checked={useSpecificDays}
+                                    onChange={(e) => setUseSpecificDays(e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <label htmlFor="useSpecificDays" className="text-xs font-semibold text-gray-700">
+                                    Restringir a dias especificos y turnos
+                                </label>
+                            </div>
+
+                            {useSpecificDays && (
+                                <>
+                                    {dateOptions.length > 0 ? (
+                                        <div>
+                                            <div className="text-xs text-gray-500 mb-2">
+                                                Dias validos para este tipo de entrada
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {dateOptions.map((date) => {
+                                                    const selected = selectedValidDays.includes(date)
+                                                    return (
+                                                        <Button
+                                                            key={date}
+                                                            type="button"
+                                                            size="sm"
+                                                            variant={selected ? "default" : "outline"}
+                                                            onClick={() =>
+                                                                setSelectedValidDays((prev) =>
+                                                                    selected
+                                                                        ? prev.filter((item) => item !== date)
+                                                                        : [...prev, date]
+                                                                )
+                                                            }
+                                                        >
+                                                            {formatDate(date, { dateStyle: "medium" })}
+                                                        </Button>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-xs text-gray-500">
+                                            Define fecha inicio/fin del evento para habilitar esta seleccion.
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500">
+                                            Turnos (separados por coma)
+                                        </label>
+                                        <Input
+                                            value={shiftsInput}
+                                            onChange={(e) => setShiftsInput(e.target.value)}
+                                            placeholder="Manana, Tarde, Noche"
+                                            className="h-9"
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
                         <div className="flex justify-end gap-2">
                             <Button variant="ghost" size="sm" onClick={resetForm}>
                                 Cancelar
@@ -399,59 +533,76 @@ export function TicketTypeManager({
                 )}
 
                 <div className="space-y-2">
-                    {ticketTypes.map((ticket) => (
-                        <div
-                            key={ticket.id}
-                            className={`flex items-center justify-between p-3 rounded-lg border ${ticket.isActive === false ? "bg-gray-100 opacity-60" : "bg-white"}`}
-                        >
-                            <div>
-                                <div className="font-medium flex items-center gap-2">
-                                    {ticket.name}
-                                    {ticket.isPackage && (
-                                        <Badge variant="secondary" className="text-xs">
-                                            Paquete {ticket.packageDaysCount} dias
-                                        </Badge>
-                                    )}
-                                    {ticket.isActive === false && (
-                                        <Badge variant="destructive" className="text-xs">Inactivo</Badge>
-                                    )}
+                    {ticketTypes.map((ticket) => {
+                        const schedule = parseTicketScheduleConfig(ticket.validDays)
+
+                        return (
+                            <div
+                                key={ticket.id}
+                                className={`flex items-center justify-between p-3 rounded-lg border ${ticket.isActive === false ? "bg-gray-100 opacity-60" : "bg-white"}`}
+                            >
+                                <div>
+                                    <div className="font-medium flex items-center gap-2">
+                                        {ticket.name}
+                                        {ticket.isPackage && (
+                                            <Badge variant="secondary" className="text-xs">
+                                                Paquete {ticket.packageDaysCount} dias
+                                            </Badge>
+                                        )}
+                                        {schedule.dates.length > 0 && (
+                                            <Badge variant="secondary" className="text-xs">
+                                                {schedule.dates.length} dias
+                                            </Badge>
+                                        )}
+                                        {schedule.shifts.length > 0 && (
+                                            <Badge variant="secondary" className="text-xs">
+                                                {schedule.shifts.length} turnos
+                                            </Badge>
+                                        )}
+                                        {ticket.isActive === false && (
+                                            <Badge variant="destructive" className="text-xs">Inactivo</Badge>
+                                        )}
+                                    </div>
+                                    <div className="text-sm text-gray-500">
+                                        {formatPrice(ticket.price)} • {ticket.sold || 0} / {ticket.capacity} vendidos
+                                    </div>
                                 </div>
-                                <div className="text-sm text-gray-500">
-                                    {formatPrice(ticket.price)} • {ticket.sold || 0} / {ticket.capacity} vendidos
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleToggleActive(ticket.id!, ticket.isActive !== false)}
+                                        title={ticket.isActive !== false ? "Desactivar" : "Activar"}
+                                    >
+                                        <Power className={`h-4 w-4 ${ticket.isActive !== false ? "text-green-500" : "text-gray-400"}`} />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => {
+                                            setEditingId(ticket.id!)
+                                            setFormData(ticket)
+                                            setAutoName(false)
+                                            setIsAdding(false)
+                                            setCapacityInput(String(ticket.capacity ?? 0))
+                                            setUseSpecificDays(schedule.dates.length > 0)
+                                            setSelectedValidDays(schedule.dates)
+                                            setShiftsInput(schedule.shifts.join(", "))
+                                        }}
+                                    >
+                                        <Edit className="h-4 w-4 text-gray-500" />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleDelete(ticket.id!)}
+                                    >
+                                        <Trash2 className="h-4 w-4 text-red-500" />
+                                    </Button>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleToggleActive(ticket.id!, ticket.isActive !== false)}
-                                    title={ticket.isActive !== false ? "Desactivar" : "Activar"}
-                                >
-                                    <Power className={`h-4 w-4 ${ticket.isActive !== false ? "text-green-500" : "text-gray-400"}`} />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => {
-                                        setEditingId(ticket.id!)
-                                        setFormData(ticket)
-                                        setAutoName(false)
-                                        setIsAdding(false)
-                                        setCapacityInput(String(ticket.capacity ?? 0))
-                                    }}
-                                >
-                                    <Edit className="h-4 w-4 text-gray-500" />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleDelete(ticket.id!)}
-                                >
-                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                </Button>
-                            </div>
-                        </div>
-                    ))}
+                        )
+                    })}
                     {ticketTypes.length === 0 && !isAdding && (
                         <div className="text-center py-4 text-gray-500 text-sm">
                             No hay tipos de entrada registrados

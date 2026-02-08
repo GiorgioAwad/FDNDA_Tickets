@@ -38,7 +38,7 @@ export interface CachedTicketType {
     available: number
     isPackage: boolean
     packageDaysCount: number | null
-    validDays: string[] | null
+    validDays: unknown | null
     isActive: boolean
     sortOrder: number
 }
@@ -142,7 +142,7 @@ export async function getCachedTicketTypes(eventId: string): Promise<CachedTicke
                 available: tt.capacity === 0 ? 999999 : Math.max(0, tt.capacity - tt.sold),
                 isPackage: tt.isPackage,
                 packageDaysCount: tt.packageDaysCount,
-                validDays: tt.validDays as string[] | null,
+                validDays: tt.validDays as unknown | null,
                 isActive: tt.isActive,
                 sortOrder: tt.sortOrder,
             }))

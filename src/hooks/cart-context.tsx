@@ -3,6 +3,23 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
 import { useSession } from "next-auth/react"
 
+export interface CartScheduleConfig {
+    dates: string[]
+    shifts: string[]
+    requiredDays: number | null
+}
+
+export interface CartScheduleSelection {
+    date: string
+    shift: string
+}
+
+export interface CartAttendee {
+    name: string
+    dni: string
+    scheduleSelections?: CartScheduleSelection[]
+}
+
 export interface CartItem {
     ticketTypeId: string
     ticketTypeName: string
@@ -10,7 +27,8 @@ export interface CartItem {
     eventTitle: string
     price: number
     quantity: number
-    attendees: { name: string; dni: string }[]
+    attendees: CartAttendee[]
+    scheduleConfig?: CartScheduleConfig
 }
 
 interface CartContextType {
@@ -19,6 +37,13 @@ interface CartContextType {
     removeItem: (ticketTypeId: string) => void
     updateQuantity: (ticketTypeId: string, quantity: number) => void
     updateAttendee: (ticketTypeId: string, index: number, field: "name" | "dni", value: string) => void
+    updateAttendeeScheduleSelection: (
+        ticketTypeId: string,
+        attendeeIndex: number,
+        selectionIndex: number,
+        field: "date" | "shift",
+        value: string
+    ) => void
     clearCart: () => void
     total: number
     itemCount: number
@@ -36,10 +61,159 @@ const emitCartChange = () => {
 
 const getServerSnapshot = () => "[]"
 
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
+
+const normalizeDates = (values: unknown): string[] => {
+    if (!Array.isArray(values)) return []
+    const normalized = values
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter((value) => DATE_REGEX.test(value))
+    return Array.from(new Set(normalized))
+}
+
+const normalizeShifts = (values: unknown): string[] => {
+    if (!Array.isArray(values)) return []
+    const normalized = values
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    return Array.from(new Set(normalized))
+}
+
+const normalizeScheduleConfig = (input: unknown): CartScheduleConfig | undefined => {
+    if (!input || typeof input !== "object") return undefined
+
+    const record = input as Record<string, unknown>
+    const requiredDaysRaw = record.requiredDays
+    const requiredDaysNum =
+        typeof requiredDaysRaw === "number"
+            ? requiredDaysRaw
+            : typeof requiredDaysRaw === "string"
+              ? Number(requiredDaysRaw)
+              : NaN
+    const requiredDays =
+        Number.isFinite(requiredDaysNum) && requiredDaysNum > 0 ? Math.floor(requiredDaysNum) : null
+
+    const dates = normalizeDates(record.dates)
+    const shifts = normalizeShifts(record.shifts)
+
+    if (dates.length === 0 && shifts.length === 0 && requiredDays === null) {
+        return undefined
+    }
+
+    return {
+        dates,
+        shifts,
+        requiredDays,
+    }
+}
+
+const getRequiredScheduleSelections = (scheduleConfig?: CartScheduleConfig): number => {
+    if (!scheduleConfig) return 0
+    if (typeof scheduleConfig.requiredDays === "number" && scheduleConfig.requiredDays > 0) {
+        return scheduleConfig.requiredDays
+    }
+    return scheduleConfig.dates.length > 0 ? 1 : 0
+}
+
+const createEmptySelections = (count: number): CartScheduleSelection[] =>
+    Array.from({ length: count }, () => ({ date: "", shift: "" }))
+
+const normalizeScheduleSelections = (
+    input: unknown,
+    scheduleConfig?: CartScheduleConfig
+): CartScheduleSelection[] => {
+    const required = getRequiredScheduleSelections(scheduleConfig)
+    const rawSelections = Array.isArray(input) ? input : []
+    const selections = rawSelections
+        .map((entry) => {
+            if (!entry || typeof entry !== "object") return { date: "", shift: "" }
+            const record = entry as Record<string, unknown>
+            return {
+                date: typeof record.date === "string" ? record.date.trim() : "",
+                shift: typeof record.shift === "string" ? record.shift.trim() : "",
+            }
+        })
+        .slice(0, Math.max(required, rawSelections.length))
+
+    while (selections.length < required) {
+        selections.push({ date: "", shift: "" })
+    }
+
+    return selections
+}
+
+const createEmptyAttendee = (scheduleConfig?: CartScheduleConfig): CartAttendee => {
+    const requiredSelections = getRequiredScheduleSelections(scheduleConfig)
+    return {
+        name: "",
+        dni: "",
+        scheduleSelections: requiredSelections > 0 ? createEmptySelections(requiredSelections) : [],
+    }
+}
+
+const normalizeAttendee = (input: unknown, scheduleConfig?: CartScheduleConfig): CartAttendee => {
+    const record = input && typeof input === "object" ? (input as Record<string, unknown>) : {}
+
+    return {
+        name: typeof record.name === "string" ? record.name : "",
+        dni: typeof record.dni === "string" ? record.dni : "",
+        scheduleSelections: normalizeScheduleSelections(record.scheduleSelections, scheduleConfig),
+    }
+}
+
+const normalizeCartItem = (input: unknown): CartItem | null => {
+    if (!input || typeof input !== "object") return null
+
+    const record = input as Record<string, unknown>
+    const ticketTypeId = typeof record.ticketTypeId === "string" ? record.ticketTypeId : ""
+    if (!ticketTypeId) return null
+
+    const quantityRaw =
+        typeof record.quantity === "number"
+            ? record.quantity
+            : typeof record.quantity === "string"
+              ? Number(record.quantity)
+              : 1
+    const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? Math.floor(quantityRaw) : 1
+    const scheduleConfig = normalizeScheduleConfig(record.scheduleConfig)
+
+    const rawAttendees = Array.isArray(record.attendees) ? record.attendees : []
+    const attendees = rawAttendees
+        .slice(0, quantity)
+        .map((attendee) => normalizeAttendee(attendee, scheduleConfig))
+
+    while (attendees.length < quantity) {
+        attendees.push(createEmptyAttendee(scheduleConfig))
+    }
+
+    const priceRaw =
+        typeof record.price === "number"
+            ? record.price
+            : typeof record.price === "string"
+              ? Number(record.price)
+              : 0
+
+    return {
+        ticketTypeId,
+        ticketTypeName: typeof record.ticketTypeName === "string" ? record.ticketTypeName : "",
+        eventId: typeof record.eventId === "string" ? record.eventId : "",
+        eventTitle: typeof record.eventTitle === "string" ? record.eventTitle : "",
+        price: Number.isFinite(priceRaw) ? priceRaw : 0,
+        quantity,
+        attendees,
+        scheduleConfig,
+    }
+}
+
 const parseCartItems = (value: string): CartItem[] => {
     try {
-        const parsed = JSON.parse(value) as CartItem[]
-        return Array.isArray(parsed) ? parsed : []
+        const parsed = JSON.parse(value) as unknown
+        if (!Array.isArray(parsed)) return []
+        return parsed
+            .map((item) => normalizeCartItem(item))
+            .filter((item): item is CartItem => Boolean(item))
     } catch {
         return []
     }
@@ -102,11 +276,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         updateItems((current) => {
             const existing = current.find((i) => i.ticketTypeId === newItem.ticketTypeId)
             if (existing) {
+                const scheduleConfig = existing.scheduleConfig ?? newItem.scheduleConfig
                 const newQuantity = existing.quantity + newItem.quantity
                 const attendees = [...existing.attendees]
                 if (newQuantity > attendees.length) {
                     for (let i = attendees.length; i < newQuantity; i++) {
-                        attendees.push({ name: "", dni: "" })
+                        attendees.push(createEmptyAttendee(scheduleConfig))
                     }
                 } else if (newQuantity < attendees.length) {
                     attendees.length = newQuantity
@@ -114,12 +289,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
                 return current.map((i) =>
                     i.ticketTypeId === newItem.ticketTypeId
-                        ? { ...i, quantity: newQuantity, attendees }
+                        ? { ...i, quantity: newQuantity, attendees, scheduleConfig }
                         : i
                 )
             }
 
-            const attendees = Array.from({ length: newItem.quantity }, () => ({ name: "", dni: "" }))
+            const attendees = Array.from(
+                { length: newItem.quantity },
+                () => createEmptyAttendee(newItem.scheduleConfig)
+            )
             return [...current, { ...newItem, attendees }]
         })
     }
@@ -140,7 +318,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                     const attendees = [...item.attendees]
                     if (quantity > attendees.length) {
                         for (let i = attendees.length; i < quantity; i++) {
-                            attendees.push({ name: "", dni: "" })
+                            attendees.push(createEmptyAttendee(item.scheduleConfig))
                         }
                     } else if (quantity < attendees.length) {
                         attendees.length = quantity
@@ -172,6 +350,50 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         )
     }
 
+    const updateAttendeeScheduleSelection = (
+        ticketTypeId: string,
+        attendeeIndex: number,
+        selectionIndex: number,
+        field: "date" | "shift",
+        value: string
+    ) => {
+        updateItems((current) =>
+            current.map((item) => {
+                if (item.ticketTypeId !== ticketTypeId) return item
+
+                const attendees = [...item.attendees]
+                const attendee = attendees[attendeeIndex]
+                if (!attendee) return item
+
+                const selectionCount = Math.max(
+                    getRequiredScheduleSelections(item.scheduleConfig),
+                    selectionIndex + 1
+                )
+                const scheduleSelections = [
+                    ...(attendee.scheduleSelections ?? createEmptySelections(selectionCount)),
+                ]
+                while (scheduleSelections.length < selectionCount) {
+                    scheduleSelections.push({ date: "", shift: "" })
+                }
+
+                const target = scheduleSelections[selectionIndex] ?? { date: "", shift: "" }
+                scheduleSelections[selectionIndex] = {
+                    ...target,
+                    [field]: value,
+                }
+
+                attendees[attendeeIndex] = {
+                    ...attendee,
+                    scheduleSelections,
+                }
+                return {
+                    ...item,
+                    attendees,
+                }
+            })
+        )
+    }
+
     const clearCart = () => {
         if (typeof window === "undefined") return
         if (!cartKey) return
@@ -190,6 +412,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 removeItem,
                 updateQuantity,
                 updateAttendee,
+                updateAttendeeScheduleSelection,
                 clearCart,
                 total,
                 itemCount,
@@ -209,6 +432,7 @@ export function useCart() {
             removeItem: () => {},
             updateQuantity: () => {},
             updateAttendee: () => {},
+            updateAttendeeScheduleSelection: () => {},
             clearCart: () => {},
             total: 0,
             itemCount: 0,
@@ -216,3 +440,4 @@ export function useCart() {
     }
     return context
 }
+

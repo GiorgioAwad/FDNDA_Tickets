@@ -14,7 +14,7 @@ type TicketTypePayload = {
     capacity: number | string
     isPackage?: boolean
     packageDaysCount?: number | string | null
-    validDays?: string[]
+    validDays?: unknown
 }
 
 type EventDayPayload = {

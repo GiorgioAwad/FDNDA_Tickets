@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { formatPrice } from "@/lib/utils"
+import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { Info, ShoppingCart, Minus, Plus, Gift, CheckCircle, AlertCircle, Ticket } from "lucide-react"
 
 export type TicketTypeClient = {
@@ -22,6 +23,7 @@ export type TicketTypeClient = {
     isActive?: boolean
     isPackage?: boolean | null
     packageDaysCount?: number | null
+    validDays?: unknown
 }
 
 type TicketPurchaseCardProps = {
@@ -118,10 +120,11 @@ export default function TicketPurchaseCard({
 
     const ticketMeta = useMemo(() => {
         return ticketTypesWithLiveStock.map((ticket) => {
+            const schedule = parseTicketScheduleConfig(ticket.validDays)
             const available = ticket.capacity === 0 ? null : ticket.capacity - ticket.sold
             const maxQty = available === null ? MAX_UNLIMITED_QTY : Math.max(0, available)
             const soldOut = ticket.isActive === false || (available !== null && available <= 0)
-            return { ticket, available, maxQty, soldOut }
+            return { ticket, available, maxQty, soldOut, schedule }
         })
     }, [ticketTypesWithLiveStock])
 
@@ -138,6 +141,7 @@ export default function TicketPurchaseCard({
         const currentQty = getCartQuantity(ticketId)
         const nextQty = Math.min(currentQty + 1, maxQty)
         if (currentQty === 0) {
+            const schedule = parseTicketScheduleConfig(ticket.validDays)
             addItem({
                 ticketTypeId: ticket.id,
                 ticketTypeName: ticket.name,
@@ -145,6 +149,11 @@ export default function TicketPurchaseCard({
                 eventTitle,
                 price: ticket.price,
                 quantity: 1,
+                scheduleConfig: {
+                    dates: schedule.dates,
+                    shifts: schedule.shifts,
+                    requiredDays: ticket.isPackage ? (ticket.packageDaysCount ?? null) : null,
+                },
             })
             return
         }
@@ -239,13 +248,13 @@ export default function TicketPurchaseCard({
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <ShoppingCart className="h-5 w-5" />
-                    Entradas disponibles
+                    Entradas
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
                 {ticketTypes.length > 0 ? (
                     <>
-                        {ticketMeta.map(({ ticket, available, maxQty, soldOut }) => (
+                        {ticketMeta.map(({ ticket, available, maxQty, soldOut, schedule }) => (
                             <div
                                 key={ticket.id}
                                 className={`p-4 rounded-lg border ${
@@ -271,6 +280,21 @@ export default function TicketPurchaseCard({
                                         Paquete {ticket.packageDaysCount} clases
                                     </Badge>
                                 ) : null}
+                                {schedule.dates.length > 0 && (
+                                    <Badge variant="secondary" className="mb-2 ml-2">
+                                        {schedule.dates.length} días seleccionables
+                                    </Badge>
+                                )}
+                                {schedule.shifts.length > 0 && (
+                                    <Badge variant="secondary" className="mb-2 ml-2">
+                                        Turnos configurados
+                                    </Badge>
+                                )}
+                                {(schedule.dates.length > 0 || schedule.shifts.length > 0) && (
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        La seleccion de dias/turnos se completa en checkout.
+                                    </p>
+                                )}
 
                                 {/* AGOTADO - Banner prominente */}
                                 {soldOut && (
@@ -286,15 +310,6 @@ export default function TicketPurchaseCard({
                                 )}
 
                                 <div className="flex flex-wrap items-center gap-3 mt-3">
-                                    {!soldOut && available !== null && (
-                                        <span className="text-sm text-green-600 font-medium">
-                                            {available} disponibles
-                                        </span>
-                                    )}
-                                    {!soldOut && available === null && (
-                                        <span className="text-sm text-gray-500">Disponibilidad abierta</span>
-                                    )}
-
                                     {!soldOut && (
                                         <div className="ml-auto flex items-center gap-2">
                                             <span className="text-xs text-gray-500">Cantidad</span>

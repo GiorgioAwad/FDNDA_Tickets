@@ -17,6 +17,7 @@ interface EventsPageProps {
         search?: string
         discipline?: string
         location?: string
+        venue?: string
         page?: string
     }>
 }
@@ -29,12 +30,14 @@ function buildQuery(params: {
     search?: string
     discipline?: string
     location?: string
+    venue?: string
     page?: number
 }) {
     const query = new URLSearchParams()
     if (params.search) query.set("search", params.search)
     if (params.discipline) query.set("discipline", params.discipline)
     if (params.location) query.set("location", params.location)
+    if (params.venue) query.set("venue", params.venue)
     if (params.page && params.page > 1) query.set("page", String(params.page))
     const qs = query.toString()
     return qs ? `/eventos?${qs}` : "/eventos"
@@ -45,6 +48,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
     const search = normalize(params.search)
     const discipline = params.discipline?.trim() || ""
     const location = normalize(params.location)
+    const venue = params.venue?.trim() || ""
 
     const allEvents = await getCachedPublishedEvents()
 
@@ -56,8 +60,17 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
         )
     ).sort((a, b) => a.localeCompare(b, "es"))
 
+    const venues = Array.from(
+        new Set(
+            allEvents
+                .map((event) => event.venue?.trim())
+                .filter((value): value is string => Boolean(value))
+        )
+    ).sort((a, b) => a.localeCompare(b, "es"))
+
     const filteredEvents = allEvents.filter((event) => {
         if (discipline && event.discipline !== discipline) return false
+        if (venue && event.venue !== venue) return false
 
         if (location) {
             const eventLocation = normalize(event.location)
@@ -115,12 +128,16 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                             ))}
                         </select>
 
-                        <Input
-                            name="location"
-                            placeholder="Ubicacion"
-                            defaultValue={params.location}
-                            className="md:w-52"
-                        />
+                        <select
+                            name="venue"
+                            defaultValue={venue}
+                            className="h-11 px-3 rounded-lg border border-input bg-background text-sm md:w-64"
+                        >
+                            <option value="">Todas las sedes</option>
+                            {venues.map((item) => (
+                                <option key={item} value={item}>{item}</option>
+                            ))}
+                        </select>
 
                         <Button type="submit" variant="outline" className="gap-2">
                             <Filter className="h-4 w-4" />
@@ -208,6 +225,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                                             search: params.search,
                                             discipline,
                                             location: params.location,
+                                            venue,
                                             page: safePage - 1,
                                         })}
                                     >
@@ -224,6 +242,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                                             search: params.search,
                                             discipline,
                                             location: params.location,
+                                            venue,
                                             page: safePage + 1,
                                         })}
                                     >
@@ -241,11 +260,11 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                             No se encontraron eventos
                         </h3>
                         <p className="text-gray-500 mb-6">
-                            {params.search || params.discipline || params.location
+                            {params.search || params.discipline || params.location || params.venue
                                 ? "Intenta con otros filtros de busqueda"
                                 : "Pronto anunciaremos nuevos eventos. Mantente atento."}
                         </p>
-                        {(params.search || params.discipline || params.location) && (
+                        {(params.search || params.discipline || params.location || params.venue) && (
                             <Link href="/eventos">
                                 <Button variant="outline">Limpiar filtros</Button>
                             </Link>

@@ -26,7 +26,7 @@ interface TicketDetail {
         name: string
         isPackage?: boolean
         packageDaysCount?: number | null
-        validDays?: string[] | null
+        validDays?: unknown
     }
     order?: {
         user?: {

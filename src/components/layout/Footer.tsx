@@ -22,8 +22,7 @@ export function Footer() {
                                 />
                             </div>
                             <div>
-                                <h3 className="font-bold text-xl">FDNDA</h3>
-                                <p className="text-sm text-white/70">Tickets</p>
+                                <h3 className="font-bold text-xl">Ticketing FDNDA</h3>
                             </div>
                         </div>
                         <p className="text-sm text-white/70 leading-relaxed">
@@ -125,7 +124,7 @@ export function Footer() {
 
                 {/* Bottom bar */}
                 <div className="mt-8 pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-white/50">
-                    <p>© {new Date().getFullYear()} FDNDA. Todos los derechos reservados.</p>
+                    <p>© {new Date().getFullYear()} Ticketing FDNDA. Todos los derechos reservados.</p>
                     <div className="flex gap-4">
                         <Link href="#" className="hover:text-white transition-colors">
                             Términos y Condiciones

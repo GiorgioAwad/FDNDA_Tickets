@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma"
 import { generateTicketCode, getDaysBetween, formatPrice } from "@/lib/utils"
 import { sendPurchaseEmail } from "@/lib/email"
 import { onTicketSold } from "@/lib/cached-queries"
+import { extractTicketValidDates, normalizeScheduleSelections } from "@/lib/ticket-schedule"
 import type { Prisma } from "@prisma/client"
 
 export interface FulfillOrderResult {
@@ -14,6 +15,79 @@ interface FulfillOrderInput {
     orderId: string
     providerRef?: string
     providerResponse?: Prisma.InputJsonValue
+}
+
+type StoredAttendeeData = {
+    name?: string | null
+    dni?: string | null
+    scheduleSelections?: unknown
+}
+
+const toDateObjectsFromDateStrings = (values: string[]): Date[] => {
+    const unique = Array.from(new Set(values))
+    return unique.map((value) => new Date(value))
+}
+
+const buildEntitlementDates = (input: {
+    ticketType: {
+        isPackage: boolean
+        packageDaysCount: number | null
+        validDays: Prisma.JsonValue | null
+    }
+    event: {
+        startDate: Date
+        endDate: Date
+    }
+    attendee: StoredAttendeeData | null
+}): Date[] => {
+    const configuredDates = extractTicketValidDates(input.ticketType.validDays)
+    const allEventDates = getDaysBetween(input.event.startDate, input.event.endDate)
+        .map((date) => date.toISOString().split("T")[0])
+    const selectedDates = normalizeScheduleSelections(input.attendee?.scheduleSelections).map(
+        (selection) => selection.date
+    )
+
+    if (input.ticketType.isPackage && input.ticketType.packageDaysCount) {
+        const requiredDays = input.ticketType.packageDaysCount
+        const chosenDates: string[] = []
+
+        for (const date of selectedDates) {
+            if (!chosenDates.includes(date)) {
+                chosenDates.push(date)
+            }
+            if (chosenDates.length >= requiredDays) break
+        }
+
+        if (chosenDates.length < requiredDays) {
+            for (const date of configuredDates) {
+                if (!chosenDates.includes(date)) {
+                    chosenDates.push(date)
+                }
+                if (chosenDates.length >= requiredDays) break
+            }
+        }
+
+        if (chosenDates.length < requiredDays) {
+            for (const date of allEventDates) {
+                if (!chosenDates.includes(date)) {
+                    chosenDates.push(date)
+                }
+                if (chosenDates.length >= requiredDays) break
+            }
+        }
+
+        return toDateObjectsFromDateStrings(chosenDates.slice(0, requiredDays))
+    }
+
+    if (selectedDates.length > 0) {
+        return toDateObjectsFromDateStrings(selectedDates)
+    }
+
+    if (configuredDates.length > 0) {
+        return toDateObjectsFromDateStrings(configuredDates)
+    }
+
+    return getDaysBetween(input.event.startDate, input.event.endDate)
 }
 
 export async function fulfillPaidOrder({
@@ -115,22 +189,23 @@ export async function fulfillPaidOrder({
         for (const item of order.orderItems) {
             const event = item.ticketType.event
             const attendeeData = Array.isArray(item.attendeeData)
-                ? (item.attendeeData as { name: string; dni: string }[])
+                ? (item.attendeeData as StoredAttendeeData[])
                 : []
-
-            let validDays: Date[] = []
-
-            if (item.ticketType.isPackage && item.ticketType.packageDaysCount) {
-                const allDays = getDaysBetween(event.startDate, event.endDate)
-                validDays = allDays.slice(0, item.ticketType.packageDaysCount)
-            } else if (item.ticketType.validDays) {
-                validDays = (item.ticketType.validDays as string[]).map((d) => new Date(d))
-            } else {
-                validDays = getDaysBetween(event.startDate, event.endDate)
-            }
 
             for (let i = 0; i < item.quantity; i++) {
                 const attendee = attendeeData[i] || { name: null, dni: null }
+                const entitlementDates = buildEntitlementDates({
+                    ticketType: {
+                        isPackage: item.ticketType.isPackage,
+                        packageDaysCount: item.ticketType.packageDaysCount,
+                        validDays: item.ticketType.validDays,
+                    },
+                    event: {
+                        startDate: event.startDate,
+                        endDate: event.endDate,
+                    },
+                    attendee,
+                })
                 const ticketCode = generateTicketCode()
 
                 await tx.ticket.create({
@@ -144,7 +219,7 @@ export async function fulfillPaidOrder({
                         attendeeDni: attendee.dni || null,
                         status: "ACTIVE",
                         entitlements: {
-                            create: validDays.map((date) => ({
+                            create: entitlementDates.map((date) => ({
                                 date,
                                 status: "AVAILABLE",
                             })),

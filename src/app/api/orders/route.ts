@@ -151,12 +151,8 @@ export async function POST(request: NextRequest) {
                         throw new Error(`El tipo de entrada "${ticketType.name}" no esta disponible`)
                     }
 
-                    const available = ticketType.capacity === 0
-                        ? Infinity
-                        : Math.max(ticketType.capacity - ticketType.sold, 0)
-
                     throw new Error(
-                        `Solo quedan ${available} entradas disponibles para "${ticketType.name}"`
+                        `El tipo de entrada "${ticketType.name}" esta agotado`
                     )
                 }
 

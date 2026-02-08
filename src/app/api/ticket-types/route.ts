@@ -2,9 +2,31 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { invalidateTicketTypeCache } from "@/lib/cache"
+import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
+import type { Prisma } from "@prisma/client"
+
 export const runtime = "nodejs"
 
-// POST /api/ticket-types - Create a new ticket type
+const normalizePackageDaysCount = (value: unknown): number | null => {
+    if (value === undefined || value === null || value === "") return null
+    const num = typeof value === "number" ? value : Number(value)
+    if (!Number.isFinite(num) || num <= 0) return null
+    return Math.floor(num)
+}
+
+const normalizeValidDays = (value: unknown): Prisma.InputJsonValue => {
+    const config = parseTicketScheduleConfig(value)
+    return buildTicketValidDaysPayload(config) as Prisma.InputJsonValue
+}
+
+const normalizeDescription = (value: unknown): string | null | undefined => {
+    if (value === undefined) return undefined
+    if (value === null) return null
+    if (typeof value !== "string") return null
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+}
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -20,11 +42,14 @@ export async function POST(request: NextRequest) {
         const {
             eventId,
             name,
+            description,
             price,
             capacity,
             isPackage,
             packageDaysCount,
             validDays,
+            sortOrder,
+            isActive,
         } = body
 
         if (!eventId || !name || price === undefined || capacity === undefined) {
@@ -34,19 +59,22 @@ export async function POST(request: NextRequest) {
             )
         }
 
+        const packageDays = normalizePackageDaysCount(packageDaysCount)
         const ticketType = await prisma.ticketType.create({
             data: {
                 eventId,
                 name,
+                description: normalizeDescription(description),
                 price: Number(price),
                 capacity: Number(capacity),
-                isPackage: isPackage || false,
-                packageDaysCount: packageDaysCount ? Number(packageDaysCount) : null,
-                validDays: validDays || [],
+                isPackage: Boolean(isPackage),
+                packageDaysCount: Boolean(isPackage) ? packageDays : null,
+                validDays: normalizeValidDays(validDays),
+                sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
+                isActive: isActive === undefined ? true : Boolean(isActive),
             },
         })
 
-        // Invalidar cache
         await invalidateTicketTypeCache(eventId)
 
         return NextResponse.json({
@@ -62,7 +90,6 @@ export async function POST(request: NextRequest) {
     }
 }
 
-// PUT /api/ticket-types - Update ticket type
 export async function PUT(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -78,8 +105,13 @@ export async function PUT(request: NextRequest) {
         const {
             id,
             name,
+            description,
             price,
             capacity,
+            isPackage,
+            packageDaysCount,
+            validDays,
+            sortOrder,
             isActive,
         } = body
 
@@ -90,17 +122,40 @@ export async function PUT(request: NextRequest) {
             )
         }
 
+        const data: {
+            name?: string
+            description?: string | null
+            price?: number
+            capacity?: number
+            isPackage?: boolean
+            packageDaysCount?: number | null
+            validDays?: Prisma.InputJsonValue
+            sortOrder?: number
+            isActive?: boolean
+        } = {}
+
+        if (name !== undefined) data.name = name
+        if (description !== undefined) {
+            data.description = normalizeDescription(description) ?? null
+        }
+        if (price !== undefined) data.price = Number(price)
+        if (capacity !== undefined) data.capacity = Number(capacity)
+        if (isPackage !== undefined) data.isPackage = Boolean(isPackage)
+        if (sortOrder !== undefined) data.sortOrder = Number(sortOrder)
+        if (isActive !== undefined) data.isActive = Boolean(isActive)
+        if (validDays !== undefined) data.validDays = normalizeValidDays(validDays)
+
+        if (packageDaysCount !== undefined || isPackage !== undefined) {
+            const packageDays = normalizePackageDaysCount(packageDaysCount)
+            const packageEnabled = isPackage !== undefined ? Boolean(isPackage) : undefined
+            data.packageDaysCount = packageEnabled === false ? null : packageDays
+        }
+
         const ticketType = await prisma.ticketType.update({
             where: { id },
-            data: {
-                name,
-                price: price !== undefined ? Number(price) : undefined,
-                capacity: capacity !== undefined ? Number(capacity) : undefined,
-                isActive,
-            },
+            data,
         })
 
-        // Invalidar cache
         await invalidateTicketTypeCache(ticketType.eventId)
 
         return NextResponse.json({
@@ -116,7 +171,6 @@ export async function PUT(request: NextRequest) {
     }
 }
 
-// DELETE /api/ticket-types?id=xxx
 export async function DELETE(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -138,7 +192,6 @@ export async function DELETE(request: NextRequest) {
             )
         }
 
-        // Obtener eventId antes de cualquier operación
         const ticketType = await prisma.ticketType.findUnique({
             where: { id },
             select: { eventId: true },
@@ -151,21 +204,18 @@ export async function DELETE(request: NextRequest) {
             )
         }
 
-        // Check if sold
         const sold = await prisma.ticket.count({
             where: { ticketTypeId: id },
         })
 
         if (sold > 0) {
-            // Soft delete (deactivate) if sold
             await prisma.ticketType.update({
                 where: { id },
                 data: { isActive: false },
             })
-            
-            // Invalidar cache
+
             await invalidateTicketTypeCache(ticketType.eventId)
-            
+
             return NextResponse.json({
                 success: true,
                 message: "Tipo de entrada desactivado (tiene ventas)",
@@ -176,7 +226,6 @@ export async function DELETE(request: NextRequest) {
             where: { id },
         })
 
-        // Invalidar cache
         await invalidateTicketTypeCache(ticketType.eventId)
 
         return NextResponse.json({
@@ -191,4 +240,3 @@ export async function DELETE(request: NextRequest) {
         )
     }
 }
-

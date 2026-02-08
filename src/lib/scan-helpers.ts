@@ -1,5 +1,6 @@
 import { formatDateUTC, formatDateLocal } from "@/lib/qr"
 import { getDaysBetween } from "@/lib/utils"
+import { extractTicketValidDates } from "@/lib/ticket-schedule"
 
 // ==================== TYPES ====================
 
@@ -104,6 +105,7 @@ export const buildValidDaysFromLabel = (
 export const buildAttendanceSummary = (ticket: ScanTicket): AttendanceSummary => {
     const used = ticket.entitlements.filter((item) => item.status === "USED").length
     let total = ticket.entitlements.length
+    const explicitValidDates = extractTicketValidDates(ticket.ticketType.validDays)
 
     // Try to extract total from ticket type name (e.g., "8 clases")
     const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
@@ -113,8 +115,8 @@ export const buildAttendanceSummary = (ticket: ScanTicket): AttendanceSummary =>
         total = ticket.ticketType.packageDaysCount
     } else if (ticket.ticketType.isPackage) {
         total = nameTotal ?? total
-    } else if (Array.isArray(ticket.ticketType.validDays)) {
-        total = ticket.ticketType.validDays.length
+    } else if (explicitValidDates.length > 0) {
+        total = explicitValidDates.length
     } else if (ticket.event?.startDate && ticket.event?.endDate) {
         const label = extractDaysLabel(ticket.ticketType.name)
         const validDays = label
@@ -152,8 +154,9 @@ export const generateEntitlements = (ticket: ScanTicket): Date[] => {
         return []
     }
 
-    if (Array.isArray(ticket.ticketType.validDays)) {
-        return (ticket.ticketType.validDays as string[]).map((date) => new Date(date))
+    const explicitValidDates = extractTicketValidDates(ticket.ticketType.validDays)
+    if (explicitValidDates.length > 0) {
+        return explicitValidDates.map((date) => new Date(date))
     }
 
     const label = extractDaysLabel(ticket.ticketType.name)

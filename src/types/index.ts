@@ -194,6 +194,7 @@ export interface FilterOption {
 export interface EventFilters {
     discipline?: string
     location?: string
+    venue?: string
     dateFrom?: string
     dateTo?: string
     search?: string

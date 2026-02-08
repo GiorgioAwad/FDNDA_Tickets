@@ -71,7 +71,7 @@ export const ticketTypeSchema = z.object({
     capacity: z.number().int().min(0).default(0),
     isPackage: z.boolean().default(false),
     packageDaysCount: z.number().int().min(1).optional(),
-    validDays: z.array(z.string()).optional(),
+    validDays: z.unknown().optional(),
     isActive: z.boolean().default(true),
     sortOrder: z.number().int().default(0),
 })
@@ -85,6 +85,14 @@ export const orderItemSchema = z.object({
         z.object({
             name: z.string().min(2, "Nombre requerido"),
             dni: z.string().min(8, "DNI requerido").max(12),
+            scheduleSelections: z
+                .array(
+                    z.object({
+                        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha invalida"),
+                        shift: z.string().optional(),
+                    })
+                )
+                .optional(),
         })
     ).optional(),
 })

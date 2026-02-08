@@ -1,13 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { useCart } from "@/hooks/cart-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { formatPrice } from "@/lib/utils"
+import { formatDate, formatPrice } from "@/lib/utils"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X } from "lucide-react"
 
 type AppliedDiscount = {
@@ -21,32 +21,70 @@ type AppliedDiscount = {
 export default function CheckoutPage() {
     const router = useRouter()
     const { data: session, status } = useSession()
-    const { items, removeItem, updateQuantity, updateAttendee, total, clearCart } = useCart()
+    const {
+        items,
+        removeItem,
+        updateQuantity,
+        updateAttendee,
+        updateAttendeeScheduleSelection,
+        total,
+        clearCart,
+    } = useCart()
     const paymentsMode =
         process.env.NEXT_PUBLIC_PAYMENTS_MODE ||
         (process.env.NODE_ENV === "production" ? "izipay" : "mock")
 
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState("")
-    
-    // Discount code state
+
     const [discountCode, setDiscountCode] = useState("")
     const [discountLoading, setDiscountLoading] = useState(false)
     const [discountError, setDiscountError] = useState("")
     const [appliedDiscount, setAppliedDiscount] = useState<AppliedDiscount | null>(null)
     const [discountAmount, setDiscountAmount] = useState(0)
 
-    // If coming from event page with a pre-selected ticket
-    // This logic would be handled by the component that adds to cart, 
-    // but we can also handle direct links here if needed.
-    // For now, we assume items are already in cart via useCart.
+    const getRequiredSelections = (item: (typeof items)[number]) => {
+        if (!item.scheduleConfig) return 0
+        if (
+            typeof item.scheduleConfig.requiredDays === "number" &&
+            item.scheduleConfig.requiredDays > 0
+        ) {
+            return item.scheduleConfig.requiredDays
+        }
+        return item.scheduleConfig.dates.length > 0 ? 1 : 0
+    }
+
+    const hasMissingAttendeeData = useMemo(
+        () => items.some((item) => item.attendees.some((attendee) => !attendee.name || !attendee.dni)),
+        [items]
+    )
+
+    const hasMissingScheduleSelections = useMemo(() => {
+        return items.some((item) => {
+            const requiredSelections = getRequiredSelections(item)
+            if (requiredSelections === 0) return false
+
+            const requiresShift = (item.scheduleConfig?.shifts.length || 0) > 0
+            return item.attendees.some((attendee) => {
+                const selections = attendee.scheduleSelections ?? []
+                if (selections.length < requiredSelections) return true
+
+                for (let i = 0; i < requiredSelections; i++) {
+                    const selection = selections[i]
+                    if (!selection?.date) return true
+                    if (requiresShift && !selection?.shift) return true
+                }
+                return false
+            })
+        })
+    }, [items])
 
     const handleApplyDiscount = async () => {
         if (!discountCode.trim()) return
-        
+
         setDiscountLoading(true)
         setDiscountError("")
-        
+
         try {
             const res = await fetch("/api/discounts/validate", {
                 method: "POST",
@@ -57,28 +95,28 @@ export default function CheckoutPage() {
                     subtotal: total,
                 }),
             })
-            
+
             const data = await res.json()
-            
+
             if (data.valid) {
                 setAppliedDiscount(data.discount)
                 setDiscountAmount(data.discountAmount)
                 setDiscountCode("")
             } else {
-                setDiscountError(data.error || "Código no válido")
+                setDiscountError(data.error || "Codigo no valido")
             }
         } catch {
-            setDiscountError("Error al validar código")
+            setDiscountError("Error al validar codigo")
         } finally {
             setDiscountLoading(false)
         }
     }
-    
+
     const handleRemoveDiscount = () => {
         setAppliedDiscount(null)
         setDiscountAmount(0)
     }
-    
+
     const finalTotal = Math.max(0, total - discountAmount)
 
     const redirectToIzipayCheckout = (paymentData: {
@@ -136,12 +174,11 @@ export default function CheckoutPage() {
         setError("")
 
         try {
-            // 1. Create Order
             const orderResponse = await fetch("/api/orders", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    eventId: items[0]?.eventId, // Assuming all items are from same event for now
+                    eventId: items[0]?.eventId,
                     items: items.map((item) => ({
                         ticketTypeId: item.ticketTypeId,
                         quantity: item.quantity,
@@ -195,7 +232,6 @@ export default function CheckoutPage() {
 
             clearCart()
             redirectToIzipayCheckout(sessionData.data || {})
-
         } catch (err) {
             setError((err as Error).message)
         } finally {
@@ -206,10 +242,10 @@ export default function CheckoutPage() {
     if (items.length === 0) {
         return (
             <div className="container mx-auto px-4 py-16 text-center">
-                <h1 className="text-2xl font-bold mb-4">Tu carrito está vacío</h1>
+                <h1 className="text-2xl font-bold mb-4">Tu carrito esta vacio</h1>
                 <p className="text-gray-600 mb-8">No has seleccionado ninguna entrada.</p>
                 <Button onClick={() => router.push("/eventos")}>
-                    Ver Eventos
+                    Ver eventos
                 </Button>
             </div>
         )
@@ -228,15 +264,14 @@ export default function CheckoutPage() {
                         <ArrowLeft className="h-4 w-4" />
                         Volver
                     </Button>
-                    <h1 className="text-3xl font-bold">Finalizar Compra</h1>
+                    <h1 className="text-3xl font-bold">Finalizar compra</h1>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Cart Items & Attendees */}
                     <div className="lg:col-span-2 space-y-6">
                         <Card>
                             <CardHeader>
-                                <CardTitle>Tus Entradas</CardTitle>
+                                <CardTitle>Tus entradas</CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-6">
                                 {items.map((item) => (
@@ -281,42 +316,130 @@ export default function CheckoutPage() {
                                             </Button>
                                         </div>
 
-                                        {/* Attendees Form */}
                                         <div className="bg-gray-50 p-4 rounded-lg space-y-4">
                                             <h4 className="text-sm font-semibold flex items-center gap-2">
                                                 <User className="h-4 w-4" />
                                                 Datos de los asistentes
                                             </h4>
-                                            {item.attendees.map((attendee, index) => (
-                                                <div key={index} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="text-xs text-gray-500 mb-1 block">
-                                                            Nombre completo (Entrada #{index + 1})
-                                                        </label>
-                                                        <Input
-                                                            value={attendee.name}
-                                                            onChange={(e) =>
-                                                                updateAttendee(item.ticketTypeId, index, "name", e.target.value)
-                                                            }
-                                                            placeholder="Nombre y Apellido"
-                                                            className="bg-white"
-                                                        />
+
+                                            {item.attendees.map((attendee, attendeeIndex) => {
+                                                const requiredSelections = getRequiredSelections(item)
+                                                const scheduleConfig = item.scheduleConfig
+
+                                                return (
+                                                    <div key={attendeeIndex} className="space-y-3">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="text-xs text-gray-500 mb-1 block">
+                                                                Nombre completo (Entrada #{attendeeIndex + 1})
+                                                            </label>
+                                                            <Input
+                                                                value={attendee.name}
+                                                                onChange={(e) =>
+                                                                    updateAttendee(
+                                                                        item.ticketTypeId,
+                                                                        attendeeIndex,
+                                                                        "name",
+                                                                        e.target.value
+                                                                    )
+                                                                }
+                                                                placeholder="Nombre y apellido"
+                                                                className="bg-white"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs text-gray-500 mb-1 block">
+                                                                DNI / Pasaporte
+                                                            </label>
+                                                            <Input
+                                                                value={attendee.dni}
+                                                                onChange={(e) =>
+                                                                    updateAttendee(
+                                                                        item.ticketTypeId,
+                                                                        attendeeIndex,
+                                                                        "dni",
+                                                                        e.target.value
+                                                                    )
+                                                                }
+                                                                placeholder="Numero de documento"
+                                                                className="bg-white"
+                                                            />
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <label className="text-xs text-gray-500 mb-1 block">
-                                                            DNI / Pasaporte
-                                                        </label>
-                                                        <Input
-                                                            value={attendee.dni}
-                                                            onChange={(e) =>
-                                                                updateAttendee(item.ticketTypeId, index, "dni", e.target.value)
-                                                            }
-                                                            placeholder="Número de documento"
-                                                            className="bg-white"
-                                                        />
+
+                                                        {requiredSelections > 0 && scheduleConfig && (
+                                                        <div className="rounded-md border border-dashed border-gray-300 p-3 bg-white">
+                                                            <p className="text-xs font-medium text-gray-700 mb-2">
+                                                                Selecciona dia y turno
+                                                            </p>
+                                                            <div className="space-y-2">
+                                                                {Array.from({ length: requiredSelections }).map((_, selectionIndex) => {
+                                                                    const selection =
+                                                                        attendee.scheduleSelections?.[selectionIndex] ?? { date: "", shift: "" }
+                                                                    return (
+                                                                        <div key={selectionIndex} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                            <div>
+                                                                                <label className="text-[11px] text-gray-500 mb-1 block">
+                                                                                    Dia {selectionIndex + 1}
+                                                                                </label>
+                                                                                <select
+                                                                                    value={selection.date}
+                                                                                    onChange={(e) =>
+                                                                                        updateAttendeeScheduleSelection(
+                                                                                            item.ticketTypeId,
+                                                                                            attendeeIndex,
+                                                                                            selectionIndex,
+                                                                                            "date",
+                                                                                            e.target.value
+                                                                                        )
+                                                                                    }
+                                                                                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                                                                >
+                                                                                    <option value="">Seleccionar dia</option>
+                                                                                    {scheduleConfig.dates.map((date) => (
+                                                                                        <option key={date} value={date}>
+                                                                                            {formatDate(date, { dateStyle: "full" })}
+                                                                                        </option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            </div>
+                                                                            {scheduleConfig.shifts.length > 0 && (
+                                                                                <div>
+                                                                                    <label className="text-[11px] text-gray-500 mb-1 block">
+                                                                                        Turno
+                                                                                    </label>
+                                                                                    <select
+                                                                                        value={selection.shift}
+                                                                                        onChange={(e) =>
+                                                                                            updateAttendeeScheduleSelection(
+                                                                                                item.ticketTypeId,
+                                                                                                attendeeIndex,
+                                                                                                selectionIndex,
+                                                                                                "shift",
+                                                                                                e.target.value
+                                                                                            )
+                                                                                        }
+                                                                                        className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                                                                    >
+                                                                                        <option value="">Seleccionar turno</option>
+                                                                                        {scheduleConfig.shifts.map((shift) => (
+                                                                                            <option key={shift} value={shift}>
+                                                                                                {shift}
+                                                                                            </option>
+                                                                                        ))}
+                                                                                    </select>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                     </div>
-                                                </div>
-                                            ))}
+                                                )
+                                            })}
+
                                             <div className="text-xs text-gray-500">
                                                 * Importante: El DNI debe coincidir con el documento de identidad al ingresar.
                                             </div>
@@ -327,19 +450,17 @@ export default function CheckoutPage() {
                         </Card>
                     </div>
 
-                    {/* Order Summary */}
                     <div className="space-y-6">
                         <Card className="sticky top-24">
                             <CardHeader>
-                                <CardTitle>Resumen de Pago</CardTitle>
+                                <CardTitle>Resumen de pago</CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-4">
-                                {/* Discount Code Input */}
                                 {!appliedDiscount ? (
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium flex items-center gap-2">
                                             <Tag className="h-4 w-4 text-gray-500" />
-                                            Código de descuento
+                                            Codigo de descuento
                                         </label>
                                         <div className="flex gap-2">
                                             <Input
@@ -384,7 +505,7 @@ export default function CheckoutPage() {
                                         </div>
                                     </div>
                                 )}
-                                
+
                                 <div className="border-t pt-4 space-y-2">
                                     <div className="flex justify-between text-sm">
                                         <span className="text-gray-600">Subtotal</span>
@@ -397,7 +518,7 @@ export default function CheckoutPage() {
                                         </div>
                                     )}
                                     <div className="flex justify-between text-sm">
-                                        <span className="text-gray-600">Comisión de servicio</span>
+                                        <span className="text-gray-600">Comision de servicio</span>
                                         <span>{formatPrice(0)}</span>
                                     </div>
                                 </div>
@@ -418,15 +539,20 @@ export default function CheckoutPage() {
                                     size="lg"
                                     onClick={handlePayment}
                                     loading={loading}
-                                    disabled={items.some(i => i.attendees.some(a => !a.name || !a.dni))}
+                                    disabled={hasMissingAttendeeData || hasMissingScheduleSelections}
                                 >
                                     <CreditCard className="h-4 w-4 mr-2" />
                                     Pagar {formatPrice(finalTotal)}
                                 </Button>
 
-                                {items.some(i => i.attendees.some(a => !a.name || !a.dni)) && (
+                                {hasMissingAttendeeData && (
                                     <p className="text-xs text-amber-600 text-center">
                                         Completa los datos de todos los asistentes para continuar
+                                    </p>
+                                )}
+                                {!hasMissingAttendeeData && hasMissingScheduleSelections && (
+                                    <p className="text-xs text-amber-600 text-center">
+                                        Completa dia/turno para todos los asistentes
                                     </p>
                                 )}
 

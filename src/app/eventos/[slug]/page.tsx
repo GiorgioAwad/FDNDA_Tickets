@@ -10,7 +10,6 @@ import {
     Calendar,
     MapPin,
     Clock,
-    Users,
     Waves,
     ArrowLeft,
 } from "lucide-react"
@@ -63,6 +62,7 @@ export default async function EventDetailPage({ params }: EventPageProps) {
         isActive: ticket.isActive,
         isPackage: ticket.isPackage,
         packageDaysCount: ticket.packageDaysCount,
+        validDays: ticket.validDays,
     }))
 
     return (
@@ -177,12 +177,6 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                                                         {day.openTime} - {day.closeTime}
                                                     </div>
                                                 </div>
-                                                {day.capacity > 0 && (
-                                                    <Badge variant="secondary">
-                                                        <Users className="h-3 w-3 mr-1" />
-                                                        {day.capacity}
-                                                    </Badge>
-                                                )}
                                             </div>
                                         ))}
                                     </div>

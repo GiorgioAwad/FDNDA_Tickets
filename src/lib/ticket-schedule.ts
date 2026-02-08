@@ -1,0 +1,113 @@
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
+
+export interface TicketScheduleConfig {
+    dates: string[]
+    shifts: string[]
+}
+
+export interface ScheduleSelection {
+    date: string
+    shift: string | null
+}
+
+function normalizeDate(value: unknown): string | null {
+    if (typeof value !== "string") return null
+    const trimmed = value.trim()
+    if (!DATE_REGEX.test(trimmed)) return null
+    return trimmed
+}
+
+function normalizeShift(value: unknown): string | null {
+    if (typeof value !== "string") return null
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    return trimmed
+}
+
+function normalizeDateArray(values: unknown): string[] {
+    if (!Array.isArray(values)) return []
+    const normalized = values
+        .map((value) => normalizeDate(value))
+        .filter((value): value is string => Boolean(value))
+    return Array.from(new Set(normalized)).sort((a, b) => a.localeCompare(b))
+}
+
+function normalizeShiftArray(values: unknown): string[] {
+    if (!Array.isArray(values)) return []
+    const normalized = values
+        .map((value) => normalizeShift(value))
+        .filter((value): value is string => Boolean(value))
+    return Array.from(new Set(normalized))
+}
+
+export function parseTicketScheduleConfig(validDays: unknown): TicketScheduleConfig {
+    if (Array.isArray(validDays)) {
+        return {
+            dates: normalizeDateArray(validDays),
+            shifts: [],
+        }
+    }
+
+    if (validDays && typeof validDays === "object") {
+        const record = validDays as Record<string, unknown>
+        const byDates = normalizeDateArray(record.dates)
+        const byValidDays = normalizeDateArray(record.validDays)
+        const byDays = normalizeDateArray(record.days)
+        const byShifts = normalizeShiftArray(record.shifts)
+        const byTurns = normalizeShiftArray(record.turns)
+        const dates = byDates.length > 0 ? byDates : byValidDays.length > 0 ? byValidDays : byDays
+        const shifts = byShifts.length > 0 ? byShifts : byTurns
+
+        return {
+            dates,
+            shifts,
+        }
+    }
+
+    return { dates: [], shifts: [] }
+}
+
+export function buildTicketValidDaysPayload(config: TicketScheduleConfig): unknown {
+    const dates = normalizeDateArray(config.dates)
+    const shifts = normalizeShiftArray(config.shifts)
+
+    if (dates.length === 0) return []
+    if (shifts.length === 0) return dates
+
+    return {
+        dates,
+        shifts,
+    }
+}
+
+export function normalizeScheduleSelections(input: unknown): ScheduleSelection[] {
+    if (!Array.isArray(input)) return []
+
+    const selections: ScheduleSelection[] = []
+    for (const item of input) {
+        if (!item || typeof item !== "object") continue
+        const record = item as Record<string, unknown>
+        const date = normalizeDate(record.date)
+        if (!date) continue
+        const shift = normalizeShift(record.shift)
+        selections.push({ date, shift: shift ?? null })
+    }
+
+    const unique = new Map<string, ScheduleSelection>()
+    for (const selection of selections) {
+        const key = `${selection.date}::${selection.shift ?? ""}`
+        if (!unique.has(key)) {
+            unique.set(key, selection)
+        }
+    }
+
+    return Array.from(unique.values())
+}
+
+export function extractTicketValidDates(validDays: unknown): string[] {
+    return parseTicketScheduleConfig(validDays).dates
+}
+
+export function extractTicketShiftOptions(validDays: unknown): string[] {
+    return parseTicketScheduleConfig(validDays).shifts
+}

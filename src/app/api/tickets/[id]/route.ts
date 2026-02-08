@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 import { createQRPayload, generateQRDataURL, formatDateLocal, formatDateUTC } from "@/lib/qr"
 import { getDaysBetween } from "@/lib/utils"
+import { extractTicketValidDates } from "@/lib/ticket-schedule"
 export const runtime = "nodejs"
 
 type TicketEntitlement = {
@@ -111,9 +112,10 @@ export async function GET(
 
         if (!isPackageLike && entitlements.length === 0 && ticket.event?.startDate && ticket.event?.endDate) {
             let validDays: Date[] = []
+            const explicitValidDates = extractTicketValidDates(ticket.ticketType.validDays)
 
-            if (Array.isArray(ticket.ticketType.validDays)) {
-                validDays = (ticket.ticketType.validDays as string[]).map((date) => new Date(date))
+            if (explicitValidDates.length > 0) {
+                validDays = explicitValidDates.map((date) => new Date(date))
             } else {
                 const label = extractDaysLabel(ticket.ticketType.name)
                 validDays = label
