@@ -27,7 +27,7 @@ export function Footer() {
                         </div>
                         <p className="text-sm text-white/70 leading-relaxed">
                             Federación Deportiva Nacional de Deportes Acuáticos del Perú.
-                            Promoviendo el deporte acuático desde 1939.
+                            Promoviendo el deporte acuático desde 1926.
                         </p>
                     </div>
 
@@ -115,9 +115,9 @@ export function Footer() {
                                 className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
                                 aria-label="Flickr"
                             >
-                                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                                    <circle cx="7" cy="12" r="5" />
-                                    <circle cx="17" cy="12" r="5" />
+                                <svg className="h-4 w-4" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="7" cy="12" r="5" fill="#0063dc" />
+                                    <circle cx="17" cy="12" r="5" fill="#ff0084" />
                                 </svg>
                             </a>
                         </div>
@@ -128,10 +128,10 @@ export function Footer() {
                 <div className="mt-8 pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-white/50">
                     <p>© {new Date().getFullYear()} Ticketing FDNDA. Todos los derechos reservados.</p>
                     <div className="flex gap-4">
-                        <Link href="#" className="hover:text-white transition-colors">
+                        <Link href="/terminos" className="hover:text-white transition-colors">
                             Términos y Condiciones
                         </Link>
-                        <Link href="#" className="hover:text-white transition-colors">
+                        <Link href="/privacidad" className="hover:text-white transition-colors">
                             Política de Privacidad
                         </Link>
                     </div>
