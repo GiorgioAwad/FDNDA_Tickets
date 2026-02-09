@@ -1,6 +1,6 @@
-﻿"use client"
+"use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -30,6 +30,32 @@ interface TicketTypeManagerProps {
     eventEndDate?: string | Date
 }
 
+interface ShiftEntry {
+    name: string
+    startTime: string
+    endTime: string
+}
+
+const serializeShifts = (entries: ShiftEntry[]): string[] => {
+    return entries
+        .filter((e) => e.name.trim())
+        .map((e) => {
+            const name = e.name.trim()
+            if (e.startTime && e.endTime) {
+                return `${name} (${e.startTime}-${e.endTime})`
+            }
+            return name
+        })
+}
+
+const parseShiftString = (shift: string): ShiftEntry => {
+    const match = shift.match(/^(.+?)\s*\((\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})\)$/)
+    if (match) {
+        return { name: match[1].trim(), startTime: match[2], endTime: match[3] }
+    }
+    return { name: shift.trim(), startTime: "", endTime: "" }
+}
+
 export function TicketTypeManager({
     eventId,
     initialTicketTypes,
@@ -42,15 +68,8 @@ export function TicketTypeManager({
     const [entryMode, setEntryMode] = useState<"standard" | "shift">("standard")
     const [loading, setLoading] = useState(false)
 
-    const [autoName, setAutoName] = useState(true)
-    const [daysLabel, setDaysLabel] = useState("L-M-V")
-    const [sessionsPerWeek, setSessionsPerWeek] = useState(3)
-    const [startTime, setStartTime] = useState("09:00")
-    const [endTime, setEndTime] = useState("10:00")
-    const [customLabel, setCustomLabel] = useState("")
-    const [useSpecificDays, setUseSpecificDays] = useState(false)
     const [selectedValidDays, setSelectedValidDays] = useState<string[]>([])
-    const [shiftsInput, setShiftsInput] = useState("")
+    const [shiftEntries, setShiftEntries] = useState<ShiftEntry[]>([])
     const [requireShiftSelection, setRequireShiftSelection] = useState(true)
     const [fullDayPackageDays, setFullDayPackageDays] = useState(4)
 
@@ -79,20 +98,6 @@ export function TicketTypeManager({
         [ticketTypes]
     )
 
-    const quickPresets = useMemo(
-        () => [
-            { label: "M-J", sessions: 2 },
-            { label: "M-J-S", sessions: 3 },
-            { label: "L-M-V", sessions: 3 },
-            { label: "L-M-J", sessions: 3 },
-            { label: "L-M-J-V", sessions: 4 },
-            { label: "L-S", sessions: 6 },
-            { label: "S-D", sessions: 2 },
-            { label: "D", sessions: 1 },
-        ],
-        []
-    )
-
     const dateOptions = useMemo(() => {
         if (!eventStartDate || !eventEndDate) return []
         const start = new Date(eventStartDate)
@@ -113,74 +118,15 @@ export function TicketTypeManager({
         return options
     }, [eventStartDate, eventEndDate])
 
-    const formatTimeLabel = (timeValue: string) => {
-        if (!timeValue) return ""
-        const parts = timeValue.split(":")
-        if (parts.length !== 2) return timeValue
-        const hh = Number(parts[0])
-        const mm = Number(parts[1])
-        if (Number.isNaN(hh) || Number.isNaN(mm)) return timeValue
-        const period = hh >= 12 ? "PM" : "AM"
-        const hour = ((hh + 11) % 12) + 1
-        const minutes = mm === 0 ? "" : `:${String(mm).padStart(2, "0")}`
-        return `${hour}${minutes}${period}`
+    const updateShiftEntry = (index: number, field: keyof ShiftEntry, value: string) => {
+        setShiftEntries((prev) =>
+            prev.map((entry, i) => (i === index ? { ...entry, [field]: value } : entry))
+        )
     }
 
-    const getWeekdayIndexes = (label: string) => {
-        const map: Record<string, number> = {
-            L: 1, // Monday
-            M: 2, // Tuesday
-            X: 3, // Wednesday
-            J: 4, // Thursday
-            V: 5, // Friday
-            S: 6, // Saturday
-            D: 0, // Sunday
-        }
-        return label.split("-").map((part) => map[part]).filter((val) => val !== undefined)
+    const removeShiftEntry = (index: number) => {
+        setShiftEntries((prev) => prev.filter((_, i) => i !== index))
     }
-
-    const countClassesBetween = (start?: string | Date, end?: string | Date, label?: string) => {
-        if (!start || !end || !label) return null
-        const startDate = new Date(start)
-        const endDate = new Date(end)
-        if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null
-        startDate.setHours(0, 0, 0, 0)
-        endDate.setHours(0, 0, 0, 0)
-        if (startDate > endDate) return null
-
-        const days = getWeekdayIndexes(label)
-        if (days.length === 0) return null
-
-        let count = 0
-        const current = new Date(startDate)
-        while (current <= endDate) {
-            if (days.includes(current.getDay())) {
-                count += 1
-            }
-            current.setDate(current.getDate() + 1)
-        }
-        return count
-    }
-
-    const buildName = () => {
-        const base = customLabel.trim() || daysLabel
-        const classesTotal = countClassesBetween(eventStartDate, eventEndDate, daysLabel)
-        const classesText = classesTotal ? `${classesTotal} clases` : ""
-        const sessionsText = sessionsPerWeek ? `${sessionsPerWeek} sesiones/semana` : ""
-        const timeText = startTime && endTime
-            ? `${formatTimeLabel(startTime)}-${formatTimeLabel(endTime)}`
-            : ""
-        const parts = [classesText, sessionsText, timeText].filter(Boolean)
-        if (!parts.length) return base
-        return `Turno ${base} · ${parts.join(" · ")}`
-    }
-
-    useEffect(() => {
-        if (entryMode !== "shift" || !autoName) return
-        const generatedName = buildName()
-        setFormData((prev) => ({ ...prev, name: generatedName }))
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [entryMode, autoName, daysLabel, sessionsPerWeek, startTime, endTime, customLabel, eventStartDate, eventEndDate])
 
     const resetForm = () => {
         setFormData({
@@ -193,15 +139,8 @@ export function TicketTypeManager({
             sortOrder: 0,
         })
         setCapacityInput("100")
-        setAutoName(true)
-        setDaysLabel("L-M-V")
-        setSessionsPerWeek(3)
-        setStartTime("09:00")
-        setEndTime("10:00")
-        setCustomLabel("")
-        setUseSpecificDays(false)
         setSelectedValidDays([])
-        setShiftsInput("")
+        setShiftEntries([])
         setRequireShiftSelection(true)
         setFullDayPackageDays(4)
         setEntryMode("standard")
@@ -219,12 +158,9 @@ export function TicketTypeManager({
             return
         }
 
-        const shifts = shiftsInput
-            .split(",")
-            .map((shift) => shift.trim())
-            .filter(Boolean)
+        const shifts = serializeShifts(shiftEntries)
         const selectedDays = Array.from(new Set(selectedValidDays)).sort((a, b) => a.localeCompare(b))
-        const shouldUseSpecificDays = entryMode === "shift" || useSpecificDays
+        const shouldUseSpecificDays = entryMode === "shift"
 
         if (shouldUseSpecificDays && selectedDays.length === 0) {
             alert("Selecciona al menos un dia valido")
@@ -315,7 +251,7 @@ export function TicketTypeManager({
 
             if (!response.ok) throw new Error("Error al actualizar")
 
-            setTicketTypes(ticketTypes.map(t => 
+            setTicketTypes(ticketTypes.map(t =>
                 t.id === id ? { ...t, isActive: !currentStatus } : t
             ))
         } catch (error) {
@@ -335,8 +271,6 @@ export function TicketTypeManager({
                             size="sm"
                             onClick={() => {
                                 setEntryMode("standard")
-                                setAutoName(false)
-                                setUseSpecificDays(false)
                                 setFormData({
                                     name: "",
                                     description: "",
@@ -348,7 +282,7 @@ export function TicketTypeManager({
                                 })
                                 setCapacityInput("100")
                                 setSelectedValidDays([])
-                                setShiftsInput("")
+                                setShiftEntries([])
                                 setRequireShiftSelection(true)
                                 setIsAdding(true)
                             }}
@@ -362,8 +296,6 @@ export function TicketTypeManager({
                             variant="outline"
                             onClick={() => {
                                 setEntryMode("shift")
-                                setAutoName(true)
-                                setUseSpecificDays(true)
                                 setFormData({
                                     name: "",
                                     description: "",
@@ -375,8 +307,9 @@ export function TicketTypeManager({
                                 })
                                 setCapacityInput("100")
                                 setSelectedValidDays([])
-                                setShiftsInput("")
+                                setShiftEntries([])
                                 setRequireShiftSelection(true)
+                                setFullDayPackageDays(4)
                                 setIsAdding(true)
                             }}
                         >
@@ -404,21 +337,8 @@ export function TicketTypeManager({
                                 <Input
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder={entryMode === "shift" ? "Ej: Turno Mañana" : "Ej: General, VIP"}
-                                    readOnly={entryMode === "shift" && autoName}
+                                    placeholder={entryMode === "shift" ? "Ej: Full day - 3 días" : "Ej: General, VIP"}
                                 />
-                                {entryMode === "shift" && (
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
-                                        <input
-                                            type="checkbox"
-                                            id="autoName"
-                                            checked={autoName}
-                                            onChange={(e) => setAutoName(e.target.checked)}
-                                            className="h-4 w-4 rounded border-gray-300"
-                                        />
-                                        <label htmlFor="autoName">Nombre automatico</label>
-                                    </div>
-                                )}
                             </div>
                             <div className="space-y-2">
                                 <label className="text-xs font-medium">Descripcion (opcional)</label>
@@ -479,39 +399,41 @@ export function TicketTypeManager({
                         )}
 
                         {entryMode === "shift" && (
-                        <div className="rounded-lg border bg-white p-3">
-                            <div className="text-xs font-semibold text-gray-600 mb-3">
-                                Constructor rapido de turno
-                            </div>
-                            <div className="mb-3 rounded-md border border-blue-100 bg-blue-50 p-3">
-                                <div className="text-xs font-semibold text-blue-800 mb-2">
-                                    Plantilla: Full day por N dias
+                        <>
+                            {/* Plantilla rapida */}
+                            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                                <div className="text-sm font-semibold text-blue-800 mb-2">
+                                    Plantilla rapida
                                 </div>
-                                <div className="flex flex-wrap items-end gap-2">
+                                <div className="flex flex-wrap items-end gap-3">
                                     <div className="space-y-1">
-                                        <label className="text-[11px] text-blue-700">Cantidad de dias</label>
+                                        <label className="text-xs text-blue-700">Full Day por</label>
                                         <Input
                                             type="number"
                                             min={1}
                                             value={fullDayPackageDays}
                                             onChange={(e) => setFullDayPackageDays(Math.max(1, Number(e.target.value) || 1))}
-                                            className="h-9 w-28 bg-white"
+                                            className="h-9 w-20 bg-white"
                                         />
                                     </div>
+                                    <span className="text-sm text-blue-700 pb-2">días</span>
                                     <Button
                                         type="button"
                                         size="sm"
                                         onClick={() => {
-                                            setAutoName(false)
                                             setFormData((prev) => ({
                                                 ...prev,
                                                 name: `Full day - ${fullDayPackageDays} días`,
                                                 isPackage: true,
                                                 packageDaysCount: fullDayPackageDays,
                                             }))
+                                            setSelectedValidDays([...dateOptions])
                                             setRequireShiftSelection(false)
-                                            if (!shiftsInput.trim()) {
-                                                setShiftsInput("Mañana, Tarde")
+                                            if (shiftEntries.length === 0) {
+                                                setShiftEntries([
+                                                    { name: "Mañana", startTime: "09:00", endTime: "12:00" },
+                                                    { name: "Tarde", startTime: "14:00", endTime: "18:00" },
+                                                ])
                                             }
                                         }}
                                     >
@@ -519,140 +441,138 @@ export function TicketTypeManager({
                                     </Button>
                                 </div>
                             </div>
-                            <div className="flex flex-wrap gap-2 mb-3">
-                                {quickPresets.map((preset) => (
-                                    <Button
-                                        key={preset.label}
-                                        type="button"
-                                        size="sm"
-                                        variant={daysLabel === preset.label ? "default" : "outline"}
-                                        onClick={() => {
-                                            setDaysLabel(preset.label)
-                                            setSessionsPerWeek(preset.sessions)
-                                            if (!customLabel.trim()) {
-                                                setCustomLabel("")
-                                            }
-                                        }}
-                                    >
-                                        {preset.label}
-                                    </Button>
-                                ))}
-                                <Input
-                                    value={customLabel}
-                                    onChange={(e) => setCustomLabel(e.target.value)}
-                                    placeholder="Etiqueta personalizada (opcional)"
-                                    className="h-9 w-60"
-                                />
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <div className="space-y-1">
-                                    <label className="text-xs text-gray-500">Inicio</label>
-                                    <Input
-                                        type="time"
-                                        value={startTime}
-                                        onChange={(e) => setStartTime(e.target.value)}
-                                        className="h-9"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-gray-500">Fin</label>
-                                    <Input
-                                        type="time"
-                                        value={endTime}
-                                        onChange={(e) => setEndTime(e.target.value)}
-                                        className="h-9"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-gray-500">Sesiones por semana</label>
-                                    <Input
-                                        type="number"
-                                        min={1}
-                                        value={sessionsPerWeek}
-                                        onChange={(e) => setSessionsPerWeek(Number(e.target.value))}
-                                        className="h-9"
-                                    />
-                                </div>
-                            </div>
-                            {!autoName && (
-                                <div className="mt-3 text-xs text-gray-500">
-                                    Activa &quot;Nombre automatico&quot; para generar el titulo del turno.
-                                </div>
-                            )}
-                        </div>
-                        )}
 
-                        {entryMode === "shift" && (
-                        <div className="rounded-lg border bg-white p-3 space-y-3">
-                            <div className="text-xs font-semibold text-gray-700">
-                                Dias y turnos habilitados para esta entrada
-                            </div>
-                            <>
-                                    {dateOptions.length > 0 ? (
-                                        <div>
-                                            <div className="text-xs text-gray-500 mb-2">
-                                                Puedes seleccionar multiples dias
-                                            </div>
-                                            <div className="flex flex-wrap gap-2">
-                                                {dateOptions.map((date) => {
-                                                    const selected = selectedValidDays.includes(date)
-                                                    return (
-                                                        <Button
-                                                            key={date}
-                                                            type="button"
-                                                            size="sm"
-                                                            variant={selected ? "default" : "outline"}
-                                                            onClick={() =>
-                                                                setSelectedValidDays((prev) =>
-                                                                    selected
-                                                                        ? prev.filter((item) => item !== date)
-                                                                        : [...prev, date]
-                                                                )
-                                                            }
-                                                        >
-                                                            {formatDate(date, { dateStyle: "medium" })}
-                                                        </Button>
-                                                    )
-                                                })}
-                                            </div>
+                            {/* Dias validos */}
+                            <div className="rounded-lg border bg-white p-3 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-xs font-semibold text-gray-700">Días válidos</div>
+                                    {dateOptions.length > 0 && (
+                                        <div className="flex gap-2">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 text-xs"
+                                                onClick={() => setSelectedValidDays([...dateOptions])}
+                                            >
+                                                Seleccionar todos
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 text-xs"
+                                                onClick={() => setSelectedValidDays([])}
+                                            >
+                                                Ninguno
+                                            </Button>
                                         </div>
-                                    ) : (
+                                    )}
+                                </div>
+                                {dateOptions.length > 0 ? (
+                                    <>
+                                        <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+                                            {dateOptions.map((date) => {
+                                                const selected = selectedValidDays.includes(date)
+                                                return (
+                                                    <Button
+                                                        key={date}
+                                                        type="button"
+                                                        size="sm"
+                                                        variant={selected ? "default" : "outline"}
+                                                        onClick={() =>
+                                                            setSelectedValidDays((prev) =>
+                                                                selected
+                                                                    ? prev.filter((item) => item !== date)
+                                                                    : [...prev, date]
+                                                            )
+                                                        }
+                                                    >
+                                                        {formatDate(date, { dateStyle: "medium" })}
+                                                    </Button>
+                                                )
+                                            })}
+                                        </div>
                                         <div className="text-xs text-gray-500">
-                                            Define fecha inicio/fin del evento para habilitar esta seleccion.
+                                            {selectedValidDays.length} de {dateOptions.length} días seleccionados
                                         </div>
-                                    )}
-
-                                    <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-                                        <input
-                                            type="checkbox"
-                                            id="requireShiftSelection"
-                                            checked={requireShiftSelection}
-                                            onChange={(e) => setRequireShiftSelection(e.target.checked)}
-                                            className="h-4 w-4 rounded border-gray-300"
-                                        />
-                                        <label htmlFor="requireShiftSelection" className="text-xs text-gray-700">
-                                            Requerir elegir turno en checkout
-                                        </label>
+                                    </>
+                                ) : (
+                                    <div className="text-xs text-gray-500">
+                                        Define fecha inicio/fin del evento para habilitar esta seleccion.
                                     </div>
+                                )}
+                            </div>
 
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-gray-500">
-                                            Turnos (separados por coma, opcional)
-                                        </label>
-                                        <Input
-                                            value={shiftsInput}
-                                            onChange={(e) => setShiftsInput(e.target.value)}
-                                            placeholder="Mañana, Tarde, Noche"
-                                            className="h-9"
-                                        />
-                                    </div>
-                                    {!requireShiftSelection && (
-                                        <div className="text-xs text-blue-700">
-                                            Modo full day: con un solo QR del día, el ticket será válido para todos los turnos configurados.
+                            {/* Turnos */}
+                            <div className="rounded-lg border bg-white p-3 space-y-3">
+                                <div className="text-xs font-semibold text-gray-700">Turnos</div>
+
+                                <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                                    <input
+                                        type="checkbox"
+                                        id="requireShiftSelection"
+                                        checked={requireShiftSelection}
+                                        onChange={(e) => setRequireShiftSelection(e.target.checked)}
+                                        className="h-4 w-4 rounded border-gray-300"
+                                    />
+                                    <label htmlFor="requireShiftSelection" className="text-xs text-gray-700">
+                                        Requerir elegir turno en checkout
+                                    </label>
+                                </div>
+
+                                <div className="space-y-2">
+                                    {shiftEntries.map((entry, index) => (
+                                        <div key={index} className="flex items-center gap-2">
+                                            <Input
+                                                value={entry.name}
+                                                onChange={(e) => updateShiftEntry(index, "name", e.target.value)}
+                                                placeholder="Nombre del turno"
+                                                className="h-9 flex-1"
+                                            />
+                                            <Input
+                                                type="time"
+                                                value={entry.startTime}
+                                                onChange={(e) => updateShiftEntry(index, "startTime", e.target.value)}
+                                                className="h-9 w-28"
+                                            />
+                                            <span className="text-xs text-gray-400">-</span>
+                                            <Input
+                                                type="time"
+                                                value={entry.endTime}
+                                                onChange={(e) => updateShiftEntry(index, "endTime", e.target.value)}
+                                                className="h-9 w-28"
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-9 w-9 shrink-0"
+                                                onClick={() => removeShiftEntry(index)}
+                                            >
+                                                <Trash2 className="h-4 w-4 text-red-400" />
+                                            </Button>
                                         </div>
-                                    )}
-                                </>
-                        </div>
+                                    ))}
+                                </div>
+
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setShiftEntries((prev) => [...prev, { name: "", startTime: "", endTime: "" }])}
+                                >
+                                    <Plus className="h-4 w-4 mr-1" />
+                                    Agregar turno
+                                </Button>
+
+                                {!requireShiftSelection && shiftEntries.length > 0 && (
+                                    <div className="text-xs text-blue-700">
+                                        Modo full day: con un solo QR del día, el ticket será válido para todos los turnos configurados.
+                                    </div>
+                                )}
+                            </div>
+                        </>
                         )}
 
                         <div className="flex justify-end gap-2">
@@ -734,12 +654,10 @@ export function TicketTypeManager({
                                                     setEntryMode(mode)
                                                     setEditingId(ticket.id!)
                                                     setFormData(ticket)
-                                                    setAutoName(false)
                                                     setIsAdding(false)
                                                     setCapacityInput(String(ticket.capacity ?? 0))
-                                                    setUseSpecificDays(mode === "shift")
                                                     setSelectedValidDays(schedule.dates)
-                                                    setShiftsInput(schedule.shifts.join(", "))
+                                                    setShiftEntries(schedule.shifts.map(parseShiftString))
                                                     setRequireShiftSelection(schedule.requireShiftSelection)
                                                     setFullDayPackageDays(ticket.packageDaysCount ?? 4)
                                                 }}
