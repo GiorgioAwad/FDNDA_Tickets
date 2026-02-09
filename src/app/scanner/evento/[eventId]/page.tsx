@@ -715,15 +715,6 @@ export default function EventScannerPage() {
             return
         }
 
-        if (availableShifts.length > 0 && !currentShift) {
-            setScanResult({
-                valid: false,
-                reason: "SHIFT_REQUIRED",
-                message: "Selecciona el turno actual antes de escanear.",
-            })
-            return
-        }
-        
         lastScannedCodeRef.current = parsedPayload.displayCode
         setScanning(false)
         scanLockedRef.current = true
@@ -777,19 +768,10 @@ export default function EventScannerPage() {
         } finally {
             setIsProcessing(false)
         }
-    }, [eventId, isOnline, playSound, vibrate, addToHistory, availableShifts.length, currentShift])
+    }, [eventId, isOnline, playSound, vibrate, addToHistory, currentShift])
 
     const handleManualSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault()
-        if (availableShifts.length > 0 && !currentShift) {
-            setScanResult({
-                valid: false,
-                reason: "SHIFT_REQUIRED",
-                message: "Selecciona el turno actual antes de validar manualmente.",
-            })
-            return
-        }
-
         const parsedManual = parseLookupPayload(manualCode)
         if (!parsedManual || parsedManual.kind !== "lookup") {
             setScanResult({
@@ -841,7 +823,7 @@ export default function EventScannerPage() {
         } finally {
             setIsProcessing(false)
         }
-    }, [manualCode, eventId, playSound, vibrate, addToHistory, availableShifts.length, currentShift])
+    }, [manualCode, eventId, playSound, vibrate, addToHistory, currentShift])
 
     const resetScan = useCallback(() => {
         setScanResult(null)
