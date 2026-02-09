@@ -64,14 +64,19 @@ export default function CheckoutPage() {
             const requiredSelections = getRequiredSelections(item)
             if (requiredSelections === 0) return false
 
-            const requiresShift = (item.scheduleConfig?.shifts.length || 0) > 0
+            const requiresShift =
+                (item.scheduleConfig?.shifts.length || 0) > 0 &&
+                (item.scheduleConfig?.requireShiftSelection ?? true)
             return item.attendees.some((attendee) => {
                 const selections = attendee.scheduleSelections ?? []
                 if (selections.length < requiredSelections) return true
 
+                const selectedDates = new Set<string>()
                 for (let i = 0; i < requiredSelections; i++) {
                     const selection = selections[i]
                     if (!selection?.date) return true
+                    if (selectedDates.has(selection.date)) return true
+                    selectedDates.add(selection.date)
                     if (requiresShift && !selection?.shift) return true
                 }
                 return false
@@ -403,7 +408,7 @@ export default function CheckoutPage() {
                                                                                     ))}
                                                                                 </select>
                                                                             </div>
-                                                                            {scheduleConfig.shifts.length > 0 && (
+                                                                            {scheduleConfig.shifts.length > 0 && (scheduleConfig.requireShiftSelection ?? true) && (
                                                                                 <div>
                                                                                     <label className="text-[11px] text-gray-500 mb-1 block">
                                                                                         Turno
@@ -428,6 +433,11 @@ export default function CheckoutPage() {
                                                                                             </option>
                                                                                         ))}
                                                                                     </select>
+                                                                                </div>
+                                                                            )}
+                                                                            {scheduleConfig.shifts.length > 0 && !(scheduleConfig.requireShiftSelection ?? true) && (
+                                                                                <div className="md:col-span-2 text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-md px-3 py-2">
+                                                                                    Incluye todos los turnos configurados para ese dia ({scheduleConfig.shifts.join(", ")}).
                                                                                 </div>
                                                                             )}
                                                                         </div>
@@ -552,7 +562,7 @@ export default function CheckoutPage() {
                                 )}
                                 {!hasMissingAttendeeData && hasMissingScheduleSelections && (
                                     <p className="text-xs text-amber-600 text-center">
-                                        Completa dia/turno para todos los asistentes
+                                        Completa los dias y turnos (si aplica) para todos los asistentes
                                     </p>
                                 )}
 

@@ -51,6 +51,8 @@ export function TicketTypeManager({
     const [useSpecificDays, setUseSpecificDays] = useState(false)
     const [selectedValidDays, setSelectedValidDays] = useState<string[]>([])
     const [shiftsInput, setShiftsInput] = useState("")
+    const [requireShiftSelection, setRequireShiftSelection] = useState(true)
+    const [fullDayPackageDays, setFullDayPackageDays] = useState(4)
 
     const [formData, setFormData] = useState<Partial<TicketType>>({
         name: "",
@@ -200,6 +202,8 @@ export function TicketTypeManager({
         setUseSpecificDays(false)
         setSelectedValidDays([])
         setShiftsInput("")
+        setRequireShiftSelection(true)
+        setFullDayPackageDays(4)
         setEntryMode("standard")
         setIsAdding(false)
         setEditingId(null)
@@ -239,7 +243,11 @@ export function TicketTypeManager({
         }
 
         const validDaysPayload = shouldUseSpecificDays
-            ? buildTicketValidDaysPayload({ dates: selectedDays, shifts })
+            ? buildTicketValidDaysPayload({
+                dates: selectedDays,
+                shifts,
+                requireShiftSelection: requireShiftSelection && shifts.length > 0,
+            })
             : []
 
         setLoading(true)
@@ -341,6 +349,7 @@ export function TicketTypeManager({
                                 setCapacityInput("100")
                                 setSelectedValidDays([])
                                 setShiftsInput("")
+                                setRequireShiftSelection(true)
                                 setIsAdding(true)
                             }}
                         >
@@ -367,6 +376,7 @@ export function TicketTypeManager({
                                 setCapacityInput("100")
                                 setSelectedValidDays([])
                                 setShiftsInput("")
+                                setRequireShiftSelection(true)
                                 setIsAdding(true)
                             }}
                         >
@@ -448,12 +458,12 @@ export function TicketTypeManager({
                                     onChange={(e) => setFormData({ ...formData, isPackage: e.target.checked })}
                                     className="h-4 w-4 rounded border-gray-300"
                                 />
-                                <label htmlFor="isPackage" className="text-sm">Es Paquete</label>
+                                <label htmlFor="isPackage" className="text-sm">Paquete por cantidad de días</label>
 
                                 {formData.isPackage && (
                                     <Input
                                         type="number"
-                                        placeholder="Dias"
+                                        placeholder="N° días"
                                         className="w-20 h-8"
                                         value={formData.packageDaysCount || ""}
                                         min={1}
@@ -462,11 +472,52 @@ export function TicketTypeManager({
                                 )}
                             </div>
                         </div>
+                        {formData.isPackage && (
+                            <div className="text-xs text-gray-600">
+                                Este ticket permitirá registrar hasta {formData.packageDaysCount || 0} días distintos del calendario que definas.
+                            </div>
+                        )}
 
                         {entryMode === "shift" && (
                         <div className="rounded-lg border bg-white p-3">
                             <div className="text-xs font-semibold text-gray-600 mb-3">
                                 Constructor rapido de turno
+                            </div>
+                            <div className="mb-3 rounded-md border border-blue-100 bg-blue-50 p-3">
+                                <div className="text-xs font-semibold text-blue-800 mb-2">
+                                    Plantilla: Full day por N dias
+                                </div>
+                                <div className="flex flex-wrap items-end gap-2">
+                                    <div className="space-y-1">
+                                        <label className="text-[11px] text-blue-700">Cantidad de dias</label>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            value={fullDayPackageDays}
+                                            onChange={(e) => setFullDayPackageDays(Math.max(1, Number(e.target.value) || 1))}
+                                            className="h-9 w-28 bg-white"
+                                        />
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={() => {
+                                            setAutoName(false)
+                                            setFormData((prev) => ({
+                                                ...prev,
+                                                name: `Full day - ${fullDayPackageDays} días`,
+                                                isPackage: true,
+                                                packageDaysCount: fullDayPackageDays,
+                                            }))
+                                            setRequireShiftSelection(false)
+                                            if (!shiftsInput.trim()) {
+                                                setShiftsInput("Mañana, Tarde")
+                                            }
+                                        }}
+                                    >
+                                        Aplicar plantilla
+                                    </Button>
+                                </div>
                             </div>
                             <div className="flex flex-wrap gap-2 mb-3">
                                 {quickPresets.map((preset) => (
@@ -571,6 +622,19 @@ export function TicketTypeManager({
                                         </div>
                                     )}
 
+                                    <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                                        <input
+                                            type="checkbox"
+                                            id="requireShiftSelection"
+                                            checked={requireShiftSelection}
+                                            onChange={(e) => setRequireShiftSelection(e.target.checked)}
+                                            className="h-4 w-4 rounded border-gray-300"
+                                        />
+                                        <label htmlFor="requireShiftSelection" className="text-xs text-gray-700">
+                                            Requerir elegir turno en checkout
+                                        </label>
+                                    </div>
+
                                     <div className="space-y-1">
                                         <label className="text-xs text-gray-500">
                                             Turnos (separados por coma, opcional)
@@ -582,6 +646,11 @@ export function TicketTypeManager({
                                             className="h-9"
                                         />
                                     </div>
+                                    {!requireShiftSelection && (
+                                        <div className="text-xs text-blue-700">
+                                            Modo full day: con un solo QR del día, el ticket será válido para todos los turnos configurados.
+                                        </div>
+                                    )}
                                 </>
                         </div>
                         )}
@@ -631,6 +700,11 @@ export function TicketTypeManager({
                                                         {schedule.shifts.length} turnos
                                                     </Badge>
                                                 )}
+                                                {schedule.shifts.length > 0 && !schedule.requireShiftSelection && (
+                                                    <Badge variant="secondary" className="text-xs">
+                                                        Todos los turnos
+                                                    </Badge>
+                                                )}
                                                 {ticket.isActive === false && (
                                                     <Badge variant="destructive" className="text-xs">Inactivo</Badge>
                                                 )}
@@ -666,6 +740,8 @@ export function TicketTypeManager({
                                                     setUseSpecificDays(mode === "shift")
                                                     setSelectedValidDays(schedule.dates)
                                                     setShiftsInput(schedule.shifts.join(", "))
+                                                    setRequireShiftSelection(schedule.requireShiftSelection)
+                                                    setFullDayPackageDays(ticket.packageDaysCount ?? 4)
                                                 }}
                                             >
                                                 <Edit className="h-4 w-4 text-gray-500" />

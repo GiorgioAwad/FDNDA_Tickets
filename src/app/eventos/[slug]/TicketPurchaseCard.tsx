@@ -153,6 +153,7 @@ export default function TicketPurchaseCard({
                     dates: schedule.dates,
                     shifts: schedule.shifts,
                     requiredDays: ticket.isPackage ? (ticket.packageDaysCount ?? null) : null,
+                    requireShiftSelection: schedule.requireShiftSelection,
                 },
             })
             return
@@ -290,9 +291,14 @@ export default function TicketPurchaseCard({
                                         Turnos configurados
                                     </Badge>
                                 )}
+                                {schedule.shifts.length > 0 && !schedule.requireShiftSelection && (
+                                    <Badge variant="secondary" className="mb-2 ml-2">
+                                        Válido en todos los turnos
+                                    </Badge>
+                                )}
                                 {(schedule.dates.length > 0 || schedule.shifts.length > 0) && (
                                     <p className="text-xs text-gray-500 mt-1">
-                                        La seleccion de dias/turnos se completa en checkout.
+                                        La selección de días/turnos se completa en checkout.
                                     </p>
                                 )}
 

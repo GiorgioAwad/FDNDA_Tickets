@@ -3,6 +3,7 @@ const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
 export interface TicketScheduleConfig {
     dates: string[]
     shifts: string[]
+    requireShiftSelection: boolean
 }
 
 export interface ScheduleSelection {
@@ -53,6 +54,7 @@ export function parseTicketScheduleConfig(validDays: unknown): TicketScheduleCon
         return {
             dates: normalizeDateArray(validDays),
             shifts: [],
+            requireShiftSelection: false,
         }
     }
 
@@ -65,14 +67,25 @@ export function parseTicketScheduleConfig(validDays: unknown): TicketScheduleCon
         const byTurns = normalizeShiftArray(record.turns)
         const dates = byDates.length > 0 ? byDates : byValidDays.length > 0 ? byValidDays : byDays
         const shifts = byShifts.length > 0 ? byShifts : byTurns
+        const requireShiftSelectionRaw = record.requireShiftSelection
+        const shiftOptionalRaw = record.shiftOptional
+        const requireShiftSelection =
+            shifts.length === 0
+                ? false
+                : typeof requireShiftSelectionRaw === "boolean"
+                  ? requireShiftSelectionRaw
+                  : typeof shiftOptionalRaw === "boolean"
+                    ? !shiftOptionalRaw
+                    : true
 
         return {
             dates,
             shifts,
+            requireShiftSelection,
         }
     }
 
-    return { dates: [], shifts: [] }
+    return { dates: [], shifts: [], requireShiftSelection: false }
 }
 
 export function buildTicketValidDaysPayload(config: TicketScheduleConfig): unknown {
@@ -82,10 +95,20 @@ export function buildTicketValidDaysPayload(config: TicketScheduleConfig): unkno
     if (dates.length === 0) return []
     if (shifts.length === 0) return dates
 
-    return {
+    const payload: {
+        dates: string[]
+        shifts: string[]
+        requireShiftSelection?: boolean
+    } = {
         dates,
         shifts,
     }
+
+    if (config.requireShiftSelection === false) {
+        payload.requireShiftSelection = false
+    }
+
+    return payload
 }
 
 export function normalizeScheduleSelections(input: unknown): ScheduleSelection[] {

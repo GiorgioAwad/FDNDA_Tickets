@@ -7,6 +7,7 @@ export interface CartScheduleConfig {
     dates: string[]
     shifts: string[]
     requiredDays: number | null
+    requireShiftSelection: boolean
 }
 
 export interface CartScheduleSelection {
@@ -97,6 +98,16 @@ const normalizeScheduleConfig = (input: unknown): CartScheduleConfig | undefined
 
     const dates = normalizeDates(record.dates)
     const shifts = normalizeShifts(record.shifts)
+    const requireShiftSelectionRaw = record.requireShiftSelection
+    const shiftOptionalRaw = record.shiftOptional
+    const requireShiftSelection =
+        shifts.length === 0
+            ? false
+            : typeof requireShiftSelectionRaw === "boolean"
+              ? requireShiftSelectionRaw
+              : typeof shiftOptionalRaw === "boolean"
+                ? !shiftOptionalRaw
+                : true
 
     if (dates.length === 0 && shifts.length === 0 && requiredDays === null) {
         return undefined
@@ -106,6 +117,7 @@ const normalizeScheduleConfig = (input: unknown): CartScheduleConfig | undefined
         dates,
         shifts,
         requiredDays,
+        requireShiftSelection,
     }
 }
 
@@ -440,4 +452,3 @@ export function useCart() {
     }
     return context
 }
-
