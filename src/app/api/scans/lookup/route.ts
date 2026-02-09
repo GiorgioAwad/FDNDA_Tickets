@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { getTodayDateString } from "@/lib/qr"
+import { extractTicketValidDates, normalizeShiftLabel } from "@/lib/ticket-schedule"
+import {
+    getExpectedShiftForDate,
+    getTicketScheduleSelectionsForAttendee,
+    shiftsMatch,
+} from "@/lib/ticket-shift"
 import {
     type ScanResultType,
     type ScanTicket,
@@ -182,6 +188,7 @@ export async function POST(request: NextRequest) {
         const ticketIdInput = typeof body.ticketId === "string" ? body.ticketId : undefined
         const rawInput = typeof body.rawInput === "string" ? body.rawInput : undefined
         const eventId = body.eventId as string | undefined
+        const currentShift = normalizeShiftLabel(body.currentShift)
 
         if (!eventId) {
             return NextResponse.json(
@@ -263,6 +270,42 @@ export async function POST(request: NextRequest) {
         }
 
         const today = getTodayDateString()
+        const strictDateSchedule = extractTicketValidDates(ticket.ticketType.validDays).length > 0
+        const scheduleSelections = await getTicketScheduleSelectionsForAttendee({
+            orderId: ticket.orderId,
+            ticketTypeId: ticket.ticketTypeId,
+            attendeeName: ticket.attendeeName,
+            attendeeDni: ticket.attendeeDni,
+        })
+        const expectedShift = getExpectedShiftForDate(scheduleSelections, today)
+
+        if (expectedShift) {
+            if (!currentShift) {
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "SHIFT_REQUIRED",
+                    message: `Selecciona el turno actual (${expectedShift}) para validar este ticket.`,
+                })
+            }
+
+            if (!shiftsMatch(currentShift, expectedShift)) {
+                await logScan(
+                    ticket.id,
+                    user.id,
+                    eventId,
+                    "WRONG_DAY",
+                    `Turno incorrecto. Esperado: ${expectedShift}`
+                )
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "WRONG_SHIFT",
+                    message: `Este ticket es valido para el turno "${expectedShift}".`,
+                })
+            }
+        }
+
         const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
         const isPackageLike = Boolean(
             ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || nameMatch
@@ -289,7 +332,7 @@ export async function POST(request: NextRequest) {
 
         let entitlement = ticket.entitlements.find((item) => matchesToday(item.date, today))
 
-        if (!entitlement) {
+        if (!entitlement && !strictDateSchedule) {
             const availableEntitlement = ticket.entitlements.find((item) => item.status === "AVAILABLE")
             if (availableEntitlement) {
                 const reassignedDate = new Date(`${today}T00:00:00`)
@@ -319,7 +362,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (!entitlement && isPackageLike) {
+        if (!entitlement && isPackageLike && !strictDateSchedule) {
             const attendance = computeAttendance()
             if (packageLimit && attendance.remaining <= 0) {
                 await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")
@@ -344,14 +387,29 @@ export async function POST(request: NextRequest) {
         }
 
         if (!entitlement) {
+            const attendance = computeAttendance()
+            if (packageLimit && attendance.remaining <= 0) {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "NO_CLASSES",
+                    message: "No tiene clases disponibles",
+                    scannedAt: new Date().toISOString(),
+                    attendance,
+                })
+            }
+
             await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin derecho para hoy")
             return NextResponse.json({
                 success: false,
                 valid: false,
-                reason: "WRONG_DAY",
-                message: "Este ticket no es valido para hoy",
+                reason: strictDateSchedule ? "WRONG_DAY" : "NO_CLASSES",
+                message: strictDateSchedule
+                    ? "Este ticket no es valido para hoy"
+                    : "No tiene clases disponibles",
                 scannedAt: new Date().toISOString(),
-                attendance: computeAttendance(),
+                attendance,
             })
         }
 

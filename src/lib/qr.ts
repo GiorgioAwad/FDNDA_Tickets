@@ -9,6 +9,7 @@ export interface QRPayload {
     userId: string
     date: string // YYYY-MM-DD
     ticketCode: string
+    shift?: string
     nonce: string
 }
 
@@ -33,20 +34,41 @@ export function formatDateUTC(date: Date): string {
 /**
  * Generate HMAC signature for QR payload
  */
+function buildSignatureDataV1(payload: QRPayload): string {
+    return `${payload.ticketId}:${payload.eventId}:${payload.userId}:${payload.date}:${payload.ticketCode}:${payload.nonce}`
+}
+
+function buildSignatureDataV2(payload: QRPayload): string {
+    const shift = typeof payload.shift === "string" ? payload.shift.trim() : ""
+    return `${payload.ticketId}:${payload.eventId}:${payload.userId}:${payload.date}:${payload.ticketCode}:${shift}:${payload.nonce}`
+}
+
+function safeCompareHex(left: string, right: string): boolean {
+    if (left.length !== right.length) return false
+
+    try {
+        return crypto.timingSafeEqual(Buffer.from(left, "hex"), Buffer.from(right, "hex"))
+    } catch {
+        return false
+    }
+}
+
 export function generateSignature(payload: QRPayload): string {
-    const data = `${payload.ticketId}:${payload.eventId}:${payload.userId}:${payload.date}:${payload.ticketCode}:${payload.nonce}`
-    return crypto.createHmac("sha256", QR_SECRET).update(data).digest("hex")
+    return crypto.createHmac("sha256", QR_SECRET).update(buildSignatureDataV2(payload)).digest("hex")
 }
 
 /**
  * Verify HMAC signature of QR payload
  */
 export function verifySignature(payload: SignedQRPayload): boolean {
-    const expectedSignature = generateSignature(payload)
-    return crypto.timingSafeEqual(
-        Buffer.from(payload.signature, "hex"),
-        Buffer.from(expectedSignature, "hex")
-    )
+    const expectedV2 = generateSignature(payload)
+    if (safeCompareHex(payload.signature, expectedV2)) {
+        return true
+    }
+
+    // Compatibilidad con QRs legacy emitidos antes del campo "shift"
+    const expectedV1 = crypto.createHmac("sha256", QR_SECRET).update(buildSignatureDataV1(payload)).digest("hex")
+    return safeCompareHex(payload.signature, expectedV1)
 }
 
 /**
@@ -57,10 +79,12 @@ export function createQRPayload(
     eventId: string,
     userId: string,
     ticketCode: string,
-    date: Date
+    date: Date,
+    shift?: string | null
 ): SignedQRPayload {
     const nonce = crypto.randomBytes(8).toString("hex")
     const dateStr = formatDateLocal(date)
+    const normalizedShift = typeof shift === "string" ? shift.trim() : ""
 
     const payload: QRPayload = {
         ticketId,
@@ -68,6 +92,7 @@ export function createQRPayload(
         userId,
         date: dateStr,
         ticketCode,
+        ...(normalizedShift ? { shift: normalizedShift } : {}),
         nonce,
     }
 

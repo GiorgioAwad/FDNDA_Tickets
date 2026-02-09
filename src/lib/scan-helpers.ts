@@ -15,6 +15,8 @@ export type TicketEntitlement = {
 
 export type ScanTicket = {
     id: string
+    orderId: string
+    ticketTypeId: string
     ticketCode: string
     attendeeName: string | null
     attendeeDni: string | null

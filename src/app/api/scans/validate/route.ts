@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseQRPayload, verifySignature, getTodayDateString } from "@/lib/qr"
+import { extractTicketValidDates, normalizeShiftLabel } from "@/lib/ticket-schedule"
+import {
+    getExpectedShiftForDate,
+    getTicketScheduleSelectionsForAttendee,
+    shiftsMatch,
+} from "@/lib/ticket-shift"
 import { rateLimit } from "@/lib/rate-limit"
 import {
     type ScanResultType,
@@ -35,6 +41,7 @@ export async function POST(request: NextRequest) {
 
         const body = await request.json()
         const { qrData, eventId } = body
+        const currentShift = normalizeShiftLabel(body.currentShift)
 
         if (!qrData || !eventId) {
             return NextResponse.json(
@@ -44,6 +51,7 @@ export async function POST(request: NextRequest) {
         }
 
         const payload = parseQRPayload(qrData)
+        const today = getTodayDateString()
 
         if (!payload) {
             await logScan(null, user.id, eventId, "INVALID", "QR invalido o mal formado")
@@ -62,6 +70,16 @@ export async function POST(request: NextRequest) {
                 valid: false,
                 reason: "INVALID_SIGNATURE",
                 message: "Codigo QR manipulado o invalido",
+            })
+        }
+
+        if (payload.date !== today) {
+            await logScan(payload.ticketId, user.id, eventId, "INVALID", "QR fuera de fecha")
+            return NextResponse.json({
+                success: false,
+                valid: false,
+                reason: "QR_EXPIRED",
+                message: "El QR no corresponde al dia de hoy. Abre tu ticket para actualizarlo.",
             })
         }
 
@@ -121,6 +139,53 @@ export async function POST(request: NextRequest) {
             })
         }
 
+        const strictDateSchedule = extractTicketValidDates(ticket.ticketType.validDays).length > 0
+        const scheduleSelections = await getTicketScheduleSelectionsForAttendee({
+            orderId: ticket.orderId,
+            ticketTypeId: ticket.ticketTypeId,
+            attendeeName: ticket.attendeeName,
+            attendeeDni: ticket.attendeeDni,
+        })
+        const expectedShift = getExpectedShiftForDate(scheduleSelections, today)
+        const qrShift = normalizeShiftLabel(payload.shift)
+
+        if (expectedShift && qrShift && !shiftsMatch(qrShift, expectedShift)) {
+            await logScan(ticket.id, user.id, eventId, "INVALID", "Turno del QR no coincide")
+            return NextResponse.json({
+                success: false,
+                valid: false,
+                reason: "INVALID_SHIFT",
+                message: "El QR no coincide con el turno configurado para este ticket.",
+            })
+        }
+
+        if (expectedShift) {
+            if (!currentShift) {
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "SHIFT_REQUIRED",
+                    message: `Selecciona el turno actual (${expectedShift}) para validar este ticket.`,
+                })
+            }
+
+            if (!shiftsMatch(currentShift, expectedShift)) {
+                await logScan(
+                    ticket.id,
+                    user.id,
+                    eventId,
+                    "WRONG_DAY",
+                    `Turno incorrecto. Esperado: ${expectedShift}`
+                )
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "WRONG_SHIFT",
+                    message: `Este ticket es valido para el turno "${expectedShift}".`,
+                })
+            }
+        }
+
         const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
         const isPackageLike = Boolean(
             ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || nameMatch
@@ -145,12 +210,10 @@ export async function POST(request: NextRequest) {
             return buildAttendanceSummary(ticket)
         }
 
-        // Se permite recuperacion: se usa cualquier entitlement disponible.
-        const today = getTodayDateString()
-
+        // Solo permitimos reasignacion automatica en tickets sin calendario estricto.
         let entitlement = ticket.entitlements.find((e) => matchesToday(e.date, today))
 
-        if (!entitlement) {
+        if (!entitlement && !strictDateSchedule) {
             const availableEntitlement = ticket.entitlements.find((e) => e.status === "AVAILABLE")
 
             if (availableEntitlement) {
@@ -183,7 +246,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (!entitlement && isPackageLike) {
+        if (!entitlement && isPackageLike && !strictDateSchedule) {
             const attendance = computeAttendance()
             if (packageLimit && attendance.remaining <= 0) {
                 await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")
@@ -208,14 +271,30 @@ export async function POST(request: NextRequest) {
         }
 
         if (!entitlement) {
-            await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")
+            const attendance = computeAttendance()
+            if (packageLimit && attendance.remaining <= 0) {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "NO_CLASSES",
+                    message: "No tiene clases disponibles",
+                    scannedAt: new Date().toISOString(),
+                    attendance,
+                })
+            }
+
+            const wrongDayMessage = strictDateSchedule
+                ? "Este ticket no es valido para hoy"
+                : "No tiene clases disponibles"
+            await logScan(ticket.id, user.id, eventId, "WRONG_DAY", wrongDayMessage)
             return NextResponse.json({
                 success: false,
                 valid: false,
-                reason: "NO_CLASSES",
-                message: "No tiene clases disponibles",
+                reason: strictDateSchedule ? "WRONG_DAY" : "NO_CLASSES",
+                message: wrongDayMessage,
                 scannedAt: new Date().toISOString(),
-                attendance: computeAttendance(),
+                attendance,
             })
         }
 

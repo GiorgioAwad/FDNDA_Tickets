@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { 
     Camera, 
     CheckCircle, 
@@ -296,6 +297,8 @@ export default function EventScannerPage() {
     const [showHistory, setShowHistory] = useState(false)
     const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([])
     const [eventName, setEventName] = useState<string>("")
+    const [availableShifts, setAvailableShifts] = useState<string[]>([])
+    const [currentShift, setCurrentShift] = useState("")
     const [scanCount, setScanCount] = useState({ today: 0, valid: 0 })
 
     const scannerId = useMemo(() => `qr-reader-${eventId}`, [eventId])
@@ -373,8 +376,31 @@ export default function EventScannerPage() {
             try {
                 const response = await fetch(`/api/events/${eventId}`)
                 if (response.ok) {
-                    const data = await response.json()
-                    setEventName(data.title || "Evento")
+                    const payload = await response.json() as {
+                        data?: {
+                            title?: string
+                            ticketTypes?: Array<{ validDays?: unknown }>
+                        }
+                    }
+                    const eventData = payload?.data
+
+                    setEventName(eventData?.title || "Evento")
+
+                    const shiftSet = new Set<string>()
+                    for (const ticketType of eventData?.ticketTypes ?? []) {
+                        const schedule = parseTicketScheduleConfig(ticketType.validDays)
+                        for (const shift of schedule.shifts) {
+                            shiftSet.add(shift)
+                        }
+                    }
+
+                    const nextShifts = Array.from(shiftSet)
+                    setAvailableShifts(nextShifts)
+                    setCurrentShift((previous) =>
+                        previous && nextShifts.includes(previous)
+                            ? previous
+                            : (nextShifts[0] ?? "")
+                    )
                 }
             } catch {
                 // Ignore errors
@@ -688,6 +714,15 @@ export default function EventScannerPage() {
         if (!parsedPayload) {
             return
         }
+
+        if (availableShifts.length > 0 && !currentShift) {
+            setScanResult({
+                valid: false,
+                reason: "SHIFT_REQUIRED",
+                message: "Selecciona el turno actual antes de escanear.",
+            })
+            return
+        }
         
         lastScannedCodeRef.current = parsedPayload.displayCode
         setScanning(false)
@@ -702,12 +737,13 @@ export default function EventScannerPage() {
             const endpoint = parsedPayload.kind === "signed-qr" ? "/api/scans/validate" : "/api/scans/lookup"
             const body =
                 parsedPayload.kind === "signed-qr"
-                    ? { qrData: parsedPayload.qrData, eventId }
+                    ? { qrData: parsedPayload.qrData, eventId, currentShift: currentShift || null }
                     : {
                           ticketCode: parsedPayload.ticketCode,
                           ticketId: parsedPayload.ticketId,
                           rawInput: qrData,
                           eventId,
+                          currentShift: currentShift || null,
                       }
 
             const response = await fetch(endpoint, {
@@ -741,10 +777,19 @@ export default function EventScannerPage() {
         } finally {
             setIsProcessing(false)
         }
-    }, [eventId, isOnline, playSound, vibrate, addToHistory])
+    }, [eventId, isOnline, playSound, vibrate, addToHistory, availableShifts.length, currentShift])
 
     const handleManualSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault()
+        if (availableShifts.length > 0 && !currentShift) {
+            setScanResult({
+                valid: false,
+                reason: "SHIFT_REQUIRED",
+                message: "Selecciona el turno actual antes de validar manualmente.",
+            })
+            return
+        }
+
         const parsedManual = parseLookupPayload(manualCode)
         if (!parsedManual || parsedManual.kind !== "lookup") {
             setScanResult({
@@ -769,6 +814,7 @@ export default function EventScannerPage() {
                     ticketId: parsedManual.ticketId,
                     rawInput: manualCode,
                     eventId,
+                    currentShift: currentShift || null,
                 }),
             })
 
@@ -795,7 +841,7 @@ export default function EventScannerPage() {
         } finally {
             setIsProcessing(false)
         }
-    }, [manualCode, eventId, playSound, vibrate, addToHistory])
+    }, [manualCode, eventId, playSound, vibrate, addToHistory, availableShifts.length, currentShift])
 
     const resetScan = useCallback(() => {
         setScanResult(null)
@@ -868,6 +914,28 @@ export default function EventScannerPage() {
                     </Button>
                 </div>
             </div>
+
+            {availableShifts.length > 0 && (
+                <div className="px-3 py-2 bg-gray-950 border-b border-gray-800 flex items-center gap-2">
+                    <label htmlFor="scanner-shift" className="text-xs text-gray-400 whitespace-nowrap">
+                        Turno actual
+                    </label>
+                    <select
+                        id="scanner-shift"
+                        value={currentShift}
+                        onChange={(event) => setCurrentShift(event.target.value)}
+                        className="h-8 flex-1 rounded-md border border-gray-700 bg-gray-900 px-2 text-sm text-white"
+                        disabled={isProcessing}
+                    >
+                        <option value="">Seleccionar turno</option>
+                        {availableShifts.map((shift) => (
+                            <option key={shift} value={shift}>
+                                {shift}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
 
             {/* History Panel */}
             {showHistory && (

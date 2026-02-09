@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { createQRPayload, generateQRDataURL, formatDateLocal, formatDateUTC } from "@/lib/qr"
 import { getDaysBetween } from "@/lib/utils"
 import { extractTicketValidDates } from "@/lib/ticket-schedule"
+import { getExpectedShiftForDate, getTicketScheduleSelectionsForAttendee } from "@/lib/ticket-shift"
 export const runtime = "nodejs"
 
 type TicketEntitlement = {
@@ -216,14 +217,24 @@ export async function GET(
         }
 
         let qrDataUrl: string | null = null
+        let qrShift: string | null = null
 
         if (hasEntitlement && ticket.status === "ACTIVE") {
+            const scheduleSelections = await getTicketScheduleSelectionsForAttendee({
+                orderId: ticket.orderId,
+                ticketTypeId: ticket.ticketTypeId,
+                attendeeName: ticket.attendeeName,
+                attendeeDni: ticket.attendeeDni,
+            })
+            qrShift = getExpectedShiftForDate(scheduleSelections, dateStr)
+
             const qrPayload = createQRPayload(
                 ticket.id,
                 ticket.eventId,
                 ticket.userId,
                 ticket.ticketCode,
-                qrDate
+                qrDate,
+                qrShift
             )
             qrDataUrl = await generateQRDataURL(qrPayload)
         }
@@ -236,6 +247,7 @@ export async function GET(
                 scanCount,
                 qrDataUrl,
                 qrDate: dateStr,
+                qrShift,
             },
         })
     } catch (error) {

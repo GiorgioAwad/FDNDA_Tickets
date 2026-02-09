@@ -24,6 +24,14 @@ function normalizeShift(value: unknown): string | null {
     return trimmed
 }
 
+export function normalizeShiftLabel(value: unknown): string | null {
+    return normalizeShift(value)
+}
+
+export function normalizeScheduleDate(value: unknown): string | null {
+    return normalizeDate(value)
+}
+
 function normalizeDateArray(values: unknown): string[] {
     if (!Array.isArray(values)) return []
     const normalized = values
