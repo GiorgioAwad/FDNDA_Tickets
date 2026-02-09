@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { getTodayDateString } from "@/lib/qr"
-import { extractTicketValidDates, normalizeShiftLabel } from "@/lib/ticket-schedule"
+import { extractTicketValidDates, extractTicketShiftOptions, normalizeShiftLabel } from "@/lib/ticket-schedule"
 import {
     getExpectedShiftForDate,
     getTicketScheduleSelectionsForAttendee,
@@ -271,6 +271,9 @@ export async function POST(request: NextRequest) {
 
         const today = getTodayDateString()
         const strictDateSchedule = extractTicketValidDates(ticket.ticketType.validDays).length > 0
+        const configuredShifts = extractTicketShiftOptions(ticket.ticketType.validDays)
+        const hasMultipleShifts = configuredShifts.length > 1
+
         const scheduleSelections = await getTicketScheduleSelectionsForAttendee({
             orderId: ticket.orderId,
             ticketTypeId: ticket.ticketTypeId,
@@ -279,7 +282,31 @@ export async function POST(request: NextRequest) {
         })
         const expectedShift = getExpectedShiftForDate(scheduleSelections, today)
 
-        if (expectedShift) {
+        // Para tickets con multiples turnos: validar que el turno seleccionado
+        // en el scanner sea uno de los configurados (permite un scan por turno)
+        if (hasMultipleShifts) {
+            if (!currentShift) {
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "SHIFT_REQUIRED",
+                    message: `Selecciona el turno actual para validar este ticket.`,
+                })
+            }
+
+            const isValidShift = configuredShifts.some(
+                (s) => normalizeShiftLabel(s)?.toLowerCase() === currentShift?.toLowerCase()
+            )
+            if (!isValidShift) {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Turno no configurado: ${currentShift}`, currentShift)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "WRONG_SHIFT",
+                    message: `Este turno no esta configurado para este tipo de ticket.`,
+                })
+            }
+        } else if (expectedShift) {
             if (!currentShift) {
                 return NextResponse.json({
                     success: false,
@@ -295,7 +322,8 @@ export async function POST(request: NextRequest) {
                     user.id,
                     eventId,
                     "WRONG_DAY",
-                    `Turno incorrecto. Esperado: ${expectedShift}`
+                    `Turno incorrecto. Esperado: ${expectedShift}`,
+                    currentShift
                 )
                 return NextResponse.json({
                     success: false,
@@ -414,12 +442,59 @@ export async function POST(request: NextRequest) {
         }
 
         if (entitlement.status === "USED") {
-            await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Ya usado hoy")
+            // Si hay multiples turnos, permitir un scan por cada turno distinto
+            if (hasMultipleShifts && currentShift) {
+                const todayScans = await prisma.scan.findMany({
+                    where: {
+                        ticketId: ticket.id,
+                        result: "VALID",
+                        date: new Date(`${today}T00:00:00`),
+                    },
+                    select: { shift: true },
+                })
+
+                const scannedShifts = todayScans
+                    .map((s) => s.shift)
+                    .filter(Boolean)
+                    .map((s) => normalizeShiftLabel(s!))
+
+                const currentShiftNorm = normalizeShiftLabel(currentShift)
+                const alreadyScannedThisShift = scannedShifts.some(
+                    (s) => s === currentShiftNorm
+                )
+
+                if (!alreadyScannedThisShift) {
+                    const usedAt = new Date()
+                    await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift)
+
+                    return NextResponse.json({
+                        success: true,
+                        valid: true,
+                        reason: "VALID",
+                        message: "Asistencia registrada",
+                        ticket: {
+                            id: ticket.id,
+                            ticketCode: ticket.ticketCode,
+                            attendeeName: ticket.attendeeName,
+                            attendeeDni: ticket.attendeeDni,
+                            eventTitle: ticket.event.title,
+                            ticketTypeName: ticket.ticketType.name,
+                            entryDate: today,
+                        },
+                        scannedAt: usedAt.toISOString(),
+                        attendance: computeAttendance(),
+                    })
+                }
+            }
+
+            await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Ya usado hoy", currentShift)
             return NextResponse.json({
                 success: false,
                 valid: false,
                 reason: "ALREADY_USED",
-                message: "Asistencia ya registrada hoy",
+                message: hasMultipleShifts
+                    ? "Ya registrado en este turno"
+                    : "Asistencia ya registrada hoy",
                 ticket: {
                     id: ticket.id,
                     ticketCode: ticket.ticketCode,
@@ -452,7 +527,7 @@ export async function POST(request: NextRequest) {
                 select: { usedAt: true },
             })
 
-            await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Ya usado por otro scanner")
+            await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Ya usado por otro scanner", currentShift)
             return NextResponse.json({
                 success: false,
                 valid: false,
@@ -475,7 +550,7 @@ export async function POST(request: NextRequest) {
         entitlement.status = "USED"
         entitlement.usedAt = usedAt
 
-        await logScan(ticket.id, user.id, eventId, "VALID")
+        await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift)
 
         return NextResponse.json({
             success: true,
@@ -508,7 +583,8 @@ async function logScan(
     staffId: string,
     eventId: string,
     result: ScanResultType,
-    notes?: string
+    notes?: string,
+    shift?: string | null
 ) {
     try {
         await prisma.scan.create({
@@ -518,6 +594,7 @@ async function logScan(
                 eventId,
                 date: new Date(),
                 result,
+                shift: shift || null,
                 notes,
             },
         })

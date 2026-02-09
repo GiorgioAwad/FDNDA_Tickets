@@ -140,6 +140,9 @@ export async function POST(request: NextRequest) {
         }
 
         const strictDateSchedule = extractTicketValidDates(ticket.ticketType.validDays).length > 0
+        const configuredShifts = extractTicketShiftOptions(ticket.ticketType.validDays)
+        const hasMultipleShifts = configuredShifts.length > 1
+
         const scheduleSelections = await getTicketScheduleSelectionsForAttendee({
             orderId: ticket.orderId,
             ticketTypeId: ticket.ticketTypeId,
@@ -149,17 +152,42 @@ export async function POST(request: NextRequest) {
         const expectedShift = getExpectedShiftForDate(scheduleSelections, today)
         const qrShift = normalizeShiftLabel(payload.shift)
 
-        if (expectedShift && qrShift && !shiftsMatch(qrShift, expectedShift)) {
-            await logScan(ticket.id, user.id, eventId, "INVALID", "Turno del QR no coincide")
-            return NextResponse.json({
-                success: false,
-                valid: false,
-                reason: "INVALID_SHIFT",
-                message: "El QR no coincide con el turno configurado para este ticket.",
-            })
-        }
+        // Para tickets con multiples turnos: validar que el turno seleccionado
+        // en el scanner sea uno de los configurados (permite un scan por turno)
+        if (hasMultipleShifts) {
+            if (!currentShift) {
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "SHIFT_REQUIRED",
+                    message: `Selecciona el turno actual para validar este ticket.`,
+                })
+            }
 
-        if (expectedShift) {
+            const isValidShift = configuredShifts.some(
+                (s) => normalizeShiftLabel(s)?.toLowerCase() === currentShift?.toLowerCase()
+            )
+            if (!isValidShift) {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Turno no configurado: ${currentShift}`)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "WRONG_SHIFT",
+                    message: `Este turno no esta configurado para este tipo de ticket.`,
+                })
+            }
+        } else if (expectedShift) {
+            // Ticket con un solo turno: validar contra el turno esperado
+            if (qrShift && !shiftsMatch(qrShift, expectedShift)) {
+                await logScan(ticket.id, user.id, eventId, "INVALID", "Turno del QR no coincide")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "INVALID_SHIFT",
+                    message: "El QR no coincide con el turno configurado para este ticket.",
+                })
+            }
+
             if (!currentShift) {
                 return NextResponse.json({
                     success: false,
@@ -301,10 +329,6 @@ export async function POST(request: NextRequest) {
                 attendance,
             })
         }
-
-        // Verificar si el ticket tiene multiples turnos configurados
-        const configuredShifts = extractTicketShiftOptions(ticket.ticketType.validDays)
-        const hasMultipleShifts = configuredShifts.length > 1
 
         if (entitlement.status === "USED") {
             // Si hay multiples turnos, permitir un scan por cada turno distinto
