@@ -136,10 +136,10 @@ export default async function HomePage() {
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-16 max-w-3xl mx-auto">
             {[
-              { label: "Eventos", value: "50+", icon: Calendar },
-              { label: "Entradas Vendidas", value: "10K+", icon: Users },
-              { label: "Disciplinas", value: "5", icon: Trophy },
-              { label: "Años de Historia", value: "85+", icon: Timer },
+              { label: "Años de Historia", value: "100", icon: Timer },
+              { label: "Disciplinas", value: "6", icon: Trophy },
+              { label: "Año de Fundación", value: "1926", icon: Calendar },
+              { label: "Plataforma Oficial", value: "1", icon: Shield },
             ].map((stat) => (
               <div key={stat.label} className="p-4 rounded-xl bg-white/10 backdrop-blur-sm">
                 <stat.icon className="h-6 w-6 mb-2 mx-auto text-[hsl(var(--fdnda-accent))]" />

@@ -189,6 +189,7 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                                         <option value="Clavados">Clavados</option>
                                         <option value="Natación Artística">Natación Artística</option>
                                         <option value="Aguas Abiertas">Aguas Abiertas</option>
+                                        <option value="Master">Master</option>
                                     </select>
                                 </div>
                                 <div className="space-y-2">

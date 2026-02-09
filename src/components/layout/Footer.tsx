@@ -67,6 +67,7 @@ export function Footer() {
                             <li>Clavados</li>
                             <li>Natación Artística</li>
                             <li>Aguas Abiertas</li>
+                            <li>Master</li>
                         </ul>
                     </div>
 
