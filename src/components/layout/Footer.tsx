@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { Facebook, Instagram, Twitter, Youtube, Mail, Phone, MapPin } from "lucide-react"
+import { Facebook, Instagram, Mail, Phone, MapPin } from "lucide-react"
 
 export function Footer() {
     return (
@@ -76,47 +76,49 @@ export function Footer() {
                         <ul className="space-y-3 text-sm text-white/70">
                             <li className="flex items-center gap-2">
                                 <MapPin className="h-4 w-4 flex-shrink-0" />
-                                <span>Lima, Perú</span>
+                                <span>Jr. Nazca Cdra. 6 s/n Lima 11, Perú</span>
                             </li>
                             <li className="flex items-center gap-2">
                                 <Phone className="h-4 w-4 flex-shrink-0" />
-                                <span>+51 1 XXX XXXX</span>
+                                <span>+51 941 632 535</span>
                             </li>
                             <li className="flex items-center gap-2">
                                 <Mail className="h-4 w-4 flex-shrink-0" />
-                                <span>tickets@fdnda.org.pe</span>
+                                <span>ticketing@fdnda.org</span>
                             </li>
                         </ul>
 
                         {/* Social */}
                         <div className="flex gap-3 mt-4">
                             <a
-                                href="#"
+                                href="https://www.facebook.com/FDNDeportesAcuaticos/"
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
                                 aria-label="Facebook"
                             >
                                 <Facebook className="h-4 w-4" />
                             </a>
                             <a
-                                href="#"
+                                href="https://www.instagram.com/fdndeportesacuaticos"
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
                                 aria-label="Instagram"
                             >
                                 <Instagram className="h-4 w-4" />
                             </a>
                             <a
-                                href="#"
+                                href="https://www.flickr.com/people/199063205@N06/"
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-                                aria-label="Twitter"
+                                aria-label="Flickr"
                             >
-                                <Twitter className="h-4 w-4" />
-                            </a>
-                            <a
-                                href="#"
-                                className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-                                aria-label="YouTube"
-                            >
-                                <Youtube className="h-4 w-4" />
+                                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                                    <circle cx="7" cy="12" r="5" />
+                                    <circle cx="17" cy="12" r="5" />
+                                </svg>
                             </a>
                         </div>
                     </div>
