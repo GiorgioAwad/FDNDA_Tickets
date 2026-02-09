@@ -31,6 +31,11 @@ const formatDateInputValue = (value: string) => {
     return `${year}-${month}-${day}`
 }
 
+const normalizeEventDay = (day: EventDay): EventDay => ({
+    ...day,
+    date: formatDateInputValue(day.date),
+})
+
 export function EventDaysManager({
     eventId,
     initialDays,
@@ -38,10 +43,7 @@ export function EventDaysManager({
     eventEndDate,
 }: EventDaysManagerProps) {
     const [days, setDays] = useState<EventDay[]>(
-        initialDays.map((day) => ({
-            ...day,
-            date: formatDateInputValue(day.date),
-        }))
+        initialDays.map((day) => normalizeEventDay(day))
     )
     const [isAdding, setIsAdding] = useState(false)
     const [editingId, setEditingId] = useState<string | null>(null)
@@ -85,11 +87,12 @@ export function EventDaysManager({
 
             const data = await response.json()
             if (!response.ok) throw new Error(data.error || "Error al guardar día")
+            const savedDay = normalizeEventDay(data.data as EventDay)
 
             if (editingId) {
-                setDays(days.map((day) => (day.id === editingId ? data.data : day)))
+                setDays(days.map((day) => (day.id === editingId ? savedDay : day)))
             } else {
-                setDays([...days, data.data])
+                setDays([...days, savedDay])
             }
 
             resetForm()
@@ -120,7 +123,7 @@ export function EventDaysManager({
             <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Días del Evento</CardTitle>
                 {!isAdding && !editingId && (
-                    <Button size="sm" onClick={() => setIsAdding(true)}>
+                    <Button type="button" size="sm" onClick={() => setIsAdding(true)}>
                         <Plus className="h-4 w-4 mr-2" />
                         Agregar
                     </Button>
@@ -170,10 +173,10 @@ export function EventDaysManager({
                             </div>
                         </div>
                         <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" onClick={resetForm}>
+                            <Button type="button" variant="ghost" size="sm" onClick={resetForm}>
                                 Cancelar
                             </Button>
-                            <Button size="sm" onClick={handleSave} loading={loading}>
+                            <Button type="button" size="sm" onClick={handleSave} loading={loading}>
                                 <Save className="h-4 w-4 mr-2" />
                                 Guardar
                             </Button>
@@ -185,35 +188,41 @@ export function EventDaysManager({
                     {days.map((day) => (
                         <div
                             key={day.id}
-                            className="flex items-center justify-between p-3 rounded-lg border bg-white"
+                            className="rounded-lg border bg-white p-3"
                         >
-                            <div>
-                                <div className="font-medium">{day.date}</div>
-                                <div className="text-sm text-gray-500">
-                                    {day.openTime} - {day.closeTime} · Capacidad {day.capacity}
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0 flex-1">
+                                    <div className="font-medium break-words">{day.date}</div>
+                                    <div className="text-sm text-gray-500 break-words">
+                                        {day.openTime} - {day.closeTime} · Capacidad {day.capacity}
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => {
-                                        setEditingId(day.id ?? null)
-                                        setFormData(day)
-                                        setIsAdding(false)
-                                    }}
-                                >
-                                    <Edit className="h-4 w-4 text-gray-500" />
-                                </Button>
-                                {day.id && (
+                                <div className="flex items-center gap-1 self-end shrink-0 sm:self-auto">
                                     <Button
+                                        type="button"
                                         variant="ghost"
                                         size="icon"
-                                        onClick={() => handleDelete(day.id!)}
+                                        className="h-9 w-9"
+                                        onClick={() => {
+                                            setEditingId(day.id ?? null)
+                                            setFormData(normalizeEventDay(day))
+                                            setIsAdding(false)
+                                        }}
                                     >
-                                        <Trash2 className="h-4 w-4 text-red-500" />
+                                        <Edit className="h-4 w-4 text-gray-500" />
                                     </Button>
-                                )}
+                                    {day.id && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-9 w-9"
+                                            onClick={() => handleDelete(day.id!)}
+                                        >
+                                            <Trash2 className="h-4 w-4 text-red-500" />
+                                        </Button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     ))}

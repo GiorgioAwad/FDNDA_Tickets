@@ -39,6 +39,7 @@ export function TicketTypeManager({
     const [ticketTypes, setTicketTypes] = useState<TicketType[]>(initialTicketTypes)
     const [isAdding, setIsAdding] = useState(false)
     const [editingId, setEditingId] = useState<string | null>(null)
+    const [entryMode, setEntryMode] = useState<"standard" | "shift">("standard")
     const [loading, setLoading] = useState(false)
 
     const [autoName, setAutoName] = useState(true)
@@ -61,6 +62,20 @@ export function TicketTypeManager({
         sortOrder: 0,
     })
     const [capacityInput, setCapacityInput] = useState("100")
+
+    const isShiftTicketType = (ticket: TicketType) => {
+        const schedule = parseTicketScheduleConfig(ticket.validDays)
+        return schedule.dates.length > 0 || schedule.shifts.length > 0
+    }
+
+    const standardTicketTypes = useMemo(
+        () => ticketTypes.filter((ticket) => !isShiftTicketType(ticket)),
+        [ticketTypes]
+    )
+    const shiftTicketTypes = useMemo(
+        () => ticketTypes.filter((ticket) => isShiftTicketType(ticket)),
+        [ticketTypes]
+    )
 
     const quickPresets = useMemo(
         () => [
@@ -159,11 +174,11 @@ export function TicketTypeManager({
     }
 
     useEffect(() => {
-        if (!autoName) return
+        if (entryMode !== "shift" || !autoName) return
         const generatedName = buildName()
         setFormData((prev) => ({ ...prev, name: generatedName }))
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [autoName, daysLabel, sessionsPerWeek, startTime, endTime, customLabel, eventStartDate, eventEndDate])
+    }, [entryMode, autoName, daysLabel, sessionsPerWeek, startTime, endTime, customLabel, eventStartDate, eventEndDate])
 
     const resetForm = () => {
         setFormData({
@@ -185,6 +200,7 @@ export function TicketTypeManager({
         setUseSpecificDays(false)
         setSelectedValidDays([])
         setShiftsInput("")
+        setEntryMode("standard")
         setIsAdding(false)
         setEditingId(null)
     }
@@ -204,8 +220,9 @@ export function TicketTypeManager({
             .map((shift) => shift.trim())
             .filter(Boolean)
         const selectedDays = Array.from(new Set(selectedValidDays)).sort((a, b) => a.localeCompare(b))
+        const shouldUseSpecificDays = entryMode === "shift" || useSpecificDays
 
-        if (useSpecificDays && selectedDays.length === 0) {
+        if (shouldUseSpecificDays && selectedDays.length === 0) {
             alert("Selecciona al menos un dia valido")
             return
         }
@@ -213,7 +230,7 @@ export function TicketTypeManager({
         if (
             formData.isPackage &&
             formData.packageDaysCount &&
-            useSpecificDays &&
+            shouldUseSpecificDays &&
             selectedDays.length > 0 &&
             formData.packageDaysCount > selectedDays.length
         ) {
@@ -221,7 +238,7 @@ export function TicketTypeManager({
             return
         }
 
-        const validDaysPayload = useSpecificDays
+        const validDaysPayload = shouldUseSpecificDays
             ? buildTicketValidDaysPayload({ dates: selectedDays, shifts })
             : []
 
@@ -301,20 +318,75 @@ export function TicketTypeManager({
 
     return (
         <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Tipos de Entrada</CardTitle>
+            <CardHeader className="space-y-3">
+                <CardTitle>Entradas</CardTitle>
                 {!isAdding && !editingId && (
-                    <Button size="sm" onClick={() => setIsAdding(true)}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Agregar
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                                setEntryMode("standard")
+                                setAutoName(false)
+                                setUseSpecificDays(false)
+                                setFormData({
+                                    name: "",
+                                    description: "",
+                                    price: 0,
+                                    capacity: 100,
+                                    isPackage: false,
+                                    packageDaysCount: 0,
+                                    sortOrder: 0,
+                                })
+                                setCapacityInput("100")
+                                setSelectedValidDays([])
+                                setShiftsInput("")
+                                setIsAdding(true)
+                            }}
+                        >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Tipo de Entrada
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                                setEntryMode("shift")
+                                setAutoName(true)
+                                setUseSpecificDays(true)
+                                setFormData({
+                                    name: "",
+                                    description: "",
+                                    price: 0,
+                                    capacity: 100,
+                                    isPackage: false,
+                                    packageDaysCount: 0,
+                                    sortOrder: 0,
+                                })
+                                setCapacityInput("100")
+                                setSelectedValidDays([])
+                                setShiftsInput("")
+                                setIsAdding(true)
+                            }}
+                        >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Entrada con Turno
+                        </Button>
+                    </div>
                 )}
             </CardHeader>
             <CardContent className="space-y-4">
                 {(isAdding || editingId) && (
                     <div className="bg-gray-50 p-4 rounded-lg space-y-4 border">
                         <h4 className="font-medium text-sm">
-                            {editingId ? "Editar Entrada" : "Nueva Entrada"}
+                            {editingId
+                                ? entryMode === "shift"
+                                    ? "Editar Entrada con Turno"
+                                    : "Editar Tipo de Entrada"
+                                : entryMode === "shift"
+                                  ? "Nueva Entrada con Turno"
+                                  : "Nuevo Tipo de Entrada"}
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
@@ -322,19 +394,21 @@ export function TicketTypeManager({
                                 <Input
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder="Ej: General, VIP"
-                                    readOnly={autoName}
+                                    placeholder={entryMode === "shift" ? "Ej: Turno Mañana" : "Ej: General, VIP"}
+                                    readOnly={entryMode === "shift" && autoName}
                                 />
-                                <div className="flex items-center gap-2 text-xs text-gray-500">
-                                    <input
-                                        type="checkbox"
-                                        id="autoName"
-                                        checked={autoName}
-                                        onChange={(e) => setAutoName(e.target.checked)}
-                                        className="h-4 w-4 rounded border-gray-300"
-                                    />
-                                    <label htmlFor="autoName">Nombre automatico</label>
-                                </div>
+                                {entryMode === "shift" && (
+                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                        <input
+                                            type="checkbox"
+                                            id="autoName"
+                                            checked={autoName}
+                                            onChange={(e) => setAutoName(e.target.checked)}
+                                            className="h-4 w-4 rounded border-gray-300"
+                                        />
+                                        <label htmlFor="autoName">Nombre automatico</label>
+                                    </div>
+                                )}
                             </div>
                             <div className="space-y-2">
                                 <label className="text-xs font-medium">Descripcion (opcional)</label>
@@ -389,6 +463,7 @@ export function TicketTypeManager({
                             </div>
                         </div>
 
+                        {entryMode === "shift" && (
                         <div className="rounded-lg border bg-white p-3">
                             <div className="text-xs font-semibold text-gray-600 mb-3">
                                 Constructor rapido de turno
@@ -454,27 +529,18 @@ export function TicketTypeManager({
                                 </div>
                             )}
                         </div>
+                        )}
 
+                        {entryMode === "shift" && (
                         <div className="rounded-lg border bg-white p-3 space-y-3">
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="checkbox"
-                                    id="useSpecificDays"
-                                    checked={useSpecificDays}
-                                    onChange={(e) => setUseSpecificDays(e.target.checked)}
-                                    className="h-4 w-4 rounded border-gray-300"
-                                />
-                                <label htmlFor="useSpecificDays" className="text-xs font-semibold text-gray-700">
-                                    Restringir a dias especificos y turnos
-                                </label>
+                            <div className="text-xs font-semibold text-gray-700">
+                                Dias y turnos habilitados para esta entrada
                             </div>
-
-                            {useSpecificDays && (
-                                <>
+                            <>
                                     {dateOptions.length > 0 ? (
                                         <div>
                                             <div className="text-xs text-gray-500 mb-2">
-                                                Dias validos para este tipo de entrada
+                                                Puedes seleccionar multiples dias
                                             </div>
                                             <div className="flex flex-wrap gap-2">
                                                 {dateOptions.map((date) => {
@@ -507,24 +573,24 @@ export function TicketTypeManager({
 
                                     <div className="space-y-1">
                                         <label className="text-xs text-gray-500">
-                                            Turnos (separados por coma)
+                                            Turnos (separados por coma, opcional)
                                         </label>
                                         <Input
                                             value={shiftsInput}
                                             onChange={(e) => setShiftsInput(e.target.value)}
-                                            placeholder="Manana, Tarde, Noche"
+                                            placeholder="Mañana, Tarde, Noche"
                                             className="h-9"
                                         />
                                     </div>
                                 </>
-                            )}
                         </div>
+                        )}
 
                         <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="sm" onClick={resetForm}>
+                            <Button type="button" variant="ghost" size="sm" onClick={resetForm}>
                                 Cancelar
                             </Button>
-                            <Button size="sm" onClick={handleSave} loading={loading}>
+                            <Button type="button" size="sm" onClick={handleSave} loading={loading}>
                                 <Save className="h-4 w-4 mr-2" />
                                 Guardar
                             </Button>
@@ -532,83 +598,99 @@ export function TicketTypeManager({
                     </div>
                 )}
 
-                <div className="space-y-2">
-                    {ticketTypes.map((ticket) => {
-                        const schedule = parseTicketScheduleConfig(ticket.validDays)
+                {[
+                    { title: "Tipos de Entrada", items: standardTicketTypes, empty: "No hay tipos de entrada registrados" },
+                    { title: "Entradas con Turno", items: shiftTicketTypes, empty: "No hay entradas con turno registradas" },
+                ].map((section) => (
+                    <div key={section.title} className="space-y-2">
+                        <h4 className="text-sm font-semibold text-gray-700">{section.title}</h4>
+                        {section.items.map((ticket) => {
+                            const schedule = parseTicketScheduleConfig(ticket.validDays)
 
-                        return (
-                            <div
-                                key={ticket.id}
-                                className={`flex items-center justify-between p-3 rounded-lg border ${ticket.isActive === false ? "bg-gray-100 opacity-60" : "bg-white"}`}
-                            >
-                                <div>
-                                    <div className="font-medium flex items-center gap-2">
-                                        {ticket.name}
-                                        {ticket.isPackage && (
-                                            <Badge variant="secondary" className="text-xs">
-                                                Paquete {ticket.packageDaysCount} dias
-                                            </Badge>
-                                        )}
-                                        {schedule.dates.length > 0 && (
-                                            <Badge variant="secondary" className="text-xs">
-                                                {schedule.dates.length} dias
-                                            </Badge>
-                                        )}
-                                        {schedule.shifts.length > 0 && (
-                                            <Badge variant="secondary" className="text-xs">
-                                                {schedule.shifts.length} turnos
-                                            </Badge>
-                                        )}
-                                        {ticket.isActive === false && (
-                                            <Badge variant="destructive" className="text-xs">Inactivo</Badge>
-                                        )}
-                                    </div>
-                                    <div className="text-sm text-gray-500">
-                                        {formatPrice(ticket.price)} • {ticket.sold || 0} / {ticket.capacity} vendidos
+                            return (
+                                <div
+                                    key={ticket.id}
+                                    className={`rounded-lg border p-3 ${ticket.isActive === false ? "bg-gray-100 opacity-70" : "bg-white"}`}
+                                >
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="font-medium flex flex-wrap items-center gap-2">
+                                                <span className="break-words">{ticket.name}</span>
+                                                {ticket.isPackage && (
+                                                    <Badge variant="secondary" className="text-xs">
+                                                        Paquete {ticket.packageDaysCount} dias
+                                                    </Badge>
+                                                )}
+                                                {schedule.dates.length > 0 && (
+                                                    <Badge variant="secondary" className="text-xs">
+                                                        {schedule.dates.length} dias
+                                                    </Badge>
+                                                )}
+                                                {schedule.shifts.length > 0 && (
+                                                    <Badge variant="secondary" className="text-xs">
+                                                        {schedule.shifts.length} turnos
+                                                    </Badge>
+                                                )}
+                                                {ticket.isActive === false && (
+                                                    <Badge variant="destructive" className="text-xs">Inactivo</Badge>
+                                                )}
+                                            </div>
+                                            <div className="text-sm text-gray-500 break-words">
+                                                {formatPrice(ticket.price)} • {ticket.sold || 0} / {ticket.capacity} vendidos
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1 self-end shrink-0 sm:self-auto">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-9 w-9"
+                                                onClick={() => handleToggleActive(ticket.id!, ticket.isActive !== false)}
+                                                title={ticket.isActive !== false ? "Desactivar" : "Activar"}
+                                            >
+                                                <Power className={`h-4 w-4 ${ticket.isActive !== false ? "text-green-500" : "text-gray-400"}`} />
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-9 w-9"
+                                                onClick={() => {
+                                                    const mode = isShiftTicketType(ticket) ? "shift" : "standard"
+                                                    setEntryMode(mode)
+                                                    setEditingId(ticket.id!)
+                                                    setFormData(ticket)
+                                                    setAutoName(false)
+                                                    setIsAdding(false)
+                                                    setCapacityInput(String(ticket.capacity ?? 0))
+                                                    setUseSpecificDays(mode === "shift")
+                                                    setSelectedValidDays(schedule.dates)
+                                                    setShiftsInput(schedule.shifts.join(", "))
+                                                }}
+                                            >
+                                                <Edit className="h-4 w-4 text-gray-500" />
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-9 w-9"
+                                                onClick={() => handleDelete(ticket.id!)}
+                                            >
+                                                <Trash2 className="h-4 w-4 text-red-500" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleToggleActive(ticket.id!, ticket.isActive !== false)}
-                                        title={ticket.isActive !== false ? "Desactivar" : "Activar"}
-                                    >
-                                        <Power className={`h-4 w-4 ${ticket.isActive !== false ? "text-green-500" : "text-gray-400"}`} />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => {
-                                            setEditingId(ticket.id!)
-                                            setFormData(ticket)
-                                            setAutoName(false)
-                                            setIsAdding(false)
-                                            setCapacityInput(String(ticket.capacity ?? 0))
-                                            setUseSpecificDays(schedule.dates.length > 0)
-                                            setSelectedValidDays(schedule.dates)
-                                            setShiftsInput(schedule.shifts.join(", "))
-                                        }}
-                                    >
-                                        <Edit className="h-4 w-4 text-gray-500" />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleDelete(ticket.id!)}
-                                    >
-                                        <Trash2 className="h-4 w-4 text-red-500" />
-                                    </Button>
-                                </div>
+                            )
+                        })}
+                        {section.items.length === 0 && !isAdding && (
+                            <div className="text-center py-4 text-gray-500 text-sm border rounded-lg bg-gray-50">
+                                {section.empty}
                             </div>
-                        )
-                    })}
-                    {ticketTypes.length === 0 && !isAdding && (
-                        <div className="text-center py-4 text-gray-500 text-sm">
-                            No hay tipos de entrada registrados
-                        </div>
-                    )}
-                </div>
+                        )}
+                    </div>
+                ))}
             </CardContent>
         </Card>
     )
