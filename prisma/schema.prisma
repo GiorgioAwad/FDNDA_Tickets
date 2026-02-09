@@ -255,6 +255,7 @@ model Scan {
   date      DateTime   @db.Date
   scannedAt DateTime   @default(now())
   result    ScanResult
+  shift     String?
   notes     String?
 
   // Relations
