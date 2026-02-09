@@ -210,10 +210,14 @@ export async function POST(request: NextRequest) {
             return buildAttendanceSummary(ticket)
         }
 
-        // Solo permitimos reasignacion automatica en tickets sin calendario estricto.
+        // Buscar entitlement para hoy
         let entitlement = ticket.entitlements.find((e) => matchesToday(e.date, today))
 
-        if (!entitlement && !strictDateSchedule) {
+        // Reasignacion automatica: para paquetes siempre se permite reasignar
+        // un entitlement AVAILABLE al dia de hoy; para tickets sin calendario
+        // estricto tambien se permite.
+        const canReassign = !strictDateSchedule || isPackageLike
+        if (!entitlement && canReassign) {
             const availableEntitlement = ticket.entitlements.find((e) => e.status === "AVAILABLE")
 
             if (availableEntitlement) {
