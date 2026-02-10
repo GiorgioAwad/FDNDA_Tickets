@@ -203,24 +203,41 @@ export default function TicketDetailPage() {
         // Multi-shift package (e.g., "Full day - 4 días" with Mañana/Tarde)
         const dayCount = ticket.ticketType.packageDaysCount ?? classCount ?? 0
         totalCount = dayCount * shifts.length
+
+        // Map actual scans to day+shift slots using unique scan dates
+        const uniqueScanDates = [...new Set(scans.map(s => s.date))].sort()
+
+        // Build set of used day+shift combos from real scan data
+        const usedSlots = new Set<string>()
+        for (const scan of scans) {
+            const dayNumber = uniqueScanDates.indexOf(scan.date)
+            if (dayNumber >= 0 && scan.shift) {
+                // Match scan shift against configured shifts
+                const scanShortLabel = shortShiftLabel(scan.shift).trim().toLowerCase()
+                for (let si = 0; si < shifts.length; si++) {
+                    const configShortLabel = shortShiftLabel(shifts[si]).trim().toLowerCase()
+                    if (scanShortLabel === configShortLabel || scan.shift.trim().toLowerCase() === shifts[si].trim().toLowerCase()) {
+                        usedSlots.add(`${dayNumber}::${si}`)
+                        break
+                    }
+                }
+            }
+        }
+
         displayEntitlements = []
         for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
-            for (const shift of shifts) {
-                const slotIndex = displayEntitlements.length
-                const isUsed = slotIndex < effectiveUsedCount
-                    ? true
-                    : false
+            for (let shiftIndex = 0; shiftIndex < shifts.length; shiftIndex++) {
+                const isUsed = usedSlots.has(`${dayIndex}::${shiftIndex}`)
                 displayEntitlements.push({
-                    date: `slot-${slotIndex + 1}`,
+                    date: uniqueScanDates[dayIndex] ?? `slot-${dayIndex + 1}`,
                     status: isUsed ? "USED" : "AVAILABLE",
                     usedAt: null,
                     label: `Día ${dayIndex + 1}`,
-                    shiftLabel: shortShiftLabel(shift),
+                    shiftLabel: shortShiftLabel(shifts[shiftIndex]),
                 })
             }
         }
-        // Re-count used based on actual scans (more accurate)
-        usedDisplayCount = scans.length > 0 ? scans.length : effectiveUsedCount
+        usedDisplayCount = displayEntitlements.filter(e => e.status === "USED").length
     } else if (hasMultipleShifts && !isPackageLike) {
         // Multi-shift event-based (non-package with explicit days)
         const days = scheduleDays.length > 0 ? scheduleDays : entitlements.map((e) => new Date(e.date))
