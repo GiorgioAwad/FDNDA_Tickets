@@ -278,6 +278,7 @@ export default function EventScannerPage() {
     const scanLockedRef = useRef(false)
     const lastScanTimeRef = useRef<number>(0)
     const lastScannedCodeRef = useRef<string | null>(null)
+    const currentShiftRef = useRef("")
     const audioRef = useRef<HTMLAudioElement | null>(null)
     const audioSuccessRef = useRef<HTMLAudioElement | null>(null)
     const audioErrorRef = useRef<HTMLAudioElement | null>(null)
@@ -304,6 +305,10 @@ export default function EventScannerPage() {
     const scannerId = useMemo(() => `qr-reader-${eventId}`, [eventId])
 
     // ==================== EFFECTS ====================
+
+    useEffect(() => {
+        currentShiftRef.current = currentShift
+    }, [currentShift])
 
     // Load settings and history from localStorage
     useEffect(() => {
@@ -726,15 +731,16 @@ export default function EventScannerPage() {
 
         try {
             const endpoint = parsedPayload.kind === "signed-qr" ? "/api/scans/validate" : "/api/scans/lookup"
+            const selectedShift = currentShiftRef.current || null
             const body =
                 parsedPayload.kind === "signed-qr"
-                    ? { qrData: parsedPayload.qrData, eventId, currentShift: currentShift || null }
+                    ? { qrData: parsedPayload.qrData, eventId, currentShift: selectedShift }
                     : {
                           ticketCode: parsedPayload.ticketCode,
                           ticketId: parsedPayload.ticketId,
                           rawInput: qrData,
                           eventId,
-                          currentShift: currentShift || null,
+                          currentShift: selectedShift,
                       }
 
             const response = await fetch(endpoint, {
@@ -760,7 +766,7 @@ export default function EventScannerPage() {
             const errorResult: ScanResult = {
                 valid: false,
                 reason: "ERROR",
-                message: isOnline ? "Error de conexión" : "Sin conexión a internet",
+                message: navigator.onLine ? "Error de conexión" : "Sin conexión a internet",
             }
             setScanResult(errorResult)
             playSound("error")
@@ -768,7 +774,7 @@ export default function EventScannerPage() {
         } finally {
             setIsProcessing(false)
         }
-    }, [eventId, isOnline, playSound, vibrate, addToHistory, currentShift])
+    }, [eventId, playSound, vibrate, addToHistory])
 
     const handleManualSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault()
@@ -796,7 +802,7 @@ export default function EventScannerPage() {
                     ticketId: parsedManual.ticketId,
                     rawInput: manualCode,
                     eventId,
-                    currentShift: currentShift || null,
+                    currentShift: currentShiftRef.current || null,
                 }),
             })
 
@@ -823,7 +829,7 @@ export default function EventScannerPage() {
         } finally {
             setIsProcessing(false)
         }
-    }, [manualCode, eventId, playSound, vibrate, addToHistory, currentShift])
+    }, [manualCode, eventId, playSound, vibrate, addToHistory])
 
     const resetScan = useCallback(() => {
         setScanResult(null)

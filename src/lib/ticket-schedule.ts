@@ -19,10 +19,25 @@ function normalizeDate(value: unknown): string | null {
 }
 
 function normalizeShift(value: unknown): string | null {
-    if (typeof value !== "string") return null
-    const trimmed = value.trim()
-    if (!trimmed) return null
-    return trimmed
+    if (typeof value === "string") {
+        const trimmed = value.trim()
+        return trimmed ? trimmed : null
+    }
+
+    if (value && typeof value === "object") {
+        const record = value as Record<string, unknown>
+        const name = typeof record.name === "string" ? record.name.trim() : ""
+        const startTime = typeof record.startTime === "string" ? record.startTime.trim() : ""
+        const endTime = typeof record.endTime === "string" ? record.endTime.trim() : ""
+
+        if (!name) return null
+        if (startTime && endTime) {
+            return `${name} (${startTime}-${endTime})`
+        }
+        return name
+    }
+
+    return null
 }
 
 export function normalizeShiftLabel(value: unknown): string | null {

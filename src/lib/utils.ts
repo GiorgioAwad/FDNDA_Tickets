@@ -90,14 +90,12 @@ export function generateTicketCode(): string {
 
 export function getDaysBetween(start: Date, end: Date): Date[] {
     const days: Date[] = []
-    const current = new Date(start)
-    current.setHours(0, 0, 0, 0)
-    const endDate = new Date(end)
-    endDate.setHours(0, 0, 0, 0)
+    const current = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()))
+    const endDate = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()))
 
     while (current <= endDate) {
         days.push(new Date(current))
-        current.setDate(current.getDate() + 1)
+        current.setUTCDate(current.getUTCDate() + 1)
     }
 
     return days

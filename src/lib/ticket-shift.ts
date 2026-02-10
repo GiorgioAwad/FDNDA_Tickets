@@ -125,5 +125,9 @@ export function shiftsMatch(left: string | null | undefined, right: string | nul
     const normalizedRight = normalizeShiftLabel(right)?.toLowerCase() ?? null
 
     if (!normalizedLeft && !normalizedRight) return true
-    return normalizedLeft === normalizedRight
+    if (normalizedLeft === normalizedRight) return true
+
+    const compactLeft = normalizedLeft?.replace(/\s*\(.*\)\s*$/, "").trim() ?? null
+    const compactRight = normalizedRight?.replace(/\s*\(.*\)\s*$/, "").trim() ?? null
+    return compactLeft !== null && compactLeft === compactRight
 }

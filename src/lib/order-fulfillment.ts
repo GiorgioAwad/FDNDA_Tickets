@@ -25,7 +25,12 @@ type StoredAttendeeData = {
 
 const toDateObjectsFromDateStrings = (values: string[]): Date[] => {
     const unique = Array.from(new Set(values))
-    return unique.map((value) => new Date(value))
+    return unique.map((value) => {
+        const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+        if (!match) return new Date(value)
+        const [, year, month, day] = match
+        return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12, 0, 0))
+    })
 }
 
 const buildEntitlementDates = (input: {

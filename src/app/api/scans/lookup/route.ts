@@ -270,6 +270,7 @@ export async function POST(request: NextRequest) {
         }
 
         const today = getTodayDateString()
+        const todayDate = new Date(`${today}T12:00:00Z`)
         const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
         const strictDateSchedule = scheduleConfig.dates.length > 0
         const configuredShifts = scheduleConfig.shifts
@@ -298,8 +299,8 @@ export async function POST(request: NextRequest) {
             }
 
             if (currentShift) {
-                const isValidShift = configuredShifts.some(
-                    (s) => normalizeShiftLabel(s)?.toLowerCase() === currentShift.toLowerCase()
+                const isValidShift = configuredShifts.some((shiftOption) =>
+                    shiftsMatch(shiftOption, currentShift)
                 )
                 if (!isValidShift) {
                     await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Turno no configurado: ${currentShift}`, currentShift)
@@ -370,7 +371,7 @@ export async function POST(request: NextRequest) {
         if (!entitlement && !strictDateSchedule) {
             const availableEntitlement = ticket.entitlements.find((item) => item.status === "AVAILABLE")
             if (availableEntitlement) {
-                const reassignedDate = new Date(`${today}T00:00:00`)
+                const reassignedDate = todayDate
                 const moved = await prisma.ticketDayEntitlement.updateMany({
                     where: {
                         id: availableEntitlement.id,
@@ -414,7 +415,7 @@ export async function POST(request: NextRequest) {
             entitlement = await prisma.ticketDayEntitlement.create({
                 data: {
                     ticketId: ticket.id,
-                    date: new Date(`${today}T00:00:00`),
+                    date: todayDate,
                     status: "AVAILABLE",
                 },
             })
@@ -455,24 +456,21 @@ export async function POST(request: NextRequest) {
                     where: {
                         ticketId: ticket.id,
                         result: "VALID",
-                        date: new Date(`${today}T00:00:00`),
+                        date: todayDate,
                     },
                     select: { shift: true },
                 })
 
-                const scannedShifts = todayScans
-                    .map((s) => s.shift)
-                    .filter(Boolean)
-                    .map((s) => normalizeShiftLabel(s!))
-
-                const currentShiftNorm = normalizeShiftLabel(currentShift)
-                const alreadyScannedThisShift = scannedShifts.some(
-                    (s) => s === currentShiftNorm
+                const alreadyScannedThisShift = todayScans.some(
+                    (scanItem) => shiftsMatch(scanItem.shift, currentShift)
                 )
 
                 if (!alreadyScannedThisShift) {
                     const usedAt = new Date()
                     await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift)
+                    if (isPackageLike) {
+                        scanCount += 1
+                    }
 
                     return NextResponse.json({
                         success: true,

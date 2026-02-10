@@ -56,6 +56,12 @@ const parseShiftString = (shift: string): ShiftEntry => {
     return { name: shift.trim(), startTime: "", endTime: "" }
 }
 
+const toUTCDateOnly = (value: string | Date): Date | null => {
+    const parsed = value instanceof Date ? new Date(value) : new Date(value)
+    if (Number.isNaN(parsed.getTime())) return null
+    return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()))
+}
+
 export function TicketTypeManager({
     eventId,
     initialTicketTypes,
@@ -100,20 +106,18 @@ export function TicketTypeManager({
 
     const dateOptions = useMemo(() => {
         if (!eventStartDate || !eventEndDate) return []
-        const start = new Date(eventStartDate)
-        const end = new Date(eventEndDate)
-        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return []
+        const start = toUTCDateOnly(eventStartDate)
+        const end = toUTCDateOnly(eventEndDate)
+        if (!start || !end) return []
 
-        start.setHours(0, 0, 0, 0)
-        end.setHours(0, 0, 0, 0)
         const options: string[] = []
         const current = new Date(start)
         while (current <= end) {
-            const year = current.getFullYear()
-            const month = String(current.getMonth() + 1).padStart(2, "0")
-            const day = String(current.getDate()).padStart(2, "0")
+            const year = current.getUTCFullYear()
+            const month = String(current.getUTCMonth() + 1).padStart(2, "0")
+            const day = String(current.getUTCDate()).padStart(2, "0")
             options.push(`${year}-${month}-${day}`)
-            current.setDate(current.getDate() + 1)
+            current.setUTCDate(current.getUTCDate() + 1)
         }
         return options
     }, [eventStartDate, eventEndDate])

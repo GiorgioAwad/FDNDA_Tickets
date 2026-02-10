@@ -191,6 +191,8 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                             eventId={event.id}
                             eventTitle={event.title}
                             ticketTypes={ticketTypes}
+                            eventStartDate={event.startDate}
+                            eventEndDate={event.endDate}
                         />
                     </div>
                 </div>

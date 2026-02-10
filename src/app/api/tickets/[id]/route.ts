@@ -36,16 +36,14 @@ const buildValidDaysFromLabel = (start: Date, end: Date, label: string) => {
     const days = getWeekdayIndexes(label)
     if (!days.length) return []
     const results: Date[] = []
-    const current = new Date(start)
-    current.setHours(0, 0, 0, 0)
-    const endDate = new Date(end)
-    endDate.setHours(0, 0, 0, 0)
+    const current = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()))
+    const endDate = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()))
 
     while (current <= endDate) {
-        if (days.includes(current.getDay())) {
+        if (days.includes(current.getUTCDay())) {
             results.push(new Date(current))
         }
-        current.setDate(current.getDate() + 1)
+        current.setUTCDate(current.getUTCDate() + 1)
     }
     return results
 }
@@ -193,8 +191,8 @@ export async function GET(
         }
 
         // Generate QR for the specified date (or today)
-        let qrDate = dateParam ? new Date(dateParam) : new Date()
-        qrDate.setHours(0, 0, 0, 0)
+        let qrDate = dateParam ? new Date(`${dateParam}T00:00:00Z`) : new Date()
+        qrDate = new Date(Date.UTC(qrDate.getUTCFullYear(), qrDate.getUTCMonth(), qrDate.getUTCDate()))
 
         // Check if this date is valid for the ticket
         let dateStr = formatDateLocal(qrDate)
@@ -211,8 +209,8 @@ export async function GET(
             const nextEntitlement =
                 entitlementDates.find((entitlement) => entitlement >= dateStr) ??
                 entitlementDates[0]
-            qrDate = new Date(nextEntitlement)
-            qrDate.setHours(0, 0, 0, 0)
+            qrDate = new Date(`${nextEntitlement}T00:00:00Z`)
+            qrDate = new Date(Date.UTC(qrDate.getUTCFullYear(), qrDate.getUTCMonth(), qrDate.getUTCDate()))
             dateStr = nextEntitlement
             hasEntitlement = true
         }

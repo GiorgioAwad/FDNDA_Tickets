@@ -87,16 +87,14 @@ export const buildValidDaysFromLabel = (
     if (!days.length) return []
     
     const results: Date[] = []
-    const current = new Date(start)
-    current.setHours(0, 0, 0, 0)
-    const endDate = new Date(end)
-    endDate.setHours(0, 0, 0, 0)
+    const current = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()))
+    const endDate = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()))
 
     while (current <= endDate) {
-        if (days.includes(current.getDay())) {
+        if (days.includes(current.getUTCDay())) {
             results.push(new Date(current))
         }
-        current.setDate(current.getDate() + 1)
+        current.setUTCDate(current.getUTCDate() + 1)
     }
     return results
 }

@@ -30,14 +30,62 @@ type TicketPurchaseCardProps = {
     eventId: string
     eventTitle: string
     ticketTypes: TicketTypeClient[]
+    eventStartDate?: string | Date
+    eventEndDate?: string | Date
 }
 
 const MAX_UNLIMITED_QTY = 10
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
+
+const toDateKeyUTC = (value: string | Date): string | null => {
+    const parsed = value instanceof Date ? new Date(value) : new Date(value)
+    if (Number.isNaN(parsed.getTime())) return null
+    const year = parsed.getUTCFullYear()
+    const month = String(parsed.getUTCMonth() + 1).padStart(2, "0")
+    const day = String(parsed.getUTCDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+}
+
+const addDaysToDateKey = (value: string, days: number): string => {
+    const date = new Date(`${value}T00:00:00Z`)
+    date.setUTCDate(date.getUTCDate() + days)
+    const year = date.getUTCFullYear()
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0")
+    const day = String(date.getUTCDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+}
+
+const normalizeScheduleDatesForEventRange = (
+    dates: string[],
+    eventStartDate?: string | Date,
+    eventEndDate?: string | Date
+): string[] => {
+    if (!eventStartDate || !eventEndDate || dates.length === 0) return dates
+
+    const startKey = toDateKeyUTC(eventStartDate)
+    const endKey = toDateKeyUTC(eventEndDate)
+    if (!startKey || !endKey) return dates
+
+    const normalizedDates = dates.filter((date) => DATE_REGEX.test(date))
+    if (normalizedDates.length !== dates.length) return dates
+
+    const inRangeCount = normalizedDates.filter((date) => date >= startKey && date <= endKey).length
+    const shiftedDates = normalizedDates.map((date) => addDaysToDateKey(date, 1))
+    const shiftedInRangeCount = shiftedDates.filter((date) => date >= startKey && date <= endKey).length
+
+    if (shiftedInRangeCount === normalizedDates.length && shiftedInRangeCount > inRangeCount) {
+        return shiftedDates
+    }
+
+    return dates
+}
 
 export default function TicketPurchaseCard({
     eventId,
     eventTitle,
     ticketTypes,
+    eventStartDate,
+    eventEndDate,
 }: TicketPurchaseCardProps) {
     const { addItem, updateQuantity, removeItem, items, itemCount } = useCart()
     const { status } = useSession()
@@ -121,12 +169,26 @@ export default function TicketPurchaseCard({
     const ticketMeta = useMemo(() => {
         return ticketTypesWithLiveStock.map((ticket) => {
             const schedule = parseTicketScheduleConfig(ticket.validDays)
+            const normalizedDates = normalizeScheduleDatesForEventRange(
+                schedule.dates,
+                eventStartDate,
+                eventEndDate
+            )
             const available = ticket.capacity === 0 ? null : ticket.capacity - ticket.sold
             const maxQty = available === null ? MAX_UNLIMITED_QTY : Math.max(0, available)
             const soldOut = ticket.isActive === false || (available !== null && available <= 0)
-            return { ticket, available, maxQty, soldOut, schedule }
+            return {
+                ticket,
+                available,
+                maxQty,
+                soldOut,
+                schedule: {
+                    ...schedule,
+                    dates: normalizedDates,
+                },
+            }
         })
-    }, [ticketTypesWithLiveStock])
+    }, [ticketTypesWithLiveStock, eventStartDate, eventEndDate])
 
     const getCartQuantity = (ticketId: string) => {
         const found = items.find((item) => item.ticketTypeId === ticketId)
@@ -134,14 +196,14 @@ export default function TicketPurchaseCard({
     }
 
     const handleIncrement = (ticketId: string, maxQty: number) => {
-        const ticket = ticketTypesWithLiveStock.find((item) => item.id === ticketId)
-        if (!ticket) return
+        const metadata = ticketMeta.find((entry) => entry.ticket.id === ticketId)
+        if (!metadata) return
+        const ticket = metadata.ticket
         if (maxQty <= 0) return
 
         const currentQty = getCartQuantity(ticketId)
         const nextQty = Math.min(currentQty + 1, maxQty)
         if (currentQty === 0) {
-            const schedule = parseTicketScheduleConfig(ticket.validDays)
             addItem({
                 ticketTypeId: ticket.id,
                 ticketTypeName: ticket.name,
@@ -150,10 +212,10 @@ export default function TicketPurchaseCard({
                 price: ticket.price,
                 quantity: 1,
                 scheduleConfig: {
-                    dates: schedule.dates,
-                    shifts: schedule.shifts,
+                    dates: metadata.schedule.dates,
+                    shifts: metadata.schedule.shifts,
                     requiredDays: ticket.isPackage ? (ticket.packageDaysCount ?? null) : null,
-                    requireShiftSelection: schedule.requireShiftSelection,
+                    requireShiftSelection: metadata.schedule.requireShiftSelection,
                 },
             })
             return

@@ -214,14 +214,28 @@ export default function TicketDetailPage() {
         const dayCount = ticket.ticketType.packageDaysCount ?? classCount ?? 0
         totalCount = dayCount * shifts.length
 
-        // Map actual scans to day+shift slots using unique scan dates
-        const uniqueScanDates = [...new Set(scans.map(s => s.date))].sort()
+        // Keep day numbering aligned with configured entitlement dates when available.
+        const entitlementDates = Array.from(
+            new Set(entitlements.map((item) => formatDateKey(item.date)))
+        ).sort((a, b) => a.localeCompare(b))
+        const uniqueScanDates = Array.from(new Set(scans.map((scan) => scan.date))).sort((a, b) =>
+            a.localeCompare(b)
+        )
+        const orderedDayKeys = entitlementDates.length > 0 ? [...entitlementDates] : [...uniqueScanDates]
+        for (const scanDate of uniqueScanDates) {
+            if (orderedDayKeys.length >= dayCount) break
+            if (!orderedDayKeys.includes(scanDate)) {
+                orderedDayKeys.push(scanDate)
+            }
+        }
+        const dayKeys = orderedDayKeys.slice(0, dayCount)
+        const dayIndexByKey = new Map(dayKeys.map((key, index) => [key, index]))
 
         // Build set of used day+shift combos from real scan data
         const usedSlots = new Set<string>()
         for (const scan of scans) {
-            const dayNumber = uniqueScanDates.indexOf(scan.date)
-            if (dayNumber < 0) continue
+            const dayNumber = dayIndexByKey.get(scan.date)
+            if (dayNumber === undefined) continue
 
             const shiftIdx = findShiftIndex(scan.shift)
             if (shiftIdx >= 0) {
@@ -243,7 +257,7 @@ export default function TicketDetailPage() {
             for (let shiftIndex = 0; shiftIndex < shifts.length; shiftIndex++) {
                 const isUsed = usedSlots.has(`${dayIndex}::${shiftIndex}`)
                 displayEntitlements.push({
-                    date: uniqueScanDates[dayIndex] ?? `slot-${dayIndex + 1}`,
+                    date: dayKeys[dayIndex] ?? `slot-${dayIndex + 1}`,
                     status: isUsed ? "USED" : "AVAILABLE",
                     usedAt: null,
                     label: `Día ${dayIndex + 1}`,
@@ -251,7 +265,7 @@ export default function TicketDetailPage() {
                 })
             }
         }
-        usedDisplayCount = displayEntitlements.filter(e => e.status === "USED").length
+        usedDisplayCount = displayEntitlements.filter((item) => item.status === "USED").length
     } else if (hasMultipleShifts && !isPackageLike) {
         // Multi-shift event-based (non-package with explicit days)
         const days = scheduleDays.length > 0 ? scheduleDays : entitlements.map((e) => new Date(e.date))
@@ -263,13 +277,13 @@ export default function TicketDetailPage() {
                 // Check if any scan matches this date+shift
                 const used = scans.some(s =>
                     s.date === dateKey && (shiftMatchesConfig(s.shift, shifts[shiftIndex])
-                        || (!s.shift && shiftIndex === 0)) // null shift → count as first shift
+                        || (!s.shift && shiftIndex === 0)) // null shift -> count as first shift
                 )
                 displayEntitlements.push({
                     date: days[dayIndex] instanceof Date ? days[dayIndex].toISOString() : String(days[dayIndex]),
                     status: used ? "USED" : "AVAILABLE",
                     usedAt: null,
-                    label: `Día ${dayIndex + 1}`,
+                    label: `Dia ${dayIndex + 1}`,
                     shiftLabel: shortShiftLabel(shifts[shiftIndex]),
                 })
             }
@@ -351,11 +365,11 @@ export default function TicketDetailPage() {
                                     )}
                                 </div>
                                 <p className="text-sm text-gray-500 text-center mb-2">
-                                    Válido para: <span className="font-bold text-gray-900">{formatDate(ticket.qrDate)}</span>
+                                    Valido para: <span className="font-bold text-gray-900">{formatDate(ticket.qrDate)}</span>
                                 </p>
                                 <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
                                     <RefreshCw className="h-3 w-3" />
-                                    El código QR se actualiza diariamente
+                                    El codigo QR se actualiza diariamente
                                 </div>
                             </>
                         ) : (
@@ -396,7 +410,7 @@ export default function TicketDetailPage() {
                         <div className="flex items-start gap-3">
                             <MapPin className="h-5 w-5 text-gray-400 mt-0.5" />
                             <div>
-                                <div className="text-xs text-gray-500">Ubicación</div>
+                                <div className="text-xs text-gray-500">Ubicacion</div>
                                 <div className="font-medium">{ticket.event.venue}</div>
                                 <div className="text-sm text-gray-500">{ticket.event.location}</div>
                             </div>
@@ -404,7 +418,7 @@ export default function TicketDetailPage() {
 
                         <div className="pt-4 mt-4 border-t">
                             <div className="flex justify-between items-center text-sm text-gray-500">
-                                <span>Código:</span>
+                                <span>Codigo:</span>
                                 <span className="font-mono font-bold text-gray-700">{ticket.ticketCode}</span>
                             </div>
                         </div>
@@ -416,7 +430,7 @@ export default function TicketDetailPage() {
                             <div>
                                 <h3 className="text-lg font-semibold">Carnet de asistencia</h3>
                                 <p className="text-sm text-gray-500">
-                                    {usedDisplayCount}/{totalCount} clases usadas · {remainingCount} restantes
+                                    {usedDisplayCount}/{totalCount} clases usadas - {remainingCount} restantes
                                 </p>
                             </div>
                             <Badge variant="secondary" className="text-xs">
