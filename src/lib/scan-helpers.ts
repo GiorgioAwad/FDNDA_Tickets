@@ -1,6 +1,6 @@
 import { formatDateUTC, formatDateLocal } from "@/lib/qr"
 import { getDaysBetween } from "@/lib/utils"
-import { extractTicketValidDates } from "@/lib/ticket-schedule"
+import { extractTicketValidDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 
 // ==================== TYPES ====================
 
@@ -107,29 +107,32 @@ export const buildValidDaysFromLabel = (
 export const buildAttendanceSummary = (ticket: ScanTicket): AttendanceSummary => {
     const used = ticket.entitlements.filter((item) => item.status === "USED").length
     let total = ticket.entitlements.length
-    const explicitValidDates = extractTicketValidDates(ticket.ticketType.validDays)
+    const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
+    const explicitValidDates = scheduleConfig.dates
+    const configuredShifts = scheduleConfig.shifts
+    const shiftMultiplier = configuredShifts.length > 1 ? configuredShifts.length : 1
 
     // Try to extract total from ticket type name (e.g., "8 clases")
     const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
     const nameTotal = nameMatch ? Number(nameMatch[1]) : null
 
     if (ticket.ticketType.isPackage && ticket.ticketType.packageDaysCount) {
-        total = ticket.ticketType.packageDaysCount
+        total = ticket.ticketType.packageDaysCount * shiftMultiplier
     } else if (ticket.ticketType.isPackage) {
-        total = nameTotal ?? total
+        total = (nameTotal ?? total) * shiftMultiplier
     } else if (explicitValidDates.length > 0) {
-        total = explicitValidDates.length
+        total = explicitValidDates.length * shiftMultiplier
     } else if (ticket.event?.startDate && ticket.event?.endDate) {
         const label = extractDaysLabel(ticket.ticketType.name)
         const validDays = label
             ? buildValidDaysFromLabel(ticket.event.startDate, ticket.event.endDate, label)
             : getDaysBetween(ticket.event.startDate, ticket.event.endDate)
-        total = validDays.length
+        total = validDays.length * shiftMultiplier
     }
 
-    // Override with name total if available
+    // Override with name total if available (but still apply shift multiplier)
     if (nameTotal && nameTotal > 0) {
-        total = nameTotal
+        total = nameTotal * shiftMultiplier
     }
 
     const remaining = Math.max(total - used, 0)

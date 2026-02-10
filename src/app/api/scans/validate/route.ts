@@ -236,9 +236,11 @@ export async function POST(request: NextRequest) {
 
         const computeAttendance = () => {
             if (isPackageLike && packageLimit) {
+                const shiftMultiplier = hasMultipleShifts ? configuredShifts.length : 1
+                const adjustedTotal = packageLimit * shiftMultiplier
                 const usedEntitlements = ticket.entitlements.filter((item) => item.status === "USED").length
                 const used = Math.max(usedEntitlements, scanCount)
-                return { total: packageLimit, used, remaining: Math.max(packageLimit - used, 0) }
+                return { total: adjustedTotal, used, remaining: Math.max(adjustedTotal - used, 0) }
             }
             return buildAttendanceSummary(ticket)
         }

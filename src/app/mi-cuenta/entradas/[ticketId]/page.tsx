@@ -40,6 +40,8 @@ interface TicketDetail {
         usedAt: string | null
     }[]
     scanCount?: number
+    scans?: { date: string; shift: string | null }[]
+    shifts?: string[]
     qrDataUrl: string
     qrDate: string
 }
@@ -112,6 +114,10 @@ const formatDateKey = (value: Date | string) => {
     return `${year}-${month}-${day}`
 }
 
+const shortShiftLabel = (shift: string) => {
+    return shift.replace(/\s*\(.*\)$/, "")
+}
+
 export default function TicketDetailPage() {
     const params = useParams()
     const [ticket, setTicket] = useState<TicketDetail | null>(null)
@@ -174,16 +180,79 @@ export default function TicketDetailPage() {
     const usedCount = entitlements.filter((item) => item.status === "USED").length
     const scanUsedCount = ticket.scanCount ?? 0
     const effectiveUsedCount = Math.max(usedCount, scanUsedCount)
-    const totalCount = isPackageLike
-        ? (ticket.ticketType.packageDaysCount ?? classCount ?? 0)
-        : (scheduleDays.length > 0 ? scheduleDays.length : entitlements.length)
-    const displayEntitlements = isPackageLike
-        ? Array.from({ length: totalCount }, (_, index) => ({
+
+    // Multi-shift support
+    const shifts = ticket.shifts || []
+    const hasMultipleShifts = shifts.length > 1
+    const scans = ticket.scans || []
+
+    // Build a set of used date+shift combos from scans
+    const usedScanKeys = new Set(
+        scans.map((s) => `${s.date}::${(s.shift ?? "").trim().toLowerCase()}`)
+    )
+
+    const isScanUsed = (dateKey: string, shift: string) => {
+        return usedScanKeys.has(`${dateKey}::${shift.trim().toLowerCase()}`)
+    }
+
+    let totalCount: number
+    let displayEntitlements: { date: string; status: "AVAILABLE" | "USED"; usedAt: string | null; label?: string; shiftLabel?: string }[]
+    let usedDisplayCount: number
+
+    if (hasMultipleShifts && isPackageLike) {
+        // Multi-shift package (e.g., "Full day - 4 días" with Mañana/Tarde)
+        const dayCount = ticket.ticketType.packageDaysCount ?? classCount ?? 0
+        totalCount = dayCount * shifts.length
+        displayEntitlements = []
+        for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
+            for (const shift of shifts) {
+                const slotIndex = displayEntitlements.length
+                const isUsed = slotIndex < effectiveUsedCount
+                    ? true
+                    : false
+                displayEntitlements.push({
+                    date: `slot-${slotIndex + 1}`,
+                    status: isUsed ? "USED" : "AVAILABLE",
+                    usedAt: null,
+                    label: `Día ${dayIndex + 1}`,
+                    shiftLabel: shortShiftLabel(shift),
+                })
+            }
+        }
+        // Re-count used based on actual scans (more accurate)
+        usedDisplayCount = scans.length > 0 ? scans.length : effectiveUsedCount
+    } else if (hasMultipleShifts && !isPackageLike) {
+        // Multi-shift event-based (non-package with explicit days)
+        const days = scheduleDays.length > 0 ? scheduleDays : entitlements.map((e) => new Date(e.date))
+        totalCount = days.length * shifts.length
+        displayEntitlements = []
+        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+            const dateKey = formatDateKey(days[dayIndex])
+            for (const shift of shifts) {
+                const used = isScanUsed(dateKey, shift)
+                displayEntitlements.push({
+                    date: days[dayIndex] instanceof Date ? days[dayIndex].toISOString() : String(days[dayIndex]),
+                    status: used ? "USED" : "AVAILABLE",
+                    usedAt: null,
+                    label: `Día ${dayIndex + 1}`,
+                    shiftLabel: shortShiftLabel(shift),
+                })
+            }
+        }
+        usedDisplayCount = displayEntitlements.filter((item) => item.status === "USED").length
+    } else if (isPackageLike) {
+        // Single-shift or no-shift package (original behavior)
+        totalCount = ticket.ticketType.packageDaysCount ?? classCount ?? 0
+        displayEntitlements = Array.from({ length: totalCount }, (_, index) => ({
             date: `slot-${index + 1}`,
             status: index < effectiveUsedCount ? ("USED" as const) : ("AVAILABLE" as const),
             usedAt: null,
         }))
-        : (scheduleDays.length > 0
+        usedDisplayCount = effectiveUsedCount
+    } else {
+        // Single-shift or no-shift event (original behavior)
+        totalCount = scheduleDays.length > 0 ? scheduleDays.length : entitlements.length
+        displayEntitlements = scheduleDays.length > 0
             ? scheduleDays.map((date) => {
                 const key = formatDateKey(date)
                 const existing = entitlementMap.get(key)
@@ -193,10 +262,10 @@ export default function TicketDetailPage() {
                     usedAt: existing?.usedAt ?? null,
                 }
             })
-            : entitlements)
-    const usedDisplayCount = isPackageLike
-        ? effectiveUsedCount
-        : displayEntitlements.filter((item) => item.status === "USED").length
+            : entitlements
+        usedDisplayCount = displayEntitlements.filter((item) => item.status === "USED").length
+    }
+
     const remainingCount = Math.max(totalCount - usedDisplayCount, 0)
 
     return (
@@ -321,17 +390,28 @@ export default function TicketDetailPage() {
                         </div>
 
                         {displayEntitlements.length > 0 ? (
-                            <div className="grid grid-cols-4 gap-2 print-carnet-grid">
+                            <div className={`grid gap-2 print-carnet-grid ${hasMultipleShifts ? `grid-cols-${shifts.length}` : "grid-cols-4"}`}
+                                style={hasMultipleShifts ? { gridTemplateColumns: `repeat(${shifts.length}, minmax(0, 1fr))` } : undefined}
+                            >
                                 {displayEntitlements.map((entitlement, index) => (
                                     <div
-                                        key={`${entitlement.date}-${index}`}
+                                        key={`${entitlement.date}-${entitlement.shiftLabel ?? ""}-${index}`}
                                         className={`rounded-md border px-2 py-2 text-center text-xs font-semibold carnet-card ${entitlement.status === "USED"
                                             ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                                             : "border-gray-200 bg-gray-50 text-gray-700"
                                             }`}
                                     >
-                                        <div className="text-[10px] uppercase text-gray-400">Clase</div>
-                                        <div className="text-sm">{index + 1}</div>
+                                        {entitlement.shiftLabel ? (
+                                            <>
+                                                <div className="text-[10px] uppercase text-gray-400">{entitlement.shiftLabel}</div>
+                                                <div className="text-sm">{entitlement.label}</div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="text-[10px] uppercase text-gray-400">Clase</div>
+                                                <div className="text-sm">{index + 1}</div>
+                                            </>
+                                        )}
                                     </div>
                                 ))}
                             </div>

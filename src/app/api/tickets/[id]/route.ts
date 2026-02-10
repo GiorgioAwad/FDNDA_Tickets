@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 import { createQRPayload, generateQRDataURL, formatDateLocal, formatDateUTC } from "@/lib/qr"
 import { getDaysBetween } from "@/lib/utils"
-import { extractTicketValidDates } from "@/lib/ticket-schedule"
+import { extractTicketValidDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { getExpectedShiftForDate, getTicketScheduleSelectionsForAttendee } from "@/lib/ticket-shift"
 export const runtime = "nodejs"
 
@@ -149,6 +149,7 @@ export async function GET(
             select: {
                 date: true,
                 scannedAt: true,
+                shift: true,
             },
             orderBy: { scannedAt: "asc" },
         })
@@ -239,12 +240,16 @@ export async function GET(
             qrDataUrl = await generateQRDataURL(qrPayload)
         }
 
+        const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
+
         return NextResponse.json({
             success: true,
             data: {
                 ...ticket,
                 entitlements,
                 scanCount,
+                scans: scans.map(s => ({ date: formatDateUTC(s.date), shift: s.shift })),
+                shifts: scheduleConfig.shifts,
                 qrDataUrl,
                 qrDate: dateStr,
                 qrShift,
