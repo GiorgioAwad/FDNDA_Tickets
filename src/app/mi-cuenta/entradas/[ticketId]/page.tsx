@@ -186,13 +186,23 @@ export default function TicketDetailPage() {
     const hasMultipleShifts = shifts.length > 1
     const scans = ticket.scans || []
 
-    // Build a set of used date+shift combos from scans
-    const usedScanKeys = new Set(
-        scans.map((s) => `${s.date}::${(s.shift ?? "").trim().toLowerCase()}`)
-    )
+    // Match a scan's shift against a configured shift (flexible matching)
+    const shiftMatchesConfig = (scanShift: string | null, configuredShift: string): boolean => {
+        if (!scanShift) return false
+        const a = scanShift.trim().toLowerCase()
+        const b = configuredShift.trim().toLowerCase()
+        if (a === b) return true
+        // Compare short labels (without time range)
+        return shortShiftLabel(scanShift).trim().toLowerCase() === shortShiftLabel(configuredShift).trim().toLowerCase()
+    }
 
-    const isScanUsed = (dateKey: string, shift: string) => {
-        return usedScanKeys.has(`${dateKey}::${shift.trim().toLowerCase()}`)
+    // Find which configured shift index a scan matches (-1 if none)
+    const findShiftIndex = (scanShift: string | null): number => {
+        if (!scanShift) return -1
+        for (let i = 0; i < shifts.length; i++) {
+            if (shiftMatchesConfig(scanShift, shifts[i])) return i
+        }
+        return -1
     }
 
     let totalCount: number
@@ -211,12 +221,16 @@ export default function TicketDetailPage() {
         const usedSlots = new Set<string>()
         for (const scan of scans) {
             const dayNumber = uniqueScanDates.indexOf(scan.date)
-            if (dayNumber >= 0 && scan.shift) {
-                // Match scan shift against configured shifts
-                const scanShortLabel = shortShiftLabel(scan.shift).trim().toLowerCase()
+            if (dayNumber < 0) continue
+
+            const shiftIdx = findShiftIndex(scan.shift)
+            if (shiftIdx >= 0) {
+                // Scan has a recognized shift
+                usedSlots.add(`${dayNumber}::${shiftIdx}`)
+            } else {
+                // Scan without shift or unrecognized shift: assign to first available slot on that day
                 for (let si = 0; si < shifts.length; si++) {
-                    const configShortLabel = shortShiftLabel(shifts[si]).trim().toLowerCase()
-                    if (scanShortLabel === configShortLabel || scan.shift.trim().toLowerCase() === shifts[si].trim().toLowerCase()) {
+                    if (!usedSlots.has(`${dayNumber}::${si}`)) {
                         usedSlots.add(`${dayNumber}::${si}`)
                         break
                     }
@@ -245,14 +259,18 @@ export default function TicketDetailPage() {
         displayEntitlements = []
         for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
             const dateKey = formatDateKey(days[dayIndex])
-            for (const shift of shifts) {
-                const used = isScanUsed(dateKey, shift)
+            for (let shiftIndex = 0; shiftIndex < shifts.length; shiftIndex++) {
+                // Check if any scan matches this date+shift
+                const used = scans.some(s =>
+                    s.date === dateKey && (shiftMatchesConfig(s.shift, shifts[shiftIndex])
+                        || (!s.shift && shiftIndex === 0)) // null shift → count as first shift
+                )
                 displayEntitlements.push({
                     date: days[dayIndex] instanceof Date ? days[dayIndex].toISOString() : String(days[dayIndex]),
                     status: used ? "USED" : "AVAILABLE",
                     usedAt: null,
                     label: `Día ${dayIndex + 1}`,
-                    shiftLabel: shortShiftLabel(shift),
+                    shiftLabel: shortShiftLabel(shifts[shiftIndex]),
                 })
             }
         }
