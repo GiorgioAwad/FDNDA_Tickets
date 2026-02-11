@@ -256,7 +256,7 @@ export async function POST(request: NextRequest) {
             message.includes("maximo") ||
             message.includes("entero") ||
             message.includes("pertenece") ||
-            message.includes("d\u00edgitos") ||
+            message.includes("dígitos") ||
             message.includes("fiscal")
 
         return NextResponse.json(

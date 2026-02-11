@@ -344,21 +344,21 @@ export default function CheckoutPage() {
                                         {billingData.buyerDocNumber && (
                                             billingData.documentType === "BOLETA"
                                                 ? !/^\d{8}$/.test(billingData.buyerDocNumber) && (
-                                                    <p className="text-xs text-red-500 mt-1">DNI debe tener 8 d\u00edgitos</p>
+                                                    <p className="text-xs text-red-500 mt-1">DNI debe tener 8 dígitos</p>
                                                 )
                                                 : !/^\d{11}$/.test(billingData.buyerDocNumber) && (
-                                                    <p className="text-xs text-red-500 mt-1">RUC debe tener 11 d\u00edgitos</p>
+                                                    <p className="text-xs text-red-500 mt-1">RUC debe tener 11 dígitos</p>
                                                 )
                                         )}
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-500 mb-1 block">
-                                            {billingData.documentType === "BOLETA" ? "Nombre completo" : "Raz\u00f3n social"}
+                                            {billingData.documentType === "BOLETA" ? "Nombre completo" : "Razón social"}
                                         </label>
                                         <Input
                                             value={billingData.buyerName}
                                             onChange={(e) => updateBillingData("buyerName", e.target.value)}
-                                            placeholder={billingData.documentType === "BOLETA" ? "Juan P\u00e9rez" : "Empresa S.A.C."}
+                                            placeholder={billingData.documentType === "BOLETA" ? "Juan Pérez" : "Empresa S.A.C."}
                                             className="bg-white"
                                         />
                                     </div>
@@ -367,7 +367,7 @@ export default function CheckoutPage() {
                                 {billingData.documentType === "FACTURA" && (
                                     <div>
                                         <label className="text-xs text-gray-500 mb-1 block">
-                                            Direcci\u00f3n fiscal
+                                            Dirección fiscal
                                         </label>
                                         <Input
                                             value={billingData.buyerAddress}
@@ -376,7 +376,7 @@ export default function CheckoutPage() {
                                             className="bg-white"
                                         />
                                         {billingData.buyerAddress && billingData.buyerAddress.length < 5 && (
-                                            <p className="text-xs text-red-500 mt-1">Direcci\u00f3n fiscal debe tener al menos 5 caracteres</p>
+                                            <p className="text-xs text-red-500 mt-1">Dirección fiscal debe tener al menos 5 caracteres</p>
                                         )}
                                     </div>
                                 )}

@@ -80,16 +80,16 @@ export const ticketTypeSchema = z.object({
 
 export const boletaBillingSchema = z.object({
     documentType: z.literal("BOLETA"),
-    buyerDocNumber: z.string().regex(/^\d{8}$/, "DNI debe tener 8 d\u00edgitos"),
+    buyerDocNumber: z.string().regex(/^\d{8}$/, "DNI debe tener 8 dígitos"),
     buyerName: z.string().min(2, "Nombre requerido"),
     buyerAddress: z.string().optional(),
 })
 
 export const facturaBillingSchema = z.object({
     documentType: z.literal("FACTURA"),
-    buyerDocNumber: z.string().regex(/^\d{11}$/, "RUC debe tener 11 d\u00edgitos"),
-    buyerName: z.string().min(2, "Raz\u00f3n social requerida"),
-    buyerAddress: z.string().min(5, "Direcci\u00f3n fiscal requerida"),
+    buyerDocNumber: z.string().regex(/^\d{11}$/, "RUC debe tener 11 dígitos"),
+    buyerName: z.string().min(2, "Razón social requerida"),
+    buyerAddress: z.string().min(5, "Dirección fiscal requerida"),
 })
 
 export const billingDataSchema = z.discriminatedUnion("documentType", [
