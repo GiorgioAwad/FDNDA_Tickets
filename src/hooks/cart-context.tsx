@@ -32,6 +32,13 @@ export interface CartItem {
     scheduleConfig?: CartScheduleConfig
 }
 
+export interface BillingData {
+    documentType: "BOLETA" | "FACTURA"
+    buyerDocNumber: string
+    buyerName: string
+    buyerAddress: string
+}
+
 interface CartContextType {
     items: CartItem[]
     addItem: (item: Omit<CartItem, "attendees">) => void
@@ -45,12 +52,21 @@ interface CartContextType {
         field: "date" | "shift",
         value: string
     ) => void
+    billingData: BillingData
+    updateBillingData: (field: keyof BillingData, value: string) => void
     clearCart: () => void
     total: number
     itemCount: number
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined)
+
+const DEFAULT_BILLING_DATA: BillingData = {
+    documentType: "BOLETA",
+    buyerDocNumber: "",
+    buyerName: "",
+    buyerAddress: "",
+}
 
 const LEGACY_CART_KEY = "fdnda-cart"
 type CartListener = () => void
@@ -406,10 +422,50 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         )
     }
 
+    const billingKey = cartKey ? `${cartKey}:billing` : null
+
+    const getBillingSnapshot = useCallback(() => {
+        if (typeof window === "undefined") return JSON.stringify(DEFAULT_BILLING_DATA)
+        if (!billingKey) return JSON.stringify(DEFAULT_BILLING_DATA)
+        return window.localStorage.getItem(billingKey) ?? JSON.stringify(DEFAULT_BILLING_DATA)
+    }, [billingKey])
+
+    const rawBilling = useSyncExternalStore(subscribe, getBillingSnapshot, () => JSON.stringify(DEFAULT_BILLING_DATA))
+    const billingData = useMemo<BillingData>(() => {
+        try {
+            const parsed = JSON.parse(rawBilling)
+            return {
+                documentType: parsed.documentType === "FACTURA" ? "FACTURA" : "BOLETA",
+                buyerDocNumber: typeof parsed.buyerDocNumber === "string" ? parsed.buyerDocNumber : "",
+                buyerName: typeof parsed.buyerName === "string" ? parsed.buyerName : "",
+                buyerAddress: typeof parsed.buyerAddress === "string" ? parsed.buyerAddress : "",
+            }
+        } catch {
+            return DEFAULT_BILLING_DATA
+        }
+    }, [rawBilling])
+
+    const updateBillingData = (field: keyof BillingData, value: string) => {
+        if (typeof window === "undefined") return
+        if (!billingKey) return
+        const current = JSON.parse(window.localStorage.getItem(billingKey) ?? JSON.stringify(DEFAULT_BILLING_DATA))
+        const updated = { ...current, [field]: value }
+        // Reset doc number and address when switching document type
+        if (field === "documentType") {
+            updated.buyerDocNumber = ""
+            updated.buyerAddress = ""
+        }
+        window.localStorage.setItem(billingKey, JSON.stringify(updated))
+        emitCartChange()
+    }
+
     const clearCart = () => {
         if (typeof window === "undefined") return
         if (!cartKey) return
         window.localStorage.setItem(cartKey, "[]")
+        if (billingKey) {
+            window.localStorage.removeItem(billingKey)
+        }
         emitCartChange()
     }
 
@@ -425,6 +481,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 updateQuantity,
                 updateAttendee,
                 updateAttendeeScheduleSelection,
+                billingData,
+                updateBillingData,
                 clearCart,
                 total,
                 itemCount,
@@ -445,6 +503,8 @@ export function useCart() {
             updateQuantity: () => {},
             updateAttendee: () => {},
             updateAttendeeScheduleSelection: () => {},
+            billingData: DEFAULT_BILLING_DATA,
+            updateBillingData: () => {},
             clearCart: () => {},
             total: 0,
             itemCount: 0,

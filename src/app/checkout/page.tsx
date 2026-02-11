@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { formatDate, formatPrice } from "@/lib/utils"
-import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X } from "lucide-react"
+import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
 
 type AppliedDiscount = {
     id: string
@@ -27,6 +27,8 @@ export default function CheckoutPage() {
         updateQuantity,
         updateAttendee,
         updateAttendeeScheduleSelection,
+        billingData,
+        updateBillingData,
         total,
         clearCart,
     } = useCart()
@@ -58,6 +60,16 @@ export default function CheckoutPage() {
         () => items.some((item) => item.attendees.some((attendee) => !attendee.name || !attendee.dni)),
         [items]
     )
+
+    const hasMissingBillingData = useMemo(() => {
+        if (!billingData.buyerDocNumber || !billingData.buyerName) return true
+        if (billingData.documentType === "BOLETA" && !/^\d{8}$/.test(billingData.buyerDocNumber)) return true
+        if (billingData.documentType === "FACTURA") {
+            if (!/^\d{11}$/.test(billingData.buyerDocNumber)) return true
+            if (!billingData.buyerAddress || billingData.buyerAddress.length < 5) return true
+        }
+        return false
+    }, [billingData])
 
     const hasMissingScheduleSelections = useMemo(() => {
         return items.some((item) => {
@@ -189,6 +201,12 @@ export default function CheckoutPage() {
                         quantity: item.quantity,
                         attendees: item.attendees,
                     })),
+                    billing: {
+                        documentType: billingData.documentType,
+                        buyerDocNumber: billingData.buyerDocNumber,
+                        buyerName: billingData.buyerName,
+                        ...(billingData.documentType === "FACTURA" ? { buyerAddress: billingData.buyerAddress } : {}),
+                    },
                     discountCodeId: appliedDiscount?.id || null,
                 }),
             })
@@ -274,6 +292,97 @@ export default function CheckoutPage() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-2 space-y-6">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <FileText className="h-5 w-5" />
+                                    Comprobante de pago
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="flex gap-4">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="documentType"
+                                            value="BOLETA"
+                                            checked={billingData.documentType === "BOLETA"}
+                                            onChange={() => updateBillingData("documentType", "BOLETA")}
+                                            className="accent-black"
+                                        />
+                                        <span className="text-sm font-medium">Boleta de Venta</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="documentType"
+                                            value="FACTURA"
+                                            checked={billingData.documentType === "FACTURA"}
+                                            onChange={() => updateBillingData("documentType", "FACTURA")}
+                                            className="accent-black"
+                                        />
+                                        <span className="text-sm font-medium">Factura</span>
+                                    </label>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1 block">
+                                            {billingData.documentType === "BOLETA" ? "DNI" : "RUC"}
+                                        </label>
+                                        <Input
+                                            value={billingData.buyerDocNumber}
+                                            onChange={(e) => {
+                                                const value = e.target.value.replace(/\D/g, "")
+                                                const maxLen = billingData.documentType === "BOLETA" ? 8 : 11
+                                                updateBillingData("buyerDocNumber", value.slice(0, maxLen))
+                                            }}
+                                            placeholder={billingData.documentType === "BOLETA" ? "12345678" : "20123456789"}
+                                            maxLength={billingData.documentType === "BOLETA" ? 8 : 11}
+                                            className="bg-white"
+                                        />
+                                        {billingData.buyerDocNumber && (
+                                            billingData.documentType === "BOLETA"
+                                                ? !/^\d{8}$/.test(billingData.buyerDocNumber) && (
+                                                    <p className="text-xs text-red-500 mt-1">DNI debe tener 8 d\u00edgitos</p>
+                                                )
+                                                : !/^\d{11}$/.test(billingData.buyerDocNumber) && (
+                                                    <p className="text-xs text-red-500 mt-1">RUC debe tener 11 d\u00edgitos</p>
+                                                )
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1 block">
+                                            {billingData.documentType === "BOLETA" ? "Nombre completo" : "Raz\u00f3n social"}
+                                        </label>
+                                        <Input
+                                            value={billingData.buyerName}
+                                            onChange={(e) => updateBillingData("buyerName", e.target.value)}
+                                            placeholder={billingData.documentType === "BOLETA" ? "Juan P\u00e9rez" : "Empresa S.A.C."}
+                                            className="bg-white"
+                                        />
+                                    </div>
+                                </div>
+
+                                {billingData.documentType === "FACTURA" && (
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1 block">
+                                            Direcci\u00f3n fiscal
+                                        </label>
+                                        <Input
+                                            value={billingData.buyerAddress}
+                                            onChange={(e) => updateBillingData("buyerAddress", e.target.value)}
+                                            placeholder="Av. ejemplo 123, Lima"
+                                            className="bg-white"
+                                        />
+                                        {billingData.buyerAddress && billingData.buyerAddress.length < 5 && (
+                                            <p className="text-xs text-red-500 mt-1">Direcci\u00f3n fiscal debe tener al menos 5 caracteres</p>
+                                        )}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+
                         <Card>
                             <CardHeader>
                                 <CardTitle>Tus entradas</CardTitle>
@@ -549,18 +658,23 @@ export default function CheckoutPage() {
                                     size="lg"
                                     onClick={handlePayment}
                                     loading={loading}
-                                    disabled={hasMissingAttendeeData || hasMissingScheduleSelections}
+                                    disabled={hasMissingAttendeeData || hasMissingScheduleSelections || hasMissingBillingData}
                                 >
                                     <CreditCard className="h-4 w-4 mr-2" />
                                     Pagar {formatPrice(finalTotal)}
                                 </Button>
 
-                                {hasMissingAttendeeData && (
+                                {hasMissingBillingData && (
+                                    <p className="text-xs text-amber-600 text-center">
+                                        Completa los datos del comprobante de pago
+                                    </p>
+                                )}
+                                {!hasMissingBillingData && hasMissingAttendeeData && (
                                     <p className="text-xs text-amber-600 text-center">
                                         Completa los datos de todos los asistentes para continuar
                                     </p>
                                 )}
-                                {!hasMissingAttendeeData && hasMissingScheduleSelections && (
+                                {!hasMissingBillingData && !hasMissingAttendeeData && hasMissingScheduleSelections && (
                                     <p className="text-xs text-amber-600 text-center">
                                         Completa los dias y turnos (si aplica) para todos los asistentes
                                     </p>

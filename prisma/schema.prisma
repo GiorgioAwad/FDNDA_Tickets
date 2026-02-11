@@ -61,6 +61,11 @@ enum InvoiceStatus {
   FAILED
 }
 
+enum DocumentType {
+  BOLETA
+  FACTURA
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -171,6 +176,12 @@ model Order {
   providerRef      String?     // Payment reference from provider
   providerResponse Json?       // Full response from provider
   paidAt           DateTime?
+  // Billing data
+  documentType     String?     // "BOLETA" or "FACTURA"
+  buyerDocType     String?     // "1" = DNI, "6" = RUC
+  buyerDocNumber   String?     // DNI (8 digits) or RUC (11 digits)
+  buyerName        String?     // Full name or business name
+  buyerAddress     String?     // Fiscal address (for FACTURA)
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -365,13 +376,26 @@ model Invoice {
   id               String        @id @default(cuid())
   orderId          String        @unique
   status           InvoiceStatus @default(PENDING)
-  invoiceNumber    String?
-  providerResponse Json?
+  documentType     DocumentType  @default(BOLETA)
+  invoiceNumber    String?       // SUNAT serie-correlativo (e.g. B001-00000001)
+  // Buyer fiscal data
+  buyerDocType     String?       // "1" = DNI, "6" = RUC
+  buyerDocNumber   String?       // DNI (8 digits) or RUC (11 digits)
+  buyerName        String?       // Full name or business name (razón social)
+  buyerAddress     String?       // Fiscal address (for FACTURA)
+  // Provider integration
+  providerResponse Json?         // Response from ABIO/Servilex
+  pdfUrl           String?       // URL of the issued document PDF
+  sentToProvider   Boolean       @default(false)
+  retryCount       Int           @default(0)
+  lastError        String?
+  issuedAt         DateTime?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
   // Relations
   order Order @relation(fields: [orderId], references: [id])
 
+  @@index([status])
   @@map("invoices")
 }

@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        const { eventId, items, discountCodeId } = parsedBody.data
+        const { eventId, items, billing, discountCodeId } = parsedBody.data
         const cacheInvalidations = new Set<string>()
 
         // Transaccion con reserva atomica de stock para evitar sobreventa.
@@ -189,6 +189,8 @@ export async function POST(request: NextRequest) {
 
             const finalAmount = Math.max(0, totalAmount - discountAmount)
 
+            const buyerDocType = billing.documentType === "FACTURA" ? "6" : "1"
+
             const newOrder = await tx.order.create({
                 data: {
                     userId: user.id,
@@ -196,6 +198,11 @@ export async function POST(request: NextRequest) {
                     totalAmount: finalAmount,
                     currency: "PEN",
                     provider: "IZIPAY",
+                    documentType: billing.documentType,
+                    buyerDocType: buyerDocType,
+                    buyerDocNumber: billing.buyerDocNumber,
+                    buyerName: billing.buyerName,
+                    buyerAddress: billing.documentType === "FACTURA" ? billing.buyerAddress : null,
                     orderItems: {
                         create: orderItemsData,
                     },
@@ -248,7 +255,9 @@ export async function POST(request: NextRequest) {
             message.includes("minima") ||
             message.includes("maximo") ||
             message.includes("entero") ||
-            message.includes("pertenece")
+            message.includes("pertenece") ||
+            message.includes("d\u00edgitos") ||
+            message.includes("fiscal")
 
         return NextResponse.json(
             { success: false, error: message },

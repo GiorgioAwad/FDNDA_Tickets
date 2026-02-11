@@ -76,6 +76,27 @@ export const ticketTypeSchema = z.object({
     sortOrder: z.number().int().default(0),
 })
 
+// ==================== BILLING SCHEMAS ====================
+
+export const boletaBillingSchema = z.object({
+    documentType: z.literal("BOLETA"),
+    buyerDocNumber: z.string().regex(/^\d{8}$/, "DNI debe tener 8 d\u00edgitos"),
+    buyerName: z.string().min(2, "Nombre requerido"),
+    buyerAddress: z.string().optional(),
+})
+
+export const facturaBillingSchema = z.object({
+    documentType: z.literal("FACTURA"),
+    buyerDocNumber: z.string().regex(/^\d{11}$/, "RUC debe tener 11 d\u00edgitos"),
+    buyerName: z.string().min(2, "Raz\u00f3n social requerida"),
+    buyerAddress: z.string().min(5, "Direcci\u00f3n fiscal requerida"),
+})
+
+export const billingDataSchema = z.discriminatedUnion("documentType", [
+    boletaBillingSchema,
+    facturaBillingSchema,
+])
+
 // ==================== ORDER SCHEMAS ====================
 
 export const orderItemSchema = z.object({
@@ -100,6 +121,7 @@ export const orderItemSchema = z.object({
 export const createOrderSchema = z.object({
     eventId: z.string(),
     items: z.array(orderItemSchema).min(1, "Agrega al menos una entrada"),
+    billing: billingDataSchema,
 })
 
 // ==================== SCAN SCHEMAS ====================
@@ -136,3 +158,4 @@ export type OrderItemInput = z.infer<typeof orderItemSchema>
 export type CreateOrderInput = z.infer<typeof createOrderSchema>
 export type ValidateScanInput = z.infer<typeof validateScanSchema>
 export type CourtesyBatchInput = z.infer<typeof courtesyBatchSchema>
+export type BillingDataInput = z.infer<typeof billingDataSchema>
