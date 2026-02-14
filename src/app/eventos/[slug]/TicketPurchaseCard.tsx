@@ -416,7 +416,7 @@ export default function TicketPurchaseCard({
                             </Button>
                             <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 text-blue-800 text-sm">
                                 <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                                <span>Debes tener una cuenta verificada para comprar entradas.</span>
+                                <span>Podrás crear tu cuenta o iniciar sesión al momento de pagar.</span>
                             </div>
                         </div>
                     </>

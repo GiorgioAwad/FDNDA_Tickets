@@ -69,6 +69,7 @@ const DEFAULT_BILLING_DATA: BillingData = {
 }
 
 const LEGACY_CART_KEY = "fdnda-cart"
+const GUEST_CART_KEY = "fdnda-cart:guest"
 type CartListener = () => void
 const cartListeners = new Set<CartListener>()
 
@@ -250,11 +251,10 @@ const parseCartItems = (value: string): CartItem[] => {
 export function CartProvider({ children }: { children: React.ReactNode }) {
     const { data: session, status } = useSession()
     const userKey = session?.user?.id || session?.user?.email || null
-    const cartKey = userKey ? `fdnda-cart:${userKey}` : null
+    const cartKey = userKey ? `fdnda-cart:${userKey}` : GUEST_CART_KEY
 
     const getSnapshot = useCallback(() => {
         if (typeof window === "undefined") return "[]"
-        if (!cartKey) return "[]"
         return window.localStorage.getItem(cartKey) ?? "[]"
     }, [cartKey])
 
@@ -284,12 +284,47 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         if (typeof window === "undefined") return
-        if (status === "authenticated") {
-            if (window.localStorage.getItem(LEGACY_CART_KEY)) {
-                window.localStorage.removeItem(LEGACY_CART_KEY)
+        if (status !== "authenticated" || !userKey) return
+
+        const authenticatedCartKey = `fdnda-cart:${userKey}`
+        const authenticatedBillingKey = `${authenticatedCartKey}:billing`
+
+        // Migrate guest cart items
+        const guestItems = window.localStorage.getItem(GUEST_CART_KEY)
+        if (guestItems && guestItems !== "[]") {
+            const existingUserItems = window.localStorage.getItem(authenticatedCartKey)
+            if (!existingUserItems || existingUserItems === "[]") {
+                window.localStorage.setItem(authenticatedCartKey, guestItems)
+            } else {
+                const userParsed = parseCartItems(existingUserItems)
+                const guestParsed = parseCartItems(guestItems)
+                const userTicketIds = new Set(userParsed.map(i => i.ticketTypeId))
+                const merged = [
+                    ...userParsed,
+                    ...guestParsed.filter(g => !userTicketIds.has(g.ticketTypeId))
+                ]
+                window.localStorage.setItem(authenticatedCartKey, JSON.stringify(merged))
             }
+            window.localStorage.removeItem(GUEST_CART_KEY)
         }
-    }, [status])
+
+        // Migrate guest billing data
+        const guestBillingKey = `${GUEST_CART_KEY}:billing`
+        const guestBilling = window.localStorage.getItem(guestBillingKey)
+        if (guestBilling) {
+            if (!window.localStorage.getItem(authenticatedBillingKey)) {
+                window.localStorage.setItem(authenticatedBillingKey, guestBilling)
+            }
+            window.localStorage.removeItem(guestBillingKey)
+        }
+
+        // Clean up legacy key
+        if (window.localStorage.getItem(LEGACY_CART_KEY)) {
+            window.localStorage.removeItem(LEGACY_CART_KEY)
+        }
+
+        emitCartChange()
+    }, [status, userKey])
 
     const updateItems = (updater: (current: CartItem[]) => CartItem[]) => {
         if (typeof window === "undefined") return

@@ -5,7 +5,7 @@ import { authConfig } from "@/lib/auth.config"
 const { auth } = NextAuth(authConfig)
 
 // Routes that require authentication
-const protectedRoutes = ["/mi-cuenta", "/checkout"]
+const protectedRoutes = ["/mi-cuenta"]
 
 // Routes that require admin role
 const adminRoutes = ["/admin"]

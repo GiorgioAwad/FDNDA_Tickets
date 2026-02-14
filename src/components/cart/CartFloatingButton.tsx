@@ -68,11 +68,6 @@ export default function CartFloatingButton() {
         }
     }, [isPanelOpen])
 
-    // Don't show cart if not authenticated
-    if (status !== "authenticated") {
-        return null
-    }
-
     return (
         <div
             ref={wrapperRef}

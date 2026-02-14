@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { formatDate, formatPrice } from "@/lib/utils"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
+import AuthModal from "@/components/auth/AuthModal"
 
 type AppliedDiscount = {
     id: string
@@ -39,6 +40,7 @@ export default function CheckoutPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState("")
 
+    const [showAuthModal, setShowAuthModal] = useState(false)
     const [discountCode, setDiscountCode] = useState("")
     const [discountLoading, setDiscountLoading] = useState(false)
     const [discountError, setDiscountError] = useState("")
@@ -176,9 +178,14 @@ export default function CheckoutPage() {
         )
     }
 
+    const handleAuthSuccess = () => {
+        setShowAuthModal(false)
+        router.refresh()
+    }
+
     const handlePayment = async () => {
         if (status !== "authenticated") {
-            router.push("/login?callbackUrl=/checkout")
+            setShowAuthModal(true)
             return
         }
 
@@ -688,6 +695,12 @@ export default function CheckoutPage() {
                     </div>
                 </div>
             </div>
+
+            <AuthModal
+                open={showAuthModal}
+                onClose={() => setShowAuthModal(false)}
+                onSuccess={handleAuthSuccess}
+            />
         </div>
     )
 }
