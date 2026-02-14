@@ -2,7 +2,7 @@ import { Resend } from "resend"
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses"
 
 const EMAIL_PROVIDER = (process.env.EMAIL_PROVIDER || "resend").toLowerCase()
-const FROM_EMAIL = process.env.EMAIL_FROM || "Ticketing FDNDA <tickets@fdnda.org.pe>"
+const FROM_EMAIL = process.env.EMAIL_FROM || "Ticketing FDNDA <ticketing@fdnda.org>"
 
 const resend = process.env.RESEND_API_KEY
     ? new Resend(process.env.RESEND_API_KEY)
