@@ -70,6 +70,8 @@ const DEFAULT_BILLING_DATA: BillingData = {
 
 const LEGACY_CART_KEY = "fdnda-cart"
 const GUEST_CART_KEY = "fdnda-cart:guest"
+const GUEST_CART_TS_KEY = `${GUEST_CART_KEY}:ts`
+const GUEST_CART_TTL_MS = 60 * 60 * 1000 // 1 hour
 type CartListener = () => void
 const cartListeners = new Set<CartListener>()
 
@@ -255,6 +257,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     const getSnapshot = useCallback(() => {
         if (typeof window === "undefined") return "[]"
+
+        // Check TTL for guest cart
+        if (cartKey === GUEST_CART_KEY) {
+            const ts = window.localStorage.getItem(GUEST_CART_TS_KEY)
+            if (ts && Date.now() - Number(ts) > GUEST_CART_TTL_MS) {
+                window.localStorage.removeItem(GUEST_CART_KEY)
+                window.localStorage.removeItem(GUEST_CART_TS_KEY)
+                window.localStorage.removeItem(`${GUEST_CART_KEY}:billing`)
+                return "[]"
+            }
+        }
+
         return window.localStorage.getItem(cartKey) ?? "[]"
     }, [cartKey])
 
@@ -332,6 +346,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const current = parseCartItems(window.localStorage.getItem(cartKey) ?? "[]")
         const next = updater(current)
         window.localStorage.setItem(cartKey, JSON.stringify(next))
+        // Refresh TTL timestamp for guest cart
+        if (cartKey === GUEST_CART_KEY && next.length > 0) {
+            window.localStorage.setItem(GUEST_CART_TS_KEY, String(Date.now()))
+        }
         emitCartChange()
     }
 
