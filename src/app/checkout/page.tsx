@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { useCart } from "@/hooks/cart-context"
@@ -10,6 +11,13 @@ import { Input } from "@/components/ui/input"
 import { formatDate, formatPrice } from "@/lib/utils"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
 import AuthModal from "@/components/auth/AuthModal"
+
+const IzipayEmbeddedForm = dynamic(
+    () => import("@/components/checkout/izipay-embedded-form"),
+    { ssr: false }
+)
+
+const izipayMode = process.env.NEXT_PUBLIC_IZIPAY_MODE || "redirect"
 
 type AppliedDiscount = {
     id: string
@@ -39,6 +47,13 @@ export default function CheckoutPage() {
 
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState("")
+
+    // Embedded payment form state
+    const [embeddedFormData, setEmbeddedFormData] = useState<{
+        formToken: string
+        publicKey: string
+        orderId: string
+    } | null>(null)
 
     const [showAuthModal, setShowAuthModal] = useState(false)
     const [discountCode, setDiscountCode] = useState("")
@@ -242,6 +257,35 @@ export default function CheckoutPage() {
                 return
             }
 
+            if (izipayMode === "embedded") {
+                const tokenResponse = await fetch("/api/payments/izipay/form-token", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ orderId: orderData.data.orderId }),
+                })
+
+                const tokenData = await tokenResponse.json()
+
+                if (!tokenResponse.ok || !tokenData.success) {
+                    throw new Error(tokenData.error || "No se pudo iniciar el pago con IZIPAY")
+                }
+
+                if (tokenData.data?.alreadyPaid) {
+                    clearCart()
+                    router.push(`/checkout/success?orderId=${orderData.data.orderId}`)
+                    return
+                }
+
+                // Show embedded payment form instead of redirecting
+                setEmbeddedFormData({
+                    formToken: tokenData.data.formToken,
+                    publicKey: tokenData.data.publicKey,
+                    orderId: orderData.data.orderId,
+                })
+                return
+            }
+
+            // Redirect mode (default)
             const sessionResponse = await fetch("/api/payments/izipay/session", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -660,36 +704,48 @@ export default function CheckoutPage() {
                                     </div>
                                 )}
 
-                                <Button
-                                    className="w-full"
-                                    size="lg"
-                                    onClick={handlePayment}
-                                    loading={loading}
-                                    disabled={hasMissingAttendeeData || hasMissingScheduleSelections || hasMissingBillingData}
-                                >
-                                    <CreditCard className="h-4 w-4 mr-2" />
-                                    Pagar {formatPrice(finalTotal)}
-                                </Button>
+                                {embeddedFormData ? (
+                                    <IzipayEmbeddedForm
+                                        formToken={embeddedFormData.formToken}
+                                        publicKey={embeddedFormData.publicKey}
+                                        orderId={embeddedFormData.orderId}
+                                        onSuccess={() => clearCart()}
+                                        onError={(msg) => setError(msg)}
+                                    />
+                                ) : (
+                                    <>
+                                        <Button
+                                            className="w-full"
+                                            size="lg"
+                                            onClick={handlePayment}
+                                            loading={loading}
+                                            disabled={hasMissingAttendeeData || hasMissingScheduleSelections || hasMissingBillingData}
+                                        >
+                                            <CreditCard className="h-4 w-4 mr-2" />
+                                            Pagar {formatPrice(finalTotal)}
+                                        </Button>
 
-                                {hasMissingBillingData && (
-                                    <p className="text-xs text-amber-600 text-center">
-                                        Completa los datos del comprobante de pago
-                                    </p>
-                                )}
-                                {!hasMissingBillingData && hasMissingAttendeeData && (
-                                    <p className="text-xs text-amber-600 text-center">
-                                        Completa los datos de todos los asistentes para continuar
-                                    </p>
-                                )}
-                                {!hasMissingBillingData && !hasMissingAttendeeData && hasMissingScheduleSelections && (
-                                    <p className="text-xs text-amber-600 text-center">
-                                        Completa los dias y turnos (si aplica) para todos los asistentes
-                                    </p>
-                                )}
+                                        {hasMissingBillingData && (
+                                            <p className="text-xs text-amber-600 text-center">
+                                                Completa los datos del comprobante de pago
+                                            </p>
+                                        )}
+                                        {!hasMissingBillingData && hasMissingAttendeeData && (
+                                            <p className="text-xs text-amber-600 text-center">
+                                                Completa los datos de todos los asistentes para continuar
+                                            </p>
+                                        )}
+                                        {!hasMissingBillingData && !hasMissingAttendeeData && hasMissingScheduleSelections && (
+                                            <p className="text-xs text-amber-600 text-center">
+                                                Completa los dias y turnos (si aplica) para todos los asistentes
+                                            </p>
+                                        )}
 
-                                <div className="text-xs text-gray-500 text-center mt-4">
-                                    Pagos procesados de forma segura por IZIPAY
-                                </div>
+                                        <div className="text-xs text-gray-500 text-center mt-4">
+                                            Pagos procesados de forma segura por IZIPAY
+                                        </div>
+                                    </>
+                                )}
                             </CardContent>
                         </Card>
                     </div>

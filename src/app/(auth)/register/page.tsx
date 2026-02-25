@@ -6,11 +6,16 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Mail, Lock, User, AlertCircle, CheckCircle } from "lucide-react"
+import { Mail, Lock, User, AlertCircle, CheckCircle, Phone, CreditCard, Calendar, MapPin } from "lucide-react"
+import { DISTRITOS_LIMA } from "@/lib/distritos-lima"
 
 export default function RegisterPage() {
     const [formData, setFormData] = useState({
         name: "",
+        dni: "",
+        phone: "",
+        birthDate: "",
+        distrito: "",
         email: "",
         password: "",
         confirmPassword: "",
@@ -19,7 +24,7 @@ export default function RegisterPage() {
     const [success, setSuccess] = useState(false)
     const [loading, setLoading] = useState(false)
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value })
     }
 
@@ -27,6 +32,34 @@ export default function RegisterPage() {
         e.preventDefault()
         setError("")
         setLoading(true)
+
+        // Validate DNI
+        if (!/^\d{8}$/.test(formData.dni)) {
+            setError("El DNI debe tener exactamente 8 dígitos")
+            setLoading(false)
+            return
+        }
+
+        // Validate phone
+        if (!/^\d{9}$/.test(formData.phone)) {
+            setError("El teléfono debe tener exactamente 9 dígitos")
+            setLoading(false)
+            return
+        }
+
+        // Validate birth date
+        if (!formData.birthDate) {
+            setError("La fecha de nacimiento es obligatoria")
+            setLoading(false)
+            return
+        }
+
+        // Validate distrito
+        if (!formData.distrito) {
+            setError("El distrito es obligatorio")
+            setLoading(false)
+            return
+        }
 
         // Validate passwords match
         if (formData.password !== formData.confirmPassword) {
@@ -143,6 +176,88 @@ export default function RegisterPage() {
                                         className="pl-10"
                                         required
                                     />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label htmlFor="dni" className="text-sm font-medium text-gray-700">
+                                    DNI
+                                </label>
+                                <div className="relative">
+                                    <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                    <Input
+                                        id="dni"
+                                        name="dni"
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="12345678"
+                                        value={formData.dni}
+                                        onChange={handleChange}
+                                        className="pl-10"
+                                        maxLength={8}
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label htmlFor="phone" className="text-sm font-medium text-gray-700">
+                                    Teléfono
+                                </label>
+                                <div className="relative">
+                                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                    <Input
+                                        id="phone"
+                                        name="phone"
+                                        type="tel"
+                                        inputMode="numeric"
+                                        placeholder="987654321"
+                                        value={formData.phone}
+                                        onChange={handleChange}
+                                        className="pl-10"
+                                        maxLength={9}
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label htmlFor="birthDate" className="text-sm font-medium text-gray-700">
+                                    Fecha de Nacimiento
+                                </label>
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                    <Input
+                                        id="birthDate"
+                                        name="birthDate"
+                                        type="date"
+                                        value={formData.birthDate}
+                                        onChange={handleChange}
+                                        className="pl-10"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label htmlFor="distrito" className="text-sm font-medium text-gray-700">
+                                    Distrito
+                                </label>
+                                <div className="relative">
+                                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
+                                    <select
+                                        id="distrito"
+                                        name="distrito"
+                                        value={formData.distrito}
+                                        onChange={handleChange}
+                                        className="flex h-10 w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 appearance-none"
+                                        required
+                                    >
+                                        <option value="">Selecciona tu distrito</option>
+                                        {DISTRITOS_LIMA.map((d) => (
+                                            <option key={d} value={d}>{d}</option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
 

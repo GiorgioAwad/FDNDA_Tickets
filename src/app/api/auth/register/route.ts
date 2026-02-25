@@ -23,10 +23,39 @@ export async function POST(request: NextRequest) {
         const name = String(body.name || "").trim()
         const email = String(body.email || "").trim().toLowerCase()
         const password = String(body.password || "")
+        const dni = String(body.dni || "").trim()
+        const phone = String(body.phone || "").trim()
+        const birthDate = body.birthDate ? String(body.birthDate).trim() : ""
+        const distrito = String(body.distrito || "").trim()
 
-        if (!name || !email || !password) {
+        if (!name || !email || !password || !dni || !phone || !birthDate || !distrito) {
             return NextResponse.json(
                 { success: false, error: "Faltan datos requeridos" },
+                { status: 400 }
+            )
+        }
+
+        // Validate DNI format (8 digits)
+        if (!/^\d{8}$/.test(dni)) {
+            return NextResponse.json(
+                { success: false, error: "El DNI debe tener exactamente 8 dígitos" },
+                { status: 400 }
+            )
+        }
+
+        // Validate phone format (9 digits)
+        if (!/^\d{9}$/.test(phone)) {
+            return NextResponse.json(
+                { success: false, error: "El teléfono debe tener exactamente 9 dígitos" },
+                { status: 400 }
+            )
+        }
+
+        // Validate birth date
+        const parsedBirthDate = new Date(birthDate)
+        if (isNaN(parsedBirthDate.getTime())) {
+            return NextResponse.json(
+                { success: false, error: "Fecha de nacimiento inválida" },
                 { status: 400 }
             )
         }
@@ -54,6 +83,10 @@ export async function POST(request: NextRequest) {
                     name,
                     email,
                     passwordHash,
+                    dni,
+                    phone,
+                    birthDate: parsedBirthDate,
+                    distrito,
                     verifyToken,
                     emailVerifiedAt: null,
                     resetToken: null,
@@ -95,6 +128,10 @@ export async function POST(request: NextRequest) {
                 name,
                 email,
                 passwordHash,
+                dni,
+                phone,
+                birthDate: parsedBirthDate,
+                distrito,
                 role: "USER",
                 verifyToken,
             },

@@ -78,6 +78,10 @@ model User {
   verifyToken     String?
   resetToken      String?
   resetTokenExp   DateTime?
+  dni             String?
+  phone           String?
+  birthDate       DateTime?
+  distrito        String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
