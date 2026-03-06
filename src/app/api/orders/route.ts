@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
+import { buildBillingSnapshot } from "@/lib/billing"
 import { rateLimit } from "@/lib/rate-limit"
 import { createOrderSchema } from "@/lib/validations"
 import { onTicketSold } from "@/lib/cached-queries"
@@ -47,6 +48,7 @@ export async function POST(request: NextRequest) {
         }
 
         const { eventId, items, billing, discountCodeId } = parsedBody.data
+        const billingSnapshot = buildBillingSnapshot(billing, user.email)
         const cacheInvalidations = new Set<string>()
 
         // Transaccion con reserva atomica de stock para evitar sobreventa.
@@ -113,6 +115,12 @@ export async function POST(request: NextRequest) {
                         name: string
                         price: Prisma.Decimal
                         eventId: string
+                        servilexEnabled: boolean
+                        servilexIndicator: string | null
+                        servilexServiceCode: string | null
+                        servilexDisciplineCode: string | null
+                        servilexScheduleCode: string | null
+                        servilexPoolCode: string | null
                     }>
                 >(Prisma.sql`
                     UPDATE "ticket_types"
@@ -121,7 +129,17 @@ export async function POST(request: NextRequest) {
                       AND "eventId" = ${eventId}
                       AND "isActive" = true
                       AND ("capacity" = 0 OR "sold" + ${item.quantity} <= "capacity")
-                    RETURNING "id", "name", "price", "eventId"
+                    RETURNING
+                        "id",
+                        "name",
+                        "price",
+                        "eventId",
+                        "servilexEnabled",
+                        "servilexIndicator",
+                        "servilexServiceCode",
+                        "servilexDisciplineCode",
+                        "servilexScheduleCode",
+                        "servilexPoolCode"
                 `)
 
                 const reservedTicketType = reservedRows[0]
@@ -159,6 +177,33 @@ export async function POST(request: NextRequest) {
                 const subtotal = Number(reservedTicketType.price) * item.quantity
                 totalAmount += subtotal
 
+                if (reservedTicketType.servilexEnabled) {
+                    const requiredCodes = [
+                        reservedTicketType.servilexIndicator,
+                        reservedTicketType.servilexServiceCode,
+                        reservedTicketType.servilexDisciplineCode,
+                        reservedTicketType.servilexScheduleCode,
+                        reservedTicketType.servilexPoolCode,
+                    ]
+
+                    if (requiredCodes.some((value) => !String(value || "").trim())) {
+                        throw new Error(`El tipo de entrada "${reservedTicketType.name}" no tiene configuracion Servilex completa`)
+                    }
+
+                    const attendees = item.attendees || []
+                    if (attendees.length < item.quantity) {
+                        throw new Error(`Debes completar todos los asistentes para "${reservedTicketType.name}"`)
+                    }
+
+                    const missingMatricula = attendees
+                        .slice(0, item.quantity)
+                        .some((attendee) => !attendee.matricula || !attendee.matricula.trim())
+
+                    if (missingMatricula) {
+                        throw new Error(`Debes completar la matricula Servilex para "${reservedTicketType.name}"`)
+                    }
+                }
+
                 orderItemsData.push({
                     ticketTypeId: item.ticketTypeId,
                     quantity: item.quantity,
@@ -189,8 +234,6 @@ export async function POST(request: NextRequest) {
 
             const finalAmount = Math.max(0, totalAmount - discountAmount)
 
-            const buyerDocType = billing.documentType === "FACTURA" ? "6" : "1"
-
             const newOrder = await tx.order.create({
                 data: {
                     userId: user.id,
@@ -198,11 +241,18 @@ export async function POST(request: NextRequest) {
                     totalAmount: finalAmount,
                     currency: "PEN",
                     provider: "IZIPAY",
-                    documentType: billing.documentType,
-                    buyerDocType: buyerDocType,
-                    buyerDocNumber: billing.buyerDocNumber,
-                    buyerName: billing.buyerName,
-                    buyerAddress: billing.documentType === "FACTURA" ? billing.buyerAddress : null,
+                    documentType: billingSnapshot.documentType,
+                    buyerDocType: billingSnapshot.buyerDocType,
+                    buyerDocNumber: billingSnapshot.buyerDocNumber,
+                    buyerName: billingSnapshot.buyerName,
+                    buyerAddress: billingSnapshot.buyerAddress,
+                    buyerEmail: billingSnapshot.buyerEmail,
+                    buyerPhone: billingSnapshot.buyerPhone,
+                    buyerUbigeo: billingSnapshot.buyerUbigeo,
+                    buyerFirstName: billingSnapshot.buyerFirstName,
+                    buyerSecondName: billingSnapshot.buyerSecondName,
+                    buyerLastNamePaternal: billingSnapshot.buyerLastNamePaternal,
+                    buyerLastNameMaternal: billingSnapshot.buyerLastNameMaternal,
                     orderItems: {
                         create: orderItemsData,
                     },
@@ -257,7 +307,13 @@ export async function POST(request: NextRequest) {
             message.includes("entero") ||
             message.includes("pertenece") ||
             message.includes("dígitos") ||
-            message.includes("fiscal")
+            message.includes("fiscal") ||
+            message.includes("Direccion") ||
+            message.includes("Email") ||
+            message.includes("Ubigeo") ||
+            message.includes("matricula") ||
+            message.includes("asistentes") ||
+            message.includes("Servilex")
 
         return NextResponse.json(
             { success: false, error: message },

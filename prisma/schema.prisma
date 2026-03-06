@@ -154,6 +154,12 @@ model TicketType {
   isPackage        Boolean  @default(false)
   packageDaysCount Int?     // Number of days for package tickets
   validDays        Json?    // Array of dates ["2024-03-15", "2024-03-16"]
+  servilexEnabled        Boolean  @default(false)
+  servilexIndicator      String?  @default("AC")
+  servilexServiceCode    String?
+  servilexDisciplineCode String?
+  servilexScheduleCode   String?
+  servilexPoolCode       String?
   isActive         Boolean  @default(true)
   sortOrder        Int      @default(0)
   createdAt        DateTime @default(now())
@@ -186,6 +192,13 @@ model Order {
   buyerDocNumber   String?     // DNI (8 digits) or RUC (11 digits)
   buyerName        String?     // Full name or business name
   buyerAddress     String?     // Fiscal address (for FACTURA)
+  buyerEmail       String?
+  buyerPhone       String?
+  buyerUbigeo      String?
+  buyerFirstName   String?
+  buyerSecondName  String?
+  buyerLastNamePaternal String?
+  buyerLastNameMaternal String?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -387,12 +400,25 @@ model Invoice {
   buyerDocNumber   String?       // DNI (8 digits) or RUC (11 digits)
   buyerName        String?       // Full name or business name (razón social)
   buyerAddress     String?       // Fiscal address (for FACTURA)
+  buyerEmail       String?
+  buyerPhone       String?
+  buyerUbigeo      String?
+  buyerFirstName   String?
+  buyerSecondName  String?
+  buyerLastNamePaternal String?
+  buyerLastNameMaternal String?
   // Provider integration
+  traceId          String?       @unique
+  requestPayload   String?       @db.Text
+  requestSignature String?
+  httpStatus       Int?
+  reciboHash       String?
   providerResponse Json?         // Response from ABIO/Servilex
   pdfUrl           String?       // URL of the issued document PDF
   sentToProvider   Boolean       @default(false)
   retryCount       Int           @default(0)
   lastError        String?
+  sentAt           DateTime?
   issuedAt         DateTime?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt

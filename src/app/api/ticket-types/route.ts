@@ -27,6 +27,14 @@ const normalizeDescription = (value: unknown): string | null | undefined => {
     return trimmed.length > 0 ? trimmed : null
 }
 
+const normalizeOptionalCode = (value: unknown, fallback?: string | null): string | null => {
+    const source = value === undefined ? fallback : value
+    if (source === undefined || source === null) return null
+    if (typeof source !== "string") return null
+    const trimmed = source.trim()
+    return trimmed.length > 0 ? trimmed : null
+}
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -50,6 +58,12 @@ export async function POST(request: NextRequest) {
             validDays,
             sortOrder,
             isActive,
+            servilexEnabled,
+            servilexIndicator,
+            servilexServiceCode,
+            servilexDisciplineCode,
+            servilexScheduleCode,
+            servilexPoolCode,
         } = body
 
         if (!eventId || !name || price === undefined || capacity === undefined) {
@@ -72,6 +86,12 @@ export async function POST(request: NextRequest) {
                 validDays: normalizeValidDays(validDays),
                 sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
                 isActive: isActive === undefined ? true : Boolean(isActive),
+                servilexEnabled: Boolean(servilexEnabled),
+                servilexIndicator: normalizeOptionalCode(servilexIndicator, "AC"),
+                servilexServiceCode: normalizeOptionalCode(servilexServiceCode),
+                servilexDisciplineCode: normalizeOptionalCode(servilexDisciplineCode),
+                servilexScheduleCode: normalizeOptionalCode(servilexScheduleCode),
+                servilexPoolCode: normalizeOptionalCode(servilexPoolCode),
             },
         })
 
@@ -113,6 +133,12 @@ export async function PUT(request: NextRequest) {
             validDays,
             sortOrder,
             isActive,
+            servilexEnabled,
+            servilexIndicator,
+            servilexServiceCode,
+            servilexDisciplineCode,
+            servilexScheduleCode,
+            servilexPoolCode,
         } = body
 
         if (!id) {
@@ -132,6 +158,12 @@ export async function PUT(request: NextRequest) {
             validDays?: Prisma.InputJsonValue
             sortOrder?: number
             isActive?: boolean
+            servilexEnabled?: boolean
+            servilexIndicator?: string | null
+            servilexServiceCode?: string | null
+            servilexDisciplineCode?: string | null
+            servilexScheduleCode?: string | null
+            servilexPoolCode?: string | null
         } = {}
 
         if (name !== undefined) data.name = name
@@ -144,6 +176,12 @@ export async function PUT(request: NextRequest) {
         if (sortOrder !== undefined) data.sortOrder = Number(sortOrder)
         if (isActive !== undefined) data.isActive = Boolean(isActive)
         if (validDays !== undefined) data.validDays = normalizeValidDays(validDays)
+        if (servilexEnabled !== undefined) data.servilexEnabled = Boolean(servilexEnabled)
+        if (servilexIndicator !== undefined) data.servilexIndicator = normalizeOptionalCode(servilexIndicator, "AC")
+        if (servilexServiceCode !== undefined) data.servilexServiceCode = normalizeOptionalCode(servilexServiceCode)
+        if (servilexDisciplineCode !== undefined) data.servilexDisciplineCode = normalizeOptionalCode(servilexDisciplineCode)
+        if (servilexScheduleCode !== undefined) data.servilexScheduleCode = normalizeOptionalCode(servilexScheduleCode)
+        if (servilexPoolCode !== undefined) data.servilexPoolCode = normalizeOptionalCode(servilexPoolCode)
 
         if (packageDaysCount !== undefined || isPackage !== undefined) {
             const packageDays = normalizePackageDaysCount(packageDaysCount)

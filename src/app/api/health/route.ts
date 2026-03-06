@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getQueueStats } from "@/lib/email-queue"
+import { getInvoiceQueueStats } from "@/lib/invoice-worker"
 import redis from "@/lib/cache"
 
 export const runtime = "nodejs"
@@ -22,6 +23,12 @@ interface HealthStatus {
             pending?: number
             failed?: number
         }
+        invoiceQueue: {
+            status: "ok" | "warning" | "error"
+            pending?: number
+            failed?: number
+            issued?: number
+        }
         memory: {
             used: number
             total: number
@@ -39,6 +46,7 @@ export async function GET() {
             database: { status: "down" },
             redis: { status: "disabled" },
             emailQueue: { status: "ok" },
+            invoiceQueue: { status: "ok" },
             memory: { used: 0, total: 0, percentage: 0 },
         },
         version: process.env.npm_package_version || "1.0.0",
@@ -87,6 +95,20 @@ export async function GET() {
     } catch (error) {
         health.services.emailQueue = { status: "error" }
         console.error("Health check - Email queue error:", error)
+    }
+
+    // Check Invoice Queue
+    try {
+        const invoiceStats = await getInvoiceQueueStats()
+        health.services.invoiceQueue = {
+            status: invoiceStats.failed > 10 ? "warning" : "ok",
+            pending: invoiceStats.pending,
+            failed: invoiceStats.failed,
+            issued: invoiceStats.issued,
+        }
+    } catch (error) {
+        health.services.invoiceQueue = { status: "error" }
+        console.error("Health check - Invoice queue error:", error)
     }
 
     // Check memory (Node.js)

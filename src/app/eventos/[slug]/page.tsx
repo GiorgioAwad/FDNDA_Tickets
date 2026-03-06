@@ -63,6 +63,7 @@ export default async function EventDetailPage({ params }: EventPageProps) {
         isPackage: ticket.isPackage,
         packageDaysCount: ticket.packageDaysCount,
         validDays: ticket.validDays,
+        servilexEnabled: ticket.servilexEnabled,
     }))
 
     return (

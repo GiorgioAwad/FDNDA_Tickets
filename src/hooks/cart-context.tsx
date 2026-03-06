@@ -18,6 +18,7 @@ export interface CartScheduleSelection {
 export interface CartAttendee {
     name: string
     dni: string
+    matricula?: string
     scheduleSelections?: CartScheduleSelection[]
 }
 
@@ -30,6 +31,7 @@ export interface CartItem {
     quantity: number
     attendees: CartAttendee[]
     scheduleConfig?: CartScheduleConfig
+    servilexEnabled?: boolean
 }
 
 export interface BillingData {
@@ -37,6 +39,13 @@ export interface BillingData {
     buyerDocNumber: string
     buyerName: string
     buyerAddress: string
+    buyerEmail: string
+    buyerPhone: string
+    buyerUbigeo: string
+    buyerFirstName: string
+    buyerSecondName: string
+    buyerLastNamePaternal: string
+    buyerLastNameMaternal: string
 }
 
 interface CartContextType {
@@ -44,7 +53,12 @@ interface CartContextType {
     addItem: (item: Omit<CartItem, "attendees">) => void
     removeItem: (ticketTypeId: string) => void
     updateQuantity: (ticketTypeId: string, quantity: number) => void
-    updateAttendee: (ticketTypeId: string, index: number, field: "name" | "dni", value: string) => void
+    updateAttendee: (
+        ticketTypeId: string,
+        index: number,
+        field: "name" | "dni" | "matricula",
+        value: string
+    ) => void
     updateAttendeeScheduleSelection: (
         ticketTypeId: string,
         attendeeIndex: number,
@@ -66,6 +80,13 @@ const DEFAULT_BILLING_DATA: BillingData = {
     buyerDocNumber: "",
     buyerName: "",
     buyerAddress: "",
+    buyerEmail: "",
+    buyerPhone: "",
+    buyerUbigeo: "",
+    buyerFirstName: "",
+    buyerSecondName: "",
+    buyerLastNamePaternal: "",
+    buyerLastNameMaternal: "",
 }
 
 const LEGACY_CART_KEY = "fdnda-cart"
@@ -180,6 +201,7 @@ const createEmptyAttendee = (scheduleConfig?: CartScheduleConfig): CartAttendee 
     return {
         name: "",
         dni: "",
+        matricula: "",
         scheduleSelections: requiredSelections > 0 ? createEmptySelections(requiredSelections) : [],
     }
 }
@@ -190,6 +212,7 @@ const normalizeAttendee = (input: unknown, scheduleConfig?: CartScheduleConfig):
     return {
         name: typeof record.name === "string" ? record.name : "",
         dni: typeof record.dni === "string" ? record.dni : "",
+        matricula: typeof record.matricula === "string" ? record.matricula : "",
         scheduleSelections: normalizeScheduleSelections(record.scheduleSelections, scheduleConfig),
     }
 }
@@ -235,6 +258,7 @@ const normalizeCartItem = (input: unknown): CartItem | null => {
         quantity,
         attendees,
         scheduleConfig,
+        servilexEnabled: Boolean(record.servilexEnabled),
     }
 }
 
@@ -414,7 +438,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const updateAttendee = (
         ticketTypeId: string,
         index: number,
-        field: "name" | "dni",
+        field: "name" | "dni" | "matricula",
         value: string
     ) => {
         updateItems((current) =>
@@ -492,6 +516,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 buyerDocNumber: typeof parsed.buyerDocNumber === "string" ? parsed.buyerDocNumber : "",
                 buyerName: typeof parsed.buyerName === "string" ? parsed.buyerName : "",
                 buyerAddress: typeof parsed.buyerAddress === "string" ? parsed.buyerAddress : "",
+                buyerEmail: typeof parsed.buyerEmail === "string" ? parsed.buyerEmail : "",
+                buyerPhone: typeof parsed.buyerPhone === "string" ? parsed.buyerPhone : "",
+                buyerUbigeo: typeof parsed.buyerUbigeo === "string" ? parsed.buyerUbigeo : "",
+                buyerFirstName: typeof parsed.buyerFirstName === "string" ? parsed.buyerFirstName : "",
+                buyerSecondName: typeof parsed.buyerSecondName === "string" ? parsed.buyerSecondName : "",
+                buyerLastNamePaternal: typeof parsed.buyerLastNamePaternal === "string" ? parsed.buyerLastNamePaternal : "",
+                buyerLastNameMaternal: typeof parsed.buyerLastNameMaternal === "string" ? parsed.buyerLastNameMaternal : "",
             }
         } catch {
             return DEFAULT_BILLING_DATA
@@ -506,7 +537,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         // Reset doc number and address when switching document type
         if (field === "documentType") {
             updated.buyerDocNumber = ""
+            updated.buyerName = ""
             updated.buyerAddress = ""
+            updated.buyerFirstName = ""
+            updated.buyerSecondName = ""
+            updated.buyerLastNamePaternal = ""
+            updated.buyerLastNameMaternal = ""
         }
         window.localStorage.setItem(billingKey, JSON.stringify(updated))
         emitCartChange()

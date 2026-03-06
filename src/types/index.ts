@@ -119,9 +119,11 @@ export interface CartItem {
     eventTitle: string
     quantity: number
     unitPrice: number
+    servilexEnabled?: boolean
     attendees: {
         name: string
         dni: string
+        matricula?: string
     }[]
 }
 

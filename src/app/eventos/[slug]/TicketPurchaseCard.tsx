@@ -24,6 +24,7 @@ export type TicketTypeClient = {
     isPackage?: boolean | null
     packageDaysCount?: number | null
     validDays?: unknown
+    servilexEnabled?: boolean
 }
 
 type TicketPurchaseCardProps = {
@@ -217,6 +218,7 @@ export default function TicketPurchaseCard({
                     requiredDays: ticket.isPackage ? (ticket.packageDaysCount ?? null) : null,
                     requireShiftSelection: metadata.schedule.requireShiftSelection,
                 },
+                servilexEnabled: Boolean(ticket.servilexEnabled),
             })
             return
         }

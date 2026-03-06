@@ -21,6 +21,12 @@ interface TicketType {
     packageDaysCount?: number
     validDays?: unknown
     sortOrder?: number
+    servilexEnabled?: boolean
+    servilexIndicator?: string | null
+    servilexServiceCode?: string | null
+    servilexDisciplineCode?: string | null
+    servilexScheduleCode?: string | null
+    servilexPoolCode?: string | null
 }
 
 interface TicketTypeManagerProps {
@@ -87,6 +93,12 @@ export function TicketTypeManager({
         isPackage: false,
         packageDaysCount: 0,
         sortOrder: 0,
+        servilexEnabled: false,
+        servilexIndicator: "AC",
+        servilexServiceCode: "",
+        servilexDisciplineCode: "",
+        servilexScheduleCode: "",
+        servilexPoolCode: "",
     })
     const [capacityInput, setCapacityInput] = useState("100")
 
@@ -141,6 +153,12 @@ export function TicketTypeManager({
             isPackage: false,
             packageDaysCount: 0,
             sortOrder: 0,
+            servilexEnabled: false,
+            servilexIndicator: "AC",
+            servilexServiceCode: "",
+            servilexDisciplineCode: "",
+            servilexScheduleCode: "",
+            servilexPoolCode: "",
         })
         setCapacityInput("100")
         setSelectedValidDays([])
@@ -180,6 +198,20 @@ export function TicketTypeManager({
         ) {
             alert("El paquete no puede tener mas dias que los dias validos seleccionados")
             return
+        }
+
+        if (formData.servilexEnabled) {
+            const requiredServilexFields = [
+                formData.servilexIndicator,
+                formData.servilexServiceCode,
+                formData.servilexDisciplineCode,
+                formData.servilexScheduleCode,
+                formData.servilexPoolCode,
+            ]
+            if (requiredServilexFields.some((value) => !String(value || "").trim())) {
+                alert("Completa todos los codigos Servilex para este tipo de entrada")
+                return
+            }
         }
 
         const validDaysPayload = shouldUseSpecificDays
@@ -283,6 +315,12 @@ export function TicketTypeManager({
                                     isPackage: false,
                                     packageDaysCount: 0,
                                     sortOrder: 0,
+                                    servilexEnabled: false,
+                                    servilexIndicator: "AC",
+                                    servilexServiceCode: "",
+                                    servilexDisciplineCode: "",
+                                    servilexScheduleCode: "",
+                                    servilexPoolCode: "",
                                 })
                                 setCapacityInput("100")
                                 setSelectedValidDays([])
@@ -308,6 +346,12 @@ export function TicketTypeManager({
                                     isPackage: false,
                                     packageDaysCount: 0,
                                     sortOrder: 0,
+                                    servilexEnabled: false,
+                                    servilexIndicator: "AC",
+                                    servilexServiceCode: "",
+                                    servilexDisciplineCode: "",
+                                    servilexScheduleCode: "",
+                                    servilexPoolCode: "",
                                 })
                                 setCapacityInput("100")
                                 setSelectedValidDays([])
@@ -401,6 +445,71 @@ export function TicketTypeManager({
                                 Este ticket permitirá registrar hasta {formData.packageDaysCount || 0} días distintos del calendario que definas.
                             </div>
                         )}
+
+                        <div className="rounded-lg border bg-white p-3 space-y-3">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="servilexEnabled"
+                                    checked={Boolean(formData.servilexEnabled)}
+                                    onChange={(e) => setFormData({
+                                        ...formData,
+                                        servilexEnabled: e.target.checked,
+                                        servilexIndicator: e.target.checked
+                                            ? (formData.servilexIndicator || "AC")
+                                            : "",
+                                    })}
+                                    className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <label htmlFor="servilexEnabled" className="text-sm font-medium">
+                                    Requiere integracion Servilex / ABIO
+                                </label>
+                            </div>
+                            {formData.servilexEnabled && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-medium">Indicador</label>
+                                        <Input
+                                            value={formData.servilexIndicator || ""}
+                                            onChange={(e) => setFormData({ ...formData, servilexIndicator: e.target.value.toUpperCase() })}
+                                            placeholder="AC"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-medium">Codigo servicio</label>
+                                        <Input
+                                            value={formData.servilexServiceCode || ""}
+                                            onChange={(e) => setFormData({ ...formData, servilexServiceCode: e.target.value })}
+                                            placeholder="789"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-medium">Codigo disciplina</label>
+                                        <Input
+                                            value={formData.servilexDisciplineCode || ""}
+                                            onChange={(e) => setFormData({ ...formData, servilexDisciplineCode: e.target.value })}
+                                            placeholder="01"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-medium">Codigo horario</label>
+                                        <Input
+                                            value={formData.servilexScheduleCode || ""}
+                                            onChange={(e) => setFormData({ ...formData, servilexScheduleCode: e.target.value })}
+                                            placeholder="000002"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-medium">Codigo piscina</label>
+                                        <Input
+                                            value={formData.servilexPoolCode || ""}
+                                            onChange={(e) => setFormData({ ...formData, servilexPoolCode: e.target.value })}
+                                            placeholder="01"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
 
                         {entryMode === "shift" && (
                         <>
@@ -627,6 +736,11 @@ export function TicketTypeManager({
                                                 {schedule.shifts.length > 0 && !schedule.requireShiftSelection && (
                                                     <Badge variant="secondary" className="text-xs">
                                                         Todos los turnos
+                                                    </Badge>
+                                                )}
+                                                {ticket.servilexEnabled && (
+                                                    <Badge variant="secondary" className="text-xs">
+                                                        Servilex
                                                     </Badge>
                                                 )}
                                                 {ticket.isActive === false && (

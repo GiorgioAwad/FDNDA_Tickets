@@ -39,6 +39,7 @@ export interface CachedTicketType {
     isPackage: boolean
     packageDaysCount: number | null
     validDays: unknown | null
+    servilexEnabled: boolean
     isActive: boolean
     sortOrder: number
 }
@@ -143,6 +144,7 @@ export async function getCachedTicketTypes(eventId: string): Promise<CachedTicke
                 isPackage: tt.isPackage,
                 packageDaysCount: tt.packageDaysCount,
                 validDays: tt.validDays as unknown | null,
+                servilexEnabled: tt.servilexEnabled,
                 isActive: tt.isActive,
                 sortOrder: tt.sortOrder,
             }))

@@ -20,7 +20,62 @@ interface FulfillOrderInput {
 type StoredAttendeeData = {
     name?: string | null
     dni?: string | null
+    matricula?: string | null
     scheduleSelections?: unknown
+}
+
+type InvoiceDbClient = Prisma.TransactionClient | typeof prisma
+
+async function upsertPendingInvoice(
+    db: InvoiceDbClient,
+    order: {
+        id: string
+        documentType: string | null
+        buyerDocType: string | null
+        buyerDocNumber: string | null
+        buyerName: string | null
+        buyerAddress: string | null
+        buyerEmail: string | null
+        buyerPhone: string | null
+        buyerUbigeo: string | null
+        buyerFirstName: string | null
+        buyerSecondName: string | null
+        buyerLastNamePaternal: string | null
+        buyerLastNameMaternal: string | null
+        invoice?: { status: "PENDING" | "ISSUED" | "FAILED" } | null
+    }
+) {
+    const documentType = order.documentType === "FACTURA" ? "FACTURA" : "BOLETA"
+    const baseSnapshot = {
+        documentType,
+        buyerDocType: order.buyerDocType,
+        buyerDocNumber: order.buyerDocNumber,
+        buyerName: order.buyerName,
+        buyerAddress: order.buyerAddress,
+        buyerEmail: order.buyerEmail,
+        buyerPhone: order.buyerPhone,
+        buyerUbigeo: order.buyerUbigeo,
+        buyerFirstName: order.buyerFirstName,
+        buyerSecondName: order.buyerSecondName,
+        buyerLastNamePaternal: order.buyerLastNamePaternal,
+        buyerLastNameMaternal: order.buyerLastNameMaternal,
+    } as const
+
+    await db.invoice.upsert({
+        where: { orderId: order.id },
+        update: order.invoice?.status === "ISSUED"
+            ? baseSnapshot
+            : {
+                ...baseSnapshot,
+                status: "PENDING",
+                lastError: null,
+            },
+        create: {
+            orderId: order.id,
+            status: "PENDING",
+            ...baseSnapshot,
+        },
+    })
 }
 
 const toDateObjectsFromDateStrings = (values: string[]): Date[] => {
@@ -104,6 +159,11 @@ export async function fulfillPaidOrder({
         where: { id: orderId },
         include: {
             user: true,
+            invoice: {
+                select: {
+                    status: true,
+                },
+            },
             tickets: { select: { id: true } },
             orderItems: {
                 include: {
@@ -126,6 +186,7 @@ export async function fulfillPaidOrder({
     }
 
     if (order.status === "PAID" && order.tickets.length > 0) {
+        await upsertPendingInvoice(prisma, order)
         return { success: true, alreadyPaid: true }
     }
 
@@ -188,6 +249,7 @@ export async function fulfillPaidOrder({
         })
 
         if (existingTickets > 0) {
+            await upsertPendingInvoice(tx, order)
             return { alreadyPaid: true }
         }
 
@@ -238,6 +300,8 @@ export async function fulfillPaidOrder({
             }
             cacheToInvalidate.get(item.ticketType.eventId)?.add(item.ticketTypeId)
         }
+
+        await upsertPendingInvoice(tx, order)
 
         return { alreadyPaid: false }
     })

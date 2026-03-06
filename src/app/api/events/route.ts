@@ -15,6 +15,12 @@ type TicketTypePayload = {
     isPackage?: boolean
     packageDaysCount?: number | string | null
     validDays?: unknown
+    servilexEnabled?: boolean
+    servilexIndicator?: string | null
+    servilexServiceCode?: string | null
+    servilexDisciplineCode?: string | null
+    servilexScheduleCode?: string | null
+    servilexPoolCode?: string | null
 }
 
 type EventDayPayload = {
@@ -165,6 +171,12 @@ export async function POST(request: NextRequest) {
                                     ? null
                                     : packageDaysCount,
                                 validDays: ticketType.validDays || [],
+                                servilexEnabled: Boolean(ticketType.servilexEnabled),
+                                servilexIndicator: ticketType.servilexIndicator || "AC",
+                                servilexServiceCode: ticketType.servilexServiceCode || null,
+                                servilexDisciplineCode: ticketType.servilexDisciplineCode || null,
+                                servilexScheduleCode: ticketType.servilexScheduleCode || null,
+                                servilexPoolCode: ticketType.servilexPoolCode || null,
                             }
                         }),
                     }

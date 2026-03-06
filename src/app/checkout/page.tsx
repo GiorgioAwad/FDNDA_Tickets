@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
@@ -8,6 +8,7 @@ import { useCart } from "@/hooks/cart-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { buildNaturalPersonFullName } from "@/lib/billing"
 import { formatDate, formatPrice } from "@/lib/utils"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
 import AuthModal from "@/components/auth/AuthModal"
@@ -62,7 +63,7 @@ export default function CheckoutPage() {
     const [appliedDiscount, setAppliedDiscount] = useState<AppliedDiscount | null>(null)
     const [discountAmount, setDiscountAmount] = useState(0)
 
-    const getRequiredSelections = (item: (typeof items)[number]) => {
+    const getRequiredSelections = useCallback((item: (typeof items)[number]) => {
         if (!item.scheduleConfig) return 0
         if (
             typeof item.scheduleConfig.requiredDays === "number" &&
@@ -71,22 +72,60 @@ export default function CheckoutPage() {
             return item.scheduleConfig.requiredDays
         }
         return item.scheduleConfig.dates.length > 0 ? 1 : 0
-    }
+    }, [])
+
+    const boletaFullName = useMemo(
+        () =>
+            buildNaturalPersonFullName({
+                firstName: billingData.buyerFirstName,
+                secondName: billingData.buyerSecondName,
+                lastNamePaternal: billingData.buyerLastNamePaternal,
+                lastNameMaternal: billingData.buyerLastNameMaternal,
+            }),
+        [
+            billingData.buyerFirstName,
+            billingData.buyerSecondName,
+            billingData.buyerLastNamePaternal,
+            billingData.buyerLastNameMaternal,
+        ]
+    )
+
+    useEffect(() => {
+        if (status !== "authenticated") return
+        if (!session?.user?.email || billingData.buyerEmail) return
+        updateBillingData("buyerEmail", session.user.email)
+    }, [status, session?.user?.email, billingData.buyerEmail, updateBillingData])
 
     const hasMissingAttendeeData = useMemo(
-        () => items.some((item) => item.attendees.some((attendee) => !attendee.name || !attendee.dni)),
+        () =>
+            items.some((item) =>
+                item.attendees.some((attendee) =>
+                    !attendee.name ||
+                    !attendee.dni ||
+                    (item.servilexEnabled && !attendee.matricula)
+                )
+            ),
         [items]
     )
 
     const hasMissingBillingData = useMemo(() => {
-        if (!billingData.buyerDocNumber || !billingData.buyerName) return true
+        if (!billingData.buyerDocNumber || !billingData.buyerAddress) return true
+        if (!billingData.buyerEmail || !/^\S+@\S+\.\S+$/.test(billingData.buyerEmail)) return true
+        if (!billingData.buyerPhone || !/^\d{7,15}$/.test(billingData.buyerPhone)) return true
+        if (!billingData.buyerUbigeo || !/^\d{5,6}$/.test(billingData.buyerUbigeo)) return true
         if (billingData.documentType === "BOLETA" && !/^\d{8}$/.test(billingData.buyerDocNumber)) return true
         if (billingData.documentType === "FACTURA") {
             if (!/^\d{11}$/.test(billingData.buyerDocNumber)) return true
-            if (!billingData.buyerAddress || billingData.buyerAddress.length < 5) return true
+            if (!billingData.buyerName || billingData.buyerName.trim().length < 2) return true
+            return false
         }
-        return false
-    }, [billingData])
+        return (
+            !billingData.buyerFirstName ||
+            !billingData.buyerLastNamePaternal ||
+            !billingData.buyerLastNameMaternal ||
+            !boletaFullName
+        )
+    }, [billingData, boletaFullName])
 
     const hasMissingScheduleSelections = useMemo(() => {
         return items.some((item) => {
@@ -111,7 +150,7 @@ export default function CheckoutPage() {
                 return false
             })
         })
-    }, [items])
+    }, [getRequiredSelections, items])
 
     const handleApplyDiscount = async () => {
         if (!discountCode.trim()) return
@@ -226,8 +265,15 @@ export default function CheckoutPage() {
                     billing: {
                         documentType: billingData.documentType,
                         buyerDocNumber: billingData.buyerDocNumber,
-                        buyerName: billingData.buyerName,
-                        ...(billingData.documentType === "FACTURA" ? { buyerAddress: billingData.buyerAddress } : {}),
+                        buyerName: billingData.documentType === "FACTURA" ? billingData.buyerName : boletaFullName,
+                        buyerAddress: billingData.buyerAddress,
+                        buyerEmail: billingData.buyerEmail,
+                        buyerPhone: billingData.buyerPhone,
+                        buyerUbigeo: billingData.buyerUbigeo,
+                        buyerFirstName: billingData.buyerFirstName,
+                        buyerSecondName: billingData.buyerSecondName,
+                        buyerLastNamePaternal: billingData.buyerLastNamePaternal,
+                        buyerLastNameMaternal: billingData.buyerLastNameMaternal,
                     },
                     discountCodeId: appliedDiscount?.id || null,
                 }),
@@ -402,17 +448,19 @@ export default function CheckoutPage() {
                                                 )
                                         )}
                                     </div>
-                                    <div>
-                                        <label className="text-xs text-gray-500 mb-1 block">
-                                            {billingData.documentType === "BOLETA" ? "Nombre completo" : "Razón social"}
-                                        </label>
-                                        <Input
-                                            value={billingData.buyerName}
-                                            onChange={(e) => updateBillingData("buyerName", e.target.value)}
-                                            placeholder={billingData.documentType === "BOLETA" ? "Juan Pérez" : "Empresa S.A.C."}
-                                            className="bg-white"
-                                        />
-                                    </div>
+                                    {billingData.documentType === "FACTURA" && (
+                                        <div>
+                                            <label className="text-xs text-gray-500 mb-1 block">
+                                                Razón social
+                                            </label>
+                                            <Input
+                                                value={billingData.buyerName}
+                                                onChange={(e) => updateBillingData("buyerName", e.target.value)}
+                                                placeholder="Empresa S.A.C."
+                                                className="bg-white"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
 
                                 {billingData.documentType === "FACTURA" && (
@@ -430,6 +478,99 @@ export default function CheckoutPage() {
                                             <p className="text-xs text-red-500 mt-1">Dirección fiscal debe tener al menos 5 caracteres</p>
                                         )}
                                     </div>
+                                )}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1 block">Email para comprobante</label>
+                                        <Input
+                                            type="email"
+                                            value={billingData.buyerEmail}
+                                            onChange={(e) => updateBillingData("buyerEmail", e.target.value)}
+                                            placeholder="cliente@correo.com"
+                                            className="bg-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1 block">Celular</label>
+                                        <Input
+                                            value={billingData.buyerPhone}
+                                            onChange={(e) => updateBillingData("buyerPhone", e.target.value.replace(/\D/g, "").slice(0, 15))}
+                                            placeholder="999888777"
+                                            className="bg-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1 block">Ubigeo</label>
+                                        <Input
+                                            value={billingData.buyerUbigeo}
+                                            onChange={(e) => updateBillingData("buyerUbigeo", e.target.value.replace(/\D/g, "").slice(0, 6))}
+                                            placeholder="150101"
+                                            className="bg-white"
+                                        />
+                                    </div>
+                                </div>
+
+                                {billingData.documentType === "BOLETA" && (
+                                    <div>
+                                        <label className="text-xs text-gray-500 mb-1 block">Direccion</label>
+                                        <Input
+                                            value={billingData.buyerAddress}
+                                            onChange={(e) => updateBillingData("buyerAddress", e.target.value)}
+                                            placeholder="Av. ejemplo 123, Lima"
+                                            className="bg-white"
+                                        />
+                                    </div>
+                                )}
+
+                                {billingData.documentType === "BOLETA" && (
+                                    <>
+                                        <div className="text-xs text-gray-500 bg-gray-100 rounded-md px-3 py-2">
+                                            Para boleta, el nombre completo se arma con los nombres y apellidos de abajo.
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-xs text-gray-500 mb-1 block">Primer nombre</label>
+                                                <Input
+                                                    value={billingData.buyerFirstName}
+                                                    onChange={(e) => updateBillingData("buyerFirstName", e.target.value)}
+                                                    placeholder="Juan"
+                                                    className="bg-white"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs text-gray-500 mb-1 block">Segundo nombre</label>
+                                                <Input
+                                                    value={billingData.buyerSecondName}
+                                                    onChange={(e) => updateBillingData("buyerSecondName", e.target.value)}
+                                                    placeholder="Carlos"
+                                                    className="bg-white"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs text-gray-500 mb-1 block">Apellido paterno</label>
+                                                <Input
+                                                    value={billingData.buyerLastNamePaternal}
+                                                    onChange={(e) => updateBillingData("buyerLastNamePaternal", e.target.value)}
+                                                    placeholder="Perez"
+                                                    className="bg-white"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs text-gray-500 mb-1 block">Apellido materno</label>
+                                                <Input
+                                                    value={billingData.buyerLastNameMaternal}
+                                                    onChange={(e) => updateBillingData("buyerLastNameMaternal", e.target.value)}
+                                                    placeholder="Lopez"
+                                                    className="bg-white"
+                                                />
+                                            </div>
+                                        </div>
+                                        {boletaFullName && (
+                                            <div className="text-xs text-gray-500 bg-gray-100 rounded-md px-3 py-2">
+                                                Nombre completo para comprobante: <span className="font-medium text-gray-700">{boletaFullName}</span>
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </CardContent>
                         </Card>
@@ -531,6 +672,27 @@ export default function CheckoutPage() {
                                                             />
                                                         </div>
                                                     </div>
+
+                                                    {item.servilexEnabled && (
+                                                        <div>
+                                                            <label className="text-xs text-gray-500 mb-1 block">
+                                                                Matricula / codigo de referencia Servilex
+                                                            </label>
+                                                            <Input
+                                                                value={attendee.matricula || ""}
+                                                                onChange={(e) =>
+                                                                    updateAttendee(
+                                                                        item.ticketTypeId,
+                                                                        attendeeIndex,
+                                                                        "matricula",
+                                                                        e.target.value
+                                                                    )
+                                                                }
+                                                                placeholder="0000006"
+                                                                className="bg-white"
+                                                            />
+                                                        </div>
+                                                    )}
 
                                                         {requiredSelections > 0 && scheduleConfig && (
                                                         <div className="rounded-md border border-dashed border-gray-300 p-3 bg-white">
@@ -732,7 +894,7 @@ export default function CheckoutPage() {
                                         )}
                                         {!hasMissingBillingData && hasMissingAttendeeData && (
                                             <p className="text-xs text-amber-600 text-center">
-                                                Completa los datos de todos los asistentes para continuar
+                                                Completa los datos de todos los asistentes, incluida la matricula cuando aplique
                                             </p>
                                         )}
                                         {!hasMissingBillingData && !hasMissingAttendeeData && hasMissingScheduleSelections && (
