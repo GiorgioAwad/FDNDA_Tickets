@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 
 export const revalidate = 30
+export const dynamic = "force-dynamic"
 
 interface EventPageProps {
     params: Promise<{ slug: string }>

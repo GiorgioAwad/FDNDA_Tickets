@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 
 export const revalidate = 60
+export const dynamic = "force-dynamic"
 
 type HomeEvent = {
   id: string

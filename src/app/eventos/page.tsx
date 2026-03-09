@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Calendar, MapPin, Waves, Search, Filter, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react"
 
 export const revalidate = 60
+export const dynamic = "force-dynamic"
 
 const PAGE_SIZE = 12
 
