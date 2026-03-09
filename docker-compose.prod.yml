@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # ==================== PostgreSQL ====================
+  db:
+    image: postgres:15-alpine
+    container_name: fdnda_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-fdnda}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      POSTGRES_DB: ${DB_NAME:-fdnda_tickets}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-fdnda} -d ${DB_NAME:-fdnda_tickets}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  # ==================== Next.js App ====================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set NEXT_PUBLIC_APP_URL in .env}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-Ticketing FDNDA}
+        NEXT_PUBLIC_PAYMENTS_MODE: ${NEXT_PUBLIC_PAYMENTS_MODE:-mock}
+    container_name: fdnda_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-fdnda}:${DB_PASSWORD}@db:5432/${DB_NAME:-fdnda_tickets}?sslmode=disable
+      - DB_POOL_MAX=20
+      - DB_POOL_MIN=5
+    volumes:
+      - uploads_data:/app/public/uploads
+    networks:
+      - internal
+      - web
+
+  # ==================== Caddy (Reverse Proxy + SSL) ====================
+  caddy:
+    image: caddy:2-alpine
+    container_name: fdnda_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - web
+
+  # ==================== Cron Jobs ====================
+  cron:
+    image: alpine:3.19
+    container_name: fdnda_cron
+    restart: unless-stopped
+    depends_on:
+      - app
+    entrypoint: /bin/sh
+    command: >
+      -c "
+        echo '* * * * * wget -qO- --header=\"Authorization: Bearer '\"$$CRON_SECRET\"'\" http://app:3000/api/cron/process-emails > /dev/null 2>&1' > /etc/crontabs/root &&
+        echo '*/2 * * * * wget -qO- --header=\"Authorization: Bearer '\"$$CRON_SECRET\"'\" http://app:3000/api/cron/process-invoices > /dev/null 2>&1' >> /etc/crontabs/root &&
+        echo '*/5 * * * * wget -qO- --header=\"Authorization: Bearer '\"$$CRON_SECRET\"'\" http://app:3000/api/cron/expire-orders > /dev/null 2>&1' >> /etc/crontabs/root &&
+        crond -f -l 8
+      "
+    environment:
+      - CRON_SECRET=${CRON_SECRET:?Set CRON_SECRET in .env}
+    networks:
+      - internal
+
+volumes:
+  postgres_data:
+    driver: local
+  uploads_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+
+networks:
+  internal:
+    driver: bridge
+  web:
+    driver: bridge

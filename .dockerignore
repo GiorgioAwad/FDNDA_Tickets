@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.gitignore
+*.md
+.env*
+!.env.production
+docker-compose*.yml
+Caddyfile
+Dockerfile
+.dockerignore
+certs/
+docs/
+*.pdf
+*.png
+!public/**/*.png

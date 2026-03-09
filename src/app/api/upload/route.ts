@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
-import { put, del } from "@vercel/blob"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import crypto from "crypto"
+import path from "path"
+import fs from "fs/promises"
+
+const USE_BLOB = Boolean(process.env.BLOB_READ_WRITE_TOKEN)
 
 export const runtime = "nodejs"
 
@@ -69,16 +72,34 @@ export async function POST(request: NextRequest) {
         const timestamp = Date.now()
         const filename = `${type || "images"}/${timestamp}-${hash}.${ext}`
 
-        // Upload to Vercel Blob
-        const blob = await put(filename, file, {
-            access: "public",
-            addRandomSuffix: false,
-        })
+        let url: string
+        let pathname: string
+
+        if (USE_BLOB) {
+            // ── Vercel Blob storage ──
+            const { put } = await import("@vercel/blob")
+            const blob = await put(filename, file, {
+                access: "public",
+                addRandomSuffix: false,
+            })
+            url = blob.url
+            pathname = blob.pathname
+        } else {
+            // ── Local filesystem storage ──
+            const uploadDir = process.env.UPLOAD_DIR || "./public/uploads"
+            const filePath = path.join(uploadDir, filename)
+            await fs.mkdir(path.dirname(filePath), { recursive: true })
+            const buffer = Buffer.from(await file.arrayBuffer())
+            await fs.writeFile(filePath, buffer)
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL || ""
+            url = `${appUrl}/uploads/${filename}`
+            pathname = filename
+        }
 
         return NextResponse.json({
             success: true,
-            url: blob.url,
-            filename: blob.pathname,
+            url,
+            filename: pathname,
             size: file.size,
             type: file.type,
             dimensions: type === "banner" ? BANNER_DIMENSIONS : undefined,
@@ -130,6 +151,23 @@ export async function GET() {
 }
 
 /**
+ * Delete a file from Vercel Blob or local filesystem
+ */
+async function deleteUploadedFile(url: string) {
+    if (USE_BLOB) {
+        const { del } = await import("@vercel/blob")
+        await del(url)
+    } else {
+        // Extract local path from URL
+        const uploadDir = process.env.UPLOAD_DIR || "./public/uploads"
+        const urlObj = new URL(url, "http://localhost")
+        const relativePath = urlObj.pathname.replace(/^\/uploads\//, "")
+        const filePath = path.join(uploadDir, relativePath)
+        await fs.unlink(filePath).catch(() => {})
+    }
+}
+
+/**
  * DELETE /api/upload - Delete an uploaded file from Vercel Blob
  */
 export async function DELETE(request: NextRequest) {
@@ -152,7 +190,7 @@ export async function DELETE(request: NextRequest) {
             )
         }
 
-        await del(url)
+        await deleteUploadedFile(url)
 
         return NextResponse.json({
             success: true,
