@@ -34,17 +34,16 @@ Internet → Caddy (SSL :443) → Next.js App (:3000) → PostgreSQL (:5432)
 
 ## Paso 2: Configurar el dominio DNS
 
-En tu panel de dominio (GoDaddy, Cloudflare, Namecheap, etc.):
+En punto.pe o en Cloudflare (si cambias los nameservers):
 
 ```
-Tipo    Nombre                Valor              TTL
-A       tickets               65.108.XX.XX       300
-A       www.tickets           65.108.XX.XX       300
-CNAME   @                     tickets.fdnda.org.pe  (si aplica)
+Tipo    Nombre     Valor              TTL
+A       @          65.108.XX.XX       300
+A       www        65.108.XX.XX       300
 ```
 
+> `@` = dominio raíz (`ticketingfdnda.pe`)
 > Reemplaza `65.108.XX.XX` con la IP real de tu VPS.
-> Reemplaza `tickets.fdnda.org.pe` con tu dominio real.
 
 ---
 
@@ -142,7 +141,7 @@ openssl rand -base64 24
 | Variable | Qué poner |
 |----------|-----------|
 | `DB_PASSWORD` | Contraseña fuerte generada |
-| `NEXT_PUBLIC_APP_URL` | `https://tickets.fdnda.org.pe` (tu dominio) |
+| `NEXT_PUBLIC_APP_URL` | `https://ticketingfdnda.pe` |
 | `NEXTAUTH_URL` | Igual que NEXT_PUBLIC_APP_URL |
 | `NEXTAUTH_SECRET` | Generado con openssl |
 | `QR_SECRET` | Generado con openssl |
@@ -160,7 +159,7 @@ openssl rand -base64 24
 nano Caddyfile
 ```
 
-Cambia `tickets.fdnda.org.pe` por tu dominio real. Caddy genera el certificado SSL automáticamente.
+Caddy ya está configurado con `ticketingfdnda.pe`. Genera el certificado SSL automáticamente.
 
 ---
 
@@ -225,13 +224,13 @@ const bcrypt = require('bcryptjs');
 
 ```bash
 # Health check
-curl -s https://tickets.fdnda.org.pe/api/health | python3 -m json.tool
+curl -s https://ticketingfdnda.pe/api/health | python3 -m json.tool
 
 # Verificar SSL
-curl -sI https://tickets.fdnda.org.pe | head -5
+curl -sI https://ticketingfdnda.pe | head -5
 ```
 
-Abre tu navegador en `https://tickets.fdnda.org.pe` y verifica que todo funciona.
+Abre tu navegador en `https://ticketingfdnda.pe` y verifica que todo funciona.
 
 ---
 

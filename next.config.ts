@@ -22,6 +22,10 @@ const nextConfig: NextConfig = {
         hostname: "**.fdnda.org.pe",
       },
       {
+        protocol: "https",
+        hostname: "ticketingfdnda.pe",
+      },
+      {
         protocol: "http",
         hostname: "localhost",
       },
