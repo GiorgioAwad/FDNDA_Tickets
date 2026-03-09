@@ -29,6 +29,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Need DATABASE_URL at build time for Prisma, but only for schema parsing
 ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 RUN npm run build
 
 # ==================== Stage 3: Production Runner ====================
