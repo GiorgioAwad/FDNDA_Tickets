@@ -6,7 +6,7 @@ COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
 COPY prisma.config.ts ./
 
-RUN npm ci --omit=dev && npx prisma generate
+RUN npm ci && npx prisma generate
 
 # ==================== Stage 2: Build ====================
 FROM node:20-alpine AS builder
