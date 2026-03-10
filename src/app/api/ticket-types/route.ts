@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
             servilexDisciplineCode,
             servilexScheduleCode,
             servilexPoolCode,
+            servilexServiceId,
         } = body
 
         if (!eventId || !name || price === undefined || capacity === undefined) {
@@ -71,6 +72,23 @@ export async function POST(request: NextRequest) {
                 { success: false, error: "Faltan datos requeridos" },
                 { status: 400 }
             )
+        }
+
+        // Resolve servilex fields from catalog if serviceId provided
+        let resolvedIndicator = normalizeOptionalCode(servilexIndicator, "AC")
+        let resolvedServiceCode = normalizeOptionalCode(servilexServiceCode)
+        let resolvedServiceId: string | null = normalizeOptionalCode(servilexServiceId)
+
+        if (resolvedServiceId) {
+            const catalogEntry = await prisma.servilexService.findUnique({
+                where: { id: resolvedServiceId },
+            })
+            if (catalogEntry) {
+                resolvedIndicator = catalogEntry.indicador
+                resolvedServiceCode = catalogEntry.codigo
+            } else {
+                resolvedServiceId = null
+            }
         }
 
         const packageDays = normalizePackageDaysCount(packageDaysCount)
@@ -87,11 +105,12 @@ export async function POST(request: NextRequest) {
                 sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
                 isActive: isActive === undefined ? true : Boolean(isActive),
                 servilexEnabled: Boolean(servilexEnabled),
-                servilexIndicator: normalizeOptionalCode(servilexIndicator, "AC"),
-                servilexServiceCode: normalizeOptionalCode(servilexServiceCode),
+                servilexIndicator: resolvedIndicator,
+                servilexServiceCode: resolvedServiceCode,
                 servilexDisciplineCode: normalizeOptionalCode(servilexDisciplineCode),
                 servilexScheduleCode: normalizeOptionalCode(servilexScheduleCode),
                 servilexPoolCode: normalizeOptionalCode(servilexPoolCode),
+                servilexServiceId: resolvedServiceId,
             },
         })
 
@@ -139,6 +158,7 @@ export async function PUT(request: NextRequest) {
             servilexDisciplineCode,
             servilexScheduleCode,
             servilexPoolCode,
+            servilexServiceId,
         } = body
 
         if (!id) {
@@ -164,6 +184,7 @@ export async function PUT(request: NextRequest) {
             servilexDisciplineCode?: string | null
             servilexScheduleCode?: string | null
             servilexPoolCode?: string | null
+            servilexServiceId?: string | null
         } = {}
 
         if (name !== undefined) data.name = name
@@ -177,11 +198,33 @@ export async function PUT(request: NextRequest) {
         if (isActive !== undefined) data.isActive = Boolean(isActive)
         if (validDays !== undefined) data.validDays = normalizeValidDays(validDays)
         if (servilexEnabled !== undefined) data.servilexEnabled = Boolean(servilexEnabled)
-        if (servilexIndicator !== undefined) data.servilexIndicator = normalizeOptionalCode(servilexIndicator, "AC")
-        if (servilexServiceCode !== undefined) data.servilexServiceCode = normalizeOptionalCode(servilexServiceCode)
         if (servilexDisciplineCode !== undefined) data.servilexDisciplineCode = normalizeOptionalCode(servilexDisciplineCode)
         if (servilexScheduleCode !== undefined) data.servilexScheduleCode = normalizeOptionalCode(servilexScheduleCode)
         if (servilexPoolCode !== undefined) data.servilexPoolCode = normalizeOptionalCode(servilexPoolCode)
+
+        // Resolve servilex fields from catalog if serviceId provided
+        if (servilexServiceId !== undefined) {
+            const resolvedId = normalizeOptionalCode(servilexServiceId)
+            if (resolvedId) {
+                const catalogEntry = await prisma.servilexService.findUnique({
+                    where: { id: resolvedId },
+                })
+                if (catalogEntry) {
+                    data.servilexServiceId = resolvedId
+                    data.servilexIndicator = catalogEntry.indicador
+                    data.servilexServiceCode = catalogEntry.codigo
+                } else {
+                    data.servilexServiceId = null
+                }
+            } else {
+                data.servilexServiceId = null
+                if (servilexIndicator !== undefined) data.servilexIndicator = normalizeOptionalCode(servilexIndicator, "AC")
+                if (servilexServiceCode !== undefined) data.servilexServiceCode = normalizeOptionalCode(servilexServiceCode)
+            }
+        } else {
+            if (servilexIndicator !== undefined) data.servilexIndicator = normalizeOptionalCode(servilexIndicator, "AC")
+            if (servilexServiceCode !== undefined) data.servilexServiceCode = normalizeOptionalCode(servilexServiceCode)
+        }
 
         if (packageDaysCount !== undefined || isPackage !== undefined) {
             const packageDays = normalizePackageDaysCount(packageDaysCount)

@@ -160,13 +160,15 @@ model TicketType {
   servilexDisciplineCode String?
   servilexScheduleCode   String?
   servilexPoolCode       String?
+  servilexServiceId      String?
   isActive         Boolean  @default(true)
   sortOrder        Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   // Relations
-  event           Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  servilexService ServilexService? @relation(fields: [servilexServiceId], references: [id])
   orderItems      OrderItem[]
   tickets         Ticket[]
   courtesyBatches CourtesyBatch[]
@@ -387,6 +389,25 @@ model CourtesyTicket {
   claimedBy User?          @relation("ClaimedBy", fields: [claimedByUserId], references: [id])
 
   @@map("courtesy_tickets")
+}
+
+model ServilexService {
+  id          String       @id @default(cuid())
+  codigo      String       @unique  // "LNAT12", "TPOL08", etc.
+  indicador   String       // "AC"
+  disciplina  String       // "NATACION", "CLAVADOS", etc.
+  sede        String       // "LIMA", "VMT", "TRUJILLO", "HUANCHACO"
+  clases      Int?         // 4, 8, 12, 20, null para BECA/REINTEGRO
+  descripcion String       // "NATACION 12 clases - LIMA"
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  ticketTypes TicketType[]
+
+  @@index([indicador])
+  @@index([isActive])
+  @@map("servilex_services")
 }
 
 model Invoice {

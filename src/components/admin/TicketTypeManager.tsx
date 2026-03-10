@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Trash2, Edit, Save, Power } from "lucide-react"
+import { Plus, Trash2, Edit, Save, Power, FileJson } from "lucide-react"
 import { formatDate, formatPrice } from "@/lib/utils"
 import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
+import ServilexServiceCombobox from "@/components/admin/ServilexServiceCombobox"
 
 interface TicketType {
     id?: string
@@ -27,6 +28,7 @@ interface TicketType {
     servilexDisciplineCode?: string | null
     servilexScheduleCode?: string | null
     servilexPoolCode?: string | null
+    servilexServiceId?: string | null
 }
 
 interface TicketTypeManagerProps {
@@ -99,6 +101,7 @@ export function TicketTypeManager({
         servilexDisciplineCode: "",
         servilexScheduleCode: "",
         servilexPoolCode: "",
+        servilexServiceId: null,
     })
     const [capacityInput, setCapacityInput] = useState("100")
 
@@ -201,15 +204,17 @@ export function TicketTypeManager({
         }
 
         if (formData.servilexEnabled) {
+            if (!formData.servilexServiceId && !formData.servilexServiceCode) {
+                alert("Selecciona un servicio del catalogo Servilex")
+                return
+            }
             const requiredServilexFields = [
-                formData.servilexIndicator,
-                formData.servilexServiceCode,
                 formData.servilexDisciplineCode,
                 formData.servilexScheduleCode,
                 formData.servilexPoolCode,
             ]
             if (requiredServilexFields.some((value) => !String(value || "").trim())) {
-                alert("Completa todos los codigos Servilex para este tipo de entrada")
+                alert("Completa los codigos de disciplina, horario y piscina")
                 return
             }
         }
@@ -466,46 +471,54 @@ export function TicketTypeManager({
                                 </label>
                             </div>
                             {formData.servilexEnabled && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium">Indicador</label>
-                                        <Input
-                                            value={formData.servilexIndicator || ""}
-                                            onChange={(e) => setFormData({ ...formData, servilexIndicator: e.target.value.toUpperCase() })}
-                                            placeholder="AC"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium">Codigo servicio</label>
-                                        <Input
-                                            value={formData.servilexServiceCode || ""}
-                                            onChange={(e) => setFormData({ ...formData, servilexServiceCode: e.target.value })}
-                                            placeholder="789"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium">Codigo disciplina</label>
-                                        <Input
-                                            value={formData.servilexDisciplineCode || ""}
-                                            onChange={(e) => setFormData({ ...formData, servilexDisciplineCode: e.target.value })}
-                                            placeholder="01"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium">Codigo horario</label>
-                                        <Input
-                                            value={formData.servilexScheduleCode || ""}
-                                            onChange={(e) => setFormData({ ...formData, servilexScheduleCode: e.target.value })}
-                                            placeholder="000002"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium">Codigo piscina</label>
-                                        <Input
-                                            value={formData.servilexPoolCode || ""}
-                                            onChange={(e) => setFormData({ ...formData, servilexPoolCode: e.target.value })}
-                                            placeholder="01"
-                                        />
+                                <div className="space-y-4">
+                                    <ServilexServiceCombobox
+                                        value={formData.servilexServiceId || null}
+                                        onChange={(service) => {
+                                            if (service) {
+                                                setFormData({
+                                                    ...formData,
+                                                    servilexServiceId: service.id,
+                                                    servilexIndicator: service.indicador,
+                                                    servilexServiceCode: service.codigo,
+                                                })
+                                            } else {
+                                                setFormData({
+                                                    ...formData,
+                                                    servilexServiceId: null,
+                                                    servilexIndicator: "AC",
+                                                    servilexServiceCode: "",
+                                                })
+                                            }
+                                        }}
+                                        legacyIndicator={formData.servilexIndicator}
+                                        legacyServiceCode={formData.servilexServiceCode}
+                                    />
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">Codigo disciplina</label>
+                                            <Input
+                                                value={formData.servilexDisciplineCode || ""}
+                                                onChange={(e) => setFormData({ ...formData, servilexDisciplineCode: e.target.value })}
+                                                placeholder="01"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">Codigo horario</label>
+                                            <Input
+                                                value={formData.servilexScheduleCode || ""}
+                                                onChange={(e) => setFormData({ ...formData, servilexScheduleCode: e.target.value })}
+                                                placeholder="000002"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">Codigo piscina</label>
+                                            <Input
+                                                value={formData.servilexPoolCode || ""}
+                                                onChange={(e) => setFormData({ ...formData, servilexPoolCode: e.target.value })}
+                                                placeholder="01"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -762,6 +775,18 @@ export function TicketTypeManager({
                                             >
                                                 <Power className={`h-4 w-4 ${ticket.isActive !== false ? "text-green-500" : "text-gray-400"}`} />
                                             </Button>
+                                            {ticket.servilexEnabled && (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-9 w-9"
+                                                    title="Preview JSON Servilex"
+                                                    onClick={() => window.open(`/api/admin/servilex-preview?ticketTypeId=${ticket.id}`, "_blank")}
+                                                >
+                                                    <FileJson className="h-4 w-4 text-blue-500" />
+                                                </Button>
+                                            )}
                                             <Button
                                                 type="button"
                                                 variant="ghost"
