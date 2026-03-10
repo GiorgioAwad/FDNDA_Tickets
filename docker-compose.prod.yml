@@ -34,9 +34,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    ports:
+      - "3000:3000"
     env_file:
       - .env.production
     environment:
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
       - DATABASE_URL=postgresql://${DB_USER:-fdnda}:${DB_PASSWORD}@db:5432/${DB_NAME:-fdnda_tickets}?sslmode=disable
       - DB_POOL_MAX=20
       - DB_POOL_MIN=5
