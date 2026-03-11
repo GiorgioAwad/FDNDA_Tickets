@@ -5,7 +5,8 @@ import { signIn } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Mail, Lock, User, AlertCircle, CheckCircle, X } from "lucide-react"
+import { Mail, Lock, User, AlertCircle, CheckCircle, X, Phone, CreditCard, Calendar, MapPin } from "lucide-react"
+import { DISTRITOS_LIMA } from "@/lib/distritos-lima"
 
 interface AuthModalProps {
     open: boolean
@@ -25,6 +26,10 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
     // Register state
     const [registerData, setRegisterData] = useState({
         name: "",
+        dni: "",
+        phone: "",
+        birthDate: "",
+        distrito: "",
         email: "",
         password: "",
         confirmPassword: "",
@@ -67,6 +72,26 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
             return
         }
 
+        if (!/^\d{8}$/.test(registerData.dni)) {
+            setRegisterError("El DNI debe tener exactamente 8 dígitos")
+            return
+        }
+
+        if (!/^\d{9}$/.test(registerData.phone)) {
+            setRegisterError("El teléfono debe tener exactamente 9 dígitos")
+            return
+        }
+
+        if (!registerData.birthDate) {
+            setRegisterError("La fecha de nacimiento es obligatoria")
+            return
+        }
+
+        if (!registerData.distrito) {
+            setRegisterError("El distrito es obligatorio")
+            return
+        }
+
         if (registerData.password.length < 8) {
             setRegisterError("La contraseña debe tener al menos 8 caracteres")
             return
@@ -95,7 +120,7 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
         }
     }
 
-    const handleRegisterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleRegisterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         setRegisterData({ ...registerData, [e.target.name]: e.target.value })
     }
 
@@ -114,8 +139,8 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-            <div className="relative z-10 w-full max-w-md">
-                <Card className="shadow-2xl border-0">
+            <div className="relative z-10 w-full max-w-md max-h-[90vh]">
+                <Card className="shadow-2xl border-0 max-h-[90vh] overflow-y-auto">
                     <button
                         onClick={onClose}
                         className="absolute right-4 top-4 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
@@ -247,6 +272,90 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
                                                 className="pl-10"
                                                 required
                                             />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label htmlFor="modal-reg-dni" className="text-sm font-medium text-gray-700">
+                                            DNI
+                                        </label>
+                                        <div className="relative">
+                                            <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                            <Input
+                                                id="modal-reg-dni"
+                                                name="dni"
+                                                type="text"
+                                                inputMode="numeric"
+                                                placeholder="12345678"
+                                                value={registerData.dni}
+                                                onChange={handleRegisterChange}
+                                                className="pl-10"
+                                                maxLength={8}
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label htmlFor="modal-reg-phone" className="text-sm font-medium text-gray-700">
+                                            Teléfono
+                                        </label>
+                                        <div className="relative">
+                                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                            <Input
+                                                id="modal-reg-phone"
+                                                name="phone"
+                                                type="tel"
+                                                inputMode="numeric"
+                                                placeholder="987654321"
+                                                value={registerData.phone}
+                                                onChange={handleRegisterChange}
+                                                className="pl-10"
+                                                maxLength={9}
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label htmlFor="modal-reg-birthDate" className="text-sm font-medium text-gray-700">
+                                            Fecha de nacimiento
+                                        </label>
+                                        <div className="relative">
+                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                            <Input
+                                                id="modal-reg-birthDate"
+                                                name="birthDate"
+                                                type="date"
+                                                value={registerData.birthDate}
+                                                onChange={handleRegisterChange}
+                                                className="pl-10"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label htmlFor="modal-reg-distrito" className="text-sm font-medium text-gray-700">
+                                            Distrito
+                                        </label>
+                                        <div className="relative">
+                                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
+                                            <select
+                                                id="modal-reg-distrito"
+                                                name="distrito"
+                                                value={registerData.distrito}
+                                                onChange={handleRegisterChange}
+                                                className="flex h-10 w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 appearance-none"
+                                                required
+                                            >
+                                                <option value="">Selecciona tu distrito</option>
+                                                {DISTRITOS_LIMA.map((distrito) => (
+                                                    <option key={distrito} value={distrito}>
+                                                        {distrito}
+                                                    </option>
+                                                ))}
+                                            </select>
                                         </div>
                                     </div>
 

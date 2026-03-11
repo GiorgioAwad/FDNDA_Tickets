@@ -321,11 +321,11 @@ export default function RegisterPage() {
 
                             <p className="text-xs text-gray-500 text-center">
                                 Al registrarte, aceptas nuestros{" "}
-                                <Link href="#" className="text-[hsl(210,100%,40%)] hover:underline">
+                                <Link href="/terminos" className="text-[hsl(210,100%,40%)] hover:underline">
                                     Términos y Condiciones
                                 </Link>{" "}
                                 y{" "}
-                                <Link href="#" className="text-[hsl(210,100%,40%)] hover:underline">
+                                <Link href="/privacidad" className="text-[hsl(210,100%,40%)] hover:underline">
                                     Política de Privacidad
                                 </Link>
                             </p>
