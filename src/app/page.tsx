@@ -6,11 +6,11 @@ import { Badge } from "@/components/ui/badge"
 import { prisma } from "@/lib/prisma"
 import { formatDate, formatPrice } from "@/lib/utils"
 import { getCurrentUser } from "@/lib/auth"
+import HomeVerificationPopup from "@/components/home/HomeVerificationPopup"
 import type { Prisma } from "@prisma/client"
 import {
   Calendar,
   MapPin,
-  Users,
   ArrowRight,
   Trophy,
   Waves,
@@ -60,13 +60,22 @@ async function getUpcomingEvents(): Promise<HomeEvent[]> {
   return events
 }
 
-export default async function HomePage() {
+type HomePageProps = {
+  searchParams?: Promise<{
+    verified?: string
+  }>
+}
+
+export default async function HomePage({ searchParams }: HomePageProps) {
   const events = await getUpcomingEvents()
   const user = await getCurrentUser()
   const showRegister = !user
+  const params = searchParams ? await searchParams : undefined
+  const showVerificationPopup = params?.verified === "1"
 
   return (
     <div className="flex flex-col">
+      <HomeVerificationPopup open={showVerificationPopup} />
       {/* Hero Section */}
       <section className="relative min-h-[85vh] flex items-center justify-center overflow-hidden">
         {/* Background gradient */}

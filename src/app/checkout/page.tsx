@@ -10,15 +10,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { buildNaturalPersonFullName } from "@/lib/billing"
 import { formatDate, formatPrice } from "@/lib/utils"
+import type { IzipayCheckoutConfig } from "@/lib/izipay"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
 import AuthModal from "@/components/auth/AuthModal"
 
-const IzipayEmbeddedForm = dynamic(
-    () => import("@/components/checkout/izipay-embedded-form"),
+const IzipayCheckout = dynamic(
+    () => import("@/components/checkout/izipay-checkout"),
     { ssr: false }
 )
-
-const izipayMode = process.env.NEXT_PUBLIC_IZIPAY_MODE || "redirect"
 
 type AppliedDiscount = {
     id: string
@@ -49,10 +48,11 @@ export default function CheckoutPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState("")
 
-    // Embedded payment form state
-    const [embeddedFormData, setEmbeddedFormData] = useState<{
-        formToken: string
-        publicKey: string
+    const [izipayCheckoutData, setIzipayCheckoutData] = useState<{
+        authorization: string
+        keyRSA: string
+        scriptUrl: string
+        config: IzipayCheckoutConfig
         orderId: string
     } | null>(null)
 
@@ -192,46 +192,6 @@ export default function CheckoutPage() {
 
     const finalTotal = Math.max(0, total - discountAmount)
 
-    const redirectToIzipayCheckout = (paymentData: {
-        paymentUrl?: string | null
-        formToken?: string | null
-        sessionToken?: string | null
-        checkoutUrl?: string | null
-    }) => {
-        if (paymentData.paymentUrl) {
-            window.location.assign(paymentData.paymentUrl)
-            return
-        }
-
-        if (paymentData.formToken && paymentData.checkoutUrl) {
-            const form = document.createElement("form")
-            form.method = "POST"
-            form.action = paymentData.checkoutUrl
-            form.style.display = "none"
-
-            const formTokenInput = document.createElement("input")
-            formTokenInput.type = "hidden"
-            formTokenInput.name = "formToken"
-            formTokenInput.value = paymentData.formToken
-            form.appendChild(formTokenInput)
-
-            document.body.appendChild(form)
-            form.submit()
-            return
-        }
-
-        if (paymentData.sessionToken && paymentData.checkoutUrl) {
-            const separator = paymentData.checkoutUrl.includes("?") ? "&" : "?"
-            const url = `${paymentData.checkoutUrl}${separator}sessionToken=${encodeURIComponent(paymentData.sessionToken)}`
-            window.location.assign(url)
-            return
-        }
-
-        throw new Error(
-            "IZIPAY no devolvio una URL/token de checkout utilizable. Revisa IZIPAY_CHECKOUT_URL y credenciales."
-        )
-    }
-
     const handleAuthSuccess = () => {
         setShowAuthModal(false)
         router.refresh()
@@ -303,35 +263,31 @@ export default function CheckoutPage() {
                 return
             }
 
-            if (izipayMode === "embedded") {
-                const tokenResponse = await fetch("/api/payments/izipay/form-token", {
+            // OpenPay redirect flow
+            if (paymentsMode === "openpay") {
+                const openpayResponse = await fetch("/api/payments/openpay/charge", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ orderId: orderData.data.orderId }),
                 })
 
-                const tokenData = await tokenResponse.json()
+                const openpayData = await openpayResponse.json()
 
-                if (!tokenResponse.ok || !tokenData.success) {
-                    throw new Error(tokenData.error || "No se pudo iniciar el pago con IZIPAY")
+                if (!openpayResponse.ok || !openpayData.success) {
+                    throw new Error(openpayData.error || "Error al procesar el pago con OpenPay")
                 }
 
-                if (tokenData.data?.alreadyPaid) {
+                if (openpayData.data?.alreadyPaid) {
                     clearCart()
                     router.push(`/checkout/success?orderId=${orderData.data.orderId}`)
                     return
                 }
 
-                // Show embedded payment form instead of redirecting
-                setEmbeddedFormData({
-                    formToken: tokenData.data.formToken,
-                    publicKey: tokenData.data.publicKey,
-                    orderId: orderData.data.orderId,
-                })
+                clearCart()
+                window.location.assign(openpayData.data.paymentUrl)
                 return
             }
 
-            // Redirect mode (default)
             const sessionResponse = await fetch("/api/payments/izipay/session", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -350,8 +306,23 @@ export default function CheckoutPage() {
                 return
             }
 
-            clearCart()
-            redirectToIzipayCheckout(sessionData.data || {})
+            if (
+                sessionData.data?.authorization &&
+                sessionData.data?.keyRSA &&
+                sessionData.data?.scriptUrl &&
+                sessionData.data?.config
+            ) {
+                setIzipayCheckoutData({
+                    authorization: sessionData.data.authorization,
+                    keyRSA: sessionData.data.keyRSA,
+                    scriptUrl: sessionData.data.scriptUrl,
+                    config: sessionData.data.config,
+                    orderId: orderData.data.orderId,
+                })
+                return
+            }
+
+            throw new Error("IZIPAY no devolvio datos suficientes para abrir el checkout")
         } catch (err) {
             setError((err as Error).message)
         } finally {
@@ -866,11 +837,13 @@ export default function CheckoutPage() {
                                     </div>
                                 )}
 
-                                {embeddedFormData ? (
-                                    <IzipayEmbeddedForm
-                                        formToken={embeddedFormData.formToken}
-                                        publicKey={embeddedFormData.publicKey}
-                                        orderId={embeddedFormData.orderId}
+                                {izipayCheckoutData ? (
+                                    <IzipayCheckout
+                                        authorization={izipayCheckoutData.authorization}
+                                        keyRSA={izipayCheckoutData.keyRSA}
+                                        scriptUrl={izipayCheckoutData.scriptUrl}
+                                        config={izipayCheckoutData.config}
+                                        orderId={izipayCheckoutData.orderId}
                                         onSuccess={() => clearCart()}
                                         onError={(msg) => setError(msg)}
                                     />

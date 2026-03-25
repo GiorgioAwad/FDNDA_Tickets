@@ -11,14 +11,10 @@ import {
     Users, 
     Search,
     Shield,
-    Mail,
-    Calendar,
     CheckCircle,
     Clock,
     UserPlus,
-    MoreVertical,
     UserCog,
-    Trash2,
     X,
     KeyRound,
     Copy,
@@ -53,7 +49,7 @@ interface UserData {
     id: string
     name: string
     email: string
-    role: "ADMIN" | "STAFF" | "USER"
+    role: "ADMIN" | "STAFF" | "TREASURY" | "USER"
     emailVerifiedAt: string | null
     createdAt: string
     _count: {
@@ -67,6 +63,7 @@ interface UsersPageData {
     totalUsers: number
     admins: number
     scanners: number
+    treasury: number
     verified: number
 }
 
@@ -74,7 +71,7 @@ export default function UsuariosPage() {
     const [data, setData] = useState<UsersPageData | null>(null)
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState("")
-    const [filter, setFilter] = useState<"all" | "ADMIN" | "STAFF" | "USER">("all")
+    const [filter, setFilter] = useState<"all" | "ADMIN" | "STAFF" | "TREASURY" | "USER">("all")
     
     // Modal states
     const [showRoleModal, setShowRoleModal] = useState(false)
@@ -83,6 +80,7 @@ export default function UsuariosPage() {
     const [showAddStaffModal, setShowAddStaffModal] = useState(false)
     const [newStaffEmail, setNewStaffEmail] = useState("")
     const [newStaffName, setNewStaffName] = useState("")
+    const [newInternalRole, setNewInternalRole] = useState<"STAFF" | "TREASURY">("STAFF")
     const [addingStaff, setAddingStaff] = useState(false)
     
     // Reset password states
@@ -109,7 +107,7 @@ export default function UsuariosPage() {
         fetchUsers()
     }, [])
 
-    const handleRoleChange = async (userId: string, newRole: "ADMIN" | "STAFF" | "USER") => {
+    const handleRoleChange = async (userId: string, newRole: "ADMIN" | "STAFF" | "TREASURY" | "USER") => {
         setUpdatingRole(true)
         try {
             const response = await fetch(`/api/admin/users/${userId}/role`, {
@@ -137,12 +135,13 @@ export default function UsuariosPage() {
         e.preventDefault()
         setAddingStaff(true)
         try {
-            const response = await fetch("/api/admin/users/create-staff", {
+            const response = await fetch("/api/admin/users/create-internal", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ 
                     email: newStaffEmail,
                     name: newStaffName,
+                    role: newInternalRole,
                 })
             })
             const result = await response.json()
@@ -156,8 +155,8 @@ export default function UsuariosPage() {
                 alert(result.error || "Error al crear usuario")
             }
         } catch (error) {
-            console.error("Error creating staff:", error)
-            alert("Error al crear usuario staff")
+            console.error("Error creating internal user:", error)
+            alert("Error al crear usuario interno")
         } finally {
             setAddingStaff(false)
         }
@@ -198,7 +197,7 @@ export default function UsuariosPage() {
         )
     }
 
-    const usersData = data || { users: [], totalUsers: 0, admins: 0, scanners: 0, verified: 0 }
+    const usersData = data || { users: [], totalUsers: 0, admins: 0, scanners: 0, treasury: 0, verified: 0 }
 
     // Filter users
     const filteredUsers = usersData.users.filter(user => {
@@ -215,6 +214,8 @@ export default function UsuariosPage() {
                 return <Badge className="bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-100"><Shield className="h-3 w-3 mr-1" />Admin</Badge>
             case "STAFF":
                 return <Badge className="bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100">Staff</Badge>
+            case "TREASURY":
+                return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100">Tesoreria</Badge>
             case "USER":
                 return <Badge variant="outline" className="hover:bg-transparent">Usuario</Badge>
             default:
@@ -225,7 +226,7 @@ export default function UsuariosPage() {
     return (
         <div className="space-y-6">
             {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                 <Card>
                     <CardContent className="p-4">
                         <div className="flex items-center gap-3">
@@ -261,6 +262,19 @@ export default function UsuariosPage() {
                             <div>
                                 <p className="text-2xl font-bold">{usersData.scanners}</p>
                                 <p className="text-xs text-gray-500">Staff</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-emerald-100">
+                                <Shield className="h-5 w-5 text-emerald-600" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-bold">{usersData.treasury}</p>
+                                <p className="text-xs text-gray-500">Tesoreria</p>
                             </div>
                         </div>
                     </CardContent>
@@ -316,13 +330,34 @@ export default function UsuariosPage() {
                             >
                                 Staff
                             </Button>
+                            <Button
+                                variant={filter === "TREASURY" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setFilter("TREASURY")}
+                            >
+                                Tesoreria
+                            </Button>
                             <Button 
                                 size="sm" 
                                 className="gap-2 bg-green-600 hover:bg-green-700"
-                                onClick={() => setShowAddStaffModal(true)}
+                                onClick={() => {
+                                    setNewInternalRole("STAFF")
+                                    setShowAddStaffModal(true)
+                                }}
                             >
                                 <UserPlus className="h-4 w-4" />
                                 Agregar Staff
+                            </Button>
+                            <Button 
+                                size="sm" 
+                                className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+                                onClick={() => {
+                                    setNewInternalRole("TREASURY")
+                                    setShowAddStaffModal(true)
+                                }}
+                            >
+                                <UserPlus className="h-4 w-4" />
+                                Agregar Tesoreria
                             </Button>
                         </div>
                     </div>
@@ -450,6 +485,7 @@ export default function UsuariosPage() {
                                 {[
                                     { role: "USER" as const, label: "Usuario", desc: "Puede comprar entradas" },
                                     { role: "STAFF" as const, label: "Staff", desc: "Puede escanear QR en eventos" },
+                                    { role: "TREASURY" as const, label: "Tesoreria", desc: "Puede acceder al panel financiero" },
                                     { role: "ADMIN" as const, label: "Administrador", desc: "Acceso total al panel" },
                                 ].map(({ role, label, desc }) => (
                                     <button
@@ -491,7 +527,9 @@ export default function UsuariosPage() {
                 <Modal onClose={() => { setShowAddStaffModal(false); setNewStaffEmail(""); setNewStaffName(""); }}>
                     <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-xl">
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold">Agregar Usuario Staff</h3>
+                            <h3 className="text-lg font-semibold">
+                                Agregar Usuario {newInternalRole === "TREASURY" ? "de Tesoreria" : "Staff"}
+                            </h3>
                             <button 
                                 onClick={() => {
                                     setShowAddStaffModal(false)
@@ -529,6 +567,17 @@ export default function UsuariosPage() {
                                     required
                                 />
                             </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Rol</label>
+                                <select
+                                    value={newInternalRole}
+                                    onChange={(e) => setNewInternalRole(e.target.value as "STAFF" | "TREASURY")}
+                                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                >
+                                    <option value="STAFF">Staff</option>
+                                    <option value="TREASURY">Tesoreria</option>
+                                </select>
+                            </div>
                             <Button 
                                 type="submit" 
                                 className="w-full gap-2"
@@ -542,7 +591,7 @@ export default function UsuariosPage() {
                                 ) : (
                                     <>
                                         <UserPlus className="h-4 w-4" />
-                                        Crear Usuario Staff
+                                        Crear Usuario {newInternalRole === "TREASURY" ? "de Tesoreria" : "Staff"}
                                     </>
                                 )}
                             </Button>

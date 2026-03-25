@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getCurrentUser, hasRole } from "@/lib/auth"
-import { generateSlug, formatDateInput } from "@/lib/utils"
+import { getCurrentUser } from "@/lib/auth"
+import { generateSlug, formatDateInput, formatDateTimeForExport } from "@/lib/utils"
+import { extractOrderPaymentDetails } from "@/lib/payment-details"
 import * as XLSX from "xlsx"
 export const runtime = "nodejs"
 
@@ -12,7 +13,7 @@ export async function GET(
     try {
         const user = await getCurrentUser()
 
-        if (!user || !hasRole(user.role, "ADMIN")) {
+        if (!user || (user.role !== "ADMIN" && user.role !== "TREASURY")) {
             return NextResponse.json(
                 { success: false, error: "No autorizado" },
                 { status: 401 }
@@ -54,6 +55,8 @@ export async function GET(
                 order: {
                     select: {
                         id: true,
+                        provider: true,
+                        providerResponse: true,
                         paidAt: true,
                         user: { select: { name: true, email: true } },
                     },
@@ -75,28 +78,42 @@ export async function GET(
             "attendee_dni",
             "ticket_type_name",
             "order_id",
-            "paid_at",
+            "order_provider",
+            "order_payment_method",
+            "order_payment_method_raw",
+            "order_payment_brand",
+            "paid_at_local",
+            "paid_at_utc",
             "buyer_name",
             "buyer_email",
         ]
 
-        const rows = tickets.map((ticket) => [
-            event.id,
-            event.title,
-            formatDateInput(event.startDate),
-            formatDateInput(event.endDate),
-            event.location,
-            event.venue,
-            ticket.id,
-            ticket.ticketCode,
-            ticket.attendeeName || "",
-            ticket.attendeeDni || "",
-            ticket.ticketType?.name || "",
-            ticket.order?.id || "",
-            ticket.order?.paidAt ? ticket.order.paidAt.toISOString() : "",
-            ticket.order?.user?.name || "",
-            ticket.order?.user?.email || "",
-        ])
+        const rows = tickets.map((ticket) => {
+            const paymentDetails = extractOrderPaymentDetails(ticket.order || {})
+
+            return [
+                event.id,
+                event.title,
+                formatDateInput(event.startDate),
+                formatDateInput(event.endDate),
+                event.location,
+                event.venue,
+                ticket.id,
+                ticket.ticketCode,
+                ticket.attendeeName || "",
+                ticket.attendeeDni || "",
+                ticket.ticketType?.name || "",
+                ticket.order?.id || "",
+                ticket.order?.provider || "",
+                paymentDetails.methodLabel || ticket.order?.provider || "",
+                paymentDetails.methodCode || "",
+                paymentDetails.brand || "",
+                formatDateTimeForExport(ticket.order?.paidAt),
+                ticket.order?.paidAt ? ticket.order.paidAt.toISOString() : "",
+                ticket.order?.user?.name || "",
+                ticket.order?.user?.email || "",
+            ]
+        })
 
         const workbook = XLSX.utils.book_new()
         const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
@@ -121,4 +138,3 @@ export async function GET(
         )
     }
 }
-

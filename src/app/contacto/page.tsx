@@ -1,11 +1,12 @@
 import Link from "next/link"
 import { Mail, MapPin, Phone } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { LEGAL_ADDRESS, LEGAL_EMAIL, LEGAL_PHONE } from "@/lib/legal"
 
 const CONTACT_INFO = {
-    address: "Jr. Nazca Cdra. 6 s/n Lima 11, Perú",
-    phone: "+51 941 632 535",
-    email: "ticketing@fdnda.org",
+    address: LEGAL_ADDRESS,
+    phone: LEGAL_PHONE,
+    email: LEGAL_EMAIL,
 }
 
 export default function ContactoPage() {
@@ -15,7 +16,7 @@ export default function ContactoPage() {
                 <div className="mb-10 text-center">
                     <h1 className="text-4xl font-bold text-gray-900">Contacto</h1>
                     <p className="mt-3 text-gray-600">
-                        Si necesitas ayuda con tu cuenta, compras o accesos, contáctanos por cualquiera de estos canales.
+                        Si necesitas ayuda con tu cuenta, compras o accesos, contactanos por cualquiera de estos canales.
                     </p>
                 </div>
 
@@ -24,7 +25,7 @@ export default function ContactoPage() {
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-lg">
                                 <MapPin className="h-5 w-5 text-[hsl(210,100%,40%)]" />
-                                Dirección
+                                Direccion
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -38,7 +39,7 @@ export default function ContactoPage() {
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-lg">
                                 <Phone className="h-5 w-5 text-[hsl(210,100%,40%)]" />
-                                Teléfono
+                                Telefono
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -65,13 +66,17 @@ export default function ContactoPage() {
 
                 <div className="mt-8 rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm">
                     <p className="text-sm text-gray-600">
-                        También puedes revisar nuestros{" "}
+                        Tambien puedes registrar un{" "}
+                        <Link href="/libro-de-reclamaciones" className="text-[hsl(210,100%,40%)] hover:underline">
+                            Libro de Reclamaciones
+                        </Link>
+                        , revisar nuestros{" "}
                         <Link href="/terminos" className="text-[hsl(210,100%,40%)] hover:underline">
-                            Términos y Condiciones
+                            Terminos y Condiciones
                         </Link>{" "}
                         y la{" "}
                         <Link href="/privacidad" className="text-[hsl(210,100%,40%)] hover:underline">
-                            Política de Privacidad
+                            Politica de Privacidad
                         </Link>
                         .
                     </p>

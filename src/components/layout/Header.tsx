@@ -20,6 +20,7 @@ import {
     Calendar,
     Home,
     ChevronRight,
+    DollarSign,
 } from "lucide-react"
 
 export function Header() {
@@ -33,6 +34,7 @@ export function Header() {
     const pathname = usePathname()
 
     const isAdmin = session?.user?.role === "ADMIN"
+    const isTreasury = session?.user?.role === "TREASURY" || isAdmin
     const isStaff = session?.user?.role === "STAFF" || isAdmin
 
     useEffect(() => {
@@ -106,6 +108,7 @@ export function Header() {
                                         <Ticket className="h-4 w-4" />Mis Entradas
                                     </Link>
                                     {isStaff && <Link href="/scanner" className="text-sm font-medium text-gray-700 hover:text-[hsl(210,100%,25%)] flex items-center gap-1"><ScanLine className="h-4 w-4" />Escaner</Link>}
+                                    {isTreasury && <Link href="/tesoreria" className="text-sm font-medium text-gray-700 hover:text-[hsl(210,100%,25%)] flex items-center gap-1"><DollarSign className="h-4 w-4" />Tesoreria</Link>}
                                     {isAdmin && <Link href="/admin" className="text-sm font-medium text-gray-700 hover:text-[hsl(210,100%,25%)] flex items-center gap-1"><LayoutDashboard className="h-4 w-4" />Admin</Link>}
                                     <div className="flex items-center gap-2">
                                         <Link href="/mi-cuenta"><Button variant="ghost" size="sm" className="gap-2"><User className="h-4 w-4" />{session.user?.name?.split(" ")[0]}</Button></Link>
@@ -255,6 +258,25 @@ export function Header() {
                                                 <div className="flex items-center gap-3">
                                                     <LayoutDashboard className="h-5 w-5 flex-shrink-0" />
                                                     <span className="font-medium">Panel Admin</span>
+                                                </div>
+                                                <ChevronRight className="h-4 w-4 opacity-50" />
+                                            </Link>
+                                        </>
+                                    )}
+
+                                    {isTreasury && (
+                                        <>
+                                            <div className="pt-4 pb-2 px-3">
+                                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Tesoreria</p>
+                                            </div>
+                                            <Link 
+                                                href="/tesoreria" 
+                                                className={`flex items-center justify-between px-3 py-3 rounded-lg transition-colors ${pathname.startsWith("/tesoreria") ? "bg-blue-600 text-white" : "text-gray-800 hover:bg-gray-100"}`} 
+                                                onClick={() => setMobileMenuOpen(false)}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <DollarSign className="h-5 w-5 flex-shrink-0" />
+                                                    <span className="font-medium">Panel Tesoreria</span>
                                                 </div>
                                                 <ChevronRight className="h-4 w-4 opacity-50" />
                                             </Link>

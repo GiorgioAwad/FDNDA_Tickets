@@ -9,6 +9,7 @@ const globalForPrisma = globalThis as unknown as {
 
 const databaseUrl = process.env.DATABASE_URL
 const isProduction = process.env.NODE_ENV === "production"
+const enableQueryLogging = process.env.PRISMA_LOG_QUERIES === "true"
 
 function parsePoolValue(value: string | undefined, fallback: number): number {
   if (!value) return fallback
@@ -44,10 +45,27 @@ function createPrismaClient(): PrismaClient {
   }
 
   const adapter = new PrismaPg(pool)
+  const transactionMaxWait = parsePoolValue(
+    process.env.PRISMA_TX_MAX_WAIT_MS,
+    isProduction ? 10000 : 15000
+  )
+  const transactionTimeout = parsePoolValue(
+    process.env.PRISMA_TX_TIMEOUT_MS,
+    isProduction ? 15000 : 20000
+  )
 
   return new PrismaClient({
     adapter,
-    log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
+    log:
+      process.env.NODE_ENV === "development"
+        ? enableQueryLogging
+          ? ["query", "error", "warn"]
+          : ["error", "warn"]
+        : ["error"],
+    transactionOptions: {
+      maxWait: transactionMaxWait,
+      timeout: transactionTimeout,
+    },
   })
 }
 

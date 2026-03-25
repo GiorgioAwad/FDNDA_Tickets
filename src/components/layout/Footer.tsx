@@ -2,14 +2,13 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { Facebook, Instagram, Mail, Phone, MapPin } from "lucide-react"
+import { Facebook, Instagram, Mail, MapPin, Phone } from "lucide-react"
 
 export function Footer() {
     return (
         <footer className="bg-gradient-to-br from-[hsl(210,100%,15%)] to-[hsl(210,100%,25%)] text-white">
             <div className="container mx-auto px-4 py-12">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                    {/* Brand */}
+                <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
                     <div className="space-y-4">
                         <div className="flex items-center gap-2">
                             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10">
@@ -22,62 +21,59 @@ export function Footer() {
                                 />
                             </div>
                             <div>
-                                <h3 className="font-bold text-xl">Ticketing FDNDA</h3>
+                                <h3 className="text-xl font-bold">Ticketing FDNDA</h3>
                             </div>
                         </div>
-                        <p className="text-sm text-white/70 leading-relaxed">
-                            Federación Deportiva Nacional de Deportes Acuáticos del Perú.
-                            Promoviendo el deporte acuático desde 1926.
+                        <p className="text-sm leading-relaxed text-white/70">
+                            Federacion Deportiva Nacional de Deportes Acuaticos del Peru.
+                            Promoviendo el deporte acuatico desde 1926.
                         </p>
                     </div>
 
-                    {/* Quick Links */}
                     <div>
-                        <h4 className="font-semibold mb-4">Enlaces Rápidos</h4>
+                        <h4 className="mb-4 font-semibold">Enlaces Rapidos</h4>
                         <ul className="space-y-2 text-sm text-white/70">
                             <li>
-                                <Link href="/eventos" className="hover:text-white transition-colors">
-                                    Próximos Eventos
+                                <Link href="/eventos" className="transition-colors hover:text-white">
+                                    Proximos Eventos
                                 </Link>
                             </li>
                             <li>
-                                <Link href="/mi-cuenta/entradas" className="hover:text-white transition-colors">
+                                <Link href="/mi-cuenta/entradas" className="transition-colors hover:text-white">
                                     Mis Entradas
                                 </Link>
                             </li>
                             <li>
-                                <Link href="/register" className="hover:text-white transition-colors">
+                                <Link href="/register" className="transition-colors hover:text-white">
                                     Crear Cuenta
                                 </Link>
                             </li>
                             <li>
-                                <Link href="/login" className="hover:text-white transition-colors">
-                                    Iniciar Sesión
+                                <Link href="/login" className="transition-colors hover:text-white">
+                                    Iniciar Sesion
                                 </Link>
                             </li>
                         </ul>
                     </div>
 
-                    {/* Disciplines */}
                     <div>
-                        <h4 className="font-semibold mb-4">Disciplinas</h4>
+                        <h4 className="mb-4 font-semibold">Disciplinas</h4>
                         <ul className="space-y-2 text-sm text-white/70">
-                            <li>Natación</li>
+                            <li>Natacion</li>
                             <li>Waterpolo</li>
                             <li>Clavados</li>
-                            <li>Natación Artística</li>
+                            <li>Natacion Artistica</li>
                             <li>Aguas Abiertas</li>
                             <li>Master</li>
                         </ul>
                     </div>
 
-                    {/* Contact */}
                     <div>
-                        <h4 className="font-semibold mb-4">Contacto</h4>
+                        <h4 className="mb-4 font-semibold">Contacto</h4>
                         <ul className="space-y-3 text-sm text-white/70">
                             <li className="flex items-center gap-2">
                                 <MapPin className="h-4 w-4 flex-shrink-0" />
-                                <span>Jr. Nazca Cdra. 6 s/n Lima 11, Perú</span>
+                                <span>Jr. Nazca Cdra. 6 s/n Lima 11, Peru</span>
                             </li>
                             <li className="flex items-center gap-2">
                                 <Phone className="h-4 w-4 flex-shrink-0" />
@@ -89,13 +85,12 @@ export function Footer() {
                             </li>
                         </ul>
 
-                        {/* Social */}
-                        <div className="flex gap-3 mt-4">
+                        <div className="mt-4 flex gap-3">
                             <a
                                 href="https://www.facebook.com/FDNDeportesAcuaticos/"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                                className="rounded-full bg-white/10 p-2 transition-colors hover:bg-white/20"
                                 aria-label="Facebook"
                             >
                                 <Facebook className="h-4 w-4" />
@@ -104,7 +99,7 @@ export function Footer() {
                                 href="https://www.instagram.com/fdndeportesacuaticos"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                                className="rounded-full bg-white/10 p-2 transition-colors hover:bg-white/20"
                                 aria-label="Instagram"
                             >
                                 <Instagram className="h-4 w-4" />
@@ -113,7 +108,7 @@ export function Footer() {
                                 href="https://www.flickr.com/people/199063205@N06/"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                                className="rounded-full bg-white/10 p-2 transition-colors hover:bg-white/20"
                                 aria-label="Flickr"
                             >
                                 <svg className="h-4 w-4" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -125,15 +120,17 @@ export function Footer() {
                     </div>
                 </div>
 
-                {/* Bottom bar */}
-                <div className="mt-8 pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-white/50">
-                    <p>© {new Date().getFullYear()} Ticketing FDNDA. Todos los derechos reservados.</p>
+                <div className="mt-8 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-8 text-sm text-white/50 md:flex-row">
+                    <p>&copy; {new Date().getFullYear()} Ticketing FDNDA. Todos los derechos reservados.</p>
                     <div className="flex gap-4">
-                        <Link href="/terminos" className="hover:text-white transition-colors">
-                            Términos y Condiciones
+                        <Link href="/libro-de-reclamaciones" className="transition-colors hover:text-white">
+                            Libro de Reclamaciones
                         </Link>
-                        <Link href="/privacidad" className="hover:text-white transition-colors">
-                            Política de Privacidad
+                        <Link href="/terminos" className="transition-colors hover:text-white">
+                            Terminos y Condiciones
+                        </Link>
+                        <Link href="/privacidad" className="transition-colors hover:text-white">
+                            Politica de Privacidad
                         </Link>
                     </div>
                 </div>

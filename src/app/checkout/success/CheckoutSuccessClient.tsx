@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { useCart } from "@/hooks/cart-context"
 import { CheckCircle, Ticket, Loader2, XCircle } from "lucide-react"
 
 type OrderStatus = "PENDING" | "PAID" | "CANCELLED" | "REFUNDED"
@@ -12,10 +13,17 @@ type OrderStatus = "PENDING" | "PAID" | "CANCELLED" | "REFUNDED"
 export default function CheckoutSuccessClient() {
     const searchParams = useSearchParams()
     const orderId = searchParams.get("orderId")
+    const { clearCart } = useCart()
 
     const [status, setStatus] = useState<OrderStatus | null>(null)
     const [eventTitle, setEventTitle] = useState<string | null>(null)
     const [error, setError] = useState("")
+
+    useEffect(() => {
+        if (status === "PAID") {
+            clearCart()
+        }
+    }, [clearCart, status])
 
     useEffect(() => {
         if (!orderId) return

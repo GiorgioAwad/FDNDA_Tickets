@@ -1,6 +1,6 @@
 import type { NextAuthConfig } from "next-auth"
 
-type UserRole = "USER" | "STAFF" | "ADMIN"
+type UserRole = "USER" | "STAFF" | "TREASURY" | "ADMIN"
 
 // Session duration: 10 minutes of inactivity = session expires
 const SESSION_MAX_AGE = 10 * 60 // 10 minutes in seconds

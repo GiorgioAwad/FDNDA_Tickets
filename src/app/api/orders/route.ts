@@ -240,7 +240,12 @@ export async function POST(request: NextRequest) {
                     status: "PENDING",
                     totalAmount: finalAmount,
                     currency: "PEN",
-                    provider: "IZIPAY",
+                    provider: (() => {
+                        const pm = process.env.PAYMENTS_MODE || "mock"
+                        if (pm === "openpay") return "OPENPAY"
+                        if (pm === "izipay") return "IZIPAY"
+                        return "MOCK"
+                    })(),
                     documentType: billingSnapshot.documentType,
                     buyerDocType: billingSnapshot.buyerDocType,
                     buyerDocNumber: billingSnapshot.buyerDocNumber,
@@ -275,7 +280,8 @@ export async function POST(request: NextRequest) {
 
             return { order: newOrder, discountAmount }
         }, {
-            timeout: 10000,
+            maxWait: 15000,
+            timeout: 20000,
         })
 
         await Promise.all(

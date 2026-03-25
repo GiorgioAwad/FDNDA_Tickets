@@ -67,6 +67,31 @@ export function formatDateTime(date: Date | string): string {
     }).format(d)
 }
 
+export function formatDateTimeForExport(
+    date: Date | string | null | undefined,
+    timeZone: string = "America/Lima"
+): string {
+    if (!date) return ""
+
+    const d = date instanceof Date ? date : new Date(date)
+    if (Number.isNaN(d.getTime())) return ""
+
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    }).formatToParts(d)
+
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+
+    return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`
+}
+
 export function generateSlug(title: string): string {
     return title
         .toLowerCase()

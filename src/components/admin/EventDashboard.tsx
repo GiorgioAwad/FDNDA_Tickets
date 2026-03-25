@@ -46,20 +46,20 @@ export function EventDashboard({ eventId, ticketTypes }: EventDashboardProps) {
 
     const exportUrl = useMemo(() => {
         const params = new URLSearchParams()
+        params.set("eventId", eventId)
         if (ticketTypeFilter !== "all") {
             params.set("ticketTypeId", ticketTypeFilter)
         }
-        const query = params.toString()
-        return `/api/admin/events/${eventId}/export${query ? `?${query}` : ""}`
+        return `/api/admin/event-export?${params.toString()}`
     }, [eventId, ticketTypeFilter])
 
     const attendeeExportUrl = useMemo(() => {
         const params = new URLSearchParams()
+        params.set("eventId", eventId)
         if (ticketTypeFilter !== "all") {
             params.set("ticketTypeId", ticketTypeFilter)
         }
-        const query = params.toString()
-        return `/api/admin/events/${eventId}/attendees-export${query ? `?${query}` : ""}`
+        return `/api/admin/event-attendees-export?${params.toString()}`
     }, [eventId, ticketTypeFilter])
 
     useEffect(() => {
@@ -68,16 +68,23 @@ export function EventDashboard({ eventId, ticketTypes }: EventDashboardProps) {
             setError("")
             try {
                 const params = new URLSearchParams()
+                params.set("eventId", eventId)
                 if (ticketTypeFilter !== "all") {
                     params.set("ticketTypeId", ticketTypeFilter)
                 }
-                const query = params.toString()
-                const response = await fetch(
-                    `/api/admin/events/${eventId}/report${query ? `?${query}` : ""}`
-                )
-                const result = await response.json()
-                if (!response.ok || !result.success) {
-                    throw new Error(result.error || "Error al cargar dashboard")
+                const response = await fetch(`/api/admin/event-report?${params.toString()}`)
+                const contentType = response.headers.get("content-type") || ""
+                const result = contentType.includes("application/json")
+                    ? await response.json()
+                    : null
+
+                if (!response.ok || !result?.success) {
+                    throw new Error(
+                        result?.error ||
+                        (response.status === 404
+                            ? "La ruta de reporte no esta disponible"
+                            : "Error al cargar dashboard")
+                    )
                 }
                 setData(result.data)
             } catch (err) {

@@ -15,11 +15,18 @@ enum UserRole {
   USER
   ADMIN
   STAFF
+  TREASURY
 }
 
 enum EventMode {
   RANGE
   DAYS
+}
+
+enum EventCategory {
+  EVENTO
+  PISCINA_LIBRE
+  ACADEMIA
 }
 
 enum OrderStatus {
@@ -66,6 +73,23 @@ enum DocumentType {
   FACTURA
 }
 
+enum ComplaintBookEntryType {
+  RECLAMO
+  QUEJA
+}
+
+enum ComplaintBookSubjectType {
+  PRODUCTO
+  SERVICIO
+}
+
+enum ComplaintBookStatus {
+  RECEIVED
+  IN_REVIEW
+  RESPONDED
+  CLOSED
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -93,8 +117,43 @@ model User {
   courtesyBatches  CourtesyBatch[]
   claimedCourtesy  CourtesyTicket[] @relation("ClaimedBy")
   discountCodes    DiscountCode[]   @relation("DiscountCreator")
+  complaintBookEntries ComplaintBookEntry[]
 
   @@map("users")
+}
+
+model ComplaintBookEntry {
+  id                  String                   @id @default(cuid())
+  ticketNumber        String                   @unique
+  userId              String?
+  type                ComplaintBookEntryType
+  subjectType         ComplaintBookSubjectType
+  consumerIsMinor     Boolean                  @default(false)
+  parentName          String?
+  customerName        String
+  documentType        String
+  documentNumber      String
+  email               String
+  phone               String?
+  address             String
+  orderId             String?
+  eventName           String?
+  subjectDescription  String
+  amountClaimed       Decimal?                 @db.Decimal(10, 2)
+  detail              String                   @db.Text
+  requestDetail       String                   @db.Text
+  status              ComplaintBookStatus      @default(RECEIVED)
+  responseDetail      String?                  @db.Text
+  respondedAt         DateTime?
+  emailAcknowledgedAt DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([status])
+  @@map("complaint_book_entries")
 }
 
 model Event {
@@ -108,6 +167,8 @@ model Event {
   startDate   DateTime
   endDate     DateTime
   mode        EventMode @default(RANGE)
+  category    EventCategory @default(EVENTO)
+  advanceAmount Decimal @default(0) @db.Decimal(10, 2)
   isPublished Boolean   @default(false)
   discipline  String?   // e.g., "Natación", "Waterpolo", etc.
   createdAt   DateTime  @default(now())

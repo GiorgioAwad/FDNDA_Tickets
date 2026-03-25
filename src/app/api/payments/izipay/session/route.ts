@@ -1,10 +1,160 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
-import { createIzipaySession } from "@/lib/izipay"
+import {
+    IZIPAY_EMBEDDED_CONTAINER_ID,
+    buildIzipayOrderNumber,
+    createIzipaySession,
+    formatIzipayDateTime,
+    getIzipayMode,
+    getIzipayScriptUrl,
+    resolveIzipayPublicKey,
+    type IzipayWebCoreCheckoutConfig,
+} from "@/lib/izipay"
 import { fulfillPaidOrder } from "@/lib/order-fulfillment"
 
 export const runtime = "nodejs"
+
+function normalizeIzipayText(value: string, maxLength: number) {
+    const normalized = value
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9\s.,\-/#]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+
+    return normalized.slice(0, maxLength).trim()
+}
+
+function normalizeIzipayPhone(value: string | null | undefined) {
+    const digits = (value || "").replace(/\D/g, "").slice(0, 15)
+    return digits.length >= 7 ? digits : "999999999"
+}
+
+function normalizeIzipayPostalCode(value: string | null | undefined) {
+    const normalized = (value || "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 10)
+    return normalized.length >= 5 ? normalized : "15001"
+}
+
+function normalizeIzipayDocument(value: string | null | undefined) {
+    const normalized = (value || "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 15)
+    return normalized.length >= 8 ? normalized : ""
+}
+
+function splitName(fullName: string): { firstName: string; lastName: string } {
+    const normalized = normalizeIzipayText(fullName, 80)
+    if (!normalized) {
+        return { firstName: "Cliente", lastName: "FDNDA" }
+    }
+
+    const [firstName, ...rest] = normalized.split(" ")
+    return {
+        firstName: firstName.slice(0, 50),
+        lastName: (rest.join(" ") || firstName).slice(0, 50),
+    }
+}
+
+function buildBuyerName(order: {
+    buyerFirstName: string | null
+    buyerSecondName: string | null
+    buyerLastNamePaternal: string | null
+    buyerLastNameMaternal: string | null
+    buyerName: string | null
+    user: {
+        name: string
+    }
+}) {
+    const personParts = [
+        order.buyerFirstName,
+        order.buyerSecondName,
+        order.buyerLastNamePaternal,
+        order.buyerLastNameMaternal,
+    ]
+        .filter(Boolean)
+        .join(" ")
+        .trim()
+
+    return personParts || order.buyerName?.trim() || order.user.name
+}
+
+function buildCheckoutConfig(input: {
+    order: {
+        id: string
+        userId: string
+        currency: string
+        totalAmount: unknown
+        buyerDocType: string | null
+        buyerDocNumber: string | null
+        buyerAddress: string | null
+        buyerEmail: string | null
+        buyerPhone: string | null
+        buyerUbigeo: string | null
+        buyerFirstName: string | null
+        buyerSecondName: string | null
+        buyerLastNamePaternal: string | null
+        buyerLastNameMaternal: string | null
+        buyerName: string | null
+        user: {
+            name: string
+            email: string
+            phone: string | null
+        }
+    }
+    merchantCode: string
+    transactionId: string
+    appUrl: string
+    mode: "redirect" | "embedded"
+}): IzipayWebCoreCheckoutConfig {
+    const fullName = buildBuyerName(input.order)
+    const { firstName, lastName } = splitName(fullName)
+    const email = (input.order.buyerEmail || input.order.user.email || "").trim().slice(0, 50)
+    const phoneNumber = normalizeIzipayPhone(input.order.buyerPhone || input.order.user.phone)
+    const street = normalizeIzipayText(input.order.buyerAddress || "Lima", 40) || "Lima"
+    const postalCode = normalizeIzipayPostalCode(input.order.buyerUbigeo)
+    const documentType = input.order.buyerDocType === "6" ? "RUC" : "DNI"
+    const document = normalizeIzipayDocument(input.order.buyerDocNumber)
+    const amount = Number(input.order.totalAmount).toFixed(2)
+    const orderNumber = buildIzipayOrderNumber(input.order.id)
+    const city = normalizeIzipayText("Lima", 40) || "Lima"
+    const state = normalizeIzipayText("Lima", 40) || "Lima"
+
+    const billing = {
+        firstName,
+        lastName,
+        email,
+        phoneNumber,
+        street,
+        city,
+        state,
+        country: "PE",
+        postalCode,
+        documentType,
+        document,
+    }
+
+    return {
+        action: "pay",
+        merchantCode: input.merchantCode,
+        transactionId: input.transactionId,
+        order: {
+            orderNumber,
+            currency: input.order.currency,
+            amount,
+            processType: "AT",
+            merchantBuyerId: input.order.userId,
+            dateTimeTransaction: formatIzipayDateTime(),
+        },
+        billing,
+        shipping: billing,
+        render: {
+            typeForm: input.mode === "embedded" ? "embedded" : "pop-up",
+            container:
+                input.mode === "embedded" ? `#${IZIPAY_EMBEDDED_CONTAINER_ID}` : undefined,
+            showButtonProcessForm: input.mode === "embedded" ? true : undefined,
+        },
+        urlIPN: `${input.appUrl}/api/payments/izipay/webhook`,
+    }
+}
 
 export async function POST(request: NextRequest) {
     try {
@@ -13,6 +163,25 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 { success: false, error: "Ruta no disponible" },
                 { status: 404 }
+            )
+        }
+
+        const merchantCode = process.env.IZIPAY_MERCHANT_CODE || ""
+        const publicKey = resolveIzipayPublicKey()
+        const apiKey = process.env.IZIPAY_API_KEY || ""
+        const hashKey = process.env.IZIPAY_HASH_KEY || ""
+        const appUrl =
+            (process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin).replace(/\/$/, "")
+        const mode = getIzipayMode()
+
+        if (!merchantCode || !apiKey || !hashKey || !publicKey || !appUrl) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error:
+                        "Falta configuracion Izipay. Revisa IZIPAY_MERCHANT_CODE, IZIPAY_API_KEY, IZIPAY_HASH_KEY, IZIPAY_PUBLIC_KEY y NEXT_PUBLIC_APP_URL.",
+                },
+                { status: 500 }
             )
         }
 
@@ -41,6 +210,7 @@ export async function POST(request: NextRequest) {
                         id: true,
                         name: true,
                         email: true,
+                        phone: true,
                     },
                 },
                 orderItems: {
@@ -99,7 +269,6 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // Cuando el total llega a 0 (descuento 100%), confirmar sin pasarela.
         if (totalAmount === 0) {
             const result = await fulfillPaidOrder({
                 orderId: order.id,
@@ -132,28 +301,24 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        const eventTitle = order.orderItems[0]?.ticketType.event.title || "Evento FDNDA"
-        const session = await createIzipaySession({
-            orderId: order.id,
-            amount: amountInCents,
-            currency: order.currency,
-            customerEmail: order.user.email,
-            customerName: order.user.name,
-            description: `${eventTitle} - Orden ${order.id.slice(-8).toUpperCase()}`,
+        const transactionId = `${Date.now()}${order.id.replace(/[^a-zA-Z0-9]/g, "").slice(-24)}`
+            .slice(0, 40)
+        const config = buildCheckoutConfig({
+            order,
+            merchantCode,
+            transactionId,
+            appUrl,
+            mode,
         })
+        const session = await createIzipaySession(config)
 
-        if (!session.success) {
-            return NextResponse.json(
-                { success: false, error: session.error || "No se pudo iniciar la sesion de pago" },
-                { status: 502 }
-            )
-        }
-
-        if (!session.paymentUrl && !session.formToken && !session.sessionToken) {
+        if (!session.success || !session.sessionToken) {
             return NextResponse.json(
                 {
                     success: false,
-                    error: "IziPay no devolvio datos suficientes para iniciar el pago",
+                    error:
+                        session.error ||
+                        "Izipay no devolvio el token de sesion para Web Core",
                 },
                 { status: 502 }
             )
@@ -163,10 +328,10 @@ export async function POST(request: NextRequest) {
             success: true,
             data: {
                 orderId: order.id,
-                paymentUrl: session.paymentUrl || null,
-                sessionToken: session.sessionToken || null,
-                formToken: session.formToken || null,
-                checkoutUrl: process.env.IZIPAY_CHECKOUT_URL || null,
+                authorization: session.sessionToken,
+                keyRSA: publicKey,
+                scriptUrl: getIzipayScriptUrl(mode),
+                config,
             },
         })
     } catch (error) {

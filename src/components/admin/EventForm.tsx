@@ -24,6 +24,8 @@ interface EventFormData {
     location: string
     venue: string
     discipline: string
+    category: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA"
+    advanceAmount: string
     startDate: string
     endDate: string
     mode: "RANGE" | "DAYS"
@@ -42,6 +44,8 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
         location: initialData?.location || "",
         venue: initialData?.venue || "",
         discipline: initialData?.discipline || "",
+        category: initialData?.category || "EVENTO",
+        advanceAmount: initialData?.advanceAmount ? String(initialData.advanceAmount) : "0",
         startDate: initialData?.startDate ? formatDateInput(initialData.startDate) : "",
         endDate: initialData?.endDate ? formatDateInput(initialData.endDate) : "",
         mode: initialData?.mode || "RANGE",
@@ -191,6 +195,37 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                                         <option value="Aguas Abiertas">Aguas Abiertas</option>
                                         <option value="Master">Master</option>
                                     </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Tipo de evento</label>
+                                    <select
+                                        name="category"
+                                        value={formData.category}
+                                        onChange={handleChange}
+                                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                        required
+                                    >
+                                        <option value="EVENTO">Evento</option>
+                                        <option value="PISCINA_LIBRE">Piscina libre</option>
+                                        <option value="ACADEMIA">Academia</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Adelanto aplicado</label>
+                                    <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        name="advanceAmount"
+                                        value={formData.advanceAmount}
+                                        onChange={handleChange}
+                                    />
+                                    <p className="text-xs text-gray-500">
+                                        Si no aplica adelanto, deja el valor en 0.00.
+                                    </p>
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium">Modo de Fechas</label>

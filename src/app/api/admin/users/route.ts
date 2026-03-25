@@ -34,6 +34,7 @@ export async function GET() {
         const totalUsers = users.length
         const admins = users.filter(u => u.role === "ADMIN").length
         const scanners = users.filter(u => u.role === "STAFF").length  // STAFF is the scanner role
+        const treasury = users.filter(u => u.role === "TREASURY").length
         const verified = users.filter(u => u.emailVerifiedAt !== null).length
 
         return NextResponse.json({
@@ -43,6 +44,7 @@ export async function GET() {
                 totalUsers,
                 admins,
                 scanners,
+                treasury,
                 verified,
             }
         })

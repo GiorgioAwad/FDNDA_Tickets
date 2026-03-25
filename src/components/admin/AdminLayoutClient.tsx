@@ -8,6 +8,7 @@ import { useSession, signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/hooks/cart-context"
 import {
+    AlertCircle,
     LayoutDashboard,
     Calendar,
     Ticket,
@@ -18,7 +19,6 @@ import {
     Menu,
     X,
     LogOut,
-    ChevronDown,
     Home,
     ScanLine,
     DollarSign,
@@ -61,6 +61,7 @@ const adminNavigation: NavGroup[] = [
         title: "Reportes",
         items: [
             { label: "Reportes", href: "/admin/reportes", icon: FileText },
+            { label: "Reclamos", href: "/admin/reclamos", icon: AlertCircle },
             { label: "Estadísticas", href: "/admin/estadisticas", icon: BarChart3 },
         ],
     },
@@ -243,6 +244,7 @@ function AdminTopBar({ onMenuClick, title }: AdminTopBarProps) {
         if (pathname.includes("/ingresos")) return "Ingresos"
         if (pathname.includes("/reportes")) return "Reportes"
         if (pathname.includes("/estadisticas")) return "Estadísticas"
+        if (pathname.includes("/reclamos")) return "Reclamos"
         if (pathname.includes("/usuarios")) return "Usuarios"
         if (pathname.includes("/configuracion")) return "Configuración"
         return "Admin"
@@ -312,3 +314,5 @@ export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
         </div>
     )
 }
+
+

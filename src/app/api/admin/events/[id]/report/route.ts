@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getCurrentUser, hasRole } from "@/lib/auth"
+import { getCurrentUser } from "@/lib/auth"
+import { formatDateTimeForExport } from "@/lib/utils"
+import { extractOrderPaymentDetails } from "@/lib/payment-details"
 export const runtime = "nodejs"
 
 type TicketTypeSummary = {
@@ -23,8 +25,12 @@ type AttendeeRow = {
     ticketTypeName: string
     orderId: string
     paidAt: string | null
+    paidAtLocal: string | null
     buyerName: string | null
     buyerEmail: string | null
+    paymentMethod: string | null
+    paymentMethodRaw: string | null
+    paymentBrand: string | null
 }
 
 export async function GET(
@@ -34,7 +40,7 @@ export async function GET(
     try {
         const user = await getCurrentUser()
 
-        if (!user || !hasRole(user.role, "ADMIN")) {
+        if (!user || (user.role !== "ADMIN" && user.role !== "TREASURY")) {
             return NextResponse.json(
                 { success: false, error: "No autorizado" },
                 { status: 401 }
@@ -144,6 +150,8 @@ export async function GET(
                 order: {
                     select: {
                         id: true,
+                        provider: true,
+                        providerResponse: true,
                         paidAt: true,
                         user: { select: { name: true, email: true } },
                     },
@@ -152,17 +160,27 @@ export async function GET(
             orderBy: { createdAt: "desc" },
         })
 
-        const attendees: AttendeeRow[] = tickets.map((ticket) => ({
-            ticketId: ticket.id,
-            ticketCode: ticket.ticketCode,
-            attendeeName: ticket.attendeeName,
-            attendeeDni: ticket.attendeeDni,
-            ticketTypeName: ticket.ticketType?.name || "",
-            orderId: ticket.order?.id || "",
-            paidAt: ticket.order?.paidAt ? ticket.order.paidAt.toISOString() : null,
-            buyerName: ticket.order?.user?.name || null,
-            buyerEmail: ticket.order?.user?.email || null,
-        }))
+        const attendees: AttendeeRow[] = tickets.map((ticket) => {
+            const paymentDetails = extractOrderPaymentDetails(ticket.order || {})
+
+            return {
+                ticketId: ticket.id,
+                ticketCode: ticket.ticketCode,
+                attendeeName: ticket.attendeeName,
+                attendeeDni: ticket.attendeeDni,
+                ticketTypeName: ticket.ticketType?.name || "",
+                orderId: ticket.order?.id || "",
+                paidAt: ticket.order?.paidAt ? ticket.order.paidAt.toISOString() : null,
+                paidAtLocal: ticket.order?.paidAt
+                    ? formatDateTimeForExport(ticket.order.paidAt)
+                    : null,
+                buyerName: ticket.order?.user?.name || null,
+                buyerEmail: ticket.order?.user?.email || null,
+                paymentMethod: paymentDetails.methodLabel,
+                paymentMethodRaw: paymentDetails.methodCode,
+                paymentBrand: paymentDetails.brand,
+            }
+        })
 
         const commissionPercentRaw =
             process.env.IZIPAY_FEE_PERCENT ||

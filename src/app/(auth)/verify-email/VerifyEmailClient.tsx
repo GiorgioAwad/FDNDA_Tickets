@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -8,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { CheckCircle, XCircle, Loader2 } from "lucide-react"
 
 export default function VerifyEmailClient() {
+    const router = useRouter()
     const searchParams = useSearchParams()
     const token = searchParams.get("token")
 
@@ -31,6 +33,7 @@ export default function VerifyEmailClient() {
                 if (response.ok) {
                     setStatus("success")
                     setMessage(data.message || "Email verificado correctamente")
+                    router.replace("/?verified=1")
                 } else {
                     setStatus("error")
                     setMessage(data.error || "Error al verificar email")
@@ -42,7 +45,7 @@ export default function VerifyEmailClient() {
         }
 
         verifyEmail()
-    }, [token])
+    }, [router, token])
 
     return (
         <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 bg-gradient-to-b from-gray-50 to-white">

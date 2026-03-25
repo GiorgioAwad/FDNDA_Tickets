@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { getCachedEventWithTicketTypes, onEventUpdated } from "@/lib/cached-queries"
+import { EventCategory } from "@prisma/client"
 export const runtime = "nodejs"
 
 const PUBLIC_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=300"
@@ -97,6 +98,8 @@ export async function PUT(
             startDate,
             endDate,
             mode,
+            category,
+            advanceAmount,
             isPublished,
             bannerUrl,
             discipline,
@@ -126,6 +129,21 @@ export async function PUT(
             )
         }
 
+        const parsedAdvanceAmount =
+            advanceAmount === undefined || advanceAmount === null || advanceAmount === ""
+                ? undefined
+                : Number(advanceAmount)
+
+        if (
+            parsedAdvanceAmount !== undefined &&
+            (!Number.isFinite(parsedAdvanceAmount) || parsedAdvanceAmount < 0)
+        ) {
+            return NextResponse.json(
+                { success: false, error: "El adelanto debe ser un monto valido." },
+                { status: 400 }
+            )
+        }
+
         const event = await prisma.event.update({
             where: { id },
             data: {
@@ -136,6 +154,8 @@ export async function PUT(
                 startDate: parsedStartDate,
                 endDate: parsedEndDate,
                 mode,
+                category: (category as EventCategory | undefined) || undefined,
+                advanceAmount: parsedAdvanceAmount,
                 isPublished,
                 bannerUrl,
                 discipline,

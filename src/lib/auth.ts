@@ -3,7 +3,7 @@ import Credentials from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
 import { prisma } from "./prisma"
 import { authConfig } from "./auth.config"
-type UserRole = "USER" | "STAFF" | "ADMIN"
+type UserRole = "USER" | "STAFF" | "TREASURY" | "ADMIN"
 
 declare module "next-auth" {
     interface User {
@@ -80,7 +80,8 @@ export function hasRole(userRole: UserRole, requiredRole: UserRole): boolean {
     const roleHierarchy: Record<UserRole, number> = {
         USER: 1,
         STAFF: 2,
-        ADMIN: 3,
+        TREASURY: 3,
+        ADMIN: 4,
     }
     return roleHierarchy[userRole] >= roleHierarchy[requiredRole]
 }

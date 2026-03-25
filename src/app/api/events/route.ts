@@ -4,6 +4,7 @@ import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { getCachedPublishedEvents } from "@/lib/cached-queries"
 import slugify from "slugify"
+import { EventCategory } from "@prisma/client"
 export const runtime = "nodejs"
 
 const PUBLIC_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=300"
@@ -38,6 +39,8 @@ type EventPayload = {
     startDate: string | Date
     endDate: string | Date
     mode: "RANGE" | "DAYS"
+    category?: EventCategory
+    advanceAmount?: number | string
     isPublished?: boolean
     bannerUrl?: string
     discipline?: string
@@ -119,12 +122,22 @@ export async function POST(request: NextRequest) {
             startDate,
             endDate,
             mode,
+            category,
+            advanceAmount,
             isPublished,
             bannerUrl,
             discipline,
             ticketTypes, // Optional array of ticket types to create
             eventDays,   // Optional array of days to create
         } = body
+        const parsedAdvanceAmount = Number(advanceAmount || 0)
+
+        if (!Number.isFinite(parsedAdvanceAmount) || parsedAdvanceAmount < 0) {
+            return NextResponse.json(
+                { success: false, error: "El adelanto debe ser un monto valido." },
+                { status: 400 }
+            )
+        }
 
         // Generate slug
         let slug = slugify(title, { lower: true, strict: true })
@@ -147,6 +160,8 @@ export async function POST(request: NextRequest) {
                 startDate: parseDateOnly(startDate),
                 endDate: parseDateOnly(endDate),
                 mode,
+                category: category || "EVENTO",
+                advanceAmount: parsedAdvanceAmount,
                 isPublished,
                 bannerUrl,
                 discipline,

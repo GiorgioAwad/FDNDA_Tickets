@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+*.har
+Guía para validar pagos Plin - PW v2.0.pdf
 
 # local-only assets
 /certs/

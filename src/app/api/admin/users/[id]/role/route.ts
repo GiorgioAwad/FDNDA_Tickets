@@ -17,7 +17,7 @@ export async function PATCH(
         const { role } = body
 
         // Validate role
-        if (!["USER", "STAFF", "ADMIN"].includes(role)) {
+        if (!["USER", "STAFF", "TREASURY", "ADMIN"].includes(role)) {
             return NextResponse.json(
                 { success: false, error: "Rol invalido" },
                 { status: 400 }

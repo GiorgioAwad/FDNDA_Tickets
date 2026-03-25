@@ -13,7 +13,7 @@ import { Mail, Lock, AlertCircle } from "lucide-react"
 export default function LoginClient() {
     const router = useRouter()
     const searchParams = useSearchParams()
-    const callbackUrl = searchParams.get("callbackUrl") || "/mi-cuenta"
+    const callbackUrl = searchParams.get("callbackUrl")
 
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
@@ -35,7 +35,8 @@ export default function LoginClient() {
             if (result?.error) {
                 setError("Email o contrase\u00f1a incorrectos")
             } else {
-                router.push(callbackUrl)
+                const destination = callbackUrl || "/"
+                router.push(destination)
                 router.refresh()
             }
         } catch {

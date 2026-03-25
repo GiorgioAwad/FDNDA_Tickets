@@ -1,72 +1,157 @@
 import type { Metadata } from "next"
+import Link from "next/link"
+import {
+    COMPLAINTS_EMAIL,
+    LEGAL_ADDRESS,
+    LEGAL_COMMERCIAL_NAME,
+    LEGAL_EMAIL,
+    LEGAL_ENTITY_NAME,
+    LEGAL_PHONE,
+    LEGAL_RUC,
+    formatPublishedDate,
+} from "@/lib/legal"
+
+const LAST_UPDATED = "2026-03-23"
 
 export const metadata: Metadata = {
-    title: "Términos y Condiciones - Ticketing FDNDA",
-    description: "Términos y Condiciones de uso del sitio web de la Federación Deportiva Nacional de Deportes Acuáticos.",
+    title: "Terminos y Condiciones - Ticketing FDNDA",
+    description:
+        "Condiciones de uso y compra de entradas de Ticketing FDNDA para eventos de la Federacion Deportiva Nacional de Deportes Acuaticos del Peru.",
+}
+
+function Section({
+    title,
+    children,
+}: {
+    title: string
+    children: React.ReactNode
+}) {
+    return (
+        <section>
+            <h2 className="mb-3 text-xl font-semibold text-gray-900">{title}</h2>
+            <div className="space-y-3 text-gray-700">{children}</div>
+        </section>
+    )
 }
 
 export default function TerminosPage() {
     return (
         <div className="min-h-screen bg-gray-50">
-            <div className="container mx-auto px-4 py-12 max-w-4xl">
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">Términos y Condiciones de Uso</h1>
-                <p className="text-sm text-gray-500 mb-8">Última actualización: febrero 2026</p>
+            <div className="container mx-auto max-w-4xl px-4 py-12">
+                <h1 className="text-3xl font-bold text-gray-900">Terminos y Condiciones</h1>
+                <p className="mt-2 text-sm text-gray-500">
+                    Ultima actualizacion: {formatPublishedDate(LAST_UPDATED)}
+                </p>
 
-                <div className="bg-white rounded-xl shadow-sm border p-8 space-y-8 text-gray-700 leading-relaxed">
-                    <p>
-                        El presente documento establece los Términos y Condiciones que regulan el acceso y uso del sitio web de la Federación Deportiva Nacional de Deportes Acuáticos (FDNDA). Al acceder, navegar o utilizar este sitio web, el usuario acepta plenamente y sin reservas los términos aquí descritos.
-                    </p>
-
-                    <section>
-                        <h2 className="text-xl font-semibold text-gray-900 mb-3">1. Uso del sitio web</h2>
+                <div className="mt-8 rounded-xl border bg-white p-8 shadow-sm">
+                    <Section title="1. Identificacion del proveedor">
                         <p>
-                            El usuario se compromete a utilizar este sitio web de manera responsable, lícita y conforme a la normativa vigente. Queda prohibido utilizar el sitio con fines ilícitos, fraudulentos o que puedan afectar los derechos, intereses o la imagen de la FDNDA o de terceros.
+                            Estos Terminos y Condiciones regulan el acceso y uso del sitio web y la plataforma de ticketing de {LEGAL_ENTITY_NAME}, identificada comercialmente como {LEGAL_COMMERCIAL_NAME}, con domicilio en {LEGAL_ADDRESS}.
                         </p>
-                    </section>
-
-                    <section>
-                        <h2 className="text-xl font-semibold text-gray-900 mb-3">2. Contenidos</h2>
-                        <p className="mb-3">
-                            Los contenidos publicados en este sitio web (textos, imágenes, videos, documentos, logotipos, diseños, etc.) tienen fines informativos, institucionales y promocionales relacionados con las actividades deportivas, académicas y administrativas de la FDNDA.
-                        </p>
+                        {LEGAL_RUC && (
+                            <p>
+                                RUC: {LEGAL_RUC}.
+                            </p>
+                        )}
                         <p>
-                            La FDNDA se reserva el derecho de modificar, actualizar o eliminar contenidos sin previo aviso.
+                            Para consultas sobre compras, entradas o atencion al consumidor puedes escribir a {LEGAL_EMAIL} o comunicarte al {LEGAL_PHONE}.
                         </p>
-                    </section>
+                    </Section>
 
-                    <section>
-                        <h2 className="text-xl font-semibold text-gray-900 mb-3">3. Propiedad intelectual</h2>
-                        <p className="mb-3">
-                            Todo el contenido del sitio web es propiedad de la FDNDA o se utiliza con autorización de sus titulares, y se encuentra protegido por la normativa de derechos de autor y propiedad intelectual.
+                    <Section title="2. Aceptacion y alcance">
+                        <p>
+                            Al navegar, registrarte, comprar entradas o utilizar cualquiera de las funcionalidades del sitio aceptas estos Terminos y Condiciones, asi como la <Link href="/privacidad" className="text-[hsl(210,100%,40%)] hover:underline">Politica de Privacidad</Link>.
                         </p>
                         <p>
-                            Queda prohibida su reproducción, distribución o uso sin autorización expresa, salvo para fines personales y no comerciales.
+                            Si no estas de acuerdo con estos terminos, debes abstenerte de utilizar la plataforma.
                         </p>
-                    </section>
+                    </Section>
 
-                    <section>
-                        <h2 className="text-xl font-semibold text-gray-900 mb-3">4. Responsabilidad</h2>
-                        <p className="mb-3">
-                            La FDNDA no garantiza la disponibilidad continua del sitio web ni la ausencia de errores técnicos. Tampoco se responsabiliza por daños derivados del uso del sitio o de la información contenida en él.
+                    <Section title="3. Cuenta de usuario y seguridad">
+                        <p>
+                            Para acceder a determinadas funcionalidades podras crear una cuenta proporcionando informacion veraz, completa y actualizada. Eres responsable de custodiar tus credenciales y de todas las actividades realizadas desde tu cuenta.
                         </p>
                         <p>
-                            El uso de la información publicada es responsabilidad exclusiva del usuario.
+                            Debes notificar inmediatamente cualquier uso no autorizado de tu cuenta. {LEGAL_COMMERCIAL_NAME} puede suspender o bloquear cuentas cuando detecte actividad fraudulenta, incumplimiento de estos terminos o riesgos de seguridad.
                         </p>
-                    </section>
+                    </Section>
 
-                    <section>
-                        <h2 className="text-xl font-semibold text-gray-900 mb-3">5. Enlaces externos</h2>
+                    <Section title="4. Informacion de eventos, disponibilidad y precios">
                         <p>
-                            Este sitio puede contener enlaces a páginas web de terceros. La FDNDA no tiene control sobre dichos sitios ni asume responsabilidad por sus contenidos, políticas o prácticas.
+                            La informacion sobre eventos, fechas, sedes, aforos, tipos de entrada, beneficios y restricciones se publica de acuerdo con la informacion proporcionada por la organizacion del evento o la propia federacion.
                         </p>
-                    </section>
+                        <p>
+                            Los precios, comisiones, descuentos, promociones y disponibilidad pueden variar hasta antes de la confirmacion del pago. La reserva de stock solo se considera confirmada cuando el pago ha sido aprobado y la orden ha pasado a estado pagado.
+                        </p>
+                    </Section>
 
-                    <section>
-                        <h2 className="text-xl font-semibold text-gray-900 mb-3">6. Modificaciones</h2>
+                    <Section title="5. Compra de entradas y medios de pago">
                         <p>
-                            La FDNDA podrá modificar estos Términos y Condiciones en cualquier momento. Las modificaciones entrarán en vigencia desde su publicación en el sitio web.
+                            Las compras realizadas en la plataforma estan sujetas a validacion de datos, disponibilidad y aprobacion del medio de pago. La plataforma utiliza pasarelas y proveedores externos de pago para procesar transacciones, por lo que determinadas validaciones o rechazos pueden depender de terceros.
                         </p>
-                    </section>
+                        <p>
+                            El usuario es responsable de verificar que los datos de facturacion, identidad y contacto sean correctos antes de confirmar la compra.
+                        </p>
+                    </Section>
+
+                    <Section title="6. Emision y uso de entradas">
+                        <p>
+                            Una vez aprobado el pago, las entradas digitales se ponen a disposicion del usuario en su cuenta y/o se remiten a los canales definidos por la plataforma. Cada entrada es personal o nominativa cuando asi se indique y puede incorporar controles de seguridad y validacion.
+                        </p>
+                        <p>
+                            El titular debe conservar su codigo QR o medio de acceso y presentarlo en el ingreso cuando corresponda. La reventa, duplicacion, alteracion o uso no autorizado de entradas puede ocasionar su anulacion sin derecho a reembolso.
+                        </p>
+                    </Section>
+
+                    <Section title="7. Cambios, cancelaciones y devoluciones">
+                        <p>
+                            La reprogramacion, suspension, cancelacion o modificacion de un evento puede depender de la organizacion del evento, de la autoridad competente o de causas de fuerza mayor. En esos casos, la plataforma aplicara las instrucciones del organizador y la normativa de proteccion al consumidor que resulte aplicable.
+                        </p>
+                        <p>
+                            Los reembolsos, cambios o anulaciones no procederan cuando el evento haya sido correctamente ejecutado y el impedimento sea imputable al usuario, salvo disposicion legal distinta o politica expresa del evento.
+                        </p>
+                    </Section>
+
+                    <Section title="8. Conductas prohibidas">
+                        <ul className="list-disc space-y-2 pl-5">
+                            <li>Usar la plataforma con fines fraudulentos, ilicitos o contrarios a la buena fe.</li>
+                            <li>Suplantar identidad, manipular promociones o interferir con la disponibilidad del sitio.</li>
+                            <li>Intentar vulnerar medidas de seguridad, extraer informacion de forma automatizada o alterar el funcionamiento del servicio.</li>
+                        </ul>
+                    </Section>
+
+                    <Section title="9. Propiedad intelectual">
+                        <p>
+                            Los signos distintivos, disenos, textos, imagenes, software, bases de datos y demas contenidos del sitio son de titularidad de {LEGAL_ENTITY_NAME} o de terceros autorizados. Su uso no autorizado esta prohibido.
+                        </p>
+                    </Section>
+
+                    <Section title="10. Responsabilidad">
+                        <p>
+                            {LEGAL_COMMERCIAL_NAME} adopta medidas razonables para la continuidad y seguridad del sitio, pero no garantiza la ausencia absoluta de interrupciones, errores, ataques o eventos ajenos a su control. Tampoco sera responsable por incumplimientos atribuibles a terceros, fallas del usuario, entidades financieras, pasarelas de pago, proveedores de telecomunicaciones o casos fortuitos y de fuerza mayor.
+                        </p>
+                    </Section>
+
+                    <Section title="11. Proteccion de datos personales">
+                        <p>
+                            El tratamiento de datos personales se realiza conforme a la Ley N.&deg; 29733, su reglamento vigente y las demas normas peruanas aplicables. Para mas informacion revisa la <Link href="/privacidad" className="text-[hsl(210,100%,40%)] hover:underline">Politica de Privacidad</Link>.
+                        </p>
+                    </Section>
+
+                    <Section title="12. Libro de Reclamaciones y atencion al consumidor">
+                        <p>
+                            El usuario puede registrar quejas o reclamos a traves del <Link href="/libro-de-reclamaciones" className="text-[hsl(210,100%,40%)] hover:underline">Libro de Reclamaciones</Link> disponible en este sitio o escribir a {COMPLAINTS_EMAIL}. La formulacion del reclamo no impide acudir a otras vias de solucion de controversias ni constituye una denuncia ante Indecopi.
+                        </p>
+                    </Section>
+
+                    <Section title="13. Modificaciones y ley aplicable">
+                        <p>
+                            {LEGAL_ENTITY_NAME} puede actualizar estos Terminos y Condiciones para adecuarlos a cambios operativos, contractuales o regulatorios. La version vigente sera la publicada en el sitio.
+                        </p>
+                        <p>
+                            Estos terminos se interpretan conforme a las leyes de la Republica del Peru.
+                        </p>
+                    </Section>
                 </div>
             </div>
         </div>

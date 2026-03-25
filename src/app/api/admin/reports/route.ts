@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getCurrentUser, hasRole } from "@/lib/auth"
+import { getCurrentUser } from "@/lib/auth"
 import type { Prisma } from "@prisma/client"
 export const runtime = "nodejs"
 
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     try {
         const user = await getCurrentUser()
 
-        if (!user || !hasRole(user.role, "ADMIN")) {
+        if (!user || (user.role !== "ADMIN" && user.role !== "TREASURY")) {
             return NextResponse.json(
                 { success: false, error: "No autorizado" },
                 { status: 401 }

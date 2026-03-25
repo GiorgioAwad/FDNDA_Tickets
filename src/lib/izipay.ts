@@ -1,17 +1,30 @@
 import crypto from "crypto"
 
-// IZIPAY Configuration - Redirect mode (basic gateway)
+// Web Core / Token Session
 const IZIPAY_MERCHANT_CODE = process.env.IZIPAY_MERCHANT_CODE || ""
 const IZIPAY_API_KEY = process.env.IZIPAY_API_KEY || ""
 const IZIPAY_HASH_KEY = process.env.IZIPAY_HASH_KEY || ""
-const IZIPAY_ENDPOINT = process.env.IZIPAY_ENDPOINT || "https://sandbox-api.izipay.pe"
+const IZIPAY_PUBLIC_KEY =
+    process.env.IZIPAY_PUBLIC_KEY ||
+    process.env.NEXT_PUBLIC_IZIPAY_PUBLIC_KEY ||
+    ""
+const IZIPAY_ENDPOINT = process.env.IZIPAY_ENDPOINT || "https://sandbox-api-pw.izipay.pe"
+const IZIPAY_CHECKOUT_SCRIPT_URL =
+    process.env.IZIPAY_CHECKOUT_SCRIPT_URL ||
+    process.env.IZIPAY_SCRIPT_URL ||
+    process.env.NEXT_PUBLIC_IZIPAY_SCRIPT_URL ||
+    (IZIPAY_ENDPOINT.includes("sandbox")
+        ? "https://sandbox-checkout.izipay.pe/payments/v1/js/index.js"
+        : "https://checkout.izipay.pe/payments/v1/js/index.js")
 
-// IZIPAY Configuration - Embedded mode (full gateway with QR, Yape, etc.)
+// Legacy embedded integration
 const IZIPAY_EMBEDDED_USERNAME = process.env.IZIPAY_EMBEDDED_USERNAME || ""
 const IZIPAY_EMBEDDED_PASSWORD = process.env.IZIPAY_EMBEDDED_PASSWORD || ""
 const IZIPAY_HMAC_SHA256_KEY = process.env.IZIPAY_HMAC_SHA256_KEY || ""
-const IZIPAY_EMBEDDED_ENDPOINT = process.env.IZIPAY_EMBEDDED_ENDPOINT || "https://sandbox-api-pw.izipay.pe"
-const IZIPAY_PUBLIC_KEY = process.env.NEXT_PUBLIC_IZIPAY_PUBLIC_KEY || ""
+const IZIPAY_EMBEDDED_ENDPOINT =
+    process.env.IZIPAY_EMBEDDED_ENDPOINT || "https://sandbox-api-pw.izipay.pe"
+
+export const IZIPAY_EMBEDDED_CONTAINER_ID = "izipay-sdk-container"
 
 export type IzipayMode = "redirect" | "embedded"
 
@@ -21,12 +34,19 @@ export function getIzipayMode(): IzipayMode {
 }
 
 export interface IzipayOrderData {
-    orderId: string
-    amount: number // In cents (e.g., 1000 = S/ 10.00)
-    currency: string
-    customerEmail: string
-    customerName: string
-    description: string
+    action: "pay" | "pay_token_external"
+    merchantCode: string
+    transactionId: string
+    order: {
+        orderNumber: string
+        currency: string
+        amount: string
+        processType: "AT"
+        merchantBuyerId: string
+        dateTimeTransaction: string
+    }
+    billing: IzipayWebCoreCheckoutConfig["billing"]
+    shipping: IzipayWebCoreCheckoutConfig["shipping"]
 }
 
 export interface IzipaySessionResponse {
@@ -55,86 +75,355 @@ export interface IzipayWebhookPayload {
     hash: string
 }
 
-/**
- * Generate HMAC signature for IZIPAY requests
- */
-function generateIzipaySignature(data: string): string {
+export interface IzipayWebCoreCheckoutConfig {
+    action: "pay" | "pay_token_external"
+    merchantCode: string
+    transactionId: string
+    order: {
+        orderNumber: string
+        currency: string
+        amount: string
+        processType: "AT"
+        merchantBuyerId: string
+        dateTimeTransaction: string
+    }
+    billing: {
+        firstName: string
+        lastName: string
+        email: string
+        phoneNumber: string
+        street: string
+        city: string
+        state: string
+        country: string
+        postalCode: string
+        documentType: string
+        document: string
+    }
+    shipping: {
+        firstName: string
+        lastName: string
+        email: string
+        phoneNumber: string
+        street: string
+        city: string
+        state: string
+        country: string
+        postalCode: string
+        documentType: string
+        document: string
+    }
+    render?: {
+        typeForm: "pop-up" | "embedded" | "redirect"
+        container?: string
+        showButtonProcessForm?: boolean
+        redirectUrls?: {
+            onSuccess: string
+            onError: string
+            onCancel: string
+        }
+    }
+    urlIPN?: string
+}
+
+export interface IzipayWebCorePaymentResponse {
+    code?: string
+    message?: string
+    messageUser?: string
+    messageUserEng?: string
+    payloadHttp?: string
+    signature?: string
+    transactionId?: string
+    response?: {
+        payMethod?: string
+        order?: Array<{
+            orderNumber?: string
+            amount?: string
+            currency?: string
+            stateMessage?: string
+            referenceNumber?: string
+            codeAuth?: string
+        }>
+        card?: {
+            brand?: string
+            pan?: string
+        }
+        billing?: {
+            email?: string
+            documentType?: string
+            document?: string
+        }
+    }
+}
+
+export interface IzipayWebCoreParsedResult {
+    orderId: string
+    transactionId: string
+    status: "PAID" | "PENDING" | "ERROR"
+    message?: string
+    amount: number
+    currency: string
+    paymentMethod?: string
+    raw: IzipayWebCorePaymentResponse
+}
+
+export type IzipayCheckoutConfig = IzipayWebCoreCheckoutConfig
+
+export interface ParsedIzipayPaymentResult {
+    code: string
+    message?: string
+    messageUser?: string
+    messageUserEng?: string
+    payloadHttp: string
+    signature?: string
+    transactionId?: string
+    orderId?: string
+    amount?: number
+    currency?: string
+    payMethod?: string
+    raw: IzipayWebCorePaymentResponse
+    payload: IzipayWebCorePaymentResponse
+}
+
+function timingSafeEqualString(a: string, b: string): boolean {
+    const aBuffer = Buffer.from(a)
+    const bBuffer = Buffer.from(b)
+
+    if (aBuffer.length !== bBuffer.length) {
+        return false
+    }
+
+    return crypto.timingSafeEqual(aBuffer, bBuffer)
+}
+
+function generateIzipayHexSignature(data: string): string {
     return crypto
         .createHmac("sha256", IZIPAY_HASH_KEY)
         .update(data)
         .digest("hex")
 }
 
-/**
- * Verify webhook signature from IZIPAY
- */
+function generateIzipayBase64Signature(payload: string): string {
+    return crypto
+        .createHmac("sha256", Buffer.from(IZIPAY_HASH_KEY, "utf-8"))
+        .update(Buffer.from(payload, "utf-8"))
+        .digest("base64")
+}
+
+export function isIzipayCommunicationError(code?: string): boolean {
+    return code === "021" || code === "COMMUNICATION_ERROR"
+}
+
+export function resolveIzipayPublicKey(): string {
+    return IZIPAY_PUBLIC_KEY
+}
+
+export function getIzipayCheckoutScriptUrl(): string {
+    return IZIPAY_CHECKOUT_SCRIPT_URL
+}
+
+export function getIzipayScriptUrl(
+    mode: IzipayMode = getIzipayMode(),
+    containerId = IZIPAY_EMBEDDED_CONTAINER_ID
+): string {
+    if (mode !== "embedded") {
+        return IZIPAY_CHECKOUT_SCRIPT_URL
+    }
+
+    if (IZIPAY_CHECKOUT_SCRIPT_URL.includes("mode=embedded")) {
+        return IZIPAY_CHECKOUT_SCRIPT_URL
+    }
+
+    const separator = IZIPAY_CHECKOUT_SCRIPT_URL.includes("?") ? "&" : "?"
+    return `${IZIPAY_CHECKOUT_SCRIPT_URL}${separator}mode=embedded&container=${encodeURIComponent(containerId)}`
+}
+
+export function formatIzipayDateTime(date = new Date()): string {
+    // Izipay soporte solicitó epoch en microsegundos para QR Web Core.
+    return String(Math.floor(date.getTime()) * 1000)
+}
+
+export function buildIzipayOrderNumber(orderId: string): string {
+    const normalized = orderId.replace(/[^a-zA-Z0-9]/g, "")
+    const candidate = normalized.slice(-15)
+    return candidate.length >= 5 ? candidate : normalized.padStart(5, "0").slice(-5)
+}
+
+export function verifyIzipayWebCoreSignature(
+    paymentResponse: Pick<IzipayWebCorePaymentResponse, "code" | "payloadHttp" | "signature">
+): boolean {
+    if (isIzipayCommunicationError(paymentResponse.code)) {
+        return true
+    }
+
+    if (!paymentResponse.payloadHttp || !paymentResponse.signature || !IZIPAY_HASH_KEY) {
+        return false
+    }
+
+    const expectedSignature = generateIzipayBase64Signature(paymentResponse.payloadHttp)
+    return timingSafeEqualString(paymentResponse.signature, expectedSignature)
+}
+
+export function verifyIzipaySdkSignature(
+    payloadHttp: string,
+    signature: string
+): boolean {
+    return verifyIzipayWebCoreSignature({
+        code: "00",
+        payloadHttp,
+        signature,
+    })
+}
+
+export function parseIzipayWebCoreResponse(
+    paymentResponse: IzipayWebCorePaymentResponse
+): IzipayWebCoreParsedResult | null {
+    const firstOrder = paymentResponse.response?.order?.[0]
+    const orderId = firstOrder?.orderNumber || ""
+    const transactionId = paymentResponse.transactionId || firstOrder?.referenceNumber || ""
+    const currency = firstOrder?.currency || "PEN"
+    const amount = Number(firstOrder?.amount || 0)
+    const isPaid = paymentResponse.code === "00"
+    const isPending = isIzipayCommunicationError(paymentResponse.code)
+
+    if (!orderId) {
+        return null
+    }
+
+    return {
+        orderId,
+        transactionId,
+        status: isPaid ? "PAID" : isPending ? "PENDING" : "ERROR",
+        message:
+            paymentResponse.messageUser ||
+            paymentResponse.message ||
+            firstOrder?.stateMessage,
+        amount,
+        currency,
+        paymentMethod: paymentResponse.response?.payMethod,
+        raw: paymentResponse,
+    }
+}
+
+export function parseIzipaySdkPaymentResponse(
+    value: IzipayWebCorePaymentResponse | Record<string, unknown> | string
+): ParsedIzipayPaymentResult | null {
+    try {
+        const raw =
+            typeof value === "string"
+                ? (JSON.parse(value) as IzipayWebCorePaymentResponse)
+                : (value as IzipayWebCorePaymentResponse)
+
+        const payload =
+            raw.payloadHttp && raw.payloadHttp.trim()
+                ? (JSON.parse(raw.payloadHttp) as IzipayWebCorePaymentResponse)
+                : raw
+
+        const parsed = parseIzipayWebCoreResponse({
+            ...payload,
+            transactionId: raw.transactionId || payload.transactionId,
+        })
+
+        return {
+            code: payload.code || raw.code || "",
+            message: payload.message || raw.message,
+            messageUser: payload.messageUser || raw.messageUser,
+            messageUserEng: payload.messageUserEng || raw.messageUserEng,
+            payloadHttp:
+                raw.payloadHttp && raw.payloadHttp.trim()
+                    ? raw.payloadHttp
+                    : JSON.stringify(payload),
+            signature: raw.signature,
+            transactionId: raw.transactionId || payload.transactionId,
+            orderId: parsed?.orderId,
+            amount: parsed?.amount,
+            currency: parsed?.currency,
+            payMethod: payload.response?.payMethod,
+            raw,
+            payload,
+        }
+    } catch {
+        return null
+    }
+}
+
+export function isIzipayPaymentApproved(result: { code?: string }): boolean {
+    return result.code === "00"
+}
+
 export function verifyIzipayWebhookSignature(
     payload: IzipayWebhookPayload,
     receivedHash: string
 ): boolean {
     const dataToSign = `${payload.orderDetails.orderId}|${payload.orderDetails.amount}|${payload.orderDetails.currency}|${payload.transactionDetails.transactionId}`
-    const expectedHash = generateIzipaySignature(dataToSign)
+    const expectedHash = generateIzipayHexSignature(dataToSign)
 
     try {
-        return crypto.timingSafeEqual(
-            Buffer.from(receivedHash),
-            Buffer.from(expectedHash)
-        )
+        return timingSafeEqualString(receivedHash, expectedHash)
     } catch {
         return false
     }
 }
 
-/**
- * Create a payment session with IZIPAY
- */
 export async function createIzipaySession(
     orderData: IzipayOrderData
 ): Promise<IzipaySessionResponse> {
     try {
-        // Generate request signature
-        const timestamp = Date.now().toString()
-        const signatureData = `${IZIPAY_MERCHANT_CODE}|${orderData.orderId}|${orderData.amount}|${orderData.currency}|${timestamp}`
-        const signature = generateIzipaySignature(signatureData)
-
-        // Make API request to IZIPAY
-        const response = await fetch(`${IZIPAY_ENDPOINT}/api/v1/payments/sessions`, {
+        const response = await fetch(`${IZIPAY_ENDPOINT}/security/v1/Token/Generate`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${IZIPAY_API_KEY}`,
-                "X-Merchant-Code": IZIPAY_MERCHANT_CODE,
-                "X-Signature": signature,
-                "X-Timestamp": timestamp,
+                transactionId: orderData.transactionId,
             },
             body: JSON.stringify({
-                merchantCode: IZIPAY_MERCHANT_CODE,
-                orderId: orderData.orderId,
-                amount: orderData.amount,
-                currency: orderData.currency,
-                customer: {
-                    email: orderData.customerEmail,
-                    name: orderData.customerName,
-                },
-                description: orderData.description,
-                returnUrl: `${process.env.NEXT_PUBLIC_APP_URL}/checkout/success`,
-                cancelUrl: `${process.env.NEXT_PUBLIC_APP_URL}/checkout/cancel`,
-                webhookUrl: `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/izipay/webhook`,
+                requestSource: "ECOMMERCE",
+                publicKey: IZIPAY_API_KEY,
+                action: orderData.action,
+                merchantCode: orderData.merchantCode,
+                transactionId: orderData.transactionId,
+                orderNumber: orderData.order.orderNumber,
+                currency: orderData.order.currency,
+                amount: orderData.order.amount,
+                processType: orderData.order.processType,
+                merchantBuyerId: orderData.order.merchantBuyerId,
+                dateTimeTransaction: orderData.order.dateTimeTransaction,
+                billing: orderData.billing,
+                shipping: orderData.shipping,
             }),
         })
 
         if (!response.ok) {
-            const errorData = await response.json()
+            const errorText = await response.text().catch(() => "")
+            let errorMessage = `HTTP ${response.status}`
+
+            try {
+                const errorData = JSON.parse(errorText) as Record<string, unknown>
+                errorMessage =
+                    String(
+                        errorData.message ||
+                        errorData.error ||
+                        errorData.code ||
+                        errorText ||
+                        errorMessage
+                    )
+            } catch {
+                if (errorText) {
+                    errorMessage = errorText
+                }
+            }
+
             return {
                 success: false,
-                error: errorData.message || "Error creating payment session",
+                error: errorMessage,
             }
         }
 
-        const data = await response.json() as Record<string, unknown>
+        const data = (await response.json()) as Record<string, unknown>
         const answer = (data.answer as Record<string, unknown> | undefined) || undefined
+        const responseData = (data.response as Record<string, unknown> | undefined) || undefined
         const sessionToken =
             (data.sessionToken as string | undefined) ||
+            (responseData?.token as string | undefined) ||
             (answer?.sessionToken as string | undefined) ||
             (data.token as string | undefined)
         const formToken =
@@ -165,9 +454,6 @@ export async function createIzipaySession(
     }
 }
 
-/**
- * Get payment status from IZIPAY
- */
 export async function getIzipayPaymentStatus(orderId: string): Promise<{
     success: boolean
     status?: "PAID" | "PENDING" | "CANCELLED" | "ERROR"
@@ -177,30 +463,32 @@ export async function getIzipayPaymentStatus(orderId: string): Promise<{
     try {
         const timestamp = Date.now().toString()
         const signatureData = `${IZIPAY_MERCHANT_CODE}|${orderId}|${timestamp}`
-        const signature = generateIzipaySignature(signatureData)
+        const signature = generateIzipayHexSignature(signatureData)
 
-        const response = await fetch(
-            `${IZIPAY_ENDPOINT}/api/v1/payments/orders/${orderId}`,
-            {
-                method: "GET",
-                headers: {
-                    "Authorization": `Bearer ${IZIPAY_API_KEY}`,
-                    "X-Merchant-Code": IZIPAY_MERCHANT_CODE,
-                    "X-Signature": signature,
-                    "X-Timestamp": timestamp,
-                },
-            }
-        )
+        const response = await fetch(`${IZIPAY_ENDPOINT}/api/v1/payments/orders/${orderId}`, {
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${IZIPAY_API_KEY}`,
+                "X-Merchant-Code": IZIPAY_MERCHANT_CODE,
+                "X-Signature": signature,
+                "X-Timestamp": timestamp,
+            },
+        })
 
         if (!response.ok) {
-            const errorData = await response.json()
+            const errorData = await response.json().catch(() => ({}))
             return {
                 success: false,
-                error: errorData.message || "Error getting payment status",
+                error:
+                    (errorData as Record<string, unknown>).message?.toString() ||
+                    "Error getting payment status",
             }
         }
 
-        const data = await response.json()
+        const data = (await response.json()) as {
+            status?: "PAID" | "PENDING" | "CANCELLED" | "ERROR"
+            transactionId?: string
+        }
 
         return {
             success: true,
@@ -215,15 +503,10 @@ export async function getIzipayPaymentStatus(orderId: string): Promise<{
     }
 }
 
-/**
- * Mock payment for development/testing
- * Simulates a successful IZIPAY payment
- */
 export async function mockIzipayPayment(orderId: string): Promise<{
     success: boolean
     transactionId: string
 }> {
-    // Simulate network delay
     await new Promise((resolve) => setTimeout(resolve, 1000))
 
     return {
@@ -232,11 +515,9 @@ export async function mockIzipayPayment(orderId: string): Promise<{
     }
 }
 
-// ─── Embedded mode (full gateway: cards + QR + Yape + Plin) ─────────────────
-
 export interface IzipayFormTokenData {
     orderId: string
-    amount: number // In cents (e.g., 1000 = S/ 10.00)
+    amount: number // In cents (e.g. 1000 = S/ 10.00)
     currency: string
     customerEmail: string
     customerFirstName: string
@@ -252,10 +533,6 @@ export interface IzipayFormTokenResponse {
     error?: string
 }
 
-/**
- * Create a formToken via Izipay's CreatePayment API (V4).
- * Used for embedded/pop-in checkout that supports all payment methods.
- */
 export async function createIzipayFormToken(
     data: IzipayFormTokenData
 ): Promise<IzipayFormTokenResponse> {
@@ -316,9 +593,6 @@ export async function createIzipayFormToken(
     }
 }
 
-/**
- * Verify the HMAC-SHA256 hash returned by the embedded form (kr-hash).
- */
 export function verifyEmbeddedFormHash(
     krAnswer: string,
     receivedHash: string
@@ -329,19 +603,12 @@ export function verifyEmbeddedFormHash(
         .digest("hex")
 
     try {
-        return crypto.timingSafeEqual(
-            Buffer.from(receivedHash),
-            Buffer.from(expectedHash)
-        )
+        return timingSafeEqualString(receivedHash, expectedHash)
     } catch {
         return false
     }
 }
 
-/**
- * Verify IPN webhook hash from the embedded gateway.
- * Uses the PASSWORD key (different from the HMAC key used for form responses).
- */
 export function verifyEmbeddedIpnHash(
     krAnswer: string,
     receivedHash: string
@@ -353,10 +620,7 @@ export function verifyEmbeddedIpnHash(
         .digest("hex")
 
     try {
-        return crypto.timingSafeEqual(
-            Buffer.from(receivedHash),
-            Buffer.from(expectedHash)
-        )
+        return timingSafeEqualString(receivedHash, expectedHash)
     } catch {
         return false
     }
@@ -371,9 +635,6 @@ export interface EmbeddedPaymentResult {
     currency: string
 }
 
-/**
- * Parse the kr-answer JSON from the embedded form into a structured result.
- */
 export function parseEmbeddedAnswer(krAnswerJson: string): EmbeddedPaymentResult | null {
     try {
         const answer = JSON.parse(krAnswerJson) as Record<string, unknown>
@@ -389,7 +650,10 @@ export function parseEmbeddedAnswer(krAnswerJson: string): EmbeddedPaymentResult
 
         return {
             orderId: (orderDetails?.orderId as string) || "",
-            transactionId: (transaction?.uuid as string) || (transaction?.transactionId as string) || "",
+            transactionId:
+                (transaction?.uuid as string) ||
+                (transaction?.transactionId as string) ||
+                "",
             status,
             paymentMethod: (transaction?.paymentMethodType as string) || undefined,
             amount: Number(orderDetails?.orderTotalAmount) || 0,
@@ -399,5 +663,3 @@ export function parseEmbeddedAnswer(krAnswerJson: string): EmbeddedPaymentResult
         return null
     }
 }
-
-export { IZIPAY_PUBLIC_KEY }

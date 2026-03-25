@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getCurrentUser, hasRole } from "@/lib/auth"
-import { formatDateInput, generateSlug } from "@/lib/utils"
+import { getCurrentUser } from "@/lib/auth"
+import { formatDateInput, formatDateTimeForExport, generateSlug } from "@/lib/utils"
+import { extractOrderPaymentDetails } from "@/lib/payment-details"
 import * as XLSX from "xlsx"
 export const runtime = "nodejs"
 
@@ -16,7 +17,7 @@ export async function GET(
     try {
         const user = await getCurrentUser()
 
-        if (!user || !hasRole(user.role, "ADMIN")) {
+        if (!user || (user.role !== "ADMIN" && user.role !== "TREASURY")) {
             return NextResponse.json(
                 { success: false, error: "No autorizado" },
                 { status: 401 }
@@ -62,6 +63,7 @@ export async function GET(
                         currency: true,
                         provider: true,
                         providerRef: true,
+                        providerResponse: true,
                         paidAt: true,
                         createdAt: true,
                         user: { select: { name: true, email: true } },
@@ -95,14 +97,20 @@ export async function GET(
             "order_currency",
             "order_provider",
             "order_provider_ref",
-            "order_paid_at",
-            "order_created_at",
+            "order_payment_method",
+            "order_payment_method_raw",
+            "order_payment_brand",
+            "order_paid_at_local",
+            "order_paid_at_utc",
+            "order_created_at_local",
+            "order_created_at_utc",
             "buyer_name",
             "buyer_email",
             "ticket_id",
             "ticket_code",
             "ticket_status",
-            "ticket_created_at",
+            "ticket_created_at_local",
+            "ticket_created_at_utc",
             "ticket_type_id",
             "ticket_type_name",
             "ticket_type_price",
@@ -117,6 +125,8 @@ export async function GET(
             const orderItem = ticket.order.orderItems.find(
                 (item) => item.ticketTypeId === ticket.ticketTypeId
             )
+            const paymentDetails = extractOrderPaymentDetails(ticket.order)
+
             return [
                 event.id,
                 event.title,
@@ -130,13 +140,19 @@ export async function GET(
                 ticket.order.currency,
                 ticket.order.provider,
                 ticket.order.providerRef || "",
+                paymentDetails.methodLabel || ticket.order.provider,
+                paymentDetails.methodCode || "",
+                paymentDetails.brand || "",
+                formatDateTimeForExport(ticket.order.paidAt),
                 toIso(ticket.order.paidAt),
+                formatDateTimeForExport(ticket.order.createdAt),
                 toIso(ticket.order.createdAt),
                 ticket.order.user?.name || "",
                 ticket.order.user?.email || "",
                 ticket.id,
                 ticket.ticketCode,
                 ticket.status,
+                formatDateTimeForExport(ticket.createdAt),
                 toIso(ticket.createdAt),
                 ticket.ticketTypeId,
                 ticket.ticketType?.name || "",
