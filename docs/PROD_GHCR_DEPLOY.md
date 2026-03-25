@@ -1,0 +1,40 @@
+# Deploy rápido a Vultr con GHCR
+
+La app sigue corriendo en Vultr para conservar la IP estática whitelisteada por Servilex.
+El build pesado sale del VPS y se hace en GitHub Actions.
+
+## Imágenes publicadas
+
+Al hacer `git push origin main`, el workflow publica:
+
+- `ghcr.io/giorgioawad/fdnda-tickets-app:latest`
+- `ghcr.io/giorgioawad/fdnda-tickets-tools:latest`
+
+## Variables en `.env.production`
+
+```env
+APP_IMAGE=ghcr.io/giorgioawad/fdnda-tickets-app:latest
+TOOLS_IMAGE=ghcr.io/giorgioawad/fdnda-tickets-tools:latest
+```
+
+## Deploy en Vultr
+
+```bash
+cd /opt/fdnda-tickets
+git pull origin main
+docker login ghcr.io
+docker compose -f docker-compose.prod.yml --env-file .env.production pull app migrate
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d app
+docker compose --profile tools -f docker-compose.prod.yml --env-file .env.production run --rm migrate
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d caddy cron
+```
+
+## Recuperación de la migración Servilex
+
+Si Prisma se detiene en `20260310201307_add_servilex_catalog` con error `column already exists`:
+
+```bash
+docker exec -i fdnda_db psql -U "$DB_USER" -d "$DB_NAME" < scripts/recover_servilex_catalog_migration.sql
+docker compose --profile tools -f docker-compose.prod.yml --env-file .env.production run --rm migrate sh -lc "./node_modules/.bin/prisma migrate resolve --applied 20260310201307_add_servilex_catalog"
+docker compose --profile tools -f docker-compose.prod.yml --env-file .env.production run --rm migrate
+```

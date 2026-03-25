@@ -20,6 +20,7 @@ services:
 
   # ==================== Prisma Migrations ====================
   migrate:
+    image: ${TOOLS_IMAGE:-fdnda-tickets-tools:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -39,6 +40,7 @@ services:
 
   # ==================== Next.js App ====================
   app:
+    image: ${APP_IMAGE:-fdnda-tickets-app:local}
     build:
       context: .
       dockerfile: Dockerfile

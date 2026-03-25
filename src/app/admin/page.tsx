@@ -5,17 +5,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
-    Users,
     Calendar,
     Ticket,
     DollarSign,
-    TrendingUp,
     Plus,
     ArrowUpRight,
     ArrowDownRight,
     CreditCard,
     Percent,
     Eye,
+    AlertTriangle,
 } from "lucide-react"
 import type { Prisma } from "@prisma/client"
 export const dynamic = "force-dynamic"
@@ -62,8 +61,127 @@ export default async function AdminDashboardPage() {
     const lastMonth = new Date(thisMonth)
     lastMonth.setMonth(lastMonth.getMonth() - 1)
 
-    // Fetch all stats in parallel
-    const [
+    let dashboardData:
+        | {
+              totalUsers: number
+              totalEvents: number
+              activeEvents: number
+              totalTickets: number
+              paidSummary: {
+                  _sum: { totalAmount: Prisma.Decimal | null }
+                  _count: { _all: number }
+              }
+              thisMonthSummary: { _sum: { totalAmount: Prisma.Decimal | null } }
+              lastMonthSummary: { _sum: { totalAmount: Prisma.Decimal | null } }
+              recentOrders: RecentOrder[]
+              upcomingEvents: ActiveEvent[]
+              todayScans: number
+          }
+        | null = null
+
+    try {
+        const [
+            totalUsers,
+            totalEvents,
+            activeEvents,
+            totalTickets,
+            paidSummary,
+            thisMonthSummary,
+            lastMonthSummary,
+            recentOrders,
+            upcomingEvents,
+            todayScans,
+        ] = await Promise.all([
+            prisma.user.count({ where: { role: "USER" } }),
+            prisma.event.count(),
+            prisma.event.count({
+                where: { endDate: { gte: new Date() }, isPublished: true }
+            }),
+            prisma.ticket.count({ where: { status: "ACTIVE" } }),
+            prisma.order.aggregate({
+                where: { status: "PAID" },
+                _sum: { totalAmount: true },
+                _count: { _all: true },
+            }),
+            prisma.order.aggregate({
+                where: {
+                    status: "PAID",
+                    createdAt: { gte: thisMonth },
+                },
+                _sum: { totalAmount: true },
+            }),
+            prisma.order.aggregate({
+                where: {
+                    status: "PAID",
+                    createdAt: {
+                        gte: lastMonth,
+                        lt: thisMonth,
+                    },
+                },
+                _sum: { totalAmount: true },
+            }),
+            prisma.order.findMany({
+                where: { status: "PAID" },
+                take: 5,
+                orderBy: { createdAt: "desc" },
+                include: { user: true }
+            }) as Promise<RecentOrder[]>,
+            prisma.event.findMany({
+                where: {
+                    endDate: { gte: new Date() },
+                    isPublished: true
+                },
+                take: 5,
+                orderBy: { startDate: "asc" },
+                include: {
+                    _count: { select: { tickets: true } }
+                }
+            }) as Promise<ActiveEvent[]>,
+            prisma.scan.count({
+                where: {
+                    scannedAt: {
+                        gte: new Date(new Date().setHours(0, 0, 0, 0))
+                    },
+                    result: "VALID"
+                }
+            }),
+        ])
+
+        dashboardData = {
+            totalUsers,
+            totalEvents,
+            activeEvents,
+            totalTickets,
+            paidSummary,
+            thisMonthSummary,
+            lastMonthSummary,
+            recentOrders,
+            upcomingEvents,
+            todayScans,
+        }
+    } catch (error) {
+        console.error("Failed to load admin dashboard data", error)
+    }
+
+    if (!dashboardData) {
+        return (
+            <Card className="border-amber-200 bg-amber-50">
+                <CardContent className="flex flex-col gap-3 p-6">
+                    <div className="flex items-center gap-3 text-amber-800">
+                        <AlertTriangle className="h-5 w-5" />
+                        <h2 className="text-lg font-semibold">No se pudo cargar el dashboard</h2>
+                    </div>
+                    <p className="text-sm text-amber-900/80">
+                        El panel no se caer&aacute; completo otra vez, pero el servidor no pudo leer
+                        datos de administraci&oacute;n. Revisa migraciones pendientes y logs del
+                        contenedor `app`.
+                    </p>
+                </CardContent>
+            </Card>
+        )
+    }
+
+    const {
         totalUsers,
         totalEvents,
         activeEvents,
@@ -74,61 +192,7 @@ export default async function AdminDashboardPage() {
         recentOrders,
         upcomingEvents,
         todayScans,
-    ] = await Promise.all([
-        prisma.user.count({ where: { role: "USER" } }),
-        prisma.event.count(),
-        prisma.event.count({
-            where: { endDate: { gte: new Date() }, isPublished: true }
-        }),
-        prisma.ticket.count({ where: { status: "ACTIVE" } }),
-        prisma.order.aggregate({
-            where: { status: "PAID" },
-            _sum: { totalAmount: true },
-            _count: { _all: true },
-        }),
-        prisma.order.aggregate({
-            where: {
-                status: "PAID",
-                createdAt: { gte: thisMonth },
-            },
-            _sum: { totalAmount: true },
-        }),
-        prisma.order.aggregate({
-            where: {
-                status: "PAID",
-                createdAt: {
-                    gte: lastMonth,
-                    lt: thisMonth,
-                },
-            },
-            _sum: { totalAmount: true },
-        }),
-        prisma.order.findMany({
-            where: { status: "PAID" },
-            take: 5,
-            orderBy: { createdAt: "desc" },
-            include: { user: true }
-        }) as Promise<RecentOrder[]>,
-        prisma.event.findMany({
-            where: { 
-                endDate: { gte: new Date() },
-                isPublished: true 
-            },
-            take: 5,
-            orderBy: { startDate: "asc" },
-            include: {
-                _count: { select: { tickets: true } }
-            }
-        }) as Promise<ActiveEvent[]>,
-        prisma.scan.count({
-            where: {
-                scannedAt: {
-                    gte: new Date(new Date().setHours(0, 0, 0, 0))
-                },
-                result: "VALID"
-            }
-        }),
-    ])
+    } = dashboardData
 
     // Calculate revenue metrics
     const grossRevenue = Number(paidSummary._sum.totalAmount ?? 0)
