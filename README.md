@@ -135,7 +135,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.production logs app --
 docker exec fdnda_app wget -qO- http://127.0.0.1:3000/api/health
 
 # Correr migraciones de Prisma
-docker exec fdnda_app npx prisma migrate deploy
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm migrate
 
 # Reiniciar un servicio
 docker compose -f docker-compose.prod.yml --env-file .env.production restart app

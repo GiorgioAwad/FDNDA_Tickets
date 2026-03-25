@@ -25,7 +25,7 @@ Se corrigieron riesgos de concurrencia y escalamiento en:
 
 2. Neon PostgreSQL
 - Usar URL pooler (`-pooler`) en `DATABASE_URL`.
-- Ejecutar migraciones en produccion: `npx prisma migrate deploy`.
+- Ejecutar migraciones en produccion: `docker compose -f docker-compose.prod.yml --env-file .env.production run --rm migrate`.
 - Confirmar autosuspend/autoscaling.
 
 3. Upstash Redis
@@ -71,7 +71,7 @@ Se corrigieron riesgos de concurrencia y escalamiento en:
 ```bash
 npm ci
 npx prisma generate
-npx prisma migrate deploy
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm migrate
 npm run build
 ```
 

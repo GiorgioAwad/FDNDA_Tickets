@@ -20,6 +20,25 @@ services:
     networks:
       - internal
 
+  # ==================== Prisma Migrations ====================
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: deps
+    profiles:
+      - tools
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-fdnda}:${DB_PASSWORD}@db:5432/${DB_NAME:-fdnda_tickets}?sslmode=disable
+    command: ["/bin/sh", "-lc", "./node_modules/.bin/prisma migrate deploy"]
+    networks:
+      - internal
+
   # ==================== Next.js App ====================
   app:
     build:

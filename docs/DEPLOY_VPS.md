@@ -192,7 +192,7 @@ Deberías ver 4 contenedores: `fdnda_db`, `fdnda_app`, `fdnda_caddy`, `fdnda_cro
 
 ```bash
 # Ejecutar migraciones
-docker compose -f docker-compose.prod.yml exec app npx prisma migrate deploy
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm migrate
 
 # Crear usuario admin (ajusta email y contraseña)
 docker compose -f docker-compose.prod.yml exec app node -e "
