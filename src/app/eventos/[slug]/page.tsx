@@ -1,8 +1,8 @@
 ﻿import { notFound } from "next/navigation"
 import Link from "next/link"
-import Image from "next/image"
 import { prisma } from "@/lib/prisma"
 import { formatDate } from "@/lib/utils"
+import { EventBannerMedia } from "@/components/events/EventBannerMedia"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import TicketPurchaseCard, { type TicketTypeClient } from "./TicketPurchaseCard"
@@ -83,10 +83,9 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                     </div>
                 </div>
                 {event.bannerUrl ? (
-                    <Image
+                    <EventBannerMedia
                         src={event.bannerUrl}
                         alt={event.title}
-                        fill
                         priority
                         sizes="100vw"
                         className="object-cover opacity-80"

@@ -1,8 +1,8 @@
 import Link from "next/link"
-import Image from "next/image"
 import { prisma } from "@/lib/prisma"
 import { getTreasuryEventSummaries } from "@/lib/treasury"
 import { formatDate, formatPrice } from "@/lib/utils"
+import { EventBannerMedia } from "@/components/events/EventBannerMedia"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -313,12 +313,10 @@ function EventCard({
             <Card className={`h-full overflow-hidden transition-shadow hover:shadow-lg ${status === "past" ? "opacity-80" : ""}`}>
                 <div className="relative h-32 bg-gradient-to-br from-blue-600 to-blue-700">
                     {event.bannerUrl ? (
-                        <Image
+                        <EventBannerMedia
                             src={event.bannerUrl}
                             alt={event.title}
-                            fill
                             className="object-cover"
-                            unoptimized
                         />
                     ) : (
                         <div className="absolute inset-0 flex items-center justify-center">

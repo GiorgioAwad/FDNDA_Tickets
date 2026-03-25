@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma"
 import { formatDate, formatPrice } from "@/lib/utils"
 import { getCurrentUser } from "@/lib/auth"
 import HomeVerificationPopup from "@/components/home/HomeVerificationPopup"
+import { EventBannerMedia } from "@/components/events/EventBannerMedia"
 import type { Prisma } from "@prisma/client"
 import {
   Calendar,
@@ -39,25 +40,39 @@ type HomeEvent = {
 }
 
 async function getUpcomingEvents(): Promise<HomeEvent[]> {
-  const events = await prisma.event.findMany({
-    where: {
-      isPublished: true,
-      endDate: { gte: new Date() },
-    },
-    include: {
-      ticketTypes: {
-        where: { isActive: true },
-        orderBy: { price: "asc" },
-        take: 1,
+  try {
+    const events = await prisma.event.findMany({
+      where: {
+        isPublished: true,
+        endDate: { gte: new Date() },
       },
-      _count: {
-        select: { tickets: true },
+      include: {
+        ticketTypes: {
+          where: { isActive: true },
+          orderBy: { price: "asc" },
+          take: 1,
+        },
+        _count: {
+          select: { tickets: true },
+        },
       },
-    },
-    orderBy: { startDate: "asc" },
-    take: 6,
-  })
-  return events
+      orderBy: { startDate: "asc" },
+      take: 6,
+    })
+    return events
+  } catch (error) {
+    console.error("Failed to load upcoming events for home page", error)
+    return []
+  }
+}
+
+async function getSafeCurrentUser() {
+  try {
+    return await getCurrentUser()
+  } catch (error) {
+    console.error("Failed to resolve current user for home page", error)
+    return null
+  }
 }
 
 type HomePageProps = {
@@ -67,8 +82,10 @@ type HomePageProps = {
 }
 
 export default async function HomePage({ searchParams }: HomePageProps) {
-  const events = await getUpcomingEvents()
-  const user = await getCurrentUser()
+  const [events, user] = await Promise.all([
+    getUpcomingEvents(),
+    getSafeCurrentUser(),
+  ])
   const showRegister = !user
   const params = searchParams ? await searchParams : undefined
   const showVerificationPopup = params?.verified === "1"
@@ -183,10 +200,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                     {/* Event image placeholder */}
                     <div className="relative h-48 bg-gradient-fdnda overflow-hidden">
                       {event.bannerUrl ? (
-                        <Image
+                        <EventBannerMedia
                           src={event.bannerUrl}
                           alt={event.title}
-                          fill
                           sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
                           className="object-cover group-hover:scale-105 transition-transform duration-500"
                         />

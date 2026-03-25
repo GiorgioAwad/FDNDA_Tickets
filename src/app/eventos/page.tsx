@@ -1,7 +1,7 @@
 import Link from "next/link"
-import Image from "next/image"
 import { getCachedPublishedEvents, type CachedEvent } from "@/lib/cached-queries"
 import { formatDate, formatPrice } from "@/lib/utils"
+import { EventBannerMedia } from "@/components/events/EventBannerMedia"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -155,10 +155,9 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                                     <Card hover className="h-full overflow-hidden group">
                                         <div className="relative h-48 bg-gradient-fdnda overflow-hidden">
                                             {event.bannerUrl ? (
-                                                <Image
+                                                <EventBannerMedia
                                                     src={event.bannerUrl}
                                                     alt={event.title}
-                                                    fill
                                                     sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
                                                     className="object-cover group-hover:scale-105 transition-transform duration-500"
                                                 />
