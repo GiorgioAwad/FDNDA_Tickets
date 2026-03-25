@@ -42,6 +42,10 @@ jobs:
           tags: |
             ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-app:latest
             ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-app:${{ github.sha }}
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://ticketingfdnda.pe' }}
+            NEXT_PUBLIC_APP_NAME=${{ vars.NEXT_PUBLIC_APP_NAME || 'Ticketing FDNDA' }}
+            NEXT_PUBLIC_PAYMENTS_MODE=${{ vars.NEXT_PUBLIC_PAYMENTS_MODE || 'mock' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

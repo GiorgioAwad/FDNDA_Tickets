@@ -10,6 +10,43 @@ Al hacer `git push origin main`, el workflow publica:
 - `ghcr.io/giorgioawad/fdnda-tickets-app:latest`
 - `ghcr.io/giorgioawad/fdnda-tickets-tools:latest`
 
+## Variables de GitHub Actions
+
+Configura estas **Repository variables** en GitHub antes de publicar imágenes:
+
+- `NEXT_PUBLIC_APP_URL`
+- `NEXT_PUBLIC_APP_NAME`
+- `NEXT_PUBLIC_PAYMENTS_MODE`
+
+Ruta:
+
+`Repository -> Settings -> Secrets and variables -> Actions -> Variables`
+
+Valores recomendados para producción:
+
+```text
+NEXT_PUBLIC_APP_URL=https://ticketingfdnda.pe
+NEXT_PUBLIC_APP_NAME=Ticketing FDNDA
+NEXT_PUBLIC_PAYMENTS_MODE=izipay
+```
+
+## Login a GHCR
+
+Para hacer `docker login ghcr.io` en el VPS, usa:
+
+- `username`: tu usuario de GitHub
+- `password`: un Personal Access Token (PAT) de GitHub con permiso `read:packages`
+
+Ruta para crearlo:
+
+`GitHub -> Settings -> Developer settings -> Personal access tokens`
+
+Comando recomendado:
+
+```bash
+echo TU_GITHUB_PAT | docker login ghcr.io -u TU_USUARIO_GITHUB --password-stdin
+```
+
 ## Variables en `.env.production`
 
 ```env
