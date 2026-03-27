@@ -10,16 +10,10 @@ import {
 
 export const dynamic = "force-dynamic"
 
-function buildPreviewResponse(
-    source: ServilexPayloadSource,
-    orderStatus: string | null,
-    mode: "order" | "mock",
-    extra: Record<string, unknown> = {}
-) {
-    const config = getServilexConfig()
-    const payload = buildServilexPayload(source, config)
-    const missingConfig = getServilexMissingConfig(config)
-    const redactedPayload = {
+function buildRedactedPayload(source: ServilexPayloadSource) {
+    const payload = buildServilexPayload(source, getServilexConfig())
+
+    return {
         ...payload,
         seguridad: {
             ...payload.seguridad,
@@ -28,12 +22,40 @@ function buildPreviewResponse(
             token: payload.seguridad.token ? "***configurado***" : "",
         },
     }
+}
+
+function buildPreviewResponse(
+    source: ServilexPayloadSource,
+    orderStatus: string | null,
+    mode: "order" | "mock",
+    debugMode = false,
+    extra: Record<string, unknown> = {}
+) {
+    const config = getServilexConfig()
+    const payload = buildRedactedPayload(source)
+    const missingConfig = getServilexMissingConfig(config)
+
+    const responseHeaders = {
+        "Cache-Control": "no-store",
+        "X-Servilex-Preview-Mode": mode,
+        "X-Servilex-Order-Id": source.orderId,
+        "X-Servilex-Order-Status": orderStatus || "",
+        "X-Servilex-Endpoint": config.endpoint,
+        "X-Servilex-Warnings": missingConfig.join(",") || "none",
+        "X-Servilex-Security-Redacted": "true",
+    }
+
+    if (!debugMode) {
+        return NextResponse.json(payload, {
+            headers: responseHeaders,
+        })
+    }
 
     return NextResponse.json({
         mode,
         orderId: source.orderId,
         orderStatus,
-        payload: redactedPayload,
+        payload,
         headers: {
             "Content-Type": "application/json",
             "X-ABIO-Token": config.token ? "***configurado***" : "NO CONFIGURADO",
@@ -47,6 +69,8 @@ function buildPreviewResponse(
             "La firma HMAC real no se expone en el navegador.",
         ],
         ...extra,
+    }, {
+        headers: responseHeaders,
     })
 }
 
@@ -60,6 +84,7 @@ export async function GET(request: NextRequest) {
         const { searchParams } = request.nextUrl
         const orderId = searchParams.get("orderId")
         const ticketTypeId = searchParams.get("ticketTypeId")
+        const debugMode = searchParams.get("debug") === "1"
 
         if (orderId) {
             const order = await prisma.order.findUnique({
@@ -130,7 +155,7 @@ export async function GET(request: NextRequest) {
                 },
             }
 
-            return buildPreviewResponse(source, order.status, "order")
+            return buildPreviewResponse(source, order.status, "order", debugMode)
         }
 
         if (ticketTypeId) {
@@ -213,7 +238,7 @@ export async function GET(request: NextRequest) {
                 },
             }
 
-            return buildPreviewResponse(source, "PAID", "mock", {
+            return buildPreviewResponse(source, "PAID", "mock", debugMode, {
                 ticketTypeId: ticketType.id,
                 ticketTypeName: ticketType.name,
             })
@@ -225,6 +250,7 @@ export async function GET(request: NextRequest) {
                 usage: {
                     fromOrder: "GET /api/admin/servilex-preview?orderId=<id>",
                     fromTicketType: "GET /api/admin/servilex-preview?ticketTypeId=<id>",
+                    debug: "Agrega &debug=1 para incluir endpoint, headers y warnings del preview",
                 },
             },
             { status: 400 }
