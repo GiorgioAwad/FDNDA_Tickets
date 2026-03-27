@@ -8,6 +8,14 @@ COPY prisma.config.ts ./
 
 RUN npm ci && npx prisma generate
 
+# ==================== Stage 1b: Tools Runtime ====================
+FROM deps AS tools
+WORKDIR /app
+
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+
 # ==================== Stage 2: Build ====================
 FROM node:20-alpine AS builder
 WORKDIR /app

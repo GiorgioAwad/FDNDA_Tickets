@@ -64,8 +64,11 @@ enum CourtesyStatus {
 
 enum InvoiceStatus {
   PENDING
+  PROCESSING
   ISSUED
   FAILED
+  FAILED_RETRYABLE
+  FAILED_REQUIRES_REVIEW
 }
 
 enum DocumentType {
@@ -118,6 +121,7 @@ model User {
   claimedCourtesy  CourtesyTicket[] @relation("ClaimedBy")
   discountCodes    DiscountCode[]   @relation("DiscountCreator")
   complaintBookEntries ComplaintBookEntry[]
+  uploadedAssets   UploadedAsset[]
 
   @@map("users")
 }
@@ -154,6 +158,25 @@ model ComplaintBookEntry {
   @@index([createdAt])
   @@index([status])
   @@map("complaint_book_entries")
+}
+
+model UploadedAsset {
+  id          String   @id @default(cuid())
+  provider    String
+  kind        String?
+  key         String   @unique
+  url         String   @unique
+  contentType String
+  size        Int
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
+  @@index([provider])
+  @@map("uploaded_assets")
 }
 
 model Event {

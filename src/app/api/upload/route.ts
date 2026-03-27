@@ -1,32 +1,35 @@
+import crypto from "crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser, hasRole } from "@/lib/auth"
-import crypto from "crypto"
-import path from "path"
-import fs from "fs/promises"
-
-const USE_BLOB = Boolean(process.env.BLOB_READ_WRITE_TOKEN)
+import { prisma } from "@/lib/prisma"
+import { buildStoredAssetKey, deleteAsset, getStorageProvider, uploadAsset } from "@/lib/storage"
 
 export const runtime = "nodejs"
 
-// Allowed image types and max size
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"]
-const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+const MAX_FILE_SIZE = 5 * 1024 * 1024
 
-// Banner dimensions recommendation
 export const BANNER_DIMENSIONS = {
     width: 1200,
     height: 630,
-    aspectRatio: "1200:630", // 1.9:1 (similar to og:image)
+    aspectRatio: "1200:630",
 }
 
-/**
- * POST /api/upload - Upload an image file to Vercel Blob
- */
+async function requireAdminUser() {
+    const user = await getCurrentUser()
+
+    if (!user || !hasRole(user.role, "ADMIN")) {
+        return null
+    }
+
+    return user
+}
+
 export async function POST(request: NextRequest) {
     try {
-        const user = await getCurrentUser()
+        const user = await requireAdminUser()
 
-        if (!user || !hasRole(user.role, "ADMIN")) {
+        if (!user) {
             return NextResponse.json(
                 { success: false, error: "No autorizado" },
                 { status: 401 }
@@ -35,92 +38,87 @@ export async function POST(request: NextRequest) {
 
         const formData = await request.formData()
         const file = formData.get("file") as File | null
-        const type = formData.get("type") as string | null // "banner", "logo", etc.
+        const type = formData.get("type") as string | null
 
         if (!file) {
             return NextResponse.json(
-                { success: false, error: "No se proporcionó archivo" },
+                { success: false, error: "No se proporciono archivo" },
                 { status: 400 }
             )
         }
 
-        // Validate file type
         if (!ALLOWED_TYPES.includes(file.type)) {
             return NextResponse.json(
-                { 
-                    success: false, 
-                    error: `Tipo de archivo no permitido. Usa: ${ALLOWED_TYPES.map(t => t.split('/')[1]).join(', ')}` 
+                {
+                    success: false,
+                    error: `Tipo de archivo no permitido. Usa: ${ALLOWED_TYPES.map((item) => item.split("/")[1]).join(", ")}`,
                 },
                 { status: 400 }
             )
         }
 
-        // Validate file size
         if (file.size > MAX_FILE_SIZE) {
             return NextResponse.json(
-                { 
-                    success: false, 
-                    error: `El archivo es muy grande. Máximo: ${MAX_FILE_SIZE / 1024 / 1024}MB` 
+                {
+                    success: false,
+                    error: `El archivo es muy grande. Maximo: ${MAX_FILE_SIZE / 1024 / 1024}MB`,
                 },
                 { status: 400 }
             )
         }
 
-        // Generate unique filename
-        const ext = file.name.split(".").pop()?.toLowerCase() || "jpg"
-        const hash = crypto.randomBytes(8).toString("hex")
-        const timestamp = Date.now()
-        const filename = `${type || "images"}/${timestamp}-${hash}.${ext}`
+        const key = buildStoredAssetKey(type, file.name)
+        const buffer = Buffer.from(await file.arrayBuffer())
+        const storedAsset = await uploadAsset({
+            key,
+            buffer,
+            contentType: file.type,
+            size: file.size,
+        })
 
-        let url: string
-        let pathname: string
+        let assetRecord
 
-        if (USE_BLOB) {
-            // ── Vercel Blob storage ──
-            const { put } = await import("@vercel/blob")
-            const blob = await put(filename, file, {
-                access: "public",
-                addRandomSuffix: false,
+        try {
+            assetRecord = await prisma.uploadedAsset.create({
+                data: {
+                    provider: storedAsset.provider,
+                    kind: type || "image",
+                    key: storedAsset.key,
+                    url: storedAsset.url,
+                    contentType: storedAsset.contentType,
+                    size: storedAsset.size,
+                    createdById: user.id,
+                },
             })
-            url = blob.url
-            pathname = blob.pathname
-        } else {
-            // ── Local filesystem storage ──
-            const uploadDir = process.env.UPLOAD_DIR || "./public/uploads"
-            const filePath = path.join(uploadDir, filename)
-            await fs.mkdir(path.dirname(filePath), { recursive: true })
-            const buffer = Buffer.from(await file.arrayBuffer())
-            await fs.writeFile(filePath, buffer)
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL || ""
-            url = `${appUrl}/uploads/${filename}`
-            pathname = filename
+        } catch (error) {
+            await deleteAsset(storedAsset).catch(() => {})
+            throw error
         }
 
         return NextResponse.json({
             success: true,
-            url,
-            filename: pathname,
-            size: file.size,
-            type: file.type,
+            assetId: assetRecord.id,
+            provider: storedAsset.provider,
+            key: storedAsset.key,
+            url: storedAsset.url,
+            filename: storedAsset.key,
+            size: storedAsset.size,
+            type: storedAsset.contentType,
+            checksum: crypto.createHash("sha256").update(buffer).digest("hex"),
             dimensions: type === "banner" ? BANNER_DIMENSIONS : undefined,
+            storage: {
+                provider: getStorageProvider(),
+            },
         })
-
     } catch (error) {
         console.error("Upload error:", error)
-        
-        // Provide more specific error messages
+
         let errorMessage = "Error al subir archivo"
-        
+
         if (error instanceof Error) {
-            if (error.message.includes("BLOB_READ_WRITE_TOKEN")) {
-                errorMessage = "Configuración de almacenamiento incompleta. Contacta al administrador."
-            } else if (error.message.includes("rate limit")) {
-                errorMessage = "Demasiadas solicitudes. Intenta de nuevo en unos segundos."
-            } else {
-                errorMessage = error.message
-            }
+            errorMessage = error.message
         }
-        
+
         return NextResponse.json(
             { success: false, error: errorMessage },
             { status: 500 }
@@ -128,75 +126,68 @@ export async function POST(request: NextRequest) {
     }
 }
 
-/**
- * GET /api/upload - Get upload info and recommendations
- */
 export async function GET() {
     return NextResponse.json({
         success: true,
         allowedTypes: ALLOWED_TYPES,
         maxFileSize: MAX_FILE_SIZE,
         maxFileSizeMB: MAX_FILE_SIZE / 1024 / 1024,
+        storageProvider: getStorageProvider(),
         bannerRecommendations: {
             ...BANNER_DIMENSIONS,
-            description: "Tamaño recomendado para banners de eventos",
+            description: "Tamano recomendado para banners de eventos",
             tips: [
-                "Usa imágenes de alta calidad (mínimo 1200x630px)",
-                "Formato recomendado: JPG o WebP para mejor compresión",
-                "Evita texto pequeño que no se lea en móviles",
-                "Deja espacio para el título del evento superpuesto",
+                "Usa imagenes de alta calidad (minimo 1200x630px)",
+                "Formato recomendado: JPG o WebP para mejor compresion",
+                "Evita texto pequeno que no se lea en moviles",
+                "Deja espacio para el titulo del evento superpuesto",
             ],
         },
     })
 }
 
-/**
- * Delete a file from Vercel Blob or local filesystem
- */
-async function deleteUploadedFile(url: string) {
-    if (USE_BLOB) {
-        const { del } = await import("@vercel/blob")
-        await del(url)
-    } else {
-        // Extract local path from URL
-        const uploadDir = process.env.UPLOAD_DIR || "./public/uploads"
-        const urlObj = new URL(url, "http://localhost")
-        const relativePath = urlObj.pathname.replace(/^\/uploads\//, "")
-        const filePath = path.join(uploadDir, relativePath)
-        await fs.unlink(filePath).catch(() => {})
-    }
-}
-
-/**
- * DELETE /api/upload - Delete an uploaded file from Vercel Blob
- */
 export async function DELETE(request: NextRequest) {
     try {
-        const user = await getCurrentUser()
+        const user = await requireAdminUser()
 
-        if (!user || !hasRole(user.role, "ADMIN")) {
+        if (!user) {
             return NextResponse.json(
                 { success: false, error: "No autorizado" },
                 { status: 401 }
             )
         }
 
-        const { url } = await request.json()
+        const { url, assetId } = await request.json()
 
-        if (!url) {
+        if (!url && !assetId) {
             return NextResponse.json(
-                { success: false, error: "URL del archivo requerida" },
+                { success: false, error: "URL o assetId requeridos" },
                 { status: 400 }
             )
         }
 
-        await deleteUploadedFile(url)
+        const asset = assetId
+            ? await prisma.uploadedAsset.findUnique({ where: { id: assetId } })
+            : await prisma.uploadedAsset.findUnique({ where: { url } })
+
+        if (asset) {
+            await deleteAsset({
+                provider: asset.provider as "r2" | "blob" | "local",
+                key: asset.key,
+                url: asset.url,
+            })
+
+            await prisma.uploadedAsset.delete({
+                where: { id: asset.id },
+            })
+        } else if (url) {
+            await deleteAsset({ url })
+        }
 
         return NextResponse.json({
             success: true,
             message: "Archivo eliminado correctamente",
         })
-
     } catch (error) {
         console.error("Delete error:", error)
         return NextResponse.json(

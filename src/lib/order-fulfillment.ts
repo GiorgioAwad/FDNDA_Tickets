@@ -42,7 +42,15 @@ async function upsertPendingInvoice(
         buyerSecondName: string | null
         buyerLastNamePaternal: string | null
         buyerLastNameMaternal: string | null
-        invoice?: { status: "PENDING" | "ISSUED" | "FAILED" } | null
+        invoice?: {
+            status:
+                | "PENDING"
+                | "PROCESSING"
+                | "ISSUED"
+                | "FAILED"
+                | "FAILED_RETRYABLE"
+                | "FAILED_REQUIRES_REVIEW"
+        } | null
     }
 ) {
     const documentType = order.documentType === "FACTURA" ? "FACTURA" : "BOLETA"
@@ -68,11 +76,13 @@ async function upsertPendingInvoice(
             : {
                 ...baseSnapshot,
                 status: "PENDING",
+                retryCount: 0,
                 lastError: null,
             },
         create: {
             orderId: order.id,
             status: "PENDING",
+            retryCount: 0,
             ...baseSnapshot,
         },
     })

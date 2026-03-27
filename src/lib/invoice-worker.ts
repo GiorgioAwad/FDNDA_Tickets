@@ -10,6 +10,8 @@ import {
 
 type InvoiceQueueItem = Awaited<ReturnType<typeof loadInvoices>>[number]
 
+const CLAIMABLE_STATUSES = ["PENDING", "FAILED", "FAILED_RETRYABLE"] as const
+
 const toJsonValue = (
     value: unknown
 ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput => {
@@ -35,6 +37,10 @@ async function loadInvoices(maxJobs: number) {
             },
             OR: [
                 { status: "PENDING" },
+                {
+                    status: "FAILED_RETRYABLE",
+                    retryCount: { lt: config.maxRetries },
+                },
                 {
                     status: "FAILED",
                     retryCount: { lt: config.maxRetries },
@@ -73,6 +79,21 @@ async function loadInvoices(maxJobs: number) {
     })
 }
 
+async function claimInvoice(invoiceId: string) {
+    const result = await prisma.invoice.updateMany({
+        where: {
+            id: invoiceId,
+            status: { in: [...CLAIMABLE_STATUSES] },
+        },
+        data: {
+            status: "PROCESSING",
+            sentAt: new Date(),
+        },
+    })
+
+    return result.count === 1
+}
+
 async function markInvoiceIssued(
     invoice: InvoiceQueueItem,
     response: Awaited<ReturnType<typeof sendServilexInvoice>>
@@ -108,10 +129,17 @@ async function markInvoiceFailed(
     responseBody: unknown,
     errorMessage: string
 ) {
+    const config = getServilexConfig()
+    const nextRetryCount = invoice.retryCount + 1
+    const nextStatus =
+        nextRetryCount >= config.maxRetries
+            ? "FAILED_REQUIRES_REVIEW"
+            : "FAILED_RETRYABLE"
+
     await prisma.invoice.update({
         where: { id: invoice.id },
         data: {
-            status: "FAILED",
+            status: nextStatus,
             traceId,
             requestPayload: rawPayload,
             requestSignature: signature,
@@ -127,13 +155,26 @@ async function markInvoiceFailed(
 let isProcessing = false
 
 export async function getInvoiceQueueStats() {
-    const [pending, failed, issued] = await Promise.all([
-        prisma.invoice.count({ where: { status: "PENDING" } }),
-        prisma.invoice.count({ where: { status: "FAILED" } }),
+    const [pending, processing, failed, issued] = await Promise.all([
+        prisma.invoice.count({
+            where: {
+                status: {
+                    in: ["PENDING", "FAILED", "FAILED_RETRYABLE"],
+                },
+            },
+        }),
+        prisma.invoice.count({ where: { status: "PROCESSING" } }),
+        prisma.invoice.count({
+            where: {
+                status: {
+                    in: ["FAILED_REQUIRES_REVIEW"],
+                },
+            },
+        }),
         prisma.invoice.count({ where: { status: "ISSUED" } }),
     ])
 
-    return { pending, failed, issued }
+    return { pending, processing, failed, issued }
 }
 
 export async function processInvoiceQueue(maxJobs: number = 10): Promise<{
@@ -156,6 +197,13 @@ export async function processInvoiceQueue(maxJobs: number = 10): Promise<{
         const missingConfig = getServilexMissingConfig(config)
 
         for (const invoice of invoices) {
+            const claimed = await claimInvoice(invoice.id)
+
+            if (!claimed) {
+                skipped += 1
+                continue
+            }
+
             if (missingConfig.length > 0) {
                 await markInvoiceFailed(
                     invoice,
@@ -166,7 +214,7 @@ export async function processInvoiceQueue(maxJobs: number = 10): Promise<{
                     null,
                     `Configuracion Servilex incompleta: ${missingConfig.join(", ")}`
                 )
-                failed++
+                failed += 1
                 continue
             }
 
@@ -176,7 +224,7 @@ export async function processInvoiceQueue(maxJobs: number = 10): Promise<{
 
                 if (response.ok) {
                     await markInvoiceIssued(invoice, response)
-                    processed++
+                    processed += 1
                     continue
                 }
 
@@ -189,7 +237,7 @@ export async function processInvoiceQueue(maxJobs: number = 10): Promise<{
                     response.responseBody,
                     response.errorMessage || "Error enviando invoice a Servilex"
                 )
-                failed++
+                failed += 1
             } catch (error) {
                 const message = error instanceof Error ? error.message : "Error procesando invoice"
                 await markInvoiceFailed(
@@ -201,11 +249,9 @@ export async function processInvoiceQueue(maxJobs: number = 10): Promise<{
                     null,
                     message
                 )
-                failed++
+                failed += 1
             }
         }
-
-        skipped = Math.max(0, invoices.length - processed - failed)
     } finally {
         isProcessing = false
     }

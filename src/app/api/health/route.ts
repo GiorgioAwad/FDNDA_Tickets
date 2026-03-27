@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getQueueStats } from "@/lib/email-queue"
 import { getInvoiceQueueStats } from "@/lib/invoice-worker"
-import redis from "@/lib/cache"
+import { redis } from "@/lib/redis"
 
 export const runtime = "nodejs"
 
@@ -26,6 +26,7 @@ interface HealthStatus {
         invoiceQueue: {
             status: "ok" | "warning" | "error"
             pending?: number
+            processing?: number
             failed?: number
             issued?: number
         }
@@ -82,6 +83,11 @@ export async function GET() {
             }
             console.error("Health check - Redis error:", error)
         }
+    } else if (process.env.NODE_ENV === "production") {
+        health.services.redis = { status: "down" }
+        if (health.status === "healthy") {
+            health.status = "degraded"
+        }
     }
 
     // Check Email Queue
@@ -103,6 +109,7 @@ export async function GET() {
         health.services.invoiceQueue = {
             status: invoiceStats.failed > 10 ? "warning" : "ok",
             pending: invoiceStats.pending,
+            processing: invoiceStats.processing,
             failed: invoiceStats.failed,
             issued: invoiceStats.issued,
         }

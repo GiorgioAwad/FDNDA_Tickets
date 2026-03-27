@@ -54,7 +54,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          target: deps
+          target: tools
           push: true
           tags: |
             ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-tools:latest

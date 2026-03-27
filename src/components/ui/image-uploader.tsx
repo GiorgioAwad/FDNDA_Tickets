@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react"
-import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { 
@@ -283,13 +282,12 @@ export function ImageUploader({
                                 </p>
                             </div>
                         ) : (
-                            <Image
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
                                 src={value}
                                 alt="Preview"
-                                fill
-                                sizes="(max-width: 768px) 100vw, 400px"
-                                unoptimized
-                                className="object-cover"
+                                className="absolute inset-0 h-full w-full object-cover"
+                                loading="lazy"
                                 onError={() => setPreviewError(true)}
                             />
                         )}

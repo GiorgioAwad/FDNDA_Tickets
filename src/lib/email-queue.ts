@@ -1,4 +1,4 @@
-import { Redis } from "@upstash/redis"
+import { redis, shouldUseInMemoryFallback } from "@/lib/redis"
 
 // ==================== TYPES ====================
 
@@ -18,16 +18,7 @@ interface QueuedEmail {
     priority: number
 }
 
-// ==================== REDIS CLIENT ====================
-
-const redis = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-    ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    })
-    : null
-
-// In-memory queue fallback for local development.
+// In-memory queue fallback for local development only.
 const memoryQueue: QueuedEmail[] = []
 const processingJobs = new Set<string>()
 
@@ -69,12 +60,13 @@ export async function queueEmail(
 
     try {
         if (redis) {
-            // Use sorted set for priority.
             const score = priority * 1000000000000 + Date.now()
             await redis.zadd(QUEUE_KEY, { score, member: JSON.stringify(job) })
-        } else {
+        } else if (shouldUseInMemoryFallback("email.queue")) {
             memoryQueue.push({ job, priority })
             memoryQueue.sort((a, b) => a.priority - b.priority)
+        } else {
+            throw new Error("La cola de emails requiere Redis en produccion")
         }
 
         console.log(`Email queued: ${type} -> ${to} (ID: ${jobId})`)
@@ -165,6 +157,10 @@ export async function dequeueEmail(): Promise<EmailJob | null> {
             return job
         }
 
+        if (!shouldUseInMemoryFallback("email.dequeue")) {
+            return null
+        }
+
         if (memoryQueue.length === 0) return null
 
         const { job } = memoryQueue.shift()!
@@ -188,7 +184,7 @@ export async function completeJob(jobId: string): Promise<void> {
     try {
         if (redis) {
             await redis.hdel(PROCESSING_KEY, jobId)
-        } else {
+        } else if (shouldUseInMemoryFallback("email.complete")) {
             processingJobs.delete(jobId)
         }
         console.log(`Email completed: ${jobId}`)
@@ -214,7 +210,7 @@ export async function failJob(job: EmailJob, error: string): Promise<void> {
                     score: Date.now() + delaySeconds * 1000,
                     member: JSON.stringify(job),
                 })
-            } else {
+            } else if (shouldUseInMemoryFallback("email.fail")) {
                 processingJobs.delete(job.id)
                 memoryQueue.push({ job, priority: 10 })
             }
@@ -226,7 +222,7 @@ export async function failJob(job: EmailJob, error: string): Promise<void> {
                 await redis.hset(FAILED_KEY, {
                     [job.id]: JSON.stringify({ ...job, error, failedAt: new Date().toISOString() }),
                 })
-            } else {
+            } else if (shouldUseInMemoryFallback("email.fail")) {
                 processingJobs.delete(job.id)
             }
 
@@ -253,6 +249,10 @@ export async function getQueueStats(): Promise<{
                 redis.hlen(FAILED_KEY),
             ])
             return { pending, processing, failed }
+        }
+
+        if (!shouldUseInMemoryFallback("email.stats")) {
+            return { pending: 0, processing: 0, failed: 0 }
         }
 
         return {
