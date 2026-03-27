@@ -7,13 +7,13 @@ export const maxDuration = 60
 
 function isCronAuthorized(request: NextRequest): boolean {
     const cronSecret = process.env.CRON_SECRET
-    if (!cronSecret) return true
+    if (!cronSecret) {
+        console.error("CRON_SECRET is not configured — rejecting cron request")
+        return false
+    }
 
     const authHeader = request.headers.get("authorization")
     if (authHeader === `Bearer ${cronSecret}`) return true
-
-    const vercelCron = request.headers.get("x-vercel-cron")
-    if (vercelCron === "1" || vercelCron === "true") return true
 
     return false
 }

@@ -31,7 +31,7 @@ export const rateLimiters = {
     scanner: redis
         ? new Ratelimit({
             redis,
-            limiter: Ratelimit.slidingWindow(300, "1 m"),
+            limiter: Ratelimit.slidingWindow(60, "1 m"),
             analytics: true,
             prefix: "ratelimit:scanner",
         })
@@ -53,7 +53,16 @@ export async function rateLimit(
         }
     }
 
+    // In production without Redis, reject critical operations (auth, payment)
     if (!shouldUseInMemoryFallback(`rate-limit.${type}`)) {
+        if (type === "auth" || type === "payment") {
+            console.error(`[rate-limit] Redis unavailable for critical type "${type}" — rejecting request`)
+            return {
+                success: false,
+                remaining: 0,
+                reset: Date.now() + 60_000,
+            }
+        }
         return {
             success: true,
             remaining: Number.MAX_SAFE_INTEGER,
@@ -65,7 +74,7 @@ export async function rateLimit(
         auth: { max: 5, window: 60_000 },
         api: { max: 100, window: 60_000 },
         payment: { max: 10, window: 60_000 },
-        scanner: { max: 300, window: 60_000 },
+        scanner: { max: 60, window: 60_000 },
     }
 
     const { max, window } = limits[type]

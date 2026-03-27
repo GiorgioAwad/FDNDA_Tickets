@@ -1,27 +1,41 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const isProduction = process.env.NODE_ENV === "production";
 
 function buildContentSecurityPolicy() {
-  const scriptSrc = [
-    "'self'",
-    "'unsafe-inline'",
-    "https://sandbox-checkout.izipay.pe",
-    "https://checkout.izipay.pe",
-  ];
+  const scriptSrc = isProduction
+    ? [
+        "'self'",
+        "'unsafe-inline'", // Required by Izipay SDK — migrate to nonces when possible
+        "https://checkout.izipay.pe",
+      ]
+    : [
+        "'self'",
+        "'unsafe-inline'",
+        "https://sandbox-checkout.izipay.pe",
+        "https://checkout.izipay.pe",
+      ];
 
   const styleSrc = [
     "'self'",
-    "'unsafe-inline'",
+    "'unsafe-inline'", // Required by Next.js for styled-jsx
   ];
 
-  const connectSrc = [
-    "'self'",
-    "https://sandbox-checkout.izipay.pe",
-    "https://checkout.izipay.pe",
-    "https://sandbox-api-pw.izipay.pe",
-    "https://api-pw.izipay.pe",
-  ];
+  const connectSrc = isProduction
+    ? [
+        "'self'",
+        "https://checkout.izipay.pe",
+        "https://api-pw.izipay.pe",
+        "https://api.izipay.pe",
+      ]
+    : [
+        "'self'",
+        "https://sandbox-checkout.izipay.pe",
+        "https://checkout.izipay.pe",
+        "https://sandbox-api-pw.izipay.pe",
+        "https://api-pw.izipay.pe",
+      ];
 
   const imgSrc = [
     "'self'",
@@ -30,11 +44,16 @@ function buildContentSecurityPolicy() {
     "https:",
   ];
 
-  const frameSrc = [
-    "'self'",
-    "https://sandbox-checkout.izipay.pe",
-    "https://checkout.izipay.pe",
-  ];
+  const frameSrc = isProduction
+    ? [
+        "'self'",
+        "https://checkout.izipay.pe",
+      ]
+    : [
+        "'self'",
+        "https://sandbox-checkout.izipay.pe",
+        "https://checkout.izipay.pe",
+      ];
 
   const directives = [
     `default-src 'self'`,
@@ -47,7 +66,7 @@ function buildContentSecurityPolicy() {
     `font-src 'self' data:`,
     `connect-src ${connectSrc.join(" ")}`,
     `frame-src ${frameSrc.join(" ")}`,
-    `form-action 'self' https://sandbox-checkout.izipay.pe https://checkout.izipay.pe`,
+    `form-action 'self' ${isProduction ? "https://checkout.izipay.pe" : "https://sandbox-checkout.izipay.pe https://checkout.izipay.pe"}`,
     `manifest-src 'self'`,
     `worker-src 'self' blob:`,
   ];
@@ -121,6 +140,14 @@ const nextConfig: NextConfig = {
         key: "Permissions-Policy",
         value: "camera=(self), microphone=(), geolocation=()",
       },
+      {
+        key: "Cross-Origin-Opener-Policy",
+        value: "same-origin",
+      },
+      {
+        key: "Cross-Origin-Resource-Policy",
+        value: "same-origin",
+      },
     ];
 
     if (isProduction) {
@@ -139,4 +166,18 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  // Solo sube source maps si hay auth token (produccion)
+  silent: !process.env.SENTRY_AUTH_TOKEN,
+
+  // Sube source maps para mejor stack traces en Sentry
+  widenClientFileUpload: true,
+
+  // Oculta source maps del publico (solo Sentry las ve)
+  sourcemaps: {
+    deleteSourcemapsAfterUpload: true,
+  },
+
+  // Desactiva el logger para no agregar peso al bundle
+  disableLogger: true,
+});

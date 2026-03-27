@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { buildStoredAssetKey, deleteAsset, getStorageProvider, uploadAsset } from "@/lib/storage"
+import { rateLimit, getClientIP } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -27,6 +28,16 @@ async function requireAdminUser() {
 
 export async function POST(request: NextRequest) {
     try {
+        // Rate limiting for uploads
+        const ip = getClientIP(request)
+        const { success: rateLimitOk } = await rateLimit(ip, "api")
+        if (!rateLimitOk) {
+            return NextResponse.json(
+                { success: false, error: "Demasiados intentos. Intenta de nuevo en un minuto." },
+                { status: 429 }
+            )
+        }
+
         const user = await requireAdminUser()
 
         if (!user) {
@@ -113,14 +124,8 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         console.error("Upload error:", error)
 
-        let errorMessage = "Error al subir archivo"
-
-        if (error instanceof Error) {
-            errorMessage = error.message
-        }
-
         return NextResponse.json(
-            { success: false, error: errorMessage },
+            { success: false, error: "Error al subir archivo" },
             { status: 500 }
         )
     }

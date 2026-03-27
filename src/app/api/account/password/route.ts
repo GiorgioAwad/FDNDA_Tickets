@@ -1,9 +1,11 @@
 ﻿import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getCurrentUser } from "@/lib/auth"
+import { getCurrentUser, hashPassword } from "@/lib/auth"
 import bcrypt from "bcryptjs"
 
 export const runtime = "nodejs"
+
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/
 
 export async function PUT(request: NextRequest) {
     try {
@@ -25,6 +27,10 @@ export async function PUT(request: NextRequest) {
             return NextResponse.json({ success: false, error: "La nueva contrasena debe tener al menos 8 caracteres" }, { status: 400 })
         }
 
+        if (!PASSWORD_REGEX.test(newPassword)) {
+            return NextResponse.json({ success: false, error: "La contrasena debe incluir mayúsculas, minúsculas y números" }, { status: 400 })
+        }
+
         if (newPassword !== confirmPassword) {
             return NextResponse.json({ success: false, error: "Las contrasenas no coinciden" }, { status: 400 })
         }
@@ -39,7 +45,7 @@ export async function PUT(request: NextRequest) {
             return NextResponse.json({ success: false, error: "Contrasena actual incorrecta" }, { status: 400 })
         }
 
-        const passwordHash = await bcrypt.hash(newPassword, 10)
+        const passwordHash = await hashPassword(newPassword)
         await prisma.user.update({
             where: { id: user.id },
             data: { passwordHash }

@@ -192,9 +192,9 @@ export async function getOpenPayCharge(chargeId: string): Promise<{
  * OpenPay can be configured to send webhooks with Basic Auth.
  */
 export function verifyOpenPayWebhook(request: NextRequest): boolean {
-    // If no webhook auth is configured, skip verification
-    if (!OPENPAY_WEBHOOK_AUTH_USER && !OPENPAY_WEBHOOK_AUTH_PASS) {
-        return true
+    if (!OPENPAY_WEBHOOK_AUTH_USER || !OPENPAY_WEBHOOK_AUTH_PASS) {
+        console.error("OpenPay webhook credentials not configured — rejecting webhook")
+        return false
     }
 
     const authHeader = request.headers.get("authorization") || ""

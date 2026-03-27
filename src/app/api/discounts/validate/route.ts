@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
+import { rateLimit, getClientIP } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
 // POST - Validar código de descuento
 export async function POST(request: NextRequest) {
     try {
+        // Rate limiting to prevent discount code enumeration
+        const ip = getClientIP(request)
+        const { success: rateLimitOk } = await rateLimit(ip, "api")
+        if (!rateLimitOk) {
+            return NextResponse.json(
+                { valid: false, error: "Demasiados intentos. Intenta de nuevo en un minuto." },
+                { status: 429 }
+            )
+        }
+
         const session = await auth()
         const userId = session?.user?.id
 

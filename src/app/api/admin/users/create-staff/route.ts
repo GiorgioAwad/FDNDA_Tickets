@@ -34,8 +34,8 @@ export async function POST(request: Request) {
             )
         }
 
-        // Generate temporary password
-        const tempPassword = crypto.randomBytes(4).toString("hex") // 8 character password
+        // Generate temporary password (16 bytes = 32 hex chars for stronger security)
+        const tempPassword = crypto.randomBytes(16).toString("hex")
 
         // Hash password
         const passwordHash = await bcrypt.hash(tempPassword, 12)
