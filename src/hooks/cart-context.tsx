@@ -32,6 +32,7 @@ export interface CartItem {
     attendees: CartAttendee[]
     scheduleConfig?: CartScheduleConfig
     servilexEnabled?: boolean
+    servilexIndicator?: string | null
 }
 
 export interface BillingData {
@@ -259,6 +260,8 @@ const normalizeCartItem = (input: unknown): CartItem | null => {
         attendees,
         scheduleConfig,
         servilexEnabled: Boolean(record.servilexEnabled),
+        servilexIndicator:
+            typeof record.servilexIndicator === "string" ? record.servilexIndicator : null,
     }
 }
 

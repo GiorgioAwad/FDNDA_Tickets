@@ -102,7 +102,11 @@ export default function CheckoutPage() {
                 item.attendees.some((attendee) =>
                     !attendee.name ||
                     !attendee.dni ||
-                    (item.servilexEnabled && !attendee.matricula)
+                    (
+                        item.servilexEnabled &&
+                        (item.servilexIndicator || "AC").toUpperCase() === "AC" &&
+                        !attendee.matricula
+                    )
                 )
             ),
         [items]
@@ -644,7 +648,7 @@ export default function CheckoutPage() {
                                                         </div>
                                                     </div>
 
-                                                    {item.servilexEnabled && (
+                                                    {item.servilexEnabled && (item.servilexIndicator || "AC").toUpperCase() === "AC" && (
                                                         <div>
                                                             <label className="text-xs text-gray-500 mb-1 block">
                                                                 Matricula / codigo de referencia Servilex

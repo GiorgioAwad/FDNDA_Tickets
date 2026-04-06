@@ -1,5 +1,38 @@
 import crypto from "crypto"
+import { buildNaturalPersonFullName, splitNaturalPersonName } from "@/lib/billing"
 import { normalizeScheduleSelections } from "@/lib/ticket-schedule"
+
+export type ServilexIndicator = "AC" | "OS" | "PN" | "PA"
+export type ServilexInvoiceGroupType = "ALUMNO" | "INDICATOR"
+
+const SUPPORTED_INDICATORS = new Set<ServilexIndicator>(["AC", "OS", "PN", "PA"])
+const DEFAULT_ENDPOINT = "https://abio-pse.ue.r.appspot.com/fpdn/invoice"
+const DEFAULT_ABIO_VERSION = "1.2"
+
+const CARD_BRAND_MAP: Record<string, string> = {
+    visa: "VISA",
+    mastercard: "MASTERCARD",
+    master_card: "MASTERCARD",
+    amex: "AMEX",
+    american_express: "AMEX",
+    diners: "DINERS",
+    diners_club: "DINERS",
+}
+
+const PAYMENT_METHOD_MAP: Record<string, string> = {
+    card: "006",
+    credit_card: "006",
+    credit: "006",
+    debit_card: "005",
+    debit: "005",
+    transfer: "007",
+    bank_transfer: "007",
+    cash: "008",
+    yape: "997",
+    plin: "998",
+    pago_push: "008",
+    qr: "008",
+}
 
 export interface ServilexConfig {
     enabled: boolean
@@ -29,23 +62,29 @@ export interface ServilexMeta {
     traceId: string
     timestamp: string
     terminal: string
-    hash: string
-}
-
-export interface ServilexSeguridad {
-    empresa: string
-    usuario: string
-    password: string
-    token: string
 }
 
 export interface ServilexComprobante {
     tipo: "BOL" | "FAC"
     serie: string
-    numero: string
 }
 
 export interface ServilexEntidad {
+    tipoDocumento: string
+    numeroDocumento: string
+    razonSocial: string
+    apellidoPaterno: string
+    apellidoMaterno: string
+    primerNombre: string
+    segundoNombre: string
+    direccion: string
+    ubigeo: string
+    email: string
+    celular: string
+    codigoReferencia: string
+}
+
+export interface ServilexAlumno {
     tipoDocumento: string
     numeroDocumento: string
     apellidoPaterno: string
@@ -62,9 +101,10 @@ export interface ServilexEntidad {
 export interface ServilexCabecera {
     codigoEmp: string
     sucursal: string
-    indicador: string
+    indicador: ServilexIndicator
     comprobante: ServilexComprobante
     entidad: ServilexEntidad
+    alumno?: ServilexAlumno
     fechaEmision: string
     fechaVencimiento: string
     moneda: string
@@ -76,7 +116,7 @@ export interface ServilexCabecera {
     tipoRegistro: string
 }
 
-export interface ServilexDetalleItem {
+export interface ServilexDetalleAcademiaItem {
     matricula: string
     servicio: string
     disciplina: string
@@ -87,18 +127,37 @@ export interface ServilexDetalleItem {
     precio: number
 }
 
+export interface ServilexDetalleOtrosServiciosItem {
+    servicio: string
+    cantidad: number
+    descuento: number
+    precio: number
+}
+
+export interface ServilexDetallePiscinaItem {
+    servicio: string
+    cantidad: number
+    horaInicio: string
+    horaFin: string
+    duracion: number
+    piscina: string
+    precio: number
+}
+
+export type ServilexDetalleItem =
+    | ServilexDetalleAcademiaItem
+    | ServilexDetalleOtrosServiciosItem
+    | ServilexDetallePiscinaItem
+
 export interface ServilexCobranza {
     formaPago: string
-    mensajeUsuario: string
-    codigo: string
-    numeroTarjeta: string
-    importe: number
-    fecha: string
+    tarjetaTipo: string
+    tarjetaProcedencia: string
+    totalPago: number
 }
 
 export interface ServilexPayload {
     meta: ServilexMeta
-    seguridad: ServilexSeguridad
     cabecera: ServilexCabecera
     detalle: ServilexDetalleItem[]
     cobranza: ServilexCobranza
@@ -151,10 +210,12 @@ export interface ServilexSourceTicketType {
     name: string
     servilexEnabled: boolean
     servilexIndicator: string | null
+    servilexSucursalCode: string | null
     servilexServiceCode: string | null
     servilexDisciplineCode: string | null
     servilexScheduleCode: string | null
     servilexPoolCode: string | null
+    servilexExtraConfig: unknown
     event: ServilexSourceEvent
 }
 
@@ -190,41 +251,83 @@ export interface ServilexSourceOrder {
     orderItems: ServilexSourceOrderItem[]
 }
 
+export interface ServilexSnapshotAlumno {
+    tipoDocumento: string
+    numeroDocumento: string
+    apellidoPaterno: string
+    apellidoMaterno: string
+    primerNombre: string
+    segundoNombre: string
+    direccion: string
+    ubigeo: string
+    email: string
+    celular: string
+    codigoReferencia: string
+}
+
+export interface ServilexInvoiceSnapshot {
+    indicator: ServilexIndicator
+    sucursal: string
+    groupType: ServilexInvoiceGroupType
+    groupKey: string
+    groupLabel: string
+    assignedTotal: number
+    alumno: ServilexSnapshotAlumno | null
+    detalle:
+        | ServilexDetalleAcademiaItem[]
+        | ServilexDetalleOtrosServiciosItem[]
+        | ServilexDetallePiscinaItem[]
+}
+
 export interface ServilexPayloadSource {
     id: string
     orderId: string
     traceId: string | null
     invoiceNumber: string | null
+    servilexIndicator: string | null
+    servilexGroupKey: string
+    servilexGroupLabel: string | null
+    servilexAssignedTotal: unknown
+    servilexSucursalCode: string | null
+    alumnoSnapshot: unknown
+    servilexPayloadSnapshot: unknown
     order: ServilexSourceOrder
 }
 
-const DEFAULT_ENDPOINT = "https://abio-pse.ue.r.appspot.com/fpdn/invoice"
-const DEFAULT_SUCCESS_MESSAGE = "Su compra ha sido exitosa."
-
-const CARD_BRAND_MAP: Record<string, string> = {
-    visa: "VISA",
-    mastercard: "MASTERCARD",
-    master_card: "MASTERCARD",
-    amex: "AMEX",
-    american_express: "AMEX",
-    diners: "DINERS",
-    diners_club: "DINERS",
+type ServilexAttendeeRecord = {
+    name: string
+    dni: string
+    matricula: string
+    scheduleSelections: Array<{ date: string; shift: string | null }>
 }
 
-const PAYMENT_METHOD_MAP: Record<string, string> = {
-    card: "006",
-    credit_card: "006",
-    credit: "006",
-    debit_card: "005",
-    debit: "005",
-    transfer: "007",
-    bank_transfer: "007",
-    cash: "008",
-    yape: "008",
-    plin: "008",
-    pago_push: "008",
-    qr: "008",
+type ServilexUnitBase = {
+    indicator: ServilexIndicator
+    sucursal: string
+    baseAmount: number
 }
+
+type ServilexAcademiaUnit = ServilexUnitBase & {
+    indicator: "AC"
+    attendee: ServilexAttendeeRecord
+    detalle: Omit<ServilexDetalleAcademiaItem, "precio">
+    alumno: ServilexSnapshotAlumno
+}
+
+type ServilexOtrosServiciosUnit = ServilexUnitBase & {
+    indicator: "OS"
+    detalle: Omit<ServilexDetalleOtrosServiciosItem, "precio">
+}
+
+type ServilexPiscinaLibreUnit = ServilexUnitBase & {
+    indicator: "PN" | "PA"
+    detalle: Omit<ServilexDetallePiscinaItem, "precio">
+}
+
+type ServilexInvoiceUnit =
+    | ServilexAcademiaUnit
+    | ServilexOtrosServiciosUnit
+    | ServilexPiscinaLibreUnit
 
 export function getServilexConfig(): ServilexConfig {
     const maxRetriesRaw = Number(process.env.SERVILEX_MAX_RETRIES || "3")
@@ -291,18 +394,14 @@ function asString(value: unknown): string | null {
     return normalized ? normalized : null
 }
 
-function normalizeCardBrand(raw: unknown): string | null {
-    const brand = asString(raw)
-    if (!brand) return null
-    const key = brand.toLowerCase().replace(/[\s-]+/g, "_")
-    return CARD_BRAND_MAP[key] || brand.toUpperCase()
+function asPositiveNumber(value: unknown): number | null {
+    const parsed = toAmountNumber(value)
+    return parsed > 0 ? parsed : null
 }
 
-function normalizeFormaPago(raw: unknown): string | null {
-    const paymentMethod = asString(raw)
-    if (!paymentMethod) return null
-    const key = paymentMethod.toLowerCase().replace(/[\s-]+/g, "_")
-    return PAYMENT_METHOD_MAP[key] || null
+function asNonNegativeNumber(value: unknown): number | null {
+    const parsed = toAmountNumber(value)
+    return parsed >= 0 ? parsed : null
 }
 
 function extractDigits(value: string): string {
@@ -317,56 +416,72 @@ function buildFallbackDocumentNumber(seed: string): string {
     return String(accumulator).padStart(8, "0")
 }
 
-function getComprobanteNumero(invoiceNumber: string | null, fallbackSeed: string): string {
-    const fromInvoice = asString(invoiceNumber)
-    if (fromInvoice) {
-        const digits = extractDigits(fromInvoice)
-        if (digits) {
-            return digits.slice(-8).padStart(8, "0")
-        }
-    }
-
-    return buildFallbackDocumentNumber(fallbackSeed)
+function normalizeCardBrand(raw: unknown): string | null {
+    const brand = asString(raw)
+    if (!brand) return null
+    const key = brand.toLowerCase().replace(/[\s-]+/g, "_")
+    return CARD_BRAND_MAP[key] || brand.toUpperCase()
 }
 
-function getMaskedCardNumber(
-    providerResponse: Record<string, unknown> | null,
-    fallbackBrand: string | null
-): string {
-    const response = asRecord(providerResponse?.response)
-    const responseCard = asRecord(response?.card)
-    const transactionDetails = asRecord(providerResponse?.transactionDetails)
-    const transactions = Array.isArray(providerResponse?.transactions)
-        ? (providerResponse?.transactions as unknown[])
-        : []
-    const firstTransaction = asRecord(transactions[0])
-    const paymentMethodDetails = asRecord(firstTransaction?.paymentMethodDetails)
+function normalizeFormaPago(raw: unknown): string | null {
+    const paymentMethod = asString(raw)
+    if (!paymentMethod) return null
+    const key = paymentMethod.toLowerCase().replace(/[\s-]+/g, "_")
+    return PAYMENT_METHOD_MAP[key] || null
+}
 
-    const directMasked =
-        asString(responseCard?.pan) ||
-        asString(responseCard?.maskedPan) ||
-        asString(responseCard?.maskedCardNumber) ||
-        asString(transactionDetails?.maskedCardNumber) ||
-        asString(transactionDetails?.cardMask) ||
-        asString(paymentMethodDetails?.maskedCardNumber) ||
-        asString(providerResponse?.maskedCardNumber)
+function normalizeIndicator(raw: unknown, fallback: ServilexIndicator = "AC"): ServilexIndicator {
+    const value = asString(raw)?.toUpperCase()
+    if (value && SUPPORTED_INDICATORS.has(value as ServilexIndicator)) {
+        return value as ServilexIndicator
+    }
+    return fallback
+}
 
-    if (directMasked) return directMasked
+function normalizeCode(raw: unknown, fieldName: string): string {
+    const value = asString(raw)
+    if (!value) {
+        throw new Error(`Falta ${fieldName} Servilex obligatorio`)
+    }
+    return value
+}
 
-    const firstSix =
-        asString(transactionDetails?.firstSixDigits) ||
-        asString(paymentMethodDetails?.firstSixDigits) ||
-        asString(providerResponse?.firstSixDigits)
-    const lastFour =
-        asString(transactionDetails?.lastFourDigits) ||
-        asString(responseCard?.lastFourDigits) ||
-        asString(paymentMethodDetails?.lastFourDigits) ||
-        asString(providerResponse?.lastFourDigits)
+function normalizeHora(raw: unknown, fieldName: string): string {
+    const value = asString(raw)
+    if (!value || !/^\d{2}:\d{2}$/.test(value)) {
+        throw new Error(`Falta ${fieldName} Servilex válido`)
+    }
+    return value
+}
 
-    if (firstSix && lastFour) return `${firstSix}******${lastFour}`
-    if (lastFour) return `${fallbackBrand ? `${fallbackBrand} ` : ""}******${lastFour}`
+function getJsonObject(raw: unknown): Record<string, unknown> {
+    return asRecord(raw) || {}
+}
 
-    return ""
+function getAcAttendeeData(raw: unknown): ServilexAttendeeRecord {
+    const attendeeRecord = asRecord(raw)
+    const name = asString(attendeeRecord?.name)
+    const dni = extractDigits(asString(attendeeRecord?.dni) || "")
+    const matricula = asString(attendeeRecord?.matricula)
+
+    if (!name) {
+        throw new Error("Falta nombre del alumno para comprobante AC")
+    }
+
+    if (!dni) {
+        throw new Error("Falta DNI del alumno para comprobante AC")
+    }
+
+    if (!matricula) {
+        throw new Error("Falta matricula Servilex para comprobante AC")
+    }
+
+    return {
+        name,
+        dni,
+        matricula,
+        scheduleSelections: normalizeScheduleSelections(attendeeRecord?.scheduleSelections),
+    }
 }
 
 function allocateLineAmounts(baseAmounts: number[], finalTotal: number): number[] {
@@ -388,15 +503,13 @@ function allocateLineAmounts(baseAmounts: number[], finalTotal: number): number[
         }
     })
 
-    let assigned = provisional.reduce((sum, item) => sum + item.cents, 0)
-    let remaining = finalTotalCents - assigned
+    let remaining = finalTotalCents - provisional.reduce((sum, item) => sum + item.cents, 0)
 
     provisional
         .sort((a, b) => b.remainder - a.remainder)
         .forEach((item) => {
             if (remaining <= 0) return
             item.cents += 1
-            assigned += 1
             remaining -= 1
         })
 
@@ -405,21 +518,33 @@ function allocateLineAmounts(baseAmounts: number[], finalTotal: number): number[
         .map((item) => roundCurrency(item.cents / 100))
 }
 
-function getBuyerNames(order: ServilexSourceOrder, buyerIsFactura: boolean) {
-    if (buyerIsFactura) {
+function getBuyerNames(order: ServilexSourceOrder) {
+    const razonSocial =
+        asString(order.buyerName) ||
+        buildNaturalPersonFullName({
+            firstName: order.buyerFirstName,
+            secondName: order.buyerSecondName,
+            lastNamePaternal: order.buyerLastNamePaternal,
+            lastNameMaternal: order.buyerLastNameMaternal,
+        })
+
+    if (order.documentType === "FACTURA") {
         return {
+            razonSocial,
             apellidoPaterno: "",
             apellidoMaterno: "",
-            primerNombre: order.buyerName || "",
+            primerNombre: razonSocial,
             segundoNombre: "",
         }
     }
 
+    const normalized = splitNaturalPersonName(razonSocial)
     return {
-        apellidoPaterno: order.buyerLastNamePaternal || "",
-        apellidoMaterno: order.buyerLastNameMaternal || "",
-        primerNombre: order.buyerFirstName || order.buyerName || "",
-        segundoNombre: order.buyerSecondName || "",
+        razonSocial,
+        apellidoPaterno: asString(order.buyerLastNamePaternal) || normalized.lastNamePaternal,
+        apellidoMaterno: asString(order.buyerLastNameMaternal) || normalized.lastNameMaternal,
+        primerNombre: asString(order.buyerFirstName) || normalized.firstName,
+        segundoNombre: asString(order.buyerSecondName) || normalized.secondName,
     }
 }
 
@@ -440,61 +565,472 @@ function getPaymentMetadata(order: ServilexSourceOrder, config: ServilexConfig) 
         asString(transactionDetails?.paymentMethod) ||
         asString(response?.payMethod) ||
         asString(paymentMethodDetails?.paymentMethodType) ||
-        asString(paymentMethodDetails?.paymentMethod)
+        asString(paymentMethodDetails?.paymentMethod) ||
+        asString(providerResponse?.paymentMethod)
 
     const cardBrand =
         normalizeCardBrand(firstTransaction?.brand) ||
         normalizeCardBrand(transactionDetails?.cardBrand) ||
         normalizeCardBrand(responseCard?.brand) ||
-        normalizeCardBrand(paymentMethodDetails?.brand)
+        normalizeCardBrand(paymentMethodDetails?.brand) ||
+        config.tarjetaTipo
 
-    const formaPago = normalizeFormaPago(rawMethod) || config.formaPago
-
-    const codigo =
-        asString(transactionDetails?.authorizationCode) ||
-        asString(firstTransaction?.authorizationCode) ||
-        asString(response?.authorizationCode) ||
-        asString(providerResponse?.authorizationCode) ||
-        asString(order.providerRef) ||
-        asString(transactionDetails?.transactionId) ||
-        asString(providerResponse?.transactionId) ||
-        asString(firstTransaction?.uuid) ||
-        asString(firstTransaction?.transactionId) ||
-        ""
-
-    const mensajeUsuario =
-        asString(providerResponse?.messageUser) ||
-        asString(response?.messageUser) ||
-        asString(providerResponse?.message) ||
-        asString(response?.message) ||
-        DEFAULT_SUCCESS_MESSAGE
+    const tarjetaProcedencia =
+        (asString(firstTransaction?.cardProcedencia) ||
+            asString(transactionDetails?.cardProcedencia) ||
+            asString(paymentMethodDetails?.cardProcedencia) ||
+            asString(providerResponse?.cardProcedencia) ||
+            config.tarjetaProcedencia)
+            .toUpperCase()
 
     return {
-        formaPago,
-        mensajeUsuario,
-        codigo,
-        numeroTarjeta: getMaskedCardNumber(providerResponse, cardBrand),
-        fecha: String((order.paidAt || order.createdAt).getTime()),
+        formaPago: normalizeFormaPago(rawMethod) || config.formaPago,
+        tarjetaTipo: cardBrand,
+        tarjetaProcedencia: tarjetaProcedencia === "I" ? "I" : "N",
     }
+}
+
+function getCurrencyCode(order: ServilexSourceOrder): string {
+    return order.currency === "USD" ? "02" : "01"
+}
+
+function buildAttendeeAlumnoSnapshot(
+    attendee: ServilexAttendeeRecord,
+    order: ServilexSourceOrder
+): ServilexSnapshotAlumno {
+    const names = splitNaturalPersonName(attendee.name)
+    const numeroDocumento = extractDigits(attendee.dni) || buildFallbackDocumentNumber(attendee.matricula)
+
+    return {
+        tipoDocumento: "1",
+        numeroDocumento: numeroDocumento.slice(0, 8),
+        apellidoPaterno: names.lastNamePaternal,
+        apellidoMaterno: names.lastNameMaternal,
+        primerNombre: names.firstName || attendee.name,
+        segundoNombre: names.secondName,
+        direccion: asString(order.buyerAddress) || "",
+        ubigeo: asString(order.buyerUbigeo) || "",
+        email: asString(order.buyerEmail) || order.user.email,
+        celular: asString(order.buyerPhone) || "",
+        codigoReferencia: attendee.matricula,
+    }
+}
+
+function buildAcademiaUnit(
+    item: ServilexSourceOrderItem,
+    attendee: ServilexAttendeeRecord,
+    order: ServilexSourceOrder,
+    unitPrice: number
+): ServilexAcademiaUnit {
+    const servicio = normalizeCode(item.ticketType.servilexServiceCode, "servicio")
+    const disciplina = normalizeCode(item.ticketType.servilexDisciplineCode, "disciplina")
+    const horario = normalizeCode(item.ticketType.servilexScheduleCode, "horario")
+    const piscina = normalizeCode(item.ticketType.servilexPoolCode, "piscina")
+    const sucursal =
+        asString(item.ticketType.servilexSucursalCode) || getServilexConfig().sucursal
+    const selectedDate = attendee.scheduleSelections[0]?.date
+    const serviceDate = selectedDate
+        ? new Date(`${selectedDate}T12:00:00Z`)
+        : item.ticketType.event.startDate
+
+    return {
+        indicator: "AC",
+        sucursal,
+        baseAmount: unitPrice,
+        attendee,
+        alumno: buildAttendeeAlumnoSnapshot(attendee, order),
+        detalle: {
+            matricula: attendee.matricula,
+            servicio,
+            disciplina,
+            horario,
+            piscina,
+            periodo: String(serviceDate.getUTCFullYear()),
+            mes: String(serviceDate.getUTCMonth() + 1).padStart(2, "0"),
+        },
+    }
+}
+
+function buildOtrosServiciosUnit(
+    item: ServilexSourceOrderItem,
+    unitPrice: number
+): ServilexOtrosServiciosUnit {
+    const extraConfig = getJsonObject(item.ticketType.servilexExtraConfig)
+
+    return {
+        indicator: "OS",
+        sucursal:
+            asString(item.ticketType.servilexSucursalCode) || getServilexConfig().sucursal,
+        baseAmount: unitPrice,
+        detalle: {
+            servicio: normalizeCode(item.ticketType.servilexServiceCode, "servicio"),
+            cantidad: asPositiveNumber(extraConfig.cantidad) || 1,
+            descuento: roundCurrency(asNonNegativeNumber(extraConfig.descuento) || 0),
+        },
+    }
+}
+
+function buildPiscinaLibreUnit(
+    item: ServilexSourceOrderItem,
+    indicator: "PN" | "PA",
+    unitPrice: number
+): ServilexPiscinaLibreUnit {
+    const extraConfig = getJsonObject(item.ticketType.servilexExtraConfig)
+
+    return {
+        indicator,
+        sucursal:
+            asString(item.ticketType.servilexSucursalCode) || getServilexConfig().sucursal,
+        baseAmount: unitPrice,
+        detalle: {
+            servicio: normalizeCode(item.ticketType.servilexServiceCode, "servicio"),
+            cantidad: asPositiveNumber(extraConfig.cantidad) || 1,
+            horaInicio: normalizeHora(extraConfig.horaInicio, "horaInicio"),
+            horaFin: normalizeHora(extraConfig.horaFin, "horaFin"),
+            duracion: asPositiveNumber(extraConfig.duracion) || 1,
+            piscina: normalizeCode(item.ticketType.servilexPoolCode, "piscina"),
+        },
+    }
+}
+
+function buildInvoiceUnits(order: ServilexSourceOrder): ServilexInvoiceUnit[] {
+    const servilexItems = order.orderItems.filter((item) => item.ticketType.servilexEnabled)
+
+    if (servilexItems.length === 0) {
+        return []
+    }
+
+    if (servilexItems.length !== order.orderItems.length) {
+        throw new Error("La orden mezcla items con y sin Servilex")
+    }
+
+    const units: ServilexInvoiceUnit[] = []
+
+    for (const item of servilexItems) {
+        if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+            throw new Error(`Cantidad Servilex inválida en ${item.ticketType.name}`)
+        }
+
+        const indicator = normalizeIndicator(item.ticketType.servilexIndicator)
+        const attendeeData = Array.isArray(item.attendeeData)
+            ? (item.attendeeData as unknown[])
+            : []
+        const unitPrice = roundCurrency(toAmountNumber(item.unitPrice))
+
+        for (let index = 0; index < item.quantity; index++) {
+            if (indicator === "AC") {
+                const attendee = getAcAttendeeData(attendeeData[index])
+                units.push(buildAcademiaUnit(item, attendee, order, unitPrice))
+                continue
+            }
+
+            if (indicator === "OS") {
+                units.push(buildOtrosServiciosUnit(item, unitPrice))
+                continue
+            }
+
+            units.push(buildPiscinaLibreUnit(item, indicator, unitPrice))
+        }
+    }
+
+    return units
+}
+
+function buildAcademiaGroupKey(unit: ServilexAcademiaUnit): string {
+    return `${unit.indicator}:${unit.sucursal}:matricula:${unit.attendee.matricula}`
+}
+
+function buildIndicatorGroupKey(unit: ServilexOtrosServiciosUnit | ServilexPiscinaLibreUnit): string {
+    return `${unit.indicator}:${unit.sucursal}`
+}
+
+export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): ServilexInvoiceSnapshot[] {
+    const units = buildInvoiceUnits(order)
+    if (units.length === 0) return []
+
+    const groups = new Map<string, {
+        indicator: ServilexIndicator
+        sucursal: string
+        groupType: ServilexInvoiceGroupType
+        groupLabel: string
+        alumno: ServilexSnapshotAlumno | null
+        units: ServilexInvoiceUnit[]
+    }>()
+
+    for (const unit of units) {
+        const groupKey =
+            unit.indicator === "AC"
+                ? buildAcademiaGroupKey(unit)
+                : buildIndicatorGroupKey(unit)
+
+        if (!groups.has(groupKey)) {
+            groups.set(groupKey, {
+                indicator: unit.indicator,
+                sucursal: unit.sucursal,
+                groupType: unit.indicator === "AC" ? "ALUMNO" : "INDICATOR",
+                groupLabel:
+                    unit.indicator === "AC"
+                        ? unit.attendee.name
+                        : `${unit.indicator}-${unit.sucursal}`,
+                alumno: unit.indicator === "AC" ? unit.alumno : null,
+                units: [],
+            })
+        }
+
+        groups.get(groupKey)?.units.push(unit)
+    }
+
+    const orderedGroups = Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b))
+    const assignedTotals = allocateLineAmounts(
+        orderedGroups.map(([, group]) =>
+            group.units.reduce((sum, unit) => sum + unit.baseAmount, 0)
+        ),
+        roundCurrency(toAmountNumber(order.totalAmount))
+    )
+
+    return orderedGroups.map(([groupKey, group], groupIndex) => {
+        const lineAmounts = allocateLineAmounts(
+            group.units.map((unit) => unit.baseAmount),
+            assignedTotals[groupIndex] ?? 0
+        )
+
+        if (group.indicator === "AC") {
+            const detalle = group.units.map((unit, index) => {
+                const typedUnit = unit as ServilexAcademiaUnit
+                return {
+                    ...typedUnit.detalle,
+                    precio: lineAmounts[index] ?? 0,
+                }
+            })
+
+            return {
+                indicator: group.indicator,
+                sucursal: group.sucursal,
+                groupType: group.groupType,
+                groupKey,
+                groupLabel: group.groupLabel,
+                assignedTotal: roundCurrency(detalle.reduce((sum, item) => sum + item.precio, 0)),
+                alumno: group.alumno,
+                detalle,
+            } satisfies ServilexInvoiceSnapshot
+        }
+
+        if (group.indicator === "OS") {
+            const detalle = group.units.map((unit, index) => {
+                const typedUnit = unit as ServilexOtrosServiciosUnit
+                return {
+                    ...typedUnit.detalle,
+                    precio: lineAmounts[index] ?? 0,
+                }
+            })
+
+            return {
+                indicator: group.indicator,
+                sucursal: group.sucursal,
+                groupType: group.groupType,
+                groupKey,
+                groupLabel: group.groupLabel,
+                assignedTotal: roundCurrency(detalle.reduce((sum, item) => sum + item.precio, 0)),
+                alumno: null,
+                detalle,
+            } satisfies ServilexInvoiceSnapshot
+        }
+
+        const detalle = group.units.map((unit, index) => {
+            const typedUnit = unit as ServilexPiscinaLibreUnit
+            return {
+                ...typedUnit.detalle,
+                precio: lineAmounts[index] ?? 0,
+            }
+        })
+
+        return {
+            indicator: group.indicator,
+            sucursal: group.sucursal,
+            groupType: group.groupType,
+            groupKey,
+            groupLabel: group.groupLabel,
+            assignedTotal: roundCurrency(detalle.reduce((sum, item) => sum + item.precio, 0)),
+            alumno: null,
+            detalle,
+        } satisfies ServilexInvoiceSnapshot
+    })
+}
+
+function parseSnapshotAlumno(raw: unknown): ServilexSnapshotAlumno | null {
+    const alumno = asRecord(raw)
+    if (!alumno) return null
+
+    return {
+        tipoDocumento: asString(alumno.tipoDocumento) || "1",
+        numeroDocumento: asString(alumno.numeroDocumento) || "",
+        apellidoPaterno: asString(alumno.apellidoPaterno) || "",
+        apellidoMaterno: asString(alumno.apellidoMaterno) || "",
+        primerNombre: asString(alumno.primerNombre) || "",
+        segundoNombre: asString(alumno.segundoNombre) || "",
+        direccion: asString(alumno.direccion) || "",
+        ubigeo: asString(alumno.ubigeo) || "",
+        email: asString(alumno.email) || "",
+        celular: asString(alumno.celular) || "",
+        codigoReferencia: asString(alumno.codigoReferencia) || "",
+    }
+}
+
+function parseAcademiaDetalle(raw: unknown): ServilexDetalleAcademiaItem[] {
+    if (!Array.isArray(raw)) {
+        throw new Error("Snapshot Servilex AC inválido")
+    }
+
+    return raw.map((entry) => {
+        const record = asRecord(entry)
+        if (!record) {
+            throw new Error("Detalle Servilex AC inválido")
+        }
+
+        return {
+            matricula: normalizeCode(record.matricula, "matricula"),
+            servicio: normalizeCode(record.servicio, "servicio"),
+            disciplina: normalizeCode(record.disciplina, "disciplina"),
+            horario: normalizeCode(record.horario, "horario"),
+            piscina: normalizeCode(record.piscina, "piscina"),
+            periodo: normalizeCode(record.periodo, "periodo"),
+            mes: normalizeCode(record.mes, "mes"),
+            precio: roundCurrency(toAmountNumber(record.precio)),
+        }
+    })
+}
+
+function parseOtrosServiciosDetalle(raw: unknown): ServilexDetalleOtrosServiciosItem[] {
+    if (!Array.isArray(raw)) {
+        throw new Error("Snapshot Servilex OS inválido")
+    }
+
+    return raw.map((entry) => {
+        const record = asRecord(entry)
+        if (!record) {
+            throw new Error("Detalle Servilex OS inválido")
+        }
+
+        return {
+            servicio: normalizeCode(record.servicio, "servicio"),
+            cantidad: asPositiveNumber(record.cantidad) || 1,
+            descuento: roundCurrency(asNonNegativeNumber(record.descuento) || 0),
+            precio: roundCurrency(toAmountNumber(record.precio)),
+        }
+    })
+}
+
+function parsePiscinaDetalle(raw: unknown): ServilexDetallePiscinaItem[] {
+    if (!Array.isArray(raw)) {
+        throw new Error("Snapshot Servilex PN/PA inválido")
+    }
+
+    return raw.map((entry) => {
+        const record = asRecord(entry)
+        if (!record) {
+            throw new Error("Detalle Servilex PN/PA inválido")
+        }
+
+        return {
+            servicio: normalizeCode(record.servicio, "servicio"),
+            cantidad: asPositiveNumber(record.cantidad) || 1,
+            horaInicio: normalizeHora(record.horaInicio, "horaInicio"),
+            horaFin: normalizeHora(record.horaFin, "horaFin"),
+            duracion: asPositiveNumber(record.duracion) || 1,
+            piscina: normalizeCode(record.piscina, "piscina"),
+            precio: roundCurrency(toAmountNumber(record.precio)),
+        }
+    })
+}
+
+function parseInvoiceSnapshot(
+    source: Pick<
+        ServilexPayloadSource,
+        | "servilexIndicator"
+        | "servilexGroupKey"
+        | "servilexGroupLabel"
+        | "servilexAssignedTotal"
+        | "servilexSucursalCode"
+        | "alumnoSnapshot"
+        | "servilexPayloadSnapshot"
+    >
+): ServilexInvoiceSnapshot {
+    const snapshotRecord = asRecord(source.servilexPayloadSnapshot)
+
+    if (snapshotRecord) {
+        const indicator = normalizeIndicator(snapshotRecord.indicator || source.servilexIndicator)
+        const detalleRaw = snapshotRecord.detalle
+        const detalle =
+            indicator === "AC"
+                ? parseAcademiaDetalle(detalleRaw)
+                : indicator === "OS"
+                  ? parseOtrosServiciosDetalle(detalleRaw)
+                  : parsePiscinaDetalle(detalleRaw)
+        const assignedTotal = roundCurrency(
+            detalle.reduce((sum, item) => sum + toAmountNumber(item.precio), 0)
+        )
+
+        return {
+            indicator,
+            sucursal:
+                asString(snapshotRecord.sucursal) ||
+                asString(source.servilexSucursalCode) ||
+                getServilexConfig().sucursal,
+            groupType:
+                asString(snapshotRecord.groupType) === "ALUMNO" ? "ALUMNO" : "INDICATOR",
+            groupKey: asString(snapshotRecord.groupKey) || source.servilexGroupKey,
+            groupLabel:
+                asString(snapshotRecord.groupLabel) ||
+                asString(source.servilexGroupLabel) ||
+                source.servilexGroupKey,
+            assignedTotal,
+            alumno: indicator === "AC"
+                ? parseSnapshotAlumno(snapshotRecord.alumno || source.alumnoSnapshot)
+                : null,
+            detalle,
+        }
+    }
+
+    return {
+        indicator: normalizeIndicator(source.servilexIndicator),
+        sucursal: asString(source.servilexSucursalCode) || getServilexConfig().sucursal,
+        groupType: "INDICATOR",
+        groupKey: source.servilexGroupKey,
+        groupLabel: asString(source.servilexGroupLabel) || source.servilexGroupKey,
+        assignedTotal: roundCurrency(toAmountNumber(source.servilexAssignedTotal)),
+        alumno: parseSnapshotAlumno(source.alumnoSnapshot),
+        detalle: [],
+    }
+}
+
+export function buildServilexPreviewSources(
+    order: ServilexSourceOrder,
+    seedPrefix: string
+): ServilexPayloadSource[] {
+    return buildServilexInvoiceSnapshots(order).map((snapshot, index) => ({
+        id: `${seedPrefix}-${index + 1}`,
+        orderId: order.id || `${seedPrefix}-${index + 1}`,
+        traceId: null,
+        invoiceNumber: null,
+        servilexIndicator: snapshot.indicator,
+        servilexGroupKey: snapshot.groupKey,
+        servilexGroupLabel: snapshot.groupLabel,
+        servilexAssignedTotal: snapshot.assignedTotal,
+        servilexSucursalCode: snapshot.sucursal,
+        alumnoSnapshot: snapshot.alumno,
+        servilexPayloadSnapshot: snapshot,
+        order,
+    }))
 }
 
 export function buildStableTraceId(source: { traceId: string | null; id: string }): string {
     return source.traceId || `req-${source.id}`
 }
 
-export function buildServilexMetaHash(payload: Omit<ServilexPayload, "meta">): string {
-    return crypto
-        .createHash("sha256")
-        .update(JSON.stringify(payload))
-        .digest("hex")
-}
-
 export function getServilexMissingConfig(config: ServilexConfig): string[] {
     const missing: string[] = []
 
     if (!config.token.trim()) missing.push("SERVILEX_TOKEN")
-    if (!config.usuario.trim()) missing.push("SERVILEX_USUARIO")
-    if (!config.password.trim()) missing.push("SERVILEX_PASSWORD")
 
     return missing
 }
@@ -504,100 +1040,31 @@ export function buildServilexPayload(
     config: ServilexConfig = getServilexConfig()
 ): ServilexPayload {
     const order = source.order
-    const servilexItems = order.orderItems.filter((item) => item.ticketType.servilexEnabled)
-
-    if (servilexItems.length === 0) {
-        throw new Error("La orden no tiene items Servilex habilitados")
-    }
-
-    if (servilexItems.length !== order.orderItems.length) {
-        throw new Error("La orden mezcla items con y sin Servilex")
-    }
-
-    const indicators = Array.from(
-        new Set(servilexItems.map((item) => (item.ticketType.servilexIndicator || "AC").trim()))
-    )
-
-    if (indicators.length !== 1) {
-        throw new Error("La orden tiene indicadores Servilex inconsistentes")
-    }
-
-    const rawDetailLines = servilexItems.flatMap((item) => {
-        const servicio = item.ticketType.servilexServiceCode?.trim()
-        const disciplina = item.ticketType.servilexDisciplineCode?.trim()
-        const horario = item.ticketType.servilexScheduleCode?.trim()
-        const piscina = item.ticketType.servilexPoolCode?.trim()
-
-        if (!servicio || !disciplina || !horario || !piscina) {
-            throw new Error(`Faltan códigos Servilex obligatorios en ${item.ticketType.name}`)
-        }
-
-        const attendeeData = Array.isArray(item.attendeeData)
-            ? (item.attendeeData as Array<Record<string, unknown>>)
-            : []
-
-        return Array.from({ length: item.quantity }, (_, index) => {
-            const attendee = attendeeData[index] || {}
-            const matricula = asString(attendee.matricula)
-
-            if (!matricula) {
-                throw new Error(`Falta matricula Servilex en ${item.ticketType.name}`)
-            }
-
-            const selections = normalizeScheduleSelections(attendee.scheduleSelections)
-            const selectedDate = selections[0]?.date
-            const serviceDate = selectedDate
-                ? new Date(`${selectedDate}T12:00:00Z`)
-                : item.ticketType.event.startDate
-
-            return {
-                matricula,
-                servicio,
-                disciplina,
-                horario,
-                piscina,
-                periodo: String(serviceDate.getUTCFullYear()),
-                mes: String(serviceDate.getUTCMonth() + 1).padStart(2, "0"),
-                precioBase: toAmountNumber(item.unitPrice),
-            }
-        })
-    })
-
-    const totalFromOrder = toAmountNumber(order.totalAmount)
-    const allocatedPrices = allocateLineAmounts(
-        rawDetailLines.map((line) => line.precioBase),
-        totalFromOrder
-    )
-
-    const detalle: ServilexDetalleItem[] = rawDetailLines.map((line, index) => ({
-        matricula: line.matricula,
-        servicio: line.servicio,
-        disciplina: line.disciplina,
-        horario: line.horario,
-        piscina: line.piscina,
-        periodo: line.periodo,
-        mes: line.mes,
-        precio: allocatedPrices[index] ?? 0,
-    }))
-
-    const total = roundCurrency(detalle.reduce((sum, item) => sum + item.precio, 0))
-    const issueDate = toDateOnly(order.paidAt || order.createdAt)
     const buyerIsFactura = order.documentType === "FACTURA"
-    const buyerNames = getBuyerNames(order, buyerIsFactura)
+    const buyerNames = getBuyerNames(order)
     const payment = getPaymentMetadata(order, config)
+    const snapshot = parseInvoiceSnapshot(source)
+    const total = roundCurrency(
+        snapshot.detalle.reduce((sum, item) => sum + roundCurrency(toAmountNumber(item.precio)), 0)
+    )
+    const issueDate = toDateOnly(order.paidAt || order.createdAt)
+
+    if (snapshot.detalle.length === 0) {
+        throw new Error(`Invoice Servilex ${source.servilexGroupKey} no tiene detalle`)
+    }
 
     const cabecera: ServilexCabecera = {
         codigoEmp: config.codigoEmp,
-        sucursal: config.sucursal,
-        indicador: indicators[0],
+        sucursal: snapshot.sucursal,
+        indicador: snapshot.indicator,
         comprobante: {
             tipo: buyerIsFactura ? "FAC" : "BOL",
             serie: buyerIsFactura ? config.serieFactura : config.serieBoleta,
-            numero: getComprobanteNumero(source.invoiceNumber, source.orderId || source.id),
         },
         entidad: {
             tipoDocumento: order.buyerDocType || (buyerIsFactura ? "6" : "1"),
             numeroDocumento: order.buyerDocNumber || "",
+            razonSocial: buyerNames.razonSocial,
             apellidoPaterno: buyerNames.apellidoPaterno,
             apellidoMaterno: buyerNames.apellidoMaterno,
             primerNombre: buyerNames.primerNombre,
@@ -608,9 +1075,10 @@ export function buildServilexPayload(
             celular: order.buyerPhone || "",
             codigoReferencia: order.providerRef || order.id || source.orderId,
         },
+        ...(snapshot.indicator === "AC" && snapshot.alumno ? { alumno: snapshot.alumno } : {}),
         fechaEmision: issueDate,
         fechaVencimiento: issueDate,
-        moneda: order.currency === "USD" ? "02" : "01",
+        moneda: getCurrencyCode(order),
         total,
         ejecutivo: config.ejecutivo,
         condicionPago: config.condicionPago,
@@ -619,38 +1087,21 @@ export function buildServilexPayload(
         tipoRegistro: config.tipoRegistro,
     }
 
-    const seguridad: ServilexSeguridad = {
-        empresa: config.empresa,
-        usuario: config.usuario,
-        password: config.password,
-        token: config.token,
-    }
-
-    const cobranza: ServilexCobranza = {
-        formaPago: payment.formaPago,
-        mensajeUsuario: payment.mensajeUsuario,
-        codigo: payment.codigo,
-        numeroTarjeta: payment.numeroTarjeta,
-        importe: total,
-        fecha: payment.fecha,
-    }
-
-    const unsignedPayload = {
-        seguridad,
-        cabecera,
-        detalle,
-        cobranza,
-    } satisfies Omit<ServilexPayload, "meta">
-
     return {
         meta: {
-            version: "1.0",
+            version: DEFAULT_ABIO_VERSION,
             traceId: buildStableTraceId(source),
             timestamp: formatServilexTimestamp(new Date()),
             terminal: config.terminal,
-            hash: buildServilexMetaHash(unsignedPayload),
         },
-        ...unsignedPayload,
+        cabecera,
+        detalle: snapshot.detalle,
+        cobranza: {
+            formaPago: payment.formaPago,
+            tarjetaTipo: payment.tarjetaTipo,
+            tarjetaProcedencia: payment.tarjetaProcedencia,
+            totalPago: total,
+        },
     }
 }
 

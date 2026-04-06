@@ -14,6 +14,15 @@ const orderRequestSchema = createOrderSchema.extend({
     discountCodeId: z.string().optional().nullable(),
 })
 
+const normalizeServilexIndicator = (value: unknown): "AC" | "OS" | "PN" | "PA" => {
+    if (typeof value !== "string") return "AC"
+    const normalized = value.trim().toUpperCase()
+    if (normalized === "OS" || normalized === "PN" || normalized === "PA") {
+        return normalized
+    }
+    return "AC"
+}
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -55,6 +64,8 @@ export async function POST(request: NextRequest) {
         const order = await prisma.$transaction(async (tx) => {
             let totalAmount = 0
             let discountAmount = 0
+            let hasServilexItems = false
+            let hasNonServilexItems = false
             let validatedDiscountCode: {
                 id: string
                 minPurchase: Prisma.Decimal | null
@@ -117,10 +128,12 @@ export async function POST(request: NextRequest) {
                         eventId: string
                         servilexEnabled: boolean
                         servilexIndicator: string | null
+                        servilexSucursalCode: string | null
                         servilexServiceCode: string | null
                         servilexDisciplineCode: string | null
                         servilexScheduleCode: string | null
                         servilexPoolCode: string | null
+                        servilexExtraConfig: Prisma.JsonValue | null
                     }>
                 >(Prisma.sql`
                     UPDATE "ticket_types"
@@ -136,10 +149,12 @@ export async function POST(request: NextRequest) {
                         "eventId",
                         "servilexEnabled",
                         "servilexIndicator",
+                        "servilexSucursalCode",
                         "servilexServiceCode",
                         "servilexDisciplineCode",
                         "servilexScheduleCode",
-                        "servilexPoolCode"
+                        "servilexPoolCode",
+                        "servilexExtraConfig"
                 `)
 
                 const reservedTicketType = reservedRows[0]
@@ -178,30 +193,73 @@ export async function POST(request: NextRequest) {
                 totalAmount += subtotal
 
                 if (reservedTicketType.servilexEnabled) {
-                    const requiredCodes = [
+                    hasServilexItems = true
+                    const indicator = normalizeServilexIndicator(
                         reservedTicketType.servilexIndicator,
+                    )
+                    const commonRequiredCodes = [
+                        reservedTicketType.servilexIndicator,
+                        reservedTicketType.servilexSucursalCode,
                         reservedTicketType.servilexServiceCode,
-                        reservedTicketType.servilexDisciplineCode,
-                        reservedTicketType.servilexScheduleCode,
-                        reservedTicketType.servilexPoolCode,
                     ]
 
-                    if (requiredCodes.some((value) => !String(value || "").trim())) {
-                        throw new Error(`El tipo de entrada "${reservedTicketType.name}" no tiene configuracion Servilex completa`)
+                    if (commonRequiredCodes.some((value) => !String(value || "").trim())) {
+                        throw new Error(`El tipo de entrada "${reservedTicketType.name}" no tiene configuracion Servilex base completa`)
                     }
 
-                    const attendees = item.attendees || []
-                    if (attendees.length < item.quantity) {
-                        throw new Error(`Debes completar todos los asistentes para "${reservedTicketType.name}"`)
+                    if (indicator === "AC") {
+                        const requiredCodes = [
+                            reservedTicketType.servilexDisciplineCode,
+                            reservedTicketType.servilexScheduleCode,
+                            reservedTicketType.servilexPoolCode,
+                        ]
+
+                        if (requiredCodes.some((value) => !String(value || "").trim())) {
+                            throw new Error(`El tipo de entrada "${reservedTicketType.name}" no tiene configuracion Servilex AC completa`)
+                        }
+
+                        const attendees = item.attendees || []
+                        if (attendees.length < item.quantity) {
+                            throw new Error(`Debes completar todos los asistentes para "${reservedTicketType.name}"`)
+                        }
+
+                        const missingMatricula = attendees
+                            .slice(0, item.quantity)
+                            .some((attendee) => !attendee.matricula || !attendee.matricula.trim())
+
+                        if (missingMatricula) {
+                            throw new Error(`Debes completar la matricula Servilex para "${reservedTicketType.name}"`)
+                        }
                     }
 
-                    const missingMatricula = attendees
-                        .slice(0, item.quantity)
-                        .some((attendee) => !attendee.matricula || !attendee.matricula.trim())
+                    if (indicator === "PN" || indicator === "PA") {
+                        if (!String(reservedTicketType.servilexPoolCode || "").trim()) {
+                            throw new Error(`El tipo de entrada "${reservedTicketType.name}" requiere codigo de piscina`)
+                        }
 
-                    if (missingMatricula) {
-                        throw new Error(`Debes completar la matricula Servilex para "${reservedTicketType.name}"`)
+                        const extraConfig =
+                            reservedTicketType.servilexExtraConfig &&
+                            typeof reservedTicketType.servilexExtraConfig === "object" &&
+                            !Array.isArray(reservedTicketType.servilexExtraConfig)
+                                ? (reservedTicketType.servilexExtraConfig as Record<string, unknown>)
+                                : null
+
+                        const horaInicio =
+                            typeof extraConfig?.horaInicio === "string" ? extraConfig.horaInicio.trim() : ""
+                        const horaFin =
+                            typeof extraConfig?.horaFin === "string" ? extraConfig.horaFin.trim() : ""
+                        const duracion = Number(extraConfig?.duracion)
+
+                        if (!horaInicio || !horaFin || !Number.isFinite(duracion) || duracion <= 0) {
+                            throw new Error(`El tipo de entrada "${reservedTicketType.name}" requiere horaInicio, horaFin y duracion en Servilex`)
+                        }
                     }
+                } else {
+                    hasNonServilexItems = true
+                }
+
+                if (hasServilexItems && hasNonServilexItems) {
+                    throw new Error("No se pueden mezclar items Servilex y no Servilex en la misma compra")
                 }
 
                 orderItemsData.push({

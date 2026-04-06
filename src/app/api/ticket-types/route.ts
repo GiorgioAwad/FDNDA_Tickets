@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { invalidateTicketTypeCache } from "@/lib/cache"
 import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
-import type { Prisma } from "@prisma/client"
+import { Prisma } from "@prisma/client"
 
 export const runtime = "nodejs"
 
@@ -35,6 +35,17 @@ const normalizeOptionalCode = (value: unknown, fallback?: string | null): string
     return trimmed.length > 0 ? trimmed : null
 }
 
+const normalizeExtraConfig = (
+    value: unknown
+): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined => {
+    if (value === undefined) return undefined
+    if (value === null) return Prisma.JsonNull
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return Prisma.JsonNull
+    }
+    return value as Prisma.InputJsonValue
+}
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -60,10 +71,12 @@ export async function POST(request: NextRequest) {
             isActive,
             servilexEnabled,
             servilexIndicator,
+            servilexSucursalCode,
             servilexServiceCode,
             servilexDisciplineCode,
             servilexScheduleCode,
             servilexPoolCode,
+            servilexExtraConfig,
             servilexServiceId,
         } = body
 
@@ -106,10 +119,12 @@ export async function POST(request: NextRequest) {
                 isActive: isActive === undefined ? true : Boolean(isActive),
                 servilexEnabled: Boolean(servilexEnabled),
                 servilexIndicator: resolvedIndicator,
+                servilexSucursalCode: normalizeOptionalCode(servilexSucursalCode),
                 servilexServiceCode: resolvedServiceCode,
                 servilexDisciplineCode: normalizeOptionalCode(servilexDisciplineCode),
                 servilexScheduleCode: normalizeOptionalCode(servilexScheduleCode),
                 servilexPoolCode: normalizeOptionalCode(servilexPoolCode),
+                servilexExtraConfig: normalizeExtraConfig(servilexExtraConfig),
                 servilexServiceId: resolvedServiceId,
             },
         })
@@ -154,10 +169,12 @@ export async function PUT(request: NextRequest) {
             isActive,
             servilexEnabled,
             servilexIndicator,
+            servilexSucursalCode,
             servilexServiceCode,
             servilexDisciplineCode,
             servilexScheduleCode,
             servilexPoolCode,
+            servilexExtraConfig,
             servilexServiceId,
         } = body
 
@@ -180,10 +197,12 @@ export async function PUT(request: NextRequest) {
             isActive?: boolean
             servilexEnabled?: boolean
             servilexIndicator?: string | null
+            servilexSucursalCode?: string | null
             servilexServiceCode?: string | null
             servilexDisciplineCode?: string | null
             servilexScheduleCode?: string | null
             servilexPoolCode?: string | null
+            servilexExtraConfig?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput
             servilexServiceId?: string | null
         } = {}
 
@@ -198,9 +217,11 @@ export async function PUT(request: NextRequest) {
         if (isActive !== undefined) data.isActive = Boolean(isActive)
         if (validDays !== undefined) data.validDays = normalizeValidDays(validDays)
         if (servilexEnabled !== undefined) data.servilexEnabled = Boolean(servilexEnabled)
+        if (servilexSucursalCode !== undefined) data.servilexSucursalCode = normalizeOptionalCode(servilexSucursalCode)
         if (servilexDisciplineCode !== undefined) data.servilexDisciplineCode = normalizeOptionalCode(servilexDisciplineCode)
         if (servilexScheduleCode !== undefined) data.servilexScheduleCode = normalizeOptionalCode(servilexScheduleCode)
         if (servilexPoolCode !== undefined) data.servilexPoolCode = normalizeOptionalCode(servilexPoolCode)
+        if (servilexExtraConfig !== undefined) data.servilexExtraConfig = normalizeExtraConfig(servilexExtraConfig) ?? Prisma.JsonNull
 
         // Resolve servilex fields from catalog if serviceId provided
         if (servilexServiceId !== undefined) {

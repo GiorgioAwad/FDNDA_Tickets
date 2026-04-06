@@ -240,10 +240,12 @@ model TicketType {
   validDays        Json?    // Array of dates ["2024-03-15", "2024-03-16"]
   servilexEnabled        Boolean  @default(false)
   servilexIndicator      String?  @default("AC")
+  servilexSucursalCode   String?
   servilexServiceCode    String?
   servilexDisciplineCode String?
   servilexScheduleCode   String?
   servilexPoolCode       String?
+  servilexExtraConfig    Json?
   servilexServiceId      String?
   isActive         Boolean  @default(true)
   sortOrder        Int      @default(0)
@@ -270,7 +272,12 @@ model Order {
   currency         String      @default("PEN")
   provider         String      @default("IZIPAY")
   providerRef      String?     // Payment reference from provider
+  providerOrderNumber String?
+  providerTransactionId String?
   providerResponse Json?       // Full response from provider
+  paymentSyncAttempts Int      @default(0)
+  paymentLastSyncAt DateTime?
+  paymentNeedsReview Boolean   @default(false)
   paidAt           DateTime?
   // Billing data
   documentType     String?     // "BOLETA" or "FACTURA"
@@ -292,12 +299,15 @@ model Order {
   user       User        @relation(fields: [userId], references: [id])
   orderItems OrderItem[]
   tickets    Ticket[]
-  invoice    Invoice?
+  invoices   Invoice[]
 
   @@index([userId])
   @@index([status])
   @@index([userId, status])
   @@index([createdAt])
+  @@index([providerOrderNumber])
+  @@index([providerTransactionId])
+  @@index([status, provider, paymentNeedsReview, paymentLastSyncAt])
   @@map("orders")
 }
 
@@ -496,9 +506,17 @@ model ServilexService {
 
 model Invoice {
   id               String        @id @default(cuid())
-  orderId          String        @unique
+  orderId          String
+  servilexGroupKey String        @default("legacy")
   status           InvoiceStatus @default(PENDING)
   documentType     DocumentType  @default(BOLETA)
+  servilexIndicator String?
+  servilexSucursalCode String?
+  servilexGroupType String?
+  servilexGroupLabel String?
+  assignedTotal    Decimal       @default(0) @db.Decimal(10, 2)
+  alumnoSnapshot   Json?
+  servilexPayloadSnapshot Json?
   invoiceNumber    String?       // SUNAT serie-correlativo (e.g. B001-00000001)
   // Buyer fiscal data
   buyerDocType     String?       // "1" = DNI, "6" = RUC
@@ -531,6 +549,8 @@ model Invoice {
   // Relations
   order Order @relation(fields: [orderId], references: [id])
 
+  @@unique([orderId, servilexGroupKey])
+  @@index([orderId])
   @@index([status])
   @@map("invoices")
 }

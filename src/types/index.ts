@@ -73,7 +73,7 @@ export type OrderWithDetails = Order & {
     })[]
     tickets: Ticket[]
     user: Pick<User, "id" | "name" | "email">
-    invoice?: Invoice | null
+    invoices?: Invoice[]
 }
 
 export type ScanWithDetails = Scan & {

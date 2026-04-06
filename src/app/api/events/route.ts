@@ -4,7 +4,7 @@ import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { getCachedPublishedEvents } from "@/lib/cached-queries"
 import slugify from "slugify"
-import { EventCategory } from "@prisma/client"
+import { EventCategory, Prisma } from "@prisma/client"
 export const runtime = "nodejs"
 
 const PUBLIC_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=300"
@@ -18,10 +18,12 @@ type TicketTypePayload = {
     validDays?: unknown
     servilexEnabled?: boolean
     servilexIndicator?: string | null
+    servilexSucursalCode?: string | null
     servilexServiceCode?: string | null
     servilexDisciplineCode?: string | null
     servilexScheduleCode?: string | null
     servilexPoolCode?: string | null
+    servilexExtraConfig?: unknown
 }
 
 type EventDayPayload = {
@@ -188,10 +190,17 @@ export async function POST(request: NextRequest) {
                                 validDays: ticketType.validDays || [],
                                 servilexEnabled: Boolean(ticketType.servilexEnabled),
                                 servilexIndicator: ticketType.servilexIndicator || "AC",
+                                servilexSucursalCode: ticketType.servilexSucursalCode || null,
                                 servilexServiceCode: ticketType.servilexServiceCode || null,
                                 servilexDisciplineCode: ticketType.servilexDisciplineCode || null,
                                 servilexScheduleCode: ticketType.servilexScheduleCode || null,
                                 servilexPoolCode: ticketType.servilexPoolCode || null,
+                                servilexExtraConfig:
+                                    ticketType.servilexExtraConfig &&
+                                    typeof ticketType.servilexExtraConfig === "object" &&
+                                    !Array.isArray(ticketType.servilexExtraConfig)
+                                        ? ticketType.servilexExtraConfig
+                                        : Prisma.JsonNull,
                             }
                         }),
                     }

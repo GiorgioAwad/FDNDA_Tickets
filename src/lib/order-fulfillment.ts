@@ -3,7 +3,8 @@ import { generateTicketCode, getDaysBetween, formatPrice } from "@/lib/utils"
 import { sendPurchaseEmail } from "@/lib/email"
 import { onTicketSold } from "@/lib/cached-queries"
 import { extractTicketValidDates, normalizeScheduleSelections } from "@/lib/ticket-schedule"
-import type { Prisma } from "@prisma/client"
+import { buildServilexInvoiceSnapshots } from "@/lib/servilex"
+import { Prisma } from "@prisma/client"
 
 export interface FulfillOrderResult {
     success: boolean
@@ -15,6 +16,53 @@ interface FulfillOrderInput {
     orderId: string
     providerRef?: string
     providerResponse?: Prisma.InputJsonValue
+    providerOrderNumber?: string
+    providerTransactionId?: string
+}
+
+function buildOrderPaymentMetadata(input: {
+    providerRef?: string
+    providerResponse?: Prisma.InputJsonValue
+    providerOrderNumber?: string
+    providerTransactionId?: string
+}) {
+    const data: {
+        providerRef?: string
+        providerResponse?: Prisma.InputJsonValue
+        providerOrderNumber?: string
+        providerTransactionId?: string
+    } = {}
+
+    if (input.providerRef) {
+        data.providerRef = input.providerRef
+    }
+
+    if (input.providerResponse) {
+        data.providerResponse = input.providerResponse
+    }
+
+    if (input.providerOrderNumber) {
+        data.providerOrderNumber = input.providerOrderNumber
+    }
+
+    if (input.providerTransactionId) {
+        data.providerTransactionId = input.providerTransactionId
+    }
+
+    return data
+}
+
+async function syncPaidOrderMetadata(orderId: string, input: FulfillOrderInput) {
+    const data = buildOrderPaymentMetadata(input)
+
+    if (Object.keys(data).length === 0) {
+        return
+    }
+
+    await prisma.order.update({
+        where: { id: orderId },
+        data,
+    })
 }
 
 type StoredAttendeeData = {
@@ -26,7 +74,23 @@ type StoredAttendeeData = {
 
 type InvoiceDbClient = Prisma.TransactionClient | typeof prisma
 
-async function upsertPendingInvoice(
+const toJsonValue = (
+    value: unknown
+): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput => {
+    if (value === undefined || value === null) return Prisma.JsonNull
+    if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean" ||
+        Array.isArray(value) ||
+        typeof value === "object"
+    ) {
+        return value as Prisma.InputJsonValue
+    }
+    return String(value)
+}
+
+async function syncServilexInvoices(
     db: InvoiceDbClient,
     order: {
         id: string
@@ -42,7 +106,39 @@ async function upsertPendingInvoice(
         buyerSecondName: string | null
         buyerLastNamePaternal: string | null
         buyerLastNameMaternal: string | null
-        invoice?: {
+        provider: string | null
+        providerRef: string | null
+        providerResponse: Prisma.JsonValue | null
+        currency: string
+        totalAmount: Prisma.Decimal
+        paidAt: Date | null
+        createdAt: Date
+        user: {
+            email: string
+        }
+        orderItems: Array<{
+            quantity: number
+            unitPrice: Prisma.Decimal
+            attendeeData: Prisma.JsonValue | null
+            ticketType: {
+                name: string
+                servilexEnabled: boolean
+                servilexIndicator: string | null
+                servilexSucursalCode: string | null
+                servilexServiceCode: string | null
+                servilexDisciplineCode: string | null
+                servilexScheduleCode: string | null
+                servilexPoolCode: string | null
+                servilexExtraConfig: Prisma.JsonValue | null
+                event: {
+                    id: string
+                    startDate: Date
+                }
+            }
+        }>
+        invoices: Array<{
+            id: string
+            servilexGroupKey: string
             status:
                 | "PENDING"
                 | "PROCESSING"
@@ -50,12 +146,11 @@ async function upsertPendingInvoice(
                 | "FAILED"
                 | "FAILED_RETRYABLE"
                 | "FAILED_REQUIRES_REVIEW"
-        } | null
+        }>
     }
 ) {
-    const documentType = order.documentType === "FACTURA" ? "FACTURA" : "BOLETA"
     const baseSnapshot = {
-        documentType,
+        documentType: order.documentType === "FACTURA" ? "FACTURA" : "BOLETA",
         buyerDocType: order.buyerDocType,
         buyerDocNumber: order.buyerDocNumber,
         buyerName: order.buyerName,
@@ -68,22 +163,135 @@ async function upsertPendingInvoice(
         buyerLastNamePaternal: order.buyerLastNamePaternal,
         buyerLastNameMaternal: order.buyerLastNameMaternal,
     } as const
+    const snapshots = buildServilexInvoiceSnapshots({
+        id: order.id,
+        provider: order.provider,
+        providerRef: order.providerRef,
+        providerResponse: order.providerResponse,
+        documentType: order.documentType,
+        buyerDocType: order.buyerDocType,
+        buyerDocNumber: order.buyerDocNumber,
+        buyerName: order.buyerName,
+        buyerFirstName: order.buyerFirstName,
+        buyerSecondName: order.buyerSecondName,
+        buyerLastNamePaternal: order.buyerLastNamePaternal,
+        buyerLastNameMaternal: order.buyerLastNameMaternal,
+        buyerAddress: order.buyerAddress,
+        buyerUbigeo: order.buyerUbigeo,
+        buyerEmail: order.buyerEmail,
+        buyerPhone: order.buyerPhone,
+        currency: order.currency,
+        totalAmount: order.totalAmount,
+        paidAt: order.paidAt,
+        createdAt: order.createdAt,
+        user: { email: order.user.email },
+        orderItems: order.orderItems.map((item) => ({
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            attendeeData: item.attendeeData,
+            ticketType: {
+                name: item.ticketType.name,
+                servilexEnabled: item.ticketType.servilexEnabled,
+                servilexIndicator: item.ticketType.servilexIndicator,
+                servilexSucursalCode: item.ticketType.servilexSucursalCode,
+                servilexServiceCode: item.ticketType.servilexServiceCode,
+                servilexDisciplineCode: item.ticketType.servilexDisciplineCode,
+                servilexScheduleCode: item.ticketType.servilexScheduleCode,
+                servilexPoolCode: item.ticketType.servilexPoolCode,
+                servilexExtraConfig: item.ticketType.servilexExtraConfig,
+                event: {
+                    id: item.ticketType.event.id,
+                    startDate: item.ticketType.event.startDate,
+                },
+            },
+        })),
+    })
 
-    await db.invoice.upsert({
-        where: { orderId: order.id },
-        update: order.invoice?.status === "ISSUED"
-            ? baseSnapshot
-            : {
+    if (snapshots.length === 0) {
+        await db.invoice.deleteMany({
+            where: {
+                orderId: order.id,
+                status: {
+                    not: "ISSUED",
+                },
+            },
+        })
+        return
+    }
+
+    const existingByGroupKey = new Map(
+        order.invoices.map((invoice) => [invoice.servilexGroupKey, invoice])
+    )
+
+    for (const snapshot of snapshots) {
+        const existing = existingByGroupKey.get(snapshot.groupKey)
+
+        if (existing?.status === "ISSUED") {
+            continue
+        }
+
+        const shouldResetStatus =
+            !existing ||
+            existing.status === "FAILED" ||
+            existing.status === "FAILED_RETRYABLE" ||
+            existing.status === "FAILED_REQUIRES_REVIEW"
+
+        await db.invoice.upsert({
+            where: {
+                orderId_servilexGroupKey: {
+                    orderId: order.id,
+                    servilexGroupKey: snapshot.groupKey,
+                },
+            },
+            update: {
                 ...baseSnapshot,
+                servilexIndicator: snapshot.indicator,
+                servilexSucursalCode: snapshot.sucursal,
+                servilexGroupType: snapshot.groupType,
+                servilexGroupLabel: snapshot.groupLabel,
+                assignedTotal: snapshot.assignedTotal,
+                alumnoSnapshot: toJsonValue(snapshot.alumno),
+                servilexPayloadSnapshot: toJsonValue(snapshot),
+                ...(shouldResetStatus
+                    ? {
+                        status: "PENDING",
+                        retryCount: 0,
+                        lastError: null,
+                        httpStatus: null,
+                        requestPayload: null,
+                        requestSignature: null,
+                        providerResponse: Prisma.JsonNull,
+                        sentAt: null,
+                        sentToProvider: false,
+                    }
+                    : {}),
+            },
+            create: {
+                orderId: order.id,
+                servilexGroupKey: snapshot.groupKey,
                 status: "PENDING",
                 retryCount: 0,
-                lastError: null,
+                servilexIndicator: snapshot.indicator,
+                servilexSucursalCode: snapshot.sucursal,
+                servilexGroupType: snapshot.groupType,
+                servilexGroupLabel: snapshot.groupLabel,
+                assignedTotal: snapshot.assignedTotal,
+                alumnoSnapshot: toJsonValue(snapshot.alumno),
+                servilexPayloadSnapshot: toJsonValue(snapshot),
+                ...baseSnapshot,
             },
-        create: {
+        })
+    }
+
+    await db.invoice.deleteMany({
+        where: {
             orderId: order.id,
-            status: "PENDING",
-            retryCount: 0,
-            ...baseSnapshot,
+            servilexGroupKey: {
+                notIn: snapshots.map((snapshot) => snapshot.groupKey),
+            },
+            status: {
+                not: "ISSUED",
+            },
         },
     })
 }
@@ -164,13 +372,17 @@ export async function fulfillPaidOrder({
     orderId,
     providerRef,
     providerResponse,
+    providerOrderNumber,
+    providerTransactionId,
 }: FulfillOrderInput): Promise<FulfillOrderResult> {
     const order = await prisma.order.findUnique({
         where: { id: orderId },
         include: {
             user: true,
-            invoice: {
+            invoices: {
                 select: {
+                    id: true,
+                    servilexGroupKey: true,
                     status: true,
                 },
             },
@@ -196,7 +408,14 @@ export async function fulfillPaidOrder({
     }
 
     if (order.status === "PAID" && order.tickets.length > 0) {
-        await upsertPendingInvoice(prisma, order)
+        await syncPaidOrderMetadata(order.id, {
+            orderId,
+            providerRef,
+            providerResponse,
+            providerOrderNumber,
+            providerTransactionId,
+        })
+        await syncServilexInvoices(prisma, order)
         return { success: true, alreadyPaid: true }
     }
 
@@ -206,18 +425,16 @@ export async function fulfillPaidOrder({
 
     const updateData: Prisma.OrderUpdateManyMutationInput = {
         status: "PAID",
+        ...buildOrderPaymentMetadata({
+            providerRef,
+            providerResponse,
+            providerOrderNumber,
+            providerTransactionId,
+        }),
     }
 
     if (!order.paidAt) {
         updateData.paidAt = new Date()
-    }
-
-    if (providerRef) {
-        updateData.providerRef = providerRef
-    }
-
-    if (providerResponse) {
-        updateData.providerResponse = providerResponse
     }
 
     const cacheToInvalidate = new Map<string, Set<string>>()
@@ -259,7 +476,7 @@ export async function fulfillPaidOrder({
         })
 
         if (existingTickets > 0) {
-            await upsertPendingInvoice(tx, order)
+            await syncServilexInvoices(tx, order)
             return { alreadyPaid: true }
         }
 
@@ -311,12 +528,19 @@ export async function fulfillPaidOrder({
             cacheToInvalidate.get(item.ticketType.eventId)?.add(item.ticketTypeId)
         }
 
-        await upsertPendingInvoice(tx, order)
+        await syncServilexInvoices(tx, order)
 
         return { alreadyPaid: false }
     })
 
     if (fulfillmentResult.alreadyPaid) {
+        await syncPaidOrderMetadata(order.id, {
+            orderId,
+            providerRef,
+            providerResponse,
+            providerOrderNumber,
+            providerTransactionId,
+        })
         return { success: true, alreadyPaid: true }
     }
 

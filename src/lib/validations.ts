@@ -76,10 +76,12 @@ export const ticketTypeSchema = z.object({
     sortOrder: z.number().int().default(0),
     servilexEnabled: z.boolean().default(false),
     servilexIndicator: z.string().optional(),
+    servilexSucursalCode: z.string().optional(),
     servilexServiceCode: z.string().optional(),
     servilexDisciplineCode: z.string().optional(),
     servilexScheduleCode: z.string().optional(),
     servilexPoolCode: z.string().optional(),
+    servilexExtraConfig: z.unknown().optional(),
 })
 
 // ==================== BILLING SCHEMAS ====================

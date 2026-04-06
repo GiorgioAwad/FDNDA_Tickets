@@ -32,6 +32,7 @@ async function loadInvoices(maxJobs: number) {
     const config = getServilexConfig()
     return prisma.invoice.findMany({
         where: {
+            servilexIndicator: { not: null },
             order: {
                 status: "PAID",
             },
@@ -219,7 +220,13 @@ export async function processInvoiceQueue(maxJobs: number = 10): Promise<{
             }
 
             try {
-                const payload = buildServilexPayload(invoice, config)
+                const payload = buildServilexPayload(
+                    {
+                        ...invoice,
+                        servilexAssignedTotal: invoice.assignedTotal,
+                    },
+                    config
+                )
                 const response = await sendServilexInvoice(payload, config)
 
                 if (response.ok) {
