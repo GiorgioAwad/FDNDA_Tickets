@@ -1,6 +1,12 @@
 # Caddyfile - Reverse Proxy con SSL automático
 
 ticketingfdnda.pe {
+    # Mantener compatibilidad con el cliente IPN de Izipay (TLS 1.2)
+    # sin degradar al resto del trafico moderno que puede negociar TLS 1.3.
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
     # Proxy a la app Next.js
     reverse_proxy app:3000
 
@@ -36,5 +42,9 @@ ticketingfdnda.pe {
 
 # Redirect www -> non-www
 www.ticketingfdnda.pe {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
     redir https://ticketingfdnda.pe{uri} permanent
 }

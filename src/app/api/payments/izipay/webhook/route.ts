@@ -18,6 +18,14 @@ import {
 
 export const runtime = "nodejs"
 
+export async function GET() {
+    return NextResponse.json({
+        success: true,
+        endpoint: "izipay-webhook",
+        accepts: ["embedded-ipn", "web-core-notification", "redirect-webhook"],
+    })
+}
+
 const WEBHOOK_LOCK_TTL_SECONDS = 30
 
 function isEmbeddedIpn(body: Record<string, unknown>): boolean {
