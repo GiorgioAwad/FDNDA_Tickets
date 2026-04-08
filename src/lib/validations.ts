@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { buildNaturalPersonFullName } from "@/lib/billing"
 
 // ==================== USER SCHEMAS ====================
 
@@ -122,24 +123,37 @@ export const billingDataSchema = z.discriminatedUnion("documentType", [
 
 // ==================== ORDER SCHEMAS ====================
 
+const orderAttendeeSchema = z
+    .object({
+        firstName: z.string().min(2, "Nombre requerido"),
+        secondName: z.string().min(2, "Segundo nombre requerido"),
+        lastNamePaternal: z.string().min(2, "Apellido paterno requerido"),
+        lastNameMaternal: z.string().min(2, "Apellido materno requerido"),
+        dni: z.string().min(8, "DNI requerido").max(12),
+        matricula: z.string().max(50).optional(),
+        scheduleSelections: z
+            .array(
+                z.object({
+                    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha invalida"),
+                    shift: z.string().optional(),
+                })
+            )
+            .optional(),
+    })
+    .transform((attendee) => ({
+        ...attendee,
+        name: buildNaturalPersonFullName({
+            firstName: attendee.firstName,
+            secondName: attendee.secondName,
+            lastNamePaternal: attendee.lastNamePaternal,
+            lastNameMaternal: attendee.lastNameMaternal,
+        }),
+    }))
+
 export const orderItemSchema = z.object({
     ticketTypeId: z.string(),
     quantity: z.number().int().min(1, "Cantidad minima: 1"),
-    attendees: z.array(
-        z.object({
-            name: z.string().min(2, "Nombre requerido"),
-            dni: z.string().min(8, "DNI requerido").max(12),
-            matricula: z.string().max(50).optional(),
-            scheduleSelections: z
-                .array(
-                    z.object({
-                        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha invalida"),
-                        shift: z.string().optional(),
-                    })
-                )
-                .optional(),
-        })
-    ).optional(),
+    attendees: z.array(orderAttendeeSchema).optional(),
 })
 
 export const createOrderSchema = z.object({

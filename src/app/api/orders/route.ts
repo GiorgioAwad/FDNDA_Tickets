@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
-import { buildBillingSnapshot } from "@/lib/billing"
+import { buildBillingSnapshot, buildNaturalPersonFullName } from "@/lib/billing"
 import { rateLimit } from "@/lib/rate-limit"
 import { createOrderSchema } from "@/lib/validations"
 import { onTicketSold } from "@/lib/cached-queries"
@@ -238,6 +238,13 @@ export async function POST(request: NextRequest) {
 
                         attendeeData = attendees.map((attendee, attendeeIndex) => ({
                             ...attendee,
+                            name:
+                                buildNaturalPersonFullName({
+                                    firstName: attendee.firstName,
+                                    secondName: attendee.secondName,
+                                    lastNamePaternal: attendee.lastNamePaternal,
+                                    lastNameMaternal: attendee.lastNameMaternal,
+                                }) || attendee.name,
                             matricula:
                                 typeof attendee.matricula === "string" && attendee.matricula.trim()
                                     ? attendee.matricula.trim()

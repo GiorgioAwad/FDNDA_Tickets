@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
 import { useSession } from "next-auth/react"
+import { buildNaturalPersonFullName, splitNaturalPersonName } from "@/lib/billing"
 
 export interface CartScheduleConfig {
     dates: string[]
@@ -17,6 +18,10 @@ export interface CartScheduleSelection {
 
 export interface CartAttendee {
     name: string
+    firstName: string
+    secondName: string
+    lastNamePaternal: string
+    lastNameMaternal: string
     dni: string
     matricula?: string
     scheduleSelections?: CartScheduleSelection[]
@@ -57,7 +62,7 @@ interface CartContextType {
     updateAttendee: (
         ticketTypeId: string,
         index: number,
-        field: "name" | "dni" | "matricula",
+        field: "firstName" | "secondName" | "lastNamePaternal" | "lastNameMaternal" | "dni" | "matricula",
         value: string
     ) => void
     updateAttendeeScheduleSelection: (
@@ -201,6 +206,10 @@ const createEmptyAttendee = (scheduleConfig?: CartScheduleConfig): CartAttendee 
     const requiredSelections = getRequiredScheduleSelections(scheduleConfig)
     return {
         name: "",
+        firstName: "",
+        secondName: "",
+        lastNamePaternal: "",
+        lastNameMaternal: "",
         dni: "",
         matricula: "",
         scheduleSelections: requiredSelections > 0 ? createEmptySelections(requiredSelections) : [],
@@ -209,9 +218,27 @@ const createEmptyAttendee = (scheduleConfig?: CartScheduleConfig): CartAttendee 
 
 const normalizeAttendee = (input: unknown, scheduleConfig?: CartScheduleConfig): CartAttendee => {
     const record = input && typeof input === "object" ? (input as Record<string, unknown>) : {}
+    const rawName = typeof record.name === "string" ? record.name : ""
+    const fallbackNames = splitNaturalPersonName(rawName)
+    const firstName = typeof record.firstName === "string" ? record.firstName : fallbackNames.firstName
+    const secondName = typeof record.secondName === "string" ? record.secondName : fallbackNames.secondName
+    const lastNamePaternal =
+        typeof record.lastNamePaternal === "string" ? record.lastNamePaternal : fallbackNames.lastNamePaternal
+    const lastNameMaternal =
+        typeof record.lastNameMaternal === "string" ? record.lastNameMaternal : fallbackNames.lastNameMaternal
 
     return {
-        name: typeof record.name === "string" ? record.name : "",
+        name:
+            buildNaturalPersonFullName({
+                firstName,
+                secondName,
+                lastNamePaternal,
+                lastNameMaternal,
+            }) || rawName,
+        firstName,
+        secondName,
+        lastNamePaternal,
+        lastNameMaternal,
         dni: typeof record.dni === "string" ? record.dni : "",
         matricula: typeof record.matricula === "string" ? record.matricula : "",
         scheduleSelections: normalizeScheduleSelections(record.scheduleSelections, scheduleConfig),
@@ -441,7 +468,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const updateAttendee = (
         ticketTypeId: string,
         index: number,
-        field: "name" | "dni" | "matricula",
+        field: "firstName" | "secondName" | "lastNamePaternal" | "lastNameMaternal" | "dni" | "matricula",
         value: string
     ) => {
         updateItems((current) =>
@@ -449,7 +476,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 if (item.ticketTypeId === ticketTypeId) {
                     const newAttendees = [...item.attendees]
                     if (newAttendees[index]) {
-                        newAttendees[index] = { ...newAttendees[index], [field]: value }
+                        const updatedAttendee = { ...newAttendees[index], [field]: value }
+                        newAttendees[index] = {
+                            ...updatedAttendee,
+                            name: buildNaturalPersonFullName({
+                                firstName: updatedAttendee.firstName,
+                                secondName: updatedAttendee.secondName,
+                                lastNamePaternal: updatedAttendee.lastNamePaternal,
+                                lastNameMaternal: updatedAttendee.lastNameMaternal,
+                            }),
+                        }
                     }
                     return { ...item, attendees: newAttendees }
                 }

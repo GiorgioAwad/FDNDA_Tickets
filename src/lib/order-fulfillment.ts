@@ -3,6 +3,7 @@ import { generateTicketCode, getDaysBetween, formatPrice } from "@/lib/utils"
 import { sendPurchaseEmail } from "@/lib/email"
 import { onTicketSold } from "@/lib/cached-queries"
 import { extractTicketValidDates, normalizeScheduleSelections } from "@/lib/ticket-schedule"
+import { buildNaturalPersonFullName } from "@/lib/billing"
 import { buildServilexInvoiceSnapshots } from "@/lib/servilex"
 import { Prisma } from "@prisma/client"
 
@@ -67,6 +68,10 @@ async function syncPaidOrderMetadata(orderId: string, input: FulfillOrderInput) 
 
 type StoredAttendeeData = {
     name?: string | null
+    firstName?: string | null
+    secondName?: string | null
+    lastNamePaternal?: string | null
+    lastNameMaternal?: string | null
     dni?: string | null
     matricula?: string | null
     scheduleSelections?: unknown
@@ -488,6 +493,13 @@ export async function fulfillPaidOrder({
 
             for (let i = 0; i < item.quantity; i++) {
                 const attendee = attendeeData[i] || { name: null, dni: null }
+                const attendeeFullName =
+                    buildNaturalPersonFullName({
+                        firstName: attendee.firstName,
+                        secondName: attendee.secondName,
+                        lastNamePaternal: attendee.lastNamePaternal,
+                        lastNameMaternal: attendee.lastNameMaternal,
+                    }) || attendee.name || order.user.name
                 const entitlementDates = buildEntitlementDates({
                     ticketType: {
                         isPackage: item.ticketType.isPackage,
@@ -509,7 +521,7 @@ export async function fulfillPaidOrder({
                         eventId: event.id,
                         ticketTypeId: item.ticketTypeId,
                         ticketCode,
-                        attendeeName: attendee.name || order.user.name,
+                        attendeeName: attendeeFullName,
                         attendeeDni: attendee.dni || null,
                         status: "ACTIVE",
                         entitlements: {

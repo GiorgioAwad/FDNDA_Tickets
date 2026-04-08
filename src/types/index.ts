@@ -122,6 +122,10 @@ export interface CartItem {
     servilexEnabled?: boolean
     attendees: {
         name: string
+        firstName: string
+        secondName: string
+        lastNamePaternal: string
+        lastNameMaternal: string
         dni: string
         matricula?: string
     }[]

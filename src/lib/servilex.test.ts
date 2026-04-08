@@ -5,6 +5,7 @@ import {
     buildServilexPayload,
     buildServilexPreviewSources,
     formatServilexJsonForDisplay,
+    getServilexConfig,
     sendServilexInvoice,
     stringifyServilexJson,
     type ServilexConfig,
@@ -285,6 +286,92 @@ test("normaliza AE de Izipay a AMEX para ABIO", () => {
     assert.equal(payload.cobranza.tarjetaTipo, "AMEX")
 })
 
+test("normaliza DN de Izipay a DINERS para ABIO", () => {
+    const payloadHttp = {
+        response: {
+            payMethod: "CARD",
+            card: {
+                brand: "DN",
+            },
+        },
+    }
+
+    const order = buildOrder({
+        totalAmount: 15,
+        providerResponse: {
+            source: "validate",
+            receivedAt: "2026-04-08T20:00:00Z",
+            data: {
+                payloadHttp: JSON.stringify(payloadHttp),
+            },
+        },
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 15,
+                attendeeData: [],
+                ticketType: buildTicketType("OS"),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "diners-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.cobranza.tarjetaTipo, "DINERS")
+})
+
+test("AC usa nombres estructurados y codigoReferencia maximo de 6 caracteres", () => {
+    const order = buildOrder({
+        providerRef: "PAY-REF-ABC123456",
+        totalAmount: 1,
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 1,
+                attendeeData: [
+                    {
+                        firstName: "Gabriel",
+                        secondName: "Andres",
+                        lastNamePaternal: "Muñoz",
+                        lastNameMaternal: "Ramirez",
+                        dni: "12345678",
+                        matricula: "0000007",
+                    },
+                ],
+                ticketType: buildTicketType("AC", {
+                    servilexServiceCode: "415",
+                }),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "structured-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.cabecera.entidad.codigoReferencia, "123456")
+    assert.equal(payload.cabecera.alumno?.codigoReferencia, "000007")
+    assert.equal(payload.cabecera.alumno?.primerNombre, "Gabriel")
+    assert.equal(payload.cabecera.alumno?.segundoNombre, "Andres")
+    assert.equal(payload.cabecera.alumno?.apellidoPaterno, "Muñoz")
+    assert.equal(payload.cabecera.alumno?.apellidoMaterno, "Ramirez")
+})
+
+test("getServilexConfig usa ejecutivo 0020 por defecto", () => {
+    const previous = process.env.SERVILEX_EJECUTIVO
+    delete process.env.SERVILEX_EJECUTIVO
+
+    try {
+        assert.equal(getServilexConfig().ejecutivo, "0020")
+    } finally {
+        if (previous === undefined) {
+            delete process.env.SERVILEX_EJECUTIVO
+        } else {
+            process.env.SERVILEX_EJECUTIVO = previous
+        }
+    }
+})
+
 for (const indicator of ["PN", "PA"] as const) {
     test(`${indicator} genera detalle de piscina libre con horarios`, () => {
         const order = buildOrder({
@@ -390,4 +477,67 @@ test("sendServilexInvoice trata DUPLICATE_TRACE como idempotente", async (t) => 
     assert.match(result.rawPayload, /"total":25\.00/)
     assert.match(result.rawPayload, /"precio":25\.00/)
     assert.match(result.rawPayload, /"totalPago":25\.00/)
+})
+
+test("sendServilexInvoice envia JSON UTF-8 con charset explicito", async (t) => {
+    const order = buildOrder({
+        providerRef: "REF-UTF8-123456",
+        buyerName: "Jhoansen Gabriel Muñoz Ramirez",
+        buyerFirstName: "Jhoansen",
+        buyerSecondName: "Gabriel",
+        buyerLastNamePaternal: "Muñoz",
+        buyerLastNameMaternal: "Ramirez",
+        buyerAddress: "Av. Universitaria 2011, San Miguel, Lima, Perú",
+        totalAmount: 1,
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 1,
+                attendeeData: [
+                    {
+                        firstName: "Gabriel",
+                        secondName: "Andres",
+                        lastNamePaternal: "Muñoz",
+                        lastNameMaternal: "Ramirez",
+                        dni: "12345678",
+                        matricula: "0000007",
+                    },
+                ],
+                ticketType: buildTicketType("AC"),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "utf8-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+    const originalFetch = global.fetch
+    let capturedInit: RequestInit | undefined
+
+    global.fetch = async (_input, init) => {
+        capturedInit = init
+        return new Response(
+            JSON.stringify({
+                meta: { status: "success" },
+                data: { mensaje: "ok" },
+            }),
+            {
+                status: 201,
+                headers: { "Content-Type": "application/json" },
+            }
+        )
+    }
+
+    t.after(() => {
+        global.fetch = originalFetch
+    })
+
+    const result = await sendServilexInvoice(payload, TEST_CONFIG)
+    const headers = capturedInit?.headers as Record<string, string>
+    const body = capturedInit?.body as Buffer
+
+    assert.equal(result.ok, true)
+    assert.equal(headers["Content-Type"], "application/json; charset=utf-8")
+    assert.equal(body.toString("utf8"), result.rawPayload)
+    assert.match(result.rawPayload, /Muñoz/)
+    assert.match(result.rawPayload, /Perú/)
 })

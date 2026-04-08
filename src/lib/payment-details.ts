@@ -48,6 +48,8 @@ function normalizeBrand(rawBrand: string | null): string | null {
     switch (brand) {
         case "ae":
             return "American Express"
+        case "dn":
+            return "Diners"
         case "visa":
             return "VISA"
         case "mastercard":

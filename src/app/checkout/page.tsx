@@ -100,7 +100,10 @@ export default function CheckoutPage() {
         () =>
             items.some((item) =>
                 item.attendees.some((attendee) =>
-                    !attendee.name ||
+                    !attendee.firstName?.trim() ||
+                    !attendee.secondName?.trim() ||
+                    !attendee.lastNamePaternal?.trim() ||
+                    !attendee.lastNameMaternal?.trim() ||
                     !attendee.dni
                 )
             ),
@@ -601,29 +604,89 @@ export default function CheckoutPage() {
                                             {item.attendees.map((attendee, attendeeIndex) => {
                                                 const requiredSelections = getRequiredSelections(item)
                                                 const scheduleConfig = item.scheduleConfig
+                                                const attendeeFullName = buildNaturalPersonFullName({
+                                                    firstName: attendee.firstName,
+                                                    secondName: attendee.secondName,
+                                                    lastNamePaternal: attendee.lastNamePaternal,
+                                                    lastNameMaternal: attendee.lastNameMaternal,
+                                                })
 
                                                 return (
                                                     <div key={attendeeIndex} className="space-y-3">
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                         <div>
                                                             <label className="text-xs text-gray-500 mb-1 block">
-                                                                Nombre completo (Entrada #{attendeeIndex + 1})
+                                                                Nombre (Entrada #{attendeeIndex + 1})
                                                             </label>
                                                             <Input
-                                                                value={attendee.name}
+                                                                value={attendee.firstName}
                                                                 onChange={(e) =>
                                                                     updateAttendee(
                                                                         item.ticketTypeId,
                                                                         attendeeIndex,
-                                                                        "name",
+                                                                        "firstName",
                                                                         e.target.value
                                                                     )
                                                                 }
-                                                                placeholder="Nombre y apellido"
+                                                                placeholder="Primer nombre"
                                                                 className="bg-white"
                                                             />
                                                         </div>
                                                         <div>
+                                                            <label className="text-xs text-gray-500 mb-1 block">
+                                                                Segundo nombre
+                                                            </label>
+                                                            <Input
+                                                                value={attendee.secondName}
+                                                                onChange={(e) =>
+                                                                    updateAttendee(
+                                                                        item.ticketTypeId,
+                                                                        attendeeIndex,
+                                                                        "secondName",
+                                                                        e.target.value
+                                                                    )
+                                                                }
+                                                                placeholder="Segundo nombre"
+                                                                className="bg-white"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs text-gray-500 mb-1 block">
+                                                                Apellido paterno
+                                                            </label>
+                                                            <Input
+                                                                value={attendee.lastNamePaternal}
+                                                                onChange={(e) =>
+                                                                    updateAttendee(
+                                                                        item.ticketTypeId,
+                                                                        attendeeIndex,
+                                                                        "lastNamePaternal",
+                                                                        e.target.value
+                                                                    )
+                                                                }
+                                                                placeholder="Apellido paterno"
+                                                                className="bg-white"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs text-gray-500 mb-1 block">
+                                                                Apellido materno
+                                                            </label>
+                                                            <Input
+                                                                value={attendee.lastNameMaternal}
+                                                                onChange={(e) =>
+                                                                    updateAttendee(
+                                                                        item.ticketTypeId,
+                                                                        attendeeIndex,
+                                                                        "lastNameMaternal",
+                                                                        e.target.value
+                                                                    )
+                                                                }
+                                                                placeholder="Apellido materno"
+                                                                className="bg-white"
+                                                            />
+                                                        </div>
+                                                        <div className="md:col-span-2">
                                                             <label className="text-xs text-gray-500 mb-1 block">
                                                                 DNI / Pasaporte
                                                             </label>
@@ -641,11 +704,14 @@ export default function CheckoutPage() {
                                                                 className="bg-white"
                                                             />
                                                         </div>
+                                                        <div className="md:col-span-2 rounded-md border border-dashed border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+                                                            Nombre completo del asistente: <span className="font-medium text-gray-700">{attendeeFullName || "Completa los cuatro campos del asistente"}</span>
+                                                        </div>
                                                     </div>
 
                                                     {item.servilexEnabled && (item.servilexIndicator || "AC").toUpperCase() === "AC" && (
                                                         <div className="rounded-md border border-dashed border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
-                                                            La referencia interna ABIO del alumno se genera automaticamente al procesar la compra.
+                                                            La referencia interna ABIO del alumno se genera automaticamente al procesar la compra. Para ABIO se enviaran nombre, segundo nombre, apellido paterno y apellido materno por separado.
                                                         </div>
                                                     )}
 

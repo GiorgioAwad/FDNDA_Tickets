@@ -210,7 +210,7 @@ export async function GET(request: NextRequest) {
             {
                 headers: {
                     "Cache-Control": "no-store",
-                    "Content-Type": "application/json",
+                    "Content-Type": "application/json; charset=utf-8",
                 },
             }
         )

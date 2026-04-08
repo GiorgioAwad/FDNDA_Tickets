@@ -43,7 +43,7 @@ function buildPreviewResponse(
     if (!debugMode) {
         return new NextResponse(stringifyServilexJson({ payloads }), {
             headers: {
-                "Content-Type": "application/json",
+                "Content-Type": "application/json; charset=utf-8",
                 ...responseHeaders,
             },
         })
@@ -56,7 +56,7 @@ function buildPreviewResponse(
             orderStatus,
             payloads,
             headers: {
-                "Content-Type": "application/json",
+                "Content-Type": "application/json; charset=utf-8",
                 "X-ABIO-Token": config.token ? "***configurado***" : "NO CONFIGURADO",
                 "X-ABIO-Signature": "***redacted***",
                 "X-ABIO-Empresa": config.empresa,
@@ -71,7 +71,7 @@ function buildPreviewResponse(
         }),
         {
             headers: {
-                "Content-Type": "application/json",
+                "Content-Type": "application/json; charset=utf-8",
                 ...responseHeaders,
             },
         }
@@ -260,6 +260,10 @@ export async function GET(request: NextRequest) {
                     unitPrice: ticketType.price,
                     attendeeData: [{
                         name: "USUARIO DE PRUEBA",
+                        firstName: "USUARIO",
+                        secondName: "DE",
+                        lastNamePaternal: "PRUEBA",
+                        lastNameMaternal: "TEST",
                         dni: "12345678",
                         matricula: "0000001",
                     }],

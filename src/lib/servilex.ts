@@ -8,6 +8,7 @@ export type ServilexInvoiceGroupType = "ALUMNO" | "INDICATOR"
 const SUPPORTED_INDICATORS = new Set<ServilexIndicator>(["AC", "OS", "PN", "PA"])
 const DEFAULT_ENDPOINT = "https://abio-pse.ue.r.appspot.com/fpdn/invoice"
 const DEFAULT_ABIO_VERSION = "1.2"
+const SERVILEX_REFERENCE_MAX_LENGTH = 6
 const SERVILEX_DECIMAL_FIELDS = new Set(["assignedTotal", "descuento", "precio", "total", "totalPago"])
 const SERVILEX_DECIMAL_TOKEN_PREFIX = "__SERVILEX_DECIMAL__"
 
@@ -18,6 +19,7 @@ const CARD_BRAND_MAP: Record<string, string> = {
     master_card: "MASTERCARD",
     amex: "AMEX",
     american_express: "AMEX",
+    dn: "DINERS",
     diners: "DINERS",
     diners_club: "DINERS",
 }
@@ -299,6 +301,10 @@ export interface ServilexPayloadSource {
 
 type ServilexAttendeeRecord = {
     name: string
+    firstName: string
+    secondName: string
+    lastNamePaternal: string
+    lastNameMaternal: string
     dni: string
     matricula: string
     scheduleSelections: Array<{ date: string; shift: string | null }>
@@ -353,7 +359,7 @@ export function getServilexConfig(): ServilexConfig {
         tipoTributo: process.env.SERVILEX_TIPO_TRIBUTO || "9998",
         referencia: process.env.SERVILEX_REFERENCIA || "-",
         tipoRegistro: process.env.SERVILEX_TIPO_REGISTRO || "2",
-        ejecutivo: process.env.SERVILEX_EJECUTIVO || "",
+        ejecutivo: process.env.SERVILEX_EJECUTIVO || "0020",
         maxRetries: Number.isFinite(maxRetriesRaw) && maxRetriesRaw > 0 ? Math.floor(maxRetriesRaw) : 3,
     }
 }
@@ -368,6 +374,10 @@ function roundCurrency(value: number): number {
 
 function formatServilexDecimal(value: number): string {
     return roundCurrency(value).toFixed(2)
+}
+
+function normalizeUnicodeText(value: string): string {
+    return value.normalize("NFC")
 }
 
 function toDateOnly(value: Date): string {
@@ -435,6 +445,44 @@ function buildFallbackDocumentNumber(seed: string): string {
     return String(accumulator).padStart(8, "0")
 }
 
+function normalizeReferenceCode(raw: unknown, fallbackSeed: string): string {
+    const source =
+        (typeof raw === "string" && raw.trim()) ||
+        (typeof raw === "number" && Number.isFinite(raw) ? String(raw) : "") ||
+        fallbackSeed
+
+    const normalized = normalizeUnicodeText(source)
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+
+    if (normalized) {
+        return normalized.slice(-SERVILEX_REFERENCE_MAX_LENGTH)
+    }
+
+    return buildFallbackDocumentNumber(fallbackSeed).slice(-SERVILEX_REFERENCE_MAX_LENGTH)
+}
+
+function normalizeServilexJsonValue(value: unknown): unknown {
+    if (typeof value === "string") {
+        return normalizeUnicodeText(value)
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((entry) => normalizeServilexJsonValue(entry))
+    }
+
+    if (!value || typeof value !== "object") {
+        return value
+    }
+
+    return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+            key,
+            normalizeServilexJsonValue(entry),
+        ])
+    )
+}
+
 function normalizeCardBrand(raw: unknown): string | null {
     const brand = asString(raw)
     if (!brand) return null
@@ -479,7 +527,23 @@ function getJsonObject(raw: unknown): Record<string, unknown> {
 
 function getAcAttendeeData(raw: unknown): ServilexAttendeeRecord {
     const attendeeRecord = asRecord(raw)
-    const name = asString(attendeeRecord?.name)
+    const explicitFirstName = asString(attendeeRecord?.firstName)
+    const explicitSecondName = asString(attendeeRecord?.secondName)
+    const explicitLastNamePaternal = asString(attendeeRecord?.lastNamePaternal)
+    const explicitLastNameMaternal = asString(attendeeRecord?.lastNameMaternal)
+    const legacyName = asString(attendeeRecord?.name)
+    const fallbackNames = splitNaturalPersonName(legacyName || "")
+    const firstName = explicitFirstName || fallbackNames.firstName
+    const secondName = explicitSecondName || fallbackNames.secondName
+    const lastNamePaternal = explicitLastNamePaternal || fallbackNames.lastNamePaternal
+    const lastNameMaternal = explicitLastNameMaternal || fallbackNames.lastNameMaternal
+    const name =
+        buildNaturalPersonFullName({
+            firstName,
+            secondName,
+            lastNamePaternal,
+            lastNameMaternal,
+        }) || legacyName
     const dni = extractDigits(asString(attendeeRecord?.dni) || "")
     const matricula = asString(attendeeRecord?.matricula)
 
@@ -497,6 +561,10 @@ function getAcAttendeeData(raw: unknown): ServilexAttendeeRecord {
 
     return {
         name,
+        firstName,
+        secondName,
+        lastNamePaternal,
+        lastNameMaternal,
         dni,
         matricula,
         scheduleSelections: normalizeScheduleSelections(attendeeRecord?.scheduleSelections),
@@ -627,21 +695,20 @@ function buildAttendeeAlumnoSnapshot(
     attendee: ServilexAttendeeRecord,
     order: ServilexSourceOrder
 ): ServilexSnapshotAlumno {
-    const names = splitNaturalPersonName(attendee.name)
     const numeroDocumento = extractDigits(attendee.dni) || buildFallbackDocumentNumber(attendee.matricula)
 
     return {
         tipoDocumento: "1",
         numeroDocumento: numeroDocumento.slice(0, 8),
-        apellidoPaterno: names.lastNamePaternal,
-        apellidoMaterno: names.lastNameMaternal,
-        primerNombre: names.firstName || attendee.name,
-        segundoNombre: names.secondName,
+        apellidoPaterno: attendee.lastNamePaternal,
+        apellidoMaterno: attendee.lastNameMaternal,
+        primerNombre: attendee.firstName || attendee.name,
+        segundoNombre: attendee.secondName,
         direccion: asString(order.buyerAddress) || "",
         ubigeo: asString(order.buyerUbigeo) || "",
         email: asString(order.buyerEmail) || order.user.email,
         celular: asString(order.buyerPhone) || "",
-        codigoReferencia: attendee.matricula,
+        codigoReferencia: normalizeReferenceCode(attendee.matricula, `${attendee.dni}:${attendee.matricula}`),
     }
 }
 
@@ -1082,6 +1149,17 @@ export function buildServilexPayload(
         throw new Error(`Invoice Servilex ${source.servilexGroupKey} no tiene detalle`)
     }
 
+    const alumnoPayload =
+        snapshot.indicator === "AC" && snapshot.alumno
+            ? {
+                ...snapshot.alumno,
+                codigoReferencia: normalizeReferenceCode(
+                    snapshot.alumno.codigoReferencia,
+                    `${snapshot.groupKey}:${snapshot.alumno.numeroDocumento}`
+                ),
+            }
+            : undefined
+
     const cabecera: ServilexCabecera = {
         codigoEmp: config.codigoEmp,
         sucursal: snapshot.sucursal,
@@ -1102,9 +1180,12 @@ export function buildServilexPayload(
             ubigeo: order.buyerUbigeo || "",
             email: order.buyerEmail || order.user.email,
             celular: order.buyerPhone || "",
-            codigoReferencia: order.providerRef || order.id || source.orderId,
+            codigoReferencia: normalizeReferenceCode(
+                order.providerRef || order.id || source.orderId,
+                source.orderId
+            ),
         },
-        ...(snapshot.indicator === "AC" && snapshot.alumno ? { alumno: snapshot.alumno } : {}),
+        ...(alumnoPayload ? { alumno: alumnoPayload } : {}),
         fechaEmision: issueDate,
         fechaVencimiento: issueDate,
         moneda: getCurrencyCode(order),
@@ -1135,7 +1216,8 @@ export function buildServilexPayload(
 }
 
 export function stringifyServilexJson(value: unknown): string {
-    const json = JSON.stringify(value, (key, currentValue) => {
+    const normalizedValue = normalizeServilexJsonValue(value)
+    const json = JSON.stringify(normalizedValue, (key, currentValue) => {
         if (
             typeof currentValue === "number" &&
             Number.isFinite(currentValue) &&
@@ -1190,17 +1272,18 @@ export async function sendServilexInvoice(
     config: ServilexConfig = getServilexConfig()
 ): Promise<ServilexRequestResult> {
     const rawPayload = stringifyServilexJson(payload)
-    const signature = buildServilexSignature(rawPayload, config.token)
+    const rawPayloadBuffer = Buffer.from(rawPayload, "utf8")
+    const signature = buildServilexSignature(rawPayloadBuffer.toString("utf8"), config.token)
 
     const response = await fetch(config.endpoint, {
         method: "POST",
         headers: {
-            "Content-Type": "application/json",
+            "Content-Type": "application/json; charset=utf-8",
             "X-ABIO-Token": config.token,
             "X-ABIO-Signature": signature,
             "X-ABIO-Empresa": config.empresa,
         },
-        body: rawPayload,
+        body: rawPayloadBuffer,
     })
 
     const responseText = await response.text()
