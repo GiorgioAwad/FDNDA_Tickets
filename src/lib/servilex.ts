@@ -394,6 +394,18 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     return value as Record<string, unknown>
 }
 
+function parseJsonRecord(value: unknown): Record<string, unknown> | null {
+    if (typeof value !== "string" || !value.trim()) {
+        return null
+    }
+
+    try {
+        return asRecord(JSON.parse(value))
+    } catch {
+        return null
+    }
+}
+
 function asString(value: unknown): string | null {
     if (typeof value !== "string") return null
     const normalized = value.trim()
@@ -555,15 +567,21 @@ function getBuyerNames(order: ServilexSourceOrder) {
 }
 
 function getPaymentMetadata(order: ServilexSourceOrder, config: ServilexConfig) {
-    const providerResponse = asRecord(order.providerResponse)
-    const response = asRecord(providerResponse?.response)
+    const providerEnvelope = asRecord(order.providerResponse)
+    const providerResponse = asRecord(providerEnvelope?.data) || providerEnvelope
+    const payloadHttp = parseJsonRecord(providerResponse?.payloadHttp)
+    const response = asRecord(providerResponse?.response) || asRecord(payloadHttp?.response)
     const responseCard = asRecord(response?.card)
-    const transactionDetails = asRecord(providerResponse?.transactionDetails)
+    const transactionDetails =
+        asRecord(providerResponse?.transactionDetails) || asRecord(payloadHttp?.transactionDetails)
     const transactions = Array.isArray(providerResponse?.transactions)
         ? (providerResponse?.transactions as unknown[])
+        : Array.isArray(payloadHttp?.transactions)
+            ? (payloadHttp?.transactions as unknown[])
         : []
     const firstTransaction = asRecord(transactions[0])
     const paymentMethodDetails = asRecord(firstTransaction?.paymentMethodDetails)
+    const paymentMethodCard = asRecord(paymentMethodDetails?.card)
 
     const rawMethod =
         asString(firstTransaction?.paymentMethodType) ||
@@ -572,6 +590,7 @@ function getPaymentMetadata(order: ServilexSourceOrder, config: ServilexConfig) 
         asString(response?.payMethod) ||
         asString(paymentMethodDetails?.paymentMethodType) ||
         asString(paymentMethodDetails?.paymentMethod) ||
+        asString(providerResponse?.payMethod) ||
         asString(providerResponse?.paymentMethod)
 
     const cardBrand =
@@ -579,6 +598,9 @@ function getPaymentMetadata(order: ServilexSourceOrder, config: ServilexConfig) 
         normalizeCardBrand(transactionDetails?.cardBrand) ||
         normalizeCardBrand(responseCard?.brand) ||
         normalizeCardBrand(paymentMethodDetails?.brand) ||
+        normalizeCardBrand(paymentMethodCard?.brand) ||
+        normalizeCardBrand(providerResponse?.cardBrand) ||
+        normalizeCardBrand(providerResponse?.brand) ||
         config.tarjetaTipo
 
     const tarjetaProcedencia =
