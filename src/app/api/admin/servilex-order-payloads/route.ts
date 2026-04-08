@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
-import { buildServilexPayload, getServilexConfig, stringifyServilexJson } from "@/lib/servilex"
+import {
+    buildServilexPayload,
+    formatServilexJsonForDisplay,
+    getServilexConfig,
+    stringifyServilexJson,
+} from "@/lib/servilex"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -25,6 +30,7 @@ export async function GET(request: NextRequest) {
 
         const orderId = request.nextUrl.searchParams.get("orderId") || ""
         const includeProviderResponse = request.nextUrl.searchParams.get("provider") === "1"
+        const includeRawPayloads = request.nextUrl.searchParams.get("raw") === "1"
 
         if (!orderId) {
             return NextResponse.json(
@@ -143,6 +149,10 @@ export async function GET(request: NextRequest) {
                     error instanceof Error ? error.message : "No se pudo reconstruir el payload"
             }
 
+            const requestPayload = parseJsonString(invoice.requestPayload)
+            const requestPayloadDisplay = formatServilexJsonForDisplay(requestPayload)
+            const currentPayloadDisplay = formatServilexJsonForDisplay(currentPayload)
+
             return {
                 id: invoice.id,
                 status: invoice.status,
@@ -160,12 +170,18 @@ export async function GET(request: NextRequest) {
                 reciboHash: invoice.reciboHash,
                 pdfUrl: invoice.pdfUrl,
                 lastError: invoice.lastError,
-                requestPayloadRaw: invoice.requestPayload,
-                requestPayload: parseJsonString(invoice.requestPayload),
+                requestPayload,
+                requestPayloadDisplay,
                 requestSignaturePresent: Boolean(invoice.requestSignature),
-                currentPayloadRaw: currentPayload ? stringifyServilexJson(currentPayload) : null,
                 currentPayload,
+                currentPayloadDisplay,
                 currentPayloadError,
+                ...(includeRawPayloads
+                    ? {
+                        requestPayloadRaw: invoice.requestPayload,
+                        currentPayloadRaw: currentPayload ? stringifyServilexJson(currentPayload) : null,
+                    }
+                    : {}),
                 providerResponse: includeProviderResponse ? invoice.providerResponse : undefined,
             }
         })

@@ -4,6 +4,7 @@ import {
     buildServilexInvoiceSnapshots,
     buildServilexPayload,
     buildServilexPreviewSources,
+    formatServilexJsonForDisplay,
     sendServilexInvoice,
     stringifyServilexJson,
     type ServilexConfig,
@@ -186,6 +187,33 @@ test("serializa montos Servilex con dos decimales en el JSON final", () => {
     assert.match(rawPayload, /"totalPago":1\.00/)
 })
 
+test("formatea payload Servilex para display con decimales visibles", () => {
+    const order = buildOrder({
+        totalAmount: 1,
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 1,
+                attendeeData: [
+                    { name: "Alumno Display", dni: "12345678", matricula: "MAT-DISPLAY" },
+                ],
+                ticketType: buildTicketType("AC"),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "display-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+    const display = formatServilexJsonForDisplay(payload) as Record<string, unknown>
+    const cabecera = display.cabecera as Record<string, unknown>
+    const detalle = (display.detalle as Array<Record<string, unknown>>)[0]
+    const cobranza = display.cobranza as Record<string, unknown>
+
+    assert.equal(cabecera.total, "1.00")
+    assert.equal(detalle.precio, "1.00")
+    assert.equal(cobranza.totalPago, "1.00")
+})
+
 test("lee la marca real de tarjeta desde providerResponse envuelto de Izipay", () => {
     const payloadHttp = {
         response: {
@@ -220,6 +248,41 @@ test("lee la marca real de tarjeta desde providerResponse envuelto de Izipay", (
 
     assert.equal(payload.cobranza.tarjetaTipo, "MASTERCARD")
     assert.equal(payload.cobranza.formaPago, "006")
+})
+
+test("normaliza AE de Izipay a AMEX para ABIO", () => {
+    const payloadHttp = {
+        response: {
+            payMethod: "CARD",
+            card: {
+                brand: "AE",
+            },
+        },
+    }
+
+    const order = buildOrder({
+        totalAmount: 15,
+        providerResponse: {
+            source: "validate",
+            receivedAt: "2026-04-08T20:00:00Z",
+            data: {
+                payloadHttp: JSON.stringify(payloadHttp),
+            },
+        },
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 15,
+                attendeeData: [],
+                ticketType: buildTicketType("OS"),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "amex-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.cobranza.tarjetaTipo, "AMEX")
 })
 
 for (const indicator of ["PN", "PA"] as const) {

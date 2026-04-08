@@ -12,6 +12,7 @@ const SERVILEX_DECIMAL_FIELDS = new Set(["assignedTotal", "descuento", "precio",
 const SERVILEX_DECIMAL_TOKEN_PREFIX = "__SERVILEX_DECIMAL__"
 
 const CARD_BRAND_MAP: Record<string, string> = {
+    ae: "AMEX",
     visa: "VISA",
     mastercard: "MASTERCARD",
     master_card: "MASTERCARD",
@@ -1150,6 +1151,34 @@ export function stringifyServilexJson(value: unknown): string {
         new RegExp(`"${SERVILEX_DECIMAL_TOKEN_PREFIX}(-?\\d+\\.\\d{2})"`, "g"),
         "$1"
     )
+}
+
+export function formatServilexJsonForDisplay(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map((item) => formatServilexJsonForDisplay(item))
+    }
+
+    if (!value || typeof value !== "object") {
+        return value
+    }
+
+    const record = value as Record<string, unknown>
+    const formatted: Record<string, unknown> = {}
+
+    for (const [key, currentValue] of Object.entries(record)) {
+        if (
+            typeof currentValue === "number" &&
+            Number.isFinite(currentValue) &&
+            SERVILEX_DECIMAL_FIELDS.has(key)
+        ) {
+            formatted[key] = formatServilexDecimal(currentValue)
+            continue
+        }
+
+        formatted[key] = formatServilexJsonForDisplay(currentValue)
+    }
+
+    return formatted
 }
 
 export function buildServilexSignature(rawBody: string, token: string): string {

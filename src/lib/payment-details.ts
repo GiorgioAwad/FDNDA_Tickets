@@ -46,6 +46,8 @@ function normalizeBrand(rawBrand: string | null): string | null {
     const brand = rawBrand.trim().toLowerCase().replace(/[\s-]+/g, "_")
 
     switch (brand) {
+        case "ae":
+            return "American Express"
         case "visa":
             return "VISA"
         case "mastercard":
