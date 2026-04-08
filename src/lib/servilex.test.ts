@@ -5,6 +5,7 @@ import {
     buildServilexPayload,
     buildServilexPreviewSources,
     sendServilexInvoice,
+    stringifyServilexJson,
     type ServilexConfig,
     type ServilexIndicator,
     type ServilexSourceOrder,
@@ -161,6 +162,30 @@ test("OS genera detalle con servicio, cantidad, descuento y precio", () => {
     assert.equal(detalle.descuento, 5)
 })
 
+test("serializa montos Servilex con dos decimales en el JSON final", () => {
+    const order = buildOrder({
+        totalAmount: 1,
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 1,
+                attendeeData: [
+                    { name: "Alumno Decimal", dni: "12345678", matricula: "MAT-DEC" },
+                ],
+                ticketType: buildTicketType("AC"),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "decimal-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+    const rawPayload = stringifyServilexJson(payload)
+
+    assert.match(rawPayload, /"total":1\.00/)
+    assert.match(rawPayload, /"precio":1\.00/)
+    assert.match(rawPayload, /"totalPago":1\.00/)
+})
+
 for (const indicator of ["PN", "PA"] as const) {
     test(`${indicator} genera detalle de piscina libre con horarios`, () => {
         const order = buildOrder({
@@ -263,4 +288,7 @@ test("sendServilexInvoice trata DUPLICATE_TRACE como idempotente", async (t) => 
 
     assert.equal(result.ok, true)
     assert.equal(result.errorCode, "DUPLICATE_TRACE")
+    assert.match(result.rawPayload, /"total":25\.00/)
+    assert.match(result.rawPayload, /"precio":25\.00/)
+    assert.match(result.rawPayload, /"totalPago":25\.00/)
 })

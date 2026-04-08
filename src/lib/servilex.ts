@@ -8,6 +8,8 @@ export type ServilexInvoiceGroupType = "ALUMNO" | "INDICATOR"
 const SUPPORTED_INDICATORS = new Set<ServilexIndicator>(["AC", "OS", "PN", "PA"])
 const DEFAULT_ENDPOINT = "https://abio-pse.ue.r.appspot.com/fpdn/invoice"
 const DEFAULT_ABIO_VERSION = "1.2"
+const SERVILEX_DECIMAL_FIELDS = new Set(["assignedTotal", "descuento", "precio", "total", "totalPago"])
+const SERVILEX_DECIMAL_TOKEN_PREFIX = "__SERVILEX_DECIMAL__"
 
 const CARD_BRAND_MAP: Record<string, string> = {
     visa: "VISA",
@@ -361,6 +363,10 @@ export function formatServilexTimestamp(date: Date): string {
 
 function roundCurrency(value: number): number {
     return Number(value.toFixed(2))
+}
+
+function formatServilexDecimal(value: number): string {
+    return roundCurrency(value).toFixed(2)
 }
 
 function toDateOnly(value: Date): string {
@@ -1105,6 +1111,25 @@ export function buildServilexPayload(
     }
 }
 
+export function stringifyServilexJson(value: unknown): string {
+    const json = JSON.stringify(value, (key, currentValue) => {
+        if (
+            typeof currentValue === "number" &&
+            Number.isFinite(currentValue) &&
+            SERVILEX_DECIMAL_FIELDS.has(key)
+        ) {
+            return `${SERVILEX_DECIMAL_TOKEN_PREFIX}${formatServilexDecimal(currentValue)}`
+        }
+
+        return currentValue
+    })
+
+    return json.replace(
+        new RegExp(`"${SERVILEX_DECIMAL_TOKEN_PREFIX}(-?\\d+\\.\\d{2})"`, "g"),
+        "$1"
+    )
+}
+
 export function buildServilexSignature(rawBody: string, token: string): string {
     return crypto.createHmac("sha256", token).update(rawBody).digest("hex")
 }
@@ -1113,7 +1138,7 @@ export async function sendServilexInvoice(
     payload: ServilexPayload,
     config: ServilexConfig = getServilexConfig()
 ): Promise<ServilexRequestResult> {
-    const rawPayload = JSON.stringify(payload)
+    const rawPayload = stringifyServilexJson(payload)
     const signature = buildServilexSignature(rawPayload, config.token)
 
     const response = await fetch(config.endpoint, {

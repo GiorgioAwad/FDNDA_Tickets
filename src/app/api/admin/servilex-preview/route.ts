@@ -6,6 +6,7 @@ import {
     buildServilexPreviewSources,
     getServilexConfig,
     getServilexMissingConfig,
+    stringifyServilexJson,
     type ServilexPayloadSource,
     type ServilexSourceOrder,
 } from "@/lib/servilex"
@@ -40,11 +41,16 @@ function buildPreviewResponse(
     }
 
     if (!debugMode) {
-        return NextResponse.json({ payloads }, { headers: responseHeaders })
+        return new NextResponse(stringifyServilexJson({ payloads }), {
+            headers: {
+                "Content-Type": "application/json",
+                ...responseHeaders,
+            },
+        })
     }
 
-    return NextResponse.json(
-        {
+    return new NextResponse(
+        stringifyServilexJson({
             mode,
             orderId: sources[0]?.orderId || "",
             orderStatus,
@@ -62,8 +68,13 @@ function buildPreviewResponse(
                 "La firma HMAC real no se expone en el navegador.",
             ],
             ...extra,
-        },
-        { headers: responseHeaders }
+        }),
+        {
+            headers: {
+                "Content-Type": "application/json",
+                ...responseHeaders,
+            },
+        }
     )
 }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
-import { buildServilexPayload, getServilexConfig } from "@/lib/servilex"
+import { buildServilexPayload, getServilexConfig, stringifyServilexJson } from "@/lib/servilex"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -168,8 +168,8 @@ export async function GET(request: NextRequest) {
             }
         })
 
-        return NextResponse.json(
-            {
+        return new NextResponse(
+            stringifyServilexJson({
                 order: {
                     id: order.id,
                     status: order.status,
@@ -188,10 +188,11 @@ export async function GET(request: NextRequest) {
                     terminal: config.terminal,
                 },
                 invoices,
-            },
+            }),
             {
                 headers: {
                     "Cache-Control": "no-store",
+                    "Content-Type": "application/json",
                 },
             }
         )
