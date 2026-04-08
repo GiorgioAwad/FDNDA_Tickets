@@ -145,6 +145,18 @@ export default function IzipayCheckout({
 
                 const data = await response.json()
 
+                if (data.processing) {
+                    onSuccess?.()
+                    router.push(`/checkout/success?orderId=${orderId}`)
+                    return
+                }
+
+                if (response.status === 503) {
+                    onSuccess?.()
+                    router.push(`/checkout/success?orderId=${orderId}`)
+                    return
+                }
+
                 if (!response.ok || !data.success) {
                     throw new Error(data.error || "No se pudo validar el pago con Izipay")
                 }

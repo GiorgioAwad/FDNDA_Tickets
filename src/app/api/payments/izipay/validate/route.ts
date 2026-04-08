@@ -7,8 +7,9 @@ import {
     verifyIzipayWebCoreSignature,
     type IzipayWebCorePaymentResponse,
 } from "@/lib/izipay"
-import { acquireLock, releaseLock } from "@/lib/cache"
+import { acquireLockWithStatus, releaseLock } from "@/lib/cache"
 import {
+    buildIzipayProviderResponse,
     cancelIzipayOrder,
     fulfillIzipayOrder,
     resolveIzipayOrderId,
@@ -57,17 +58,31 @@ async function handleEmbeddedValidation(body: Record<string, unknown>) {
     let lockAcquired = false
 
     try {
-        lockAcquired = await acquireLock(lockKey, LOCK_TTL_SECONDS)
+        const lockStatus = await acquireLockWithStatus(lockKey, LOCK_TTL_SECONDS)
 
-        if (!lockAcquired) {
+        if (lockStatus === "busy") {
             return NextResponse.json({ success: true, processing: true })
         }
+
+        if (lockStatus === "unavailable") {
+            return NextResponse.json(
+                { success: false, error: "Lock backend unavailable" },
+                { status: 503 }
+            )
+        }
+
+        lockAcquired = true
 
         if (paymentResult.status === "PAID") {
             const result = await fulfillIzipayOrder({
                 orderId: resolvedOrderId,
                 providerRef: paymentResult.transactionId,
-                providerResponse: JSON.parse(krAnswer) as Prisma.InputJsonValue,
+                providerOrderNumber: paymentResult.orderId,
+                providerTransactionId: paymentResult.transactionId,
+                providerResponse: buildIzipayProviderResponse(
+                    "validate",
+                    JSON.parse(krAnswer) as Prisma.InputJsonValue
+                ),
             })
 
             if (!result.success) {
@@ -90,7 +105,12 @@ async function handleEmbeddedValidation(body: Record<string, unknown>) {
         if (paymentResult.status === "CANCELLED" || paymentResult.status === "ERROR") {
             await cancelIzipayOrder({
                 orderId: resolvedOrderId,
-                providerResponse: JSON.parse(krAnswer) as Prisma.InputJsonValue,
+                providerOrderNumber: paymentResult.orderId,
+                providerTransactionId: paymentResult.transactionId,
+                providerResponse: buildIzipayProviderResponse(
+                    "validate",
+                    JSON.parse(krAnswer) as Prisma.InputJsonValue
+                ),
             })
         }
 
@@ -155,17 +175,31 @@ async function handleWebCoreValidation(body: Record<string, unknown>) {
     let lockAcquired = false
 
     try {
-        lockAcquired = await acquireLock(lockKey, LOCK_TTL_SECONDS)
+        const lockStatus = await acquireLockWithStatus(lockKey, LOCK_TTL_SECONDS)
 
-        if (!lockAcquired) {
+        if (lockStatus === "busy") {
             return NextResponse.json({ success: true, processing: true })
         }
+
+        if (lockStatus === "unavailable") {
+            return NextResponse.json(
+                { success: false, error: "Lock backend unavailable" },
+                { status: 503 }
+            )
+        }
+
+        lockAcquired = true
 
         if (paymentResult.status === "PAID") {
             const result = await fulfillIzipayOrder({
                 orderId: resolvedOrderId,
                 providerRef: paymentResult.transactionId,
-                providerResponse: paymentResponse as unknown as Prisma.InputJsonValue,
+                providerOrderNumber: paymentResult.orderId,
+                providerTransactionId: paymentResult.transactionId,
+                providerResponse: buildIzipayProviderResponse(
+                    "validate",
+                    paymentResponse as unknown as Prisma.InputJsonValue
+                ),
             })
 
             if (!result.success) {
@@ -188,7 +222,12 @@ async function handleWebCoreValidation(body: Record<string, unknown>) {
         if (paymentResult.status === "ERROR") {
             await cancelIzipayOrder({
                 orderId: resolvedOrderId,
-                providerResponse: paymentResponse as unknown as Prisma.InputJsonValue,
+                providerOrderNumber: paymentResult.orderId,
+                providerTransactionId: paymentResult.transactionId,
+                providerResponse: buildIzipayProviderResponse(
+                    "validate",
+                    paymentResponse as unknown as Prisma.InputJsonValue
+                ),
             })
         }
 

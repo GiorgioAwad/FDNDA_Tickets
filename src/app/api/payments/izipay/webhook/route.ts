@@ -9,14 +9,17 @@ import {
     type IzipayWebhookPayload,
     type IzipayWebCorePaymentResponse,
 } from "@/lib/izipay"
-import { acquireLock, releaseLock } from "@/lib/cache"
+import { acquireLockWithStatus, releaseLock } from "@/lib/cache"
 import {
+    buildIzipayProviderResponse,
     cancelIzipayOrder,
     fulfillIzipayOrder,
     resolveIzipayOrderId,
 } from "@/lib/izipay-payment"
 
 export const runtime = "nodejs"
+
+const WEBHOOK_LOCK_TTL_SECONDS = 30
 
 export async function GET() {
     return NextResponse.json({
@@ -25,8 +28,6 @@ export async function GET() {
         accepts: ["embedded-ipn", "web-core-notification", "redirect-webhook"],
     })
 }
-
-const WEBHOOK_LOCK_TTL_SECONDS = 30
 
 function isEmbeddedIpn(body: Record<string, unknown>): boolean {
     return typeof body["kr-answer"] === "string" && typeof body["kr-hash"] === "string"
@@ -72,17 +73,31 @@ async function handleEmbeddedIpn(body: Record<string, unknown>): Promise<NextRes
     let lockAcquired = false
 
     try {
-        lockAcquired = await acquireLock(lockKey, WEBHOOK_LOCK_TTL_SECONDS)
+        const lockStatus = await acquireLockWithStatus(lockKey, WEBHOOK_LOCK_TTL_SECONDS)
 
-        if (!lockAcquired) {
+        if (lockStatus === "busy") {
             return NextResponse.json({ success: true, processing: true })
         }
+
+        if (lockStatus === "unavailable") {
+            return NextResponse.json(
+                { success: false, error: "Lock backend unavailable" },
+                { status: 503 }
+            )
+        }
+
+        lockAcquired = true
 
         if (paymentResult.status === "PAID") {
             const result = await fulfillIzipayOrder({
                 orderId: resolvedOrderId,
                 providerRef: paymentResult.transactionId,
-                providerResponse: JSON.parse(krAnswer) as Prisma.InputJsonValue,
+                providerOrderNumber: paymentResult.orderId,
+                providerTransactionId: paymentResult.transactionId,
+                providerResponse: buildIzipayProviderResponse(
+                    "embedded",
+                    JSON.parse(krAnswer) as Prisma.InputJsonValue
+                ),
             })
 
             if (!result.success) {
@@ -94,7 +109,12 @@ async function handleEmbeddedIpn(body: Record<string, unknown>): Promise<NextRes
         } else if (paymentResult.status === "CANCELLED" || paymentResult.status === "ERROR") {
             await cancelIzipayOrder({
                 orderId: resolvedOrderId,
-                providerResponse: JSON.parse(krAnswer) as Prisma.InputJsonValue,
+                providerOrderNumber: paymentResult.orderId,
+                providerTransactionId: paymentResult.transactionId,
+                providerResponse: buildIzipayProviderResponse(
+                    "embedded",
+                    JSON.parse(krAnswer) as Prisma.InputJsonValue
+                ),
             })
         }
 
@@ -137,17 +157,31 @@ async function handleWebCoreNotification(
     let lockAcquired = false
 
     try {
-        lockAcquired = await acquireLock(lockKey, WEBHOOK_LOCK_TTL_SECONDS)
+        const lockStatus = await acquireLockWithStatus(lockKey, WEBHOOK_LOCK_TTL_SECONDS)
 
-        if (!lockAcquired) {
+        if (lockStatus === "busy") {
             return NextResponse.json({ success: true, processing: true })
         }
+
+        if (lockStatus === "unavailable") {
+            return NextResponse.json(
+                { success: false, error: "Lock backend unavailable" },
+                { status: 503 }
+            )
+        }
+
+        lockAcquired = true
 
         if (paymentResult.status === "PAID") {
             const result = await fulfillIzipayOrder({
                 orderId: resolvedOrderId,
                 providerRef: paymentResult.transactionId,
-                providerResponse: paymentResponse as unknown as Prisma.InputJsonValue,
+                providerOrderNumber: paymentResult.orderId,
+                providerTransactionId: paymentResult.transactionId,
+                providerResponse: buildIzipayProviderResponse(
+                    "webhook",
+                    paymentResponse as unknown as Prisma.InputJsonValue
+                ),
             })
 
             if (!result.success) {
@@ -159,7 +193,12 @@ async function handleWebCoreNotification(
         } else if (paymentResult.status === "ERROR") {
             await cancelIzipayOrder({
                 orderId: resolvedOrderId,
-                providerResponse: paymentResponse as unknown as Prisma.InputJsonValue,
+                providerOrderNumber: paymentResult.orderId,
+                providerTransactionId: paymentResult.transactionId,
+                providerResponse: buildIzipayProviderResponse(
+                    "webhook",
+                    paymentResponse as unknown as Prisma.InputJsonValue
+                ),
             })
         }
 
@@ -192,11 +231,20 @@ async function handleRedirectWebhook(body: IzipayWebhookPayload): Promise<NextRe
     let lockAcquired = false
 
     try {
-        lockAcquired = await acquireLock(lockKey, WEBHOOK_LOCK_TTL_SECONDS)
+        const lockStatus = await acquireLockWithStatus(lockKey, WEBHOOK_LOCK_TTL_SECONDS)
 
-        if (!lockAcquired) {
+        if (lockStatus === "busy") {
             return NextResponse.json({ success: true, processing: true })
         }
+
+        if (lockStatus === "unavailable") {
+            return NextResponse.json(
+                { success: false, error: "Lock backend unavailable" },
+                { status: 503 }
+            )
+        }
+
+        lockAcquired = true
 
         const { transactionDetails, orderStatus } = body
 
@@ -204,7 +252,12 @@ async function handleRedirectWebhook(body: IzipayWebhookPayload): Promise<NextRe
             const result = await fulfillIzipayOrder({
                 orderId: resolvedOrderId,
                 providerRef: transactionDetails.transactionId,
-                providerResponse: body as unknown as Prisma.InputJsonValue,
+                providerOrderNumber: body.orderDetails.orderId,
+                providerTransactionId: transactionDetails.transactionId,
+                providerResponse: buildIzipayProviderResponse(
+                    "webhook",
+                    body as unknown as Prisma.InputJsonValue
+                ),
             })
 
             if (!result.success) {
@@ -216,7 +269,12 @@ async function handleRedirectWebhook(body: IzipayWebhookPayload): Promise<NextRe
         } else if (orderStatus === "CANCELLED" || orderStatus === "ERROR") {
             await cancelIzipayOrder({
                 orderId: resolvedOrderId,
-                providerResponse: body as unknown as Prisma.InputJsonValue,
+                providerOrderNumber: body.orderDetails.orderId,
+                providerTransactionId: transactionDetails.transactionId,
+                providerResponse: buildIzipayProviderResponse(
+                    "webhook",
+                    body as unknown as Prisma.InputJsonValue
+                ),
             })
         }
 

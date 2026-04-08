@@ -11,6 +11,7 @@ import {
     resolveIzipayPublicKey,
     type IzipayWebCoreCheckoutConfig,
 } from "@/lib/izipay"
+import { storeIzipayOrderCorrelation } from "@/lib/izipay-payment"
 import { fulfillPaidOrder } from "@/lib/order-fulfillment"
 
 export const runtime = "nodejs"
@@ -310,6 +311,13 @@ export async function POST(request: NextRequest) {
             appUrl,
             mode,
         })
+
+        await storeIzipayOrderCorrelation({
+            orderId: order.id,
+            providerOrderNumber: config.order.orderNumber,
+            providerTransactionId: transactionId,
+        })
+
         const session = await createIzipaySession(config)
 
         if (!session.success || !session.sessionToken) {

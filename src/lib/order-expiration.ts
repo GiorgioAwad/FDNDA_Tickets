@@ -27,6 +27,11 @@ export async function expirePendingOrders(
         where: {
             status: "PENDING",
             createdAt: { lte: cutoffDate },
+            OR: [
+                { provider: { not: "IZIPAY" } },
+                { providerOrderNumber: null },
+                { providerTransactionId: null },
+            ],
         },
         select: {
             id: true,

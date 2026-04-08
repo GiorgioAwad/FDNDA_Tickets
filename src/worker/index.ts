@@ -1,6 +1,7 @@
 import { acquireLock, releaseLock } from "@/lib/cache"
 import { processEmailQueue } from "@/lib/email-worker"
 import { processInvoiceQueue } from "@/lib/invoice-worker"
+import { reconcilePendingIzipayOrders } from "@/lib/izipay-reconciliation"
 import { expirePendingOrders } from "@/lib/order-expiration"
 
 type WorkerTask = {
@@ -19,9 +20,17 @@ function toPositiveInt(rawValue: string | undefined, fallback: number): number {
 
 const EMAIL_INTERVAL_MS = toPositiveInt(process.env.WORKER_EMAIL_INTERVAL_MS, 60_000)
 const INVOICE_INTERVAL_MS = toPositiveInt(process.env.WORKER_INVOICE_INTERVAL_MS, 120_000)
+const IZIPAY_RECONCILE_INTERVAL_MS = toPositiveInt(
+    process.env.WORKER_IZIPAY_RECONCILE_INTERVAL_MS,
+    180_000
+)
 const EXPIRE_ORDERS_INTERVAL_MS = toPositiveInt(process.env.WORKER_EXPIRE_ORDERS_INTERVAL_MS, 300_000)
 const EMAIL_BATCH_SIZE = toPositiveInt(process.env.WORKER_EMAIL_BATCH_SIZE, 20)
 const INVOICE_BATCH_SIZE = toPositiveInt(process.env.WORKER_INVOICE_BATCH_SIZE, 10)
+const IZIPAY_RECONCILE_BATCH_SIZE = toPositiveInt(
+    process.env.WORKER_IZIPAY_RECONCILE_BATCH_SIZE,
+    25
+)
 
 let shuttingDown = false
 
@@ -35,6 +44,11 @@ const tasks: WorkerTask[] = [
         name: "invoices",
         intervalMs: INVOICE_INTERVAL_MS,
         run: () => processInvoiceQueue(INVOICE_BATCH_SIZE),
+    },
+    {
+        name: "izipay-reconcile",
+        intervalMs: IZIPAY_RECONCILE_INTERVAL_MS,
+        run: () => reconcilePendingIzipayOrders({ batchSize: IZIPAY_RECONCILE_BATCH_SIZE }),
     },
     {
         name: "expire-orders",
@@ -94,6 +108,7 @@ process.on("SIGTERM", handleShutdown)
 console.log("[worker] starting background loops", {
     emailIntervalMs: EMAIL_INTERVAL_MS,
     invoiceIntervalMs: INVOICE_INTERVAL_MS,
+    izipayReconcileIntervalMs: IZIPAY_RECONCILE_INTERVAL_MS,
     expireOrdersIntervalMs: EXPIRE_ORDERS_INTERVAL_MS,
 })
 

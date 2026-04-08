@@ -6,7 +6,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useCart } from "@/hooks/cart-context"
-import { CheckCircle, Ticket, Loader2, XCircle } from "lucide-react"
+import { AlertCircle, CheckCircle, Loader2, Ticket, XCircle } from "lucide-react"
 
 type OrderStatus = "PENDING" | "PAID" | "CANCELLED" | "REFUNDED"
 
@@ -17,6 +17,8 @@ export default function CheckoutSuccessClient() {
 
     const [status, setStatus] = useState<OrderStatus | null>(null)
     const [eventTitle, setEventTitle] = useState<string | null>(null)
+    const [reviewRequired, setReviewRequired] = useState(false)
+    const [statusMessage, setStatusMessage] = useState("")
     const [error, setError] = useState("")
 
     useEffect(() => {
@@ -34,29 +36,48 @@ export default function CheckoutSuccessClient() {
 
         const pollOrder = async () => {
             try {
-                const response = await fetch(`/api/orders/${orderId}`, { cache: "no-store" })
+                const response = await fetch(`/api/payments/izipay/status?orderId=${orderId}`, {
+                    cache: "no-store",
+                })
                 const data = await response.json()
 
                 if (!response.ok) {
                     throw new Error(data.error || "Error al consultar la orden")
                 }
 
-                if (!active) return
+                if (!active) {
+                    return
+                }
 
                 setStatus(data.data.status)
                 setEventTitle(data.data.eventTitle)
+                setReviewRequired(Boolean(data.data.reviewRequired))
+                setStatusMessage(data.data.message || "")
 
-                if (data.data.status === "PENDING" && attempts < 10) {
+                if (
+                    data.data.status === "PENDING" &&
+                    !data.data.reviewRequired &&
+                    attempts < 10
+                ) {
                     attempts += 1
                     timeoutId = setTimeout(pollOrder, 3000)
                 }
             } catch (err) {
-                if (!active) return
+                if (!active) {
+                    return
+                }
+
+                if (attempts < 10) {
+                    attempts += 1
+                    timeoutId = setTimeout(pollOrder, 3000)
+                    return
+                }
+
                 setError((err as Error).message)
             }
         }
 
-        pollOrder()
+        void pollOrder()
 
         return () => {
             active = false
@@ -80,8 +101,9 @@ export default function CheckoutSuccessClient() {
         )
     }
 
-    const isProcessing = status === null || status === "PENDING"
     const isPaid = status === "PAID"
+    const isManualReview = status === "PENDING" && reviewRequired
+    const isProcessing = status === null || (status === "PENDING" && !reviewRequired)
 
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4">
@@ -94,8 +116,11 @@ export default function CheckoutSuccessClient() {
                                 Procesando tu pago...
                             </h2>
                             <p className="text-gray-600">
-                                Estamos confirmando tu transacción
+                                Estamos confirmando tu transaccion
                             </p>
+                            {statusMessage ? (
+                                <p className="text-sm text-gray-500 mt-3">{statusMessage}</p>
+                            ) : null}
                         </>
                     ) : isPaid ? (
                         <>
@@ -104,13 +129,13 @@ export default function CheckoutSuccessClient() {
                             </div>
 
                             <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                                ¡Pago Exitoso!
+                                Pago exitoso
                             </h1>
 
                             <p className="text-gray-600 mb-8">
                                 Tu orden <strong>#{orderId.slice(-8).toUpperCase()}</strong> ha sido confirmada.
                                 {eventTitle ? ` Evento: ${eventTitle}.` : ""}
-                                {" "}Hemos enviado los tickets a tu correo electrónico.
+                                {" "}Hemos enviado los tickets a tu correo electronico.
                             </p>
 
                             <div className="space-y-5">
@@ -121,6 +146,31 @@ export default function CheckoutSuccessClient() {
                                     </Button>
                                 </Link>
 
+                                <Link href="/eventos">
+                                    <Button variant="outline" className="w-full">
+                                        Volver a eventos
+                                    </Button>
+                                </Link>
+                            </div>
+                        </>
+                    ) : isManualReview ? (
+                        <>
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-amber-100 text-amber-600 mb-6">
+                                <AlertCircle className="h-10 w-10" />
+                            </div>
+                            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                                Pago en validacion
+                            </h1>
+                            <p className="text-gray-600 mb-8">
+                                La orden <strong>#{orderId.slice(-8).toUpperCase()}</strong> sigue
+                                en revision manual.
+                                {eventTitle ? ` Evento: ${eventTitle}.` : ""}
+                                {" "}No vuelvas a pagar por ahora.
+                            </p>
+                            {statusMessage ? (
+                                <p className="text-sm text-gray-500 mb-6">{statusMessage}</p>
+                            ) : null}
+                            <div className="space-y-3">
                                 <Link href="/eventos">
                                     <Button variant="outline" className="w-full">
                                         Volver a eventos

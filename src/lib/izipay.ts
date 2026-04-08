@@ -1,7 +1,6 @@
 import crypto from "crypto"
 
 // Web Core / Token Session
-const IZIPAY_MERCHANT_CODE = process.env.IZIPAY_MERCHANT_CODE || ""
 const IZIPAY_API_KEY = process.env.IZIPAY_API_KEY || ""
 const IZIPAY_HASH_KEY = process.env.IZIPAY_HASH_KEY || ""
 const IZIPAY_PUBLIC_KEY =
@@ -249,6 +248,21 @@ export function buildIzipayOrderNumber(orderId: string): string {
     return candidate.length >= 5 ? candidate : normalized.padStart(5, "0").slice(-5)
 }
 
+export function getIzipaySearchTransactionUrl(): string {
+    const override = process.env.IZIPAY_SEARCH_TRANSACTION_URL?.trim()
+
+    if (override) {
+        return override
+    }
+
+    return `${IZIPAY_ENDPOINT.replace(/\/$/, "")}/orderinfo/v1/Transaction/Search`
+}
+
+export function getIzipayQueryLanguage(): "ESP" | "ENG" {
+    const language = (process.env.IZIPAY_QUERY_LANGUAGE || "ESP").trim().toUpperCase()
+    return language === "ENG" ? "ENG" : "ESP"
+}
+
 export function verifyIzipayWebCoreSignature(
     paymentResponse: Pick<IzipayWebCorePaymentResponse, "code" | "payloadHttp" | "signature">
 ): boolean {
@@ -454,52 +468,119 @@ export async function createIzipaySession(
     }
 }
 
-export async function getIzipayPaymentStatus(orderId: string): Promise<{
-    success: boolean
-    status?: "PAID" | "PENDING" | "CANCELLED" | "ERROR"
-    transactionId?: string
-    error?: string
-}> {
-    try {
-        const timestamp = Date.now().toString()
-        const signatureData = `${IZIPAY_MERCHANT_CODE}|${orderId}|${timestamp}`
-        const signature = generateIzipayHexSignature(signatureData)
+export interface IzipaySearchTransactionInput {
+    merchantCode: string
+    orderNumber: string
+    transactionId: string
+    language?: "ESP" | "ENG"
+}
 
-        const response = await fetch(`${IZIPAY_ENDPOINT}/api/v1/payments/orders/${orderId}`, {
-            method: "GET",
+export interface IzipaySearchTransactionResult {
+    success: boolean
+    status?: "PAID" | "PENDING" | "CANCELLED"
+    orderNumber?: string
+    transactionId?: string
+    message?: string
+    retryable?: boolean
+    raw?: IzipayWebCorePaymentResponse
+    error?: string
+}
+
+function isRetryableQueryStatus(status: number): boolean {
+    return status === 408 || status === 425 || status === 429 || status >= 500
+}
+
+export async function searchIzipayTransaction(
+    input: IzipaySearchTransactionInput
+): Promise<IzipaySearchTransactionResult> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10_000)
+
+    try {
+        const response = await fetch(getIzipaySearchTransactionUrl(), {
+            method: "POST",
             headers: {
-                Authorization: `Bearer ${IZIPAY_API_KEY}`,
-                "X-Merchant-Code": IZIPAY_MERCHANT_CODE,
-                "X-Signature": signature,
-                "X-Timestamp": timestamp,
+                Accept: "application/json",
+                Authorization: IZIPAY_API_KEY,
+                "Content-Type": "application/json",
+                transactionId: input.transactionId,
             },
+            signal: controller.signal,
+            body: JSON.stringify({
+                merchantCode: input.merchantCode,
+                numberOrden: input.orderNumber,
+                language: input.language || getIzipayQueryLanguage(),
+            }),
         })
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}))
+            const errorText = await response.text().catch(() => "")
+            let message = `HTTP ${response.status}`
+
+            try {
+                const errorData = JSON.parse(errorText) as Record<string, unknown>
+                message =
+                    String(errorData.message || errorData.error || errorData.code || message)
+            } catch {
+                if (errorText) {
+                    message = errorText
+                }
+            }
+
             return {
                 success: false,
-                error:
-                    (errorData as Record<string, unknown>).message?.toString() ||
-                    "Error getting payment status",
+                error: message,
+                retryable: isRetryableQueryStatus(response.status),
             }
         }
 
-        const data = (await response.json()) as {
-            status?: "PAID" | "PENDING" | "CANCELLED" | "ERROR"
-            transactionId?: string
+        const data = (await response.json()) as IzipayWebCorePaymentResponse
+
+        if (data.payloadHttp && data.signature && !verifyIzipayWebCoreSignature(data)) {
+            return {
+                success: false,
+                error: "Invalid Izipay query signature",
+                retryable: false,
+                raw: data,
+            }
         }
+
+        const parsed = parseIzipaySdkPaymentResponse(data)
+        if (!parsed?.orderId) {
+            return {
+                success: false,
+                error: "Invalid Izipay query response",
+                retryable: false,
+                raw: data,
+            }
+        }
+
+        const status = isIzipayPaymentApproved(parsed)
+            ? "PAID"
+            : isIzipayCommunicationError(parsed.code)
+                ? "PENDING"
+                : "CANCELLED"
 
         return {
             success: true,
-            status: data.status,
-            transactionId: data.transactionId,
+            status,
+            orderNumber: parsed.orderId,
+            transactionId: parsed.transactionId,
+            message: parsed.messageUser || parsed.message,
+            raw: data,
         }
     } catch (error) {
         return {
             success: false,
-            error: (error as Error).message,
+            error:
+                error instanceof Error && error.name === "AbortError"
+                    ? "Izipay query timeout"
+                    : (error as Error).message,
+            retryable:
+                !(error instanceof Error) || error.name === "AbortError",
         }
+    } finally {
+        clearTimeout(timeoutId)
     }
 }
 

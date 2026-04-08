@@ -255,31 +255,40 @@ export async function cacheDecrement(key: string, amount: number = 1): Promise<n
     return cacheIncrement(key, -amount)
 }
 
-export async function acquireLock(lockKey: string, ttlSeconds: number = 10): Promise<boolean> {
+export type LockAcquireStatus = "acquired" | "busy" | "unavailable"
+
+export async function acquireLockWithStatus(
+    lockKey: string,
+    ttlSeconds: number = 10
+): Promise<LockAcquireStatus> {
     try {
         if (redis) {
             const result = await redis.set(lockKey, "1", { ex: ttlSeconds, nx: true })
-            return result === "OK"
+            return result === "OK" ? "acquired" : "busy"
         }
 
         if (!shouldUseInMemoryFallback("cache.lock")) {
-            return false
+            return "unavailable"
         }
 
         const entry = memoryCache.get(lockKey)
         if (entry && entry.expiresAt > Date.now()) {
-            return false
+            return "busy"
         }
 
         memoryCache.set(lockKey, {
             data: "1",
             expiresAt: Date.now() + ttlSeconds * 1000,
         })
-        return true
+        return "acquired"
     } catch (error) {
         console.error("Acquire lock error:", error)
-        return false
+        return "unavailable"
     }
+}
+
+export async function acquireLock(lockKey: string, ttlSeconds: number = 10): Promise<boolean> {
+    return (await acquireLockWithStatus(lockKey, ttlSeconds)) === "acquired"
 }
 
 export async function releaseLock(lockKey: string): Promise<void> {

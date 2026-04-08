@@ -3,6 +3,41 @@ import { prisma } from "@/lib/prisma"
 import { fulfillPaidOrder } from "@/lib/order-fulfillment"
 import { onTicketSold } from "@/lib/cached-queries"
 
+type IzipayStoredSource = "db" | "ipn" | "query"
+
+export function buildIzipayProviderResponse(
+    source: "webhook" | "validate" | "redirect" | "query" | "session" | "embedded",
+    data: Prisma.InputJsonValue
+): Prisma.InputJsonValue {
+    return {
+        source,
+        receivedAt: new Date().toISOString(),
+        data,
+    }
+}
+
+export function getIzipayStoredSource(
+    providerResponse: Prisma.JsonValue | null | undefined
+): IzipayStoredSource {
+    if (
+        providerResponse &&
+        typeof providerResponse === "object" &&
+        !Array.isArray(providerResponse)
+    ) {
+        const source = (providerResponse as Record<string, unknown>).source
+
+        if (source === "query") {
+            return "query"
+        }
+
+        if (source === "webhook" || source === "embedded") {
+            return "ipn"
+        }
+    }
+
+    return "db"
+}
+
 export async function resolveIzipayOrderId(orderReference: string): Promise<string | null> {
     if (!orderReference) {
         return null
@@ -15,6 +50,15 @@ export async function resolveIzipayOrderId(orderReference: string): Promise<stri
 
     if (exact) {
         return exact.id
+    }
+
+    const byProviderOrderNumber = await prisma.order.findFirst({
+        where: { providerOrderNumber: orderReference },
+        select: { id: true },
+    })
+
+    if (byProviderOrderNumber) {
+        return byProviderOrderNumber.id
     }
 
     const matches = await prisma.order.findMany({
@@ -34,21 +78,45 @@ export async function resolveIzipayOrderId(orderReference: string): Promise<stri
     return null
 }
 
+export async function storeIzipayOrderCorrelation(input: {
+    orderId: string
+    providerOrderNumber: string
+    providerTransactionId: string
+}) {
+    return prisma.order.update({
+        where: { id: input.orderId },
+        data: {
+            providerOrderNumber: input.providerOrderNumber,
+            providerTransactionId: input.providerTransactionId,
+            paymentSyncAttempts: 0,
+            paymentLastSyncAt: null,
+            paymentNeedsReview: false,
+        },
+        select: { id: true },
+    })
+}
+
 export async function fulfillIzipayOrder(input: {
     orderId: string
     providerRef?: string
     providerResponse: Prisma.InputJsonValue
+    providerOrderNumber?: string
+    providerTransactionId?: string
 }) {
     return fulfillPaidOrder({
         orderId: input.orderId,
         providerRef: input.providerRef,
         providerResponse: input.providerResponse,
+        providerOrderNumber: input.providerOrderNumber,
+        providerTransactionId: input.providerTransactionId,
     })
 }
 
 export async function cancelIzipayOrder(input: {
     orderId: string
     providerResponse: Prisma.InputJsonValue
+    providerOrderNumber?: string
+    providerTransactionId?: string
 }) {
     const cancellationResult = await prisma.$transaction(async (tx) => {
         const cancelled = await tx.order.updateMany({
@@ -59,6 +127,8 @@ export async function cancelIzipayOrder(input: {
             data: {
                 status: "CANCELLED",
                 providerResponse: input.providerResponse,
+                providerOrderNumber: input.providerOrderNumber,
+                providerTransactionId: input.providerTransactionId,
             },
         })
 
