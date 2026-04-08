@@ -101,7 +101,6 @@ export default function CheckoutPage() {
             items.some((item) =>
                 item.attendees.some((attendee) =>
                     !attendee.firstName?.trim() ||
-                    !attendee.secondName?.trim() ||
                     !attendee.lastNamePaternal?.trim() ||
                     !attendee.lastNameMaternal?.trim() ||
                     !attendee.dni
@@ -634,7 +633,7 @@ export default function CheckoutPage() {
                                                         </div>
                                                         <div>
                                                             <label className="text-xs text-gray-500 mb-1 block">
-                                                                Segundo nombre
+                                                                Segundo nombre (opcional)
                                                             </label>
                                                             <Input
                                                                 value={attendee.secondName}

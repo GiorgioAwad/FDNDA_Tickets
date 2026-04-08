@@ -126,7 +126,7 @@ export const billingDataSchema = z.discriminatedUnion("documentType", [
 const orderAttendeeSchema = z
     .object({
         firstName: z.string().min(2, "Nombre requerido"),
-        secondName: z.string().min(2, "Segundo nombre requerido"),
+        secondName: z.string().trim().max(100, "Segundo nombre muy largo").optional().default(""),
         lastNamePaternal: z.string().min(2, "Apellido paterno requerido"),
         lastNameMaternal: z.string().min(2, "Apellido materno requerido"),
         dni: z.string().min(8, "DNI requerido").max(12),
