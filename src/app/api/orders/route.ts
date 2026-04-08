@@ -23,6 +23,14 @@ const normalizeServilexIndicator = (value: unknown): "AC" | "OS" | "PN" | "PA" =
     return "AC"
 }
 
+const buildGeneratedServilexMatricula = (seed: string): string => {
+    let hash = 0
+    for (const char of seed) {
+        hash = (hash * 31 + char.charCodeAt(0)) % 10_000_000
+    }
+    return String(hash).padStart(7, "0")
+}
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -59,6 +67,7 @@ export async function POST(request: NextRequest) {
         const { eventId, items, billing, discountCodeId } = parsedBody.data
         const billingSnapshot = buildBillingSnapshot(billing, user.email)
         const cacheInvalidations = new Set<string>()
+        const orderSeedTimestamp = Date.now()
 
         // Transaccion con reserva atomica de stock para evitar sobreventa.
         const order = await prisma.$transaction(async (tx) => {
@@ -119,6 +128,10 @@ export async function POST(request: NextRequest) {
                 if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
                     throw new Error("La cantidad debe ser un entero mayor que cero")
                 }
+
+                let attendeeData = Array.isArray(item.attendees)
+                    ? item.attendees.map((attendee) => ({ ...attendee }))
+                    : []
 
                 const reservedRows = await tx.$queryRaw<
                     Array<{
@@ -223,13 +236,15 @@ export async function POST(request: NextRequest) {
                             throw new Error(`Debes completar todos los asistentes para "${reservedTicketType.name}"`)
                         }
 
-                        const missingMatricula = attendees
-                            .slice(0, item.quantity)
-                            .some((attendee) => !attendee.matricula || !attendee.matricula.trim())
-
-                        if (missingMatricula) {
-                            throw new Error(`Debes completar la matricula Servilex para "${reservedTicketType.name}"`)
-                        }
+                        attendeeData = attendees.map((attendee, attendeeIndex) => ({
+                            ...attendee,
+                            matricula:
+                                typeof attendee.matricula === "string" && attendee.matricula.trim()
+                                    ? attendee.matricula.trim()
+                                    : buildGeneratedServilexMatricula(
+                                        `${orderSeedTimestamp}:${eventId}:${reservedTicketType.id}:${user.id}:${attendeeIndex}`
+                                    ),
+                        }))
                     }
 
                     if (indicator === "PN" || indicator === "PA") {
@@ -267,7 +282,7 @@ export async function POST(request: NextRequest) {
                     quantity: item.quantity,
                     unitPrice: reservedTicketType.price,
                     subtotal,
-                    attendeeData: (item.attendees || []) as Prisma.InputJsonValue,
+                    attendeeData: attendeeData as Prisma.InputJsonValue,
                 })
 
                 cacheInvalidations.add(`${eventId}:${item.ticketTypeId}`)

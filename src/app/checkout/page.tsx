@@ -101,12 +101,7 @@ export default function CheckoutPage() {
             items.some((item) =>
                 item.attendees.some((attendee) =>
                     !attendee.name ||
-                    !attendee.dni ||
-                    (
-                        item.servilexEnabled &&
-                        (item.servilexIndicator || "AC").toUpperCase() === "AC" &&
-                        !attendee.matricula
-                    )
+                    !attendee.dni
                 )
             ),
         [items]
@@ -649,23 +644,8 @@ export default function CheckoutPage() {
                                                     </div>
 
                                                     {item.servilexEnabled && (item.servilexIndicator || "AC").toUpperCase() === "AC" && (
-                                                        <div>
-                                                            <label className="text-xs text-gray-500 mb-1 block">
-                                                                Matricula / codigo de referencia Servilex
-                                                            </label>
-                                                            <Input
-                                                                value={attendee.matricula || ""}
-                                                                onChange={(e) =>
-                                                                    updateAttendee(
-                                                                        item.ticketTypeId,
-                                                                        attendeeIndex,
-                                                                        "matricula",
-                                                                        e.target.value
-                                                                    )
-                                                                }
-                                                                placeholder="0000006"
-                                                                className="bg-white"
-                                                            />
+                                                        <div className="rounded-md border border-dashed border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                                                            La referencia interna ABIO del alumno se genera automaticamente al procesar la compra.
                                                         </div>
                                                     )}
 
@@ -871,7 +851,7 @@ export default function CheckoutPage() {
                                         )}
                                         {!hasMissingBillingData && hasMissingAttendeeData && (
                                             <p className="text-xs text-amber-600 text-center">
-                                                Completa los datos de todos los asistentes, incluida la matricula cuando aplique
+                                                Completa los datos de todos los asistentes
                                             </p>
                                         )}
                                         {!hasMissingBillingData && !hasMissingAttendeeData && hasMissingScheduleSelections && (
