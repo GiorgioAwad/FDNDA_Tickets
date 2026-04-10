@@ -530,8 +530,8 @@ export function TicketTypeManager({
                                             >
                                                 <option value="AC">AC · Academia</option>
                                                 <option value="OS">OS · Otros servicios</option>
-                                                <option value="PN">PN · Piscina libre niño</option>
-                                                <option value="PA">PA · Piscina libre adulto</option>
+                                                <option value="PN">PN · Piscina no afiliado</option>
+                                                <option value="PA">PA · Piscina afiliado</option>
                                             </select>
                                         </div>
                                         <div className="space-y-2">
