@@ -321,6 +321,41 @@ test("normaliza DN de Izipay a DINERS para ABIO", () => {
     assert.equal(payload.cobranza.tarjetaTipo, "DINERS")
 })
 
+test("normaliza MC de Izipay a MASTERCARD para ABIO", () => {
+    const payloadHttp = {
+        response: {
+            payMethod: "CARD",
+            card: {
+                brand: "MC",
+            },
+        },
+    }
+
+    const order = buildOrder({
+        totalAmount: 15,
+        providerResponse: {
+            source: "validate",
+            receivedAt: "2026-04-08T20:00:00Z",
+            data: {
+                payloadHttp: JSON.stringify(payloadHttp),
+            },
+        },
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 15,
+                attendeeData: [],
+                ticketType: buildTicketType("OS"),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "mc-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.cobranza.tarjetaTipo, "MASTERCARD")
+})
+
 test("AC usa nombres estructurados y codigoReferencia maximo de 6 caracteres", () => {
     const order = buildOrder({
         providerRef: "PAY-REF-ABC123456",

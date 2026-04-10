@@ -14,6 +14,7 @@ const SERVILEX_DECIMAL_TOKEN_PREFIX = "__SERVILEX_DECIMAL__"
 
 const CARD_BRAND_MAP: Record<string, string> = {
     ae: "AMEX",
+    mc: "MASTERCARD",
     visa: "VISA",
     mastercard: "MASTERCARD",
     master_card: "MASTERCARD",
