@@ -105,6 +105,28 @@ const getServilexExtraConfig = (value: unknown): ServilexExtraConfig => {
     return value as ServilexExtraConfig
 }
 
+type PoolGeneratedSlot = {
+    name: string
+    startTime: string
+    endTime: string
+    duration: number
+}
+
+const buildPoolGeneratedSlots = (startHour: number, endHour: number): PoolGeneratedSlot[] => {
+    const slots: PoolGeneratedSlot[] = []
+    for (let h = startHour; h < endHour; h++) {
+        const startTime = `${String(h).padStart(2, "0")}:00`
+        const endTime = `${String(h + 1).padStart(2, "0")}:00`
+        slots.push({
+            name: `${startTime} - ${endTime}`,
+            startTime,
+            endTime,
+            duration: h + 1 - h,
+        })
+    }
+    return slots
+}
+
 const normalizeTicketTypeForForm = (ticket: TicketType): Partial<TicketType> => ({
     ...ticket,
     servilexIndicator: ticket.servilexIndicator || "AC",
@@ -393,15 +415,38 @@ export function TicketTypeManager({
             return
         }
 
-        const slots: { name: string }[] = []
-        for (let h = poolStartHour; h < poolEndHour; h++) {
-            const start = `${String(h).padStart(2, "0")}:00`
-            const end = `${String(h + 1).padStart(2, "0")}:00`
-            slots.push({ name: `${start} - ${end}` })
-        }
+        const currentPoolExtraConfig = getServilexExtraConfig(formData.servilexExtraConfig)
+        const currentPoolIndicator = (formData.servilexIndicator || "PN").toUpperCase()
+        const slots = buildPoolGeneratedSlots(poolStartHour, poolEndHour)
 
         const existingNames = new Set(ticketTypes.map(t => t.name.trim()))
         const slotsToCreate = slots.filter(s => !existingNames.has(s.name))
+
+        if (formData.servilexEnabled) {
+            if (currentPoolIndicator !== "PN" && currentPoolIndicator !== "PA") {
+                alert("Para el generador de piscina libre, el indicador ABIO debe ser PN o PA")
+                return
+            }
+            if (!formData.servilexSucursalCode || !String(formData.servilexSucursalCode).trim()) {
+                alert("Completa la sucursal ABIO para generar horarios integrados")
+                return
+            }
+            if (!formData.servilexServiceCode || !String(formData.servilexServiceCode).trim()) {
+                alert("Completa el codigo de servicio ABIO para generar horarios integrados")
+                return
+            }
+            if (!formData.servilexPoolCode || !String(formData.servilexPoolCode).trim()) {
+                alert("Completa el codigo de piscina para generar horarios integrados")
+                return
+            }
+            if (
+                currentPoolExtraConfig.cantidad !== undefined &&
+                (!Number.isFinite(Number(currentPoolExtraConfig.cantidad)) || Number(currentPoolExtraConfig.cantidad) <= 0)
+            ) {
+                alert("La cantidad Servilex debe ser mayor a 0")
+                return
+            }
+        }
 
         if (slotsToCreate.length === 0) {
             alert("Todos los horarios ya existen")
@@ -426,6 +471,7 @@ export function TicketTypeManager({
             setPoolProgress({ current: i + 1, total: slotsToCreate.length })
 
             try {
+                const extraConfig = getServilexExtraConfig(formData.servilexExtraConfig)
                 const response = await fetch("/api/ticket-types", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -437,6 +483,20 @@ export function TicketTypeManager({
                         sortOrder: maxSort + i + 1,
                         isActive: true,
                         validDays: [],
+                        servilexEnabled: Boolean(formData.servilexEnabled),
+                        servilexIndicator: currentPoolIndicator,
+                        servilexSucursalCode: formData.servilexSucursalCode,
+                        servilexServiceCode: formData.servilexServiceCode,
+                        servilexPoolCode: formData.servilexPoolCode,
+                        servilexExtraConfig: formData.servilexEnabled
+                            ? {
+                                ...extraConfig,
+                                cantidad: Number(extraConfig.cantidad) > 0 ? Number(extraConfig.cantidad) : 1,
+                                horaInicio: slot.startTime,
+                                horaFin: slot.endTime,
+                                duracion: slot.duration,
+                            }
+                            : {},
                     }),
                 })
                 if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -518,15 +578,31 @@ export function TicketTypeManager({
                             Entrada con Turno
                         </Button>
                         {usesDailyCapacity && (
-                            <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setShowPoolGenerator(true)}
-                            >
-                                <Plus className="h-4 w-4 mr-2" />
-                                Generar Horarios
-                            </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                                setFormData((prev) => ({
+                                    ...buildEmptyFormData(),
+                                    servilexEnabled: true,
+                                    servilexIndicator:
+                                        prev.servilexIndicator === "PA" || prev.servilexIndicator === "PN"
+                                            ? prev.servilexIndicator
+                                            : "PN",
+                                    servilexSucursalCode: prev.servilexSucursalCode || "01",
+                                    servilexServiceCode: prev.servilexServiceCode || "",
+                                    servilexPoolCode: prev.servilexPoolCode || "",
+                                    servilexExtraConfig: {
+                                        cantidad: getServilexExtraConfig(prev.servilexExtraConfig).cantidad || 1,
+                                    },
+                                }))
+                                setShowPoolGenerator(true)
+                            }}
+                        >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Generar Horarios
+                        </Button>
                         )}
                     </div>
                 )}
@@ -594,6 +670,116 @@ export function TicketTypeManager({
                                     className="mt-1"
                                 />
                             </div>
+                        </div>
+
+                        <div className="space-y-4 rounded-md border bg-white p-4">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    id="poolServilexEnabled"
+                                    type="checkbox"
+                                    checked={Boolean(formData.servilexEnabled)}
+                                    onChange={(e) =>
+                                        setFormData((prev) => ({
+                                            ...prev,
+                                            servilexEnabled: e.target.checked,
+                                            servilexIndicator:
+                                                prev.servilexIndicator === "PA" || prev.servilexIndicator === "PN"
+                                                    ? prev.servilexIndicator
+                                                    : "PN",
+                                        }))
+                                    }
+                                    className="h-4 w-4 rounded border-gray-300"
+                                    disabled={poolGenerating}
+                                />
+                                <label htmlFor="poolServilexEnabled" className="text-sm font-medium">
+                                    Integrar automaticamente cada horario con Servilex / ABIO
+                                </label>
+                            </div>
+
+                            {formData.servilexEnabled && (
+                                <>
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">Indicador ABIO</label>
+                                            <select
+                                                value={(formData.servilexIndicator || "PN").toUpperCase()}
+                                                onChange={(e) =>
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        servilexIndicator: e.target.value,
+                                                    }))
+                                                }
+                                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                                disabled={poolGenerating}
+                                            >
+                                                <option value="PN">PN · Piscina no afiliado</option>
+                                                <option value="PA">PA · Piscina afiliado</option>
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">Sucursal ABIO</label>
+                                            <Input
+                                                value={formData.servilexSucursalCode || ""}
+                                                onChange={(e) =>
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        servilexSucursalCode: e.target.value,
+                                                    }))
+                                                }
+                                                placeholder="01"
+                                                disabled={poolGenerating}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">Codigo servicio ABIO</label>
+                                            <Input
+                                                value={formData.servilexServiceCode || ""}
+                                                onChange={(e) =>
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        servilexServiceCode: e.target.value,
+                                                    }))
+                                                }
+                                                placeholder="403"
+                                                disabled={poolGenerating}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">Codigo piscina</label>
+                                            <Input
+                                                value={formData.servilexPoolCode || ""}
+                                                onChange={(e) =>
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        servilexPoolCode: e.target.value,
+                                                    }))
+                                                }
+                                                placeholder="01"
+                                                disabled={poolGenerating}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">Cantidad</label>
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                value={getServilexExtraConfig(formData.servilexExtraConfig).cantidad ?? 1}
+                                                onChange={(e) => updateServilexExtraConfig("cantidad", e.target.value)}
+                                                placeholder="1"
+                                                disabled={poolGenerating}
+                                            />
+                                        </div>
+                                        <div className="rounded-md border border-dashed bg-gray-50 p-3 text-xs text-gray-600 md:col-span-2">
+                                            Cada horario generado heredara esta configuracion ABIO y completara automaticamente
+                                            <span className="font-medium"> hora inicio, hora fin y duracion </span>
+                                            segun la franja creada.
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         {poolSlotsPreview && (
