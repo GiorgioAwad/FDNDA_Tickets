@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { fulfillPaidOrder } from "@/lib/order-fulfillment"
 import { onTicketSold } from "@/lib/cached-queries"
+import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
+import { releaseTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 
 type IzipayStoredSource = "db" | "ipn" | "query"
 
@@ -144,13 +146,44 @@ export async function cancelIzipayOrder(input: {
             select: {
                 ticketTypeId: true,
                 quantity: true,
+                attendeeData: true,
                 ticketType: {
-                    select: { eventId: true },
+                    select: {
+                        eventId: true,
+                        validDays: true,
+                        name: true,
+                        event: {
+                            select: {
+                                category: true,
+                                startDate: true,
+                                endDate: true,
+                            },
+                        },
+                    },
                 },
             },
         })
 
         for (const item of orderItems) {
+            if (isPoolFreeEventCategory(item.ticketType.event.category)) {
+                const reservationCounts = buildPoolFreeReservationCounts({
+                    attendees: Array.isArray(item.attendeeData) ? item.attendeeData : [],
+                    quantity: item.quantity,
+                    validDays: item.ticketType.validDays,
+                    eventStartDate: item.ticketType.event.startDate,
+                    eventEndDate: item.ticketType.event.endDate,
+                    ticketLabel: item.ticketType.name,
+                    strict: false,
+                })
+
+                if (reservationCounts.size > 0) {
+                    await releaseTicketTypeDateInventory(tx, {
+                        ticketTypeId: item.ticketTypeId,
+                        reservations: reservationCounts,
+                    })
+                }
+            }
+
             await tx.ticketType.updateMany({
                 where: {
                     id: item.ticketTypeId,

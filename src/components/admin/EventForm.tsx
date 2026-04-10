@@ -319,6 +319,7 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                             <TicketTypeManager
                                 eventId={initialData.id}
                                 initialTicketTypes={ticketTypes}
+                                eventCategory={formData.category}
                                 eventStartDate={formData.startDate || initialData.startDate}
                                 eventEndDate={formData.endDate || initialData.endDate}
                             />

@@ -192,6 +192,7 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                         <TicketPurchaseCard
                             eventId={event.id}
                             eventTitle={event.title}
+                            eventCategory={event.category}
                             ticketTypes={ticketTypes}
                             eventStartDate={event.startDate}
                             eventEndDate={event.endDate}

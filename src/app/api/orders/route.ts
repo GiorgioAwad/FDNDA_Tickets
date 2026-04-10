@@ -6,6 +6,8 @@ import { buildBillingSnapshot, buildNaturalPersonFullName } from "@/lib/billing"
 import { rateLimit } from "@/lib/rate-limit"
 import { createOrderSchema } from "@/lib/validations"
 import { onTicketSold } from "@/lib/cached-queries"
+import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
+import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 import { z } from "zod"
 
 export const runtime = "nodejs"
@@ -71,6 +73,20 @@ export async function POST(request: NextRequest) {
 
         // Transaccion con reserva atomica de stock para evitar sobreventa.
         const order = await prisma.$transaction(async (tx) => {
+            const eventConfig = await tx.event.findUnique({
+                where: { id: eventId },
+                select: {
+                    id: true,
+                    category: true,
+                    startDate: true,
+                    endDate: true,
+                },
+            })
+
+            if (!eventConfig) {
+                throw new Error("Evento no encontrado")
+            }
+
             let totalAmount = 0
             let discountAmount = 0
             let hasServilexItems = false
@@ -132,13 +148,16 @@ export async function POST(request: NextRequest) {
                 let attendeeData = Array.isArray(item.attendees)
                     ? item.attendees.map((attendee) => ({ ...attendee }))
                     : []
+                const usesDailyCapacity = isPoolFreeEventCategory(eventConfig.category)
 
-                const reservedRows = await tx.$queryRaw<
-                    Array<{
+                let reservedTicketType:
+                    | {
                         id: string
                         name: string
                         price: Prisma.Decimal
                         eventId: string
+                        capacity: number
+                        validDays: Prisma.JsonValue | null
                         servilexEnabled: boolean
                         servilexIndicator: string | null
                         servilexSucursalCode: string | null
@@ -147,41 +166,28 @@ export async function POST(request: NextRequest) {
                         servilexScheduleCode: string | null
                         servilexPoolCode: string | null
                         servilexExtraConfig: Prisma.JsonValue | null
-                    }>
-                >(Prisma.sql`
-                    UPDATE "ticket_types"
-                    SET "sold" = "sold" + ${item.quantity}
-                    WHERE "id" = ${item.ticketTypeId}
-                      AND "eventId" = ${eventId}
-                      AND "isActive" = true
-                      AND ("capacity" = 0 OR "sold" + ${item.quantity} <= "capacity")
-                    RETURNING
-                        "id",
-                        "name",
-                        "price",
-                        "eventId",
-                        "servilexEnabled",
-                        "servilexIndicator",
-                        "servilexSucursalCode",
-                        "servilexServiceCode",
-                        "servilexDisciplineCode",
-                        "servilexScheduleCode",
-                        "servilexPoolCode",
-                        "servilexExtraConfig"
-                `)
+                    }
+                    | undefined
 
-                const reservedTicketType = reservedRows[0]
-
-                if (!reservedTicketType) {
+                if (usesDailyCapacity) {
                     const ticketType = await tx.ticketType.findUnique({
                         where: { id: item.ticketTypeId },
                         select: {
                             id: true,
                             name: true,
+                            price: true,
                             eventId: true,
-                            isActive: true,
                             capacity: true,
-                            sold: true,
+                            validDays: true,
+                            isActive: true,
+                            servilexEnabled: true,
+                            servilexIndicator: true,
+                            servilexSucursalCode: true,
+                            servilexServiceCode: true,
+                            servilexDisciplineCode: true,
+                            servilexScheduleCode: true,
+                            servilexPoolCode: true,
+                            servilexExtraConfig: true,
                         },
                     })
 
@@ -197,9 +203,105 @@ export async function POST(request: NextRequest) {
                         throw new Error(`El tipo de entrada "${ticketType.name}" no esta disponible`)
                     }
 
-                    throw new Error(
-                        `El tipo de entrada "${ticketType.name}" esta agotado`
-                    )
+                    const reservationCounts = buildPoolFreeReservationCounts({
+                        attendees: attendeeData,
+                        quantity: item.quantity,
+                        validDays: ticketType.validDays,
+                        eventStartDate: eventConfig.startDate,
+                        eventEndDate: eventConfig.endDate,
+                        ticketLabel: ticketType.name,
+                    })
+
+                    await reserveTicketTypeDateInventory(tx, {
+                        ticketTypeId: ticketType.id,
+                        templateCapacity: ticketType.capacity,
+                        reservations: reservationCounts,
+                        ticketLabel: ticketType.name,
+                    })
+
+                    await tx.ticketType.update({
+                        where: { id: ticketType.id },
+                        data: {
+                            sold: {
+                                increment: item.quantity,
+                            },
+                        },
+                    })
+
+                    reservedTicketType = ticketType
+                } else {
+                    const reservedRows = await tx.$queryRaw<
+                        Array<{
+                            id: string
+                            name: string
+                            price: Prisma.Decimal
+                            eventId: string
+                            capacity: number
+                            validDays: Prisma.JsonValue | null
+                            servilexEnabled: boolean
+                            servilexIndicator: string | null
+                            servilexSucursalCode: string | null
+                            servilexServiceCode: string | null
+                            servilexDisciplineCode: string | null
+                            servilexScheduleCode: string | null
+                            servilexPoolCode: string | null
+                            servilexExtraConfig: Prisma.JsonValue | null
+                        }>
+                    >(Prisma.sql`
+                        UPDATE "ticket_types"
+                        SET "sold" = "sold" + ${item.quantity}
+                        WHERE "id" = ${item.ticketTypeId}
+                          AND "eventId" = ${eventId}
+                          AND "isActive" = true
+                          AND ("capacity" = 0 OR "sold" + ${item.quantity} <= "capacity")
+                        RETURNING
+                            "id",
+                            "name",
+                            "price",
+                            "eventId",
+                            "capacity",
+                            "validDays",
+                            "servilexEnabled",
+                            "servilexIndicator",
+                            "servilexSucursalCode",
+                            "servilexServiceCode",
+                            "servilexDisciplineCode",
+                            "servilexScheduleCode",
+                            "servilexPoolCode",
+                            "servilexExtraConfig"
+                    `)
+
+                    reservedTicketType = reservedRows[0]
+
+                    if (!reservedTicketType) {
+                        const ticketType = await tx.ticketType.findUnique({
+                            where: { id: item.ticketTypeId },
+                            select: {
+                                id: true,
+                                name: true,
+                                eventId: true,
+                                isActive: true,
+                                capacity: true,
+                                sold: true,
+                            },
+                        })
+
+                        if (!ticketType) {
+                            throw new Error(`Tipo de entrada no encontrado: ${item.ticketTypeId}`)
+                        }
+
+                        if (ticketType.eventId !== eventId) {
+                            throw new Error(`El tipo de entrada "${ticketType.name}" no pertenece a este evento`)
+                        }
+
+                        if (!ticketType.isActive) {
+                            throw new Error(`El tipo de entrada "${ticketType.name}" no esta disponible`)
+                        }
+
+                        throw new Error(
+                            `El tipo de entrada "${ticketType.name}" esta agotado`
+                        )
+                    }
                 }
 
                 const subtotal = Number(reservedTicketType.price) * item.quantity

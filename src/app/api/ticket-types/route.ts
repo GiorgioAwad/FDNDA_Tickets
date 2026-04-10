@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { invalidateTicketTypeCache } from "@/lib/cache"
 import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
+import { isPoolFreeEventCategory } from "@/lib/pool-free"
 import { Prisma } from "@prisma/client"
 
 export const runtime = "nodejs"
@@ -87,6 +88,21 @@ export async function POST(request: NextRequest) {
             )
         }
 
+        const event = await prisma.event.findUnique({
+            where: { id: eventId },
+            select: {
+                id: true,
+                category: true,
+            },
+        })
+
+        if (!event) {
+            return NextResponse.json(
+                { success: false, error: "Evento no encontrado" },
+                { status: 404 }
+            )
+        }
+
         // Resolve servilex fields from catalog if serviceId provided
         let resolvedIndicator = normalizeOptionalCode(servilexIndicator, "AC")
         let resolvedServiceCode = normalizeOptionalCode(servilexServiceCode)
@@ -129,7 +145,7 @@ export async function POST(request: NextRequest) {
             },
         })
 
-        await invalidateTicketTypeCache(eventId)
+        await invalidateTicketTypeCache(event.id)
 
         return NextResponse.json({
             success: true,
@@ -257,6 +273,22 @@ export async function PUT(request: NextRequest) {
             where: { id },
             data,
         })
+
+        const event = await prisma.event.findUnique({
+            where: { id: ticketType.eventId },
+            select: {
+                category: true,
+            },
+        })
+
+        if (capacity !== undefined && isPoolFreeEventCategory(event?.category)) {
+            await prisma.$executeRaw(Prisma.sql`
+                UPDATE "ticket_type_date_inventories"
+                SET "capacity" = ${Number(capacity)},
+                    "updatedAt" = CURRENT_TIMESTAMP
+                WHERE "ticketTypeId" = ${ticketType.id}
+            `)
+        }
 
         await invalidateTicketTypeCache(ticketType.eventId)
 

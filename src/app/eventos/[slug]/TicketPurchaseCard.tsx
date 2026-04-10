@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { getPoolFreeSelectableDates, isPoolFreeEventCategory } from "@/lib/pool-free"
 import { formatPrice } from "@/lib/utils"
 import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { Info, ShoppingCart, Minus, Plus, Gift, CheckCircle, AlertCircle, Ticket } from "lucide-react"
@@ -31,6 +32,7 @@ export type TicketTypeClient = {
 type TicketPurchaseCardProps = {
     eventId: string
     eventTitle: string
+    eventCategory?: string | null
     ticketTypes: TicketTypeClient[]
     eventStartDate?: string | Date
     eventEndDate?: string | Date
@@ -85,6 +87,7 @@ const normalizeScheduleDatesForEventRange = (
 export default function TicketPurchaseCard({
     eventId,
     eventTitle,
+    eventCategory,
     ticketTypes,
     eventStartDate,
     eventEndDate,
@@ -170,27 +173,46 @@ export default function TicketPurchaseCard({
 
     const ticketMeta = useMemo(() => {
         return ticketTypesWithLiveStock.map((ticket) => {
+            const usesDailyCapacity = isPoolFreeEventCategory(eventCategory)
             const schedule = parseTicketScheduleConfig(ticket.validDays)
-            const normalizedDates = normalizeScheduleDatesForEventRange(
+            let normalizedDates = normalizeScheduleDatesForEventRange(
                 schedule.dates,
                 eventStartDate,
                 eventEndDate
             )
-            const available = ticket.capacity === 0 ? null : ticket.capacity - ticket.sold
+            if (
+                usesDailyCapacity &&
+                normalizedDates.length === 0 &&
+                eventStartDate &&
+                eventEndDate
+            ) {
+                normalizedDates = getPoolFreeSelectableDates({
+                    validDays: ticket.validDays,
+                    eventStartDate: new Date(eventStartDate),
+                    eventEndDate: new Date(eventEndDate),
+                })
+            }
+
+            const available = usesDailyCapacity
+                ? (ticket.capacity === 0 ? null : ticket.capacity)
+                : (ticket.capacity === 0 ? null : ticket.capacity - ticket.sold)
             const maxQty = available === null ? MAX_UNLIMITED_QTY : Math.max(0, available)
-            const soldOut = ticket.isActive === false || (available !== null && available <= 0)
+            const soldOut = usesDailyCapacity
+                ? ticket.isActive === false
+                : ticket.isActive === false || (available !== null && available <= 0)
             return {
                 ticket,
                 available,
                 maxQty,
                 soldOut,
+                usesDailyCapacity,
                 schedule: {
                     ...schedule,
                     dates: normalizedDates,
                 },
             }
         })
-    }, [ticketTypesWithLiveStock, eventStartDate, eventEndDate])
+    }, [ticketTypesWithLiveStock, eventCategory, eventStartDate, eventEndDate])
 
     const getCartQuantity = (ticketId: string) => {
         const found = items.find((item) => item.ticketTypeId === ticketId)
@@ -321,7 +343,7 @@ export default function TicketPurchaseCard({
             <CardContent className="space-y-4">
                 {ticketTypes.length > 0 ? (
                     <>
-                        {ticketMeta.map(({ ticket, available, maxQty, soldOut, schedule }) => (
+                        {ticketMeta.map(({ ticket, available, maxQty, soldOut, usesDailyCapacity, schedule }) => (
                             <div
                                 key={ticket.id}
                                 className={`p-4 rounded-lg border ${
@@ -352,6 +374,11 @@ export default function TicketPurchaseCard({
                                         {schedule.dates.length} días seleccionables
                                     </Badge>
                                 )}
+                                {usesDailyCapacity && (
+                                    <Badge variant="secondary" className="mb-2 ml-2">
+                                        {ticket.capacity === 0 ? "Cupos por día ilimitados" : `Cupos por día: ${ticket.capacity}`}
+                                    </Badge>
+                                )}
                                 {schedule.shifts.length > 0 && (
                                     <Badge variant="secondary" className="mb-2 ml-2">
                                         Turnos configurados
@@ -364,7 +391,9 @@ export default function TicketPurchaseCard({
                                 )}
                                 {(schedule.dates.length > 0 || schedule.shifts.length > 0) && (
                                     <p className="text-xs text-gray-500 mt-1">
-                                        La selección de días/turnos se completa en checkout.
+                                        {usesDailyCapacity
+                                            ? "La fecha se elige en checkout y los cupos se descuentan por día."
+                                            : "La selección de días/turnos se completa en checkout."}
                                     </p>
                                 )}
 

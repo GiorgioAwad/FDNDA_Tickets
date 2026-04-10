@@ -255,6 +255,7 @@ model TicketType {
   // Relations
   event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   servilexService ServilexService? @relation(fields: [servilexServiceId], references: [id])
+  dateInventories TicketTypeDateInventory[]
   orderItems      OrderItem[]
   tickets         Ticket[]
   courtesyBatches CourtesyBatch[]
@@ -262,6 +263,22 @@ model TicketType {
   @@index([eventId])
   @@index([isActive])
   @@map("ticket_types")
+}
+
+model TicketTypeDateInventory {
+  id           String   @id @default(cuid())
+  ticketTypeId String
+  date         DateTime @db.Date
+  capacity     Int      @default(0)
+  sold         Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketTypeId, date])
+  @@index([ticketTypeId, date])
+  @@map("ticket_type_date_inventories")
 }
 
 model Order {

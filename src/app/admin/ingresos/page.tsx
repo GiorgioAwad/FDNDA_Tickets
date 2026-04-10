@@ -12,17 +12,15 @@ import {
     TrendingUp, 
     Percent,
     Download,
-    Calendar,
     CreditCard,
     CheckCircle,
     Clock,
     XCircle,
+    AlertCircle,
     Eye,
     X,
     User,
-    Mail,
     Ticket,
-    Hash,
     FileText,
     QrCode,
 } from "lucide-react"
@@ -46,6 +44,11 @@ interface Order {
     status: "PENDING" | "PAID" | "CANCELLED" | "REFUNDED"
     provider: string | null
     providerRef: string | null
+    providerOrderNumber: string | null
+    providerTransactionId: string | null
+    paymentSyncAttempts: number
+    paymentLastSyncAt: string | null
+    paymentNeedsReview: boolean
     createdAt: string
     paidAt: string | null
     discountCode?: {
@@ -146,6 +149,19 @@ export default function IncomePage() {
         }
     }
 
+    const getReviewBadge = (order: Order) => {
+        if (!order.paymentNeedsReview) {
+            return null
+        }
+
+        return (
+            <Badge className="bg-amber-100 text-amber-700 border-amber-200 mt-2">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                Revision manual
+            </Badge>
+        )
+    }
+
     const exportToExcel = () => {
         const statusMap: Record<string, string> = {
             PAID: "Pagado",
@@ -171,8 +187,11 @@ export default function IncomePage() {
                     "Subtotal": item.subtotal,
                     "Total Orden": idx === 0 ? order.totalAmount : "",
                     "Estado": idx === 0 ? statusMap[order.status] || order.status : "",
+                    "Revision Manual": idx === 0 ? (order.paymentNeedsReview ? "Si" : "No") : "",
                     "Método Pago": idx === 0 ? (order.provider || "-") : "",
-                    "Referencia": idx === 0 ? (order.providerRef || "-") : ""
+                    "Referencia": idx === 0 ? (order.providerRef || "-") : "",
+                    "Orden Izipay": idx === 0 ? (order.providerOrderNumber || "-") : "",
+                    "Transaccion Izipay": idx === 0 ? (order.providerTransactionId || "-") : ""
                 })
             })
         })
@@ -194,8 +213,11 @@ export default function IncomePage() {
             { wch: 12 },  // Subtotal
             { wch: 12 },  // Total Orden
             { wch: 12 },  // Estado
+            { wch: 14 },  // Revision Manual
             { wch: 12 },  // Método Pago
             { wch: 20 },  // Referencia
+            { wch: 18 },  // Orden Izipay
+            { wch: 20 },  // Transaccion Izipay
         ]
         ws['!cols'] = colWidths
 
@@ -375,7 +397,10 @@ export default function IncomePage() {
                                                 {formatPrice(order.totalAmount)}
                                             </td>
                                             <td className="py-3">
-                                                {getStatusBadge(order.status)}
+                                                <div className="flex flex-col items-start">
+                                                    {getStatusBadge(order.status)}
+                                                    {getReviewBadge(order)}
+                                                </div>
                                             </td>
                                             <td className="py-3 text-gray-500">
                                                 {new Date(order.createdAt).toLocaleDateString("es-PE", {
@@ -554,6 +579,32 @@ export default function IncomePage() {
                                             <p className="text-xs text-gray-400 mt-1">
                                                 Ref: {selectedOrder.providerRef}
                                             </p>
+                                        )}
+                                        {selectedOrder.providerOrderNumber && (
+                                            <p className="text-xs text-gray-400 mt-1">
+                                                Orden Izipay: {selectedOrder.providerOrderNumber}
+                                            </p>
+                                        )}
+                                        {selectedOrder.providerTransactionId && (
+                                            <p className="text-xs text-gray-400 mt-1">
+                                                Transacción Izipay: {selectedOrder.providerTransactionId}
+                                            </p>
+                                        )}
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            Intentos sync: {selectedOrder.paymentSyncAttempts}
+                                        </p>
+                                        {selectedOrder.paymentLastSyncAt && (
+                                            <p className="text-xs text-gray-400 mt-1">
+                                                Última sync: {new Date(selectedOrder.paymentLastSyncAt).toLocaleString("es-PE")}
+                                            </p>
+                                        )}
+                                        {selectedOrder.paymentNeedsReview && (
+                                            <div className="mt-3">
+                                                <Badge className="bg-amber-100 text-amber-700 border-amber-200">
+                                                    <AlertCircle className="h-3 w-3 mr-1" />
+                                                    Requiere revisión manual
+                                                </Badge>
+                                            </div>
                                         )}
                                         {selectedOrder.paidAt && (
                                             <p className="text-xs text-gray-400 mt-1">

@@ -12,6 +12,11 @@ interface OrderWithRelations {
     currency: string
     provider: string
     providerRef: string | null
+    providerOrderNumber: string | null
+    providerTransactionId: string | null
+    paymentSyncAttempts: number
+    paymentLastSyncAt: Date | null
+    paymentNeedsReview: boolean
     paidAt: Date | null
     createdAt: Date
     user: { name: string | null; email: string }
@@ -44,14 +49,13 @@ export async function GET() {
             return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 })
         }
 
-        // Fetch all orders with related data
         const orders = await prisma.order.findMany({
             include: {
                 user: {
                     select: {
                         name: true,
                         email: true,
-                    }
+                    },
                 },
                 orderItems: {
                     select: {
@@ -67,11 +71,11 @@ export async function GET() {
                                 event: {
                                     select: {
                                         title: true,
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                    },
+                                },
+                            },
+                        },
+                    },
                 },
                 tickets: {
                     select: {
@@ -81,53 +85,59 @@ export async function GET() {
                         status: true,
                         ticketCode: true,
                         ticketTypeId: true,
-                    }
-                }
+                    },
+                },
             },
-            orderBy: { createdAt: "desc" }
+            orderBy: { createdAt: "desc" },
         }) as unknown as OrderWithRelations[]
 
-        // Calculate totals
         const totalPaid = orders
-            .filter(o => o.status === "PAID")
-            .reduce((acc, o) => acc + o.totalAmount.toNumber(), 0)
+            .filter((order) => order.status === "PAID")
+            .reduce((acc, order) => acc + order.totalAmount.toNumber(), 0)
 
         const totalPending = orders
-            .filter(o => o.status === "PENDING")
-            .reduce((acc, o) => acc + o.totalAmount.toNumber(), 0)
+            .filter((order) => order.status === "PENDING")
+            .reduce((acc, order) => acc + order.totalAmount.toNumber(), 0)
 
         const totalCancelled = orders
-            .filter(o => o.status === "CANCELLED")
-            .reduce((acc, o) => acc + o.totalAmount.toNumber(), 0)
+            .filter((order) => order.status === "CANCELLED")
+            .reduce((acc, order) => acc + order.totalAmount.toNumber(), 0)
 
         return NextResponse.json({
             success: true,
             data: {
-                orders: orders.map(o => ({
-                    id: o.id,
-                    totalAmount: o.totalAmount.toNumber(),
-                    status: o.status,
-                    provider: o.provider,
-                    providerRef: o.providerRef,
-                    createdAt: o.createdAt,
-                    paidAt: o.paidAt,
-                    user: o.user,
-                    items: o.orderItems.map(i => ({
-                        id: i.id,
-                        quantity: i.quantity,
-                        subtotal: i.subtotal.toNumber(),
+                orders: orders.map((order) => ({
+                    id: order.id,
+                    totalAmount: order.totalAmount.toNumber(),
+                    status: order.status,
+                    provider: order.provider,
+                    providerRef: order.providerRef,
+                    providerOrderNumber: order.providerOrderNumber,
+                    providerTransactionId: order.providerTransactionId,
+                    paymentSyncAttempts: order.paymentSyncAttempts,
+                    paymentLastSyncAt: order.paymentLastSyncAt,
+                    paymentNeedsReview: order.paymentNeedsReview,
+                    createdAt: order.createdAt,
+                    paidAt: order.paidAt,
+                    user: order.user,
+                    items: order.orderItems.map((item) => ({
+                        id: item.id,
+                        quantity: item.quantity,
+                        subtotal: item.subtotal.toNumber(),
                         ticketType: {
-                            name: i.ticketType.name,
-                            price: i.unitPrice.toNumber(),
-                            event: i.ticketType.event
+                            name: item.ticketType.name,
+                            price: item.unitPrice.toNumber(),
+                            event: item.ticketType.event,
                         },
-                        tickets: o.tickets.filter(t => t.ticketTypeId === i.ticketTypeId),
-                    }))
+                        tickets: order.tickets.filter(
+                            (ticket) => ticket.ticketTypeId === item.ticketTypeId
+                        ),
+                    })),
                 })),
                 totalPaid,
                 totalPending,
                 totalCancelled,
-            }
+            },
         })
     } catch (error) {
         console.error("Error fetching income:", error)
