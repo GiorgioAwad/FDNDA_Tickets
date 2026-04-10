@@ -36,6 +36,7 @@ interface TicketType {
 interface TicketTypeManagerProps {
     eventId: string
     initialTicketTypes: TicketType[]
+    eventCategory?: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA"
     eventStartDate?: string | Date
     eventEndDate?: string | Date
 }
@@ -119,6 +120,7 @@ const normalizeTicketTypeForForm = (ticket: TicketType): Partial<TicketType> => 
 export function TicketTypeManager({
     eventId,
     initialTicketTypes,
+    eventCategory,
     eventStartDate,
     eventEndDate,
 }: TicketTypeManagerProps) {
@@ -135,6 +137,15 @@ export function TicketTypeManager({
 
     const [formData, setFormData] = useState<Partial<TicketType>>(buildEmptyFormData)
     const [capacityInput, setCapacityInput] = useState("100")
+    const usesDailyCapacity = eventCategory === "PISCINA_LIBRE"
+
+    const [showPoolGenerator, setShowPoolGenerator] = useState(false)
+    const [poolStartHour, setPoolStartHour] = useState(6)
+    const [poolEndHour, setPoolEndHour] = useState(20)
+    const [poolPrice, setPoolPrice] = useState("")
+    const [poolCapacity, setPoolCapacity] = useState("30")
+    const [poolGenerating, setPoolGenerating] = useState(false)
+    const [poolProgress, setPoolProgress] = useState({ current: 0, total: 0 })
 
     const isShiftTicketType = (ticket: TicketType) => {
         const schedule = parseTicketScheduleConfig(ticket.validDays)
@@ -167,6 +178,17 @@ export function TicketTypeManager({
         }
         return options
     }, [eventStartDate, eventEndDate])
+
+    const poolSlotsPreview = useMemo(() => {
+        if (poolStartHour >= poolEndHour) return null
+        const slots: string[] = []
+        for (let h = poolStartHour; h < poolEndHour; h++) {
+            slots.push(`${String(h).padStart(2, "0")}:00 - ${String(h + 1).padStart(2, "0")}:00`)
+        }
+        const existingNames = new Set(ticketTypes.map(t => t.name.trim()))
+        const newSlots = slots.filter(s => !existingNames.has(s))
+        return { slots, newCount: newSlots.length, skipCount: slots.length - newSlots.length }
+    }, [poolStartHour, poolEndHour, ticketTypes])
 
     const updateShiftEntry = (index: number, field: keyof ShiftEntry, value: string) => {
         setShiftEntries((prev) =>
@@ -355,6 +377,90 @@ export function TicketTypeManager({
         }
     }
 
+    const handlePoolGenerate = async () => {
+        if (poolStartHour >= poolEndHour) {
+            alert("La hora de inicio debe ser menor a la hora de fin")
+            return
+        }
+        const priceNumber = Number(poolPrice)
+        if (!Number.isFinite(priceNumber) || priceNumber < 0) {
+            alert("Precio invalido")
+            return
+        }
+        const capNumber = Number(poolCapacity)
+        if (!Number.isFinite(capNumber) || capNumber < 0) {
+            alert("Capacidad invalida")
+            return
+        }
+
+        const slots: { name: string }[] = []
+        for (let h = poolStartHour; h < poolEndHour; h++) {
+            const start = `${String(h).padStart(2, "0")}:00`
+            const end = `${String(h + 1).padStart(2, "0")}:00`
+            slots.push({ name: `${start} - ${end}` })
+        }
+
+        const existingNames = new Set(ticketTypes.map(t => t.name.trim()))
+        const slotsToCreate = slots.filter(s => !existingNames.has(s.name))
+
+        if (slotsToCreate.length === 0) {
+            alert("Todos los horarios ya existen")
+            return
+        }
+
+        const skipped = slots.length - slotsToCreate.length
+        const msg = skipped > 0
+            ? `Se crearan ${slotsToCreate.length} horarios (${skipped} ya existen y se omitiran). Continuar?`
+            : `Se crearan ${slotsToCreate.length} horarios de 1 hora. Continuar?`
+        if (!confirm(msg)) return
+
+        const maxSort = ticketTypes.reduce((max, t) => Math.max(max, t.sortOrder ?? 0), 0)
+
+        setPoolGenerating(true)
+        setPoolProgress({ current: 0, total: slotsToCreate.length })
+        const created: TicketType[] = []
+        const errors: string[] = []
+
+        for (let i = 0; i < slotsToCreate.length; i++) {
+            const slot = slotsToCreate[i]
+            setPoolProgress({ current: i + 1, total: slotsToCreate.length })
+
+            try {
+                const response = await fetch("/api/ticket-types", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        eventId,
+                        name: slot.name,
+                        price: priceNumber,
+                        capacity: capNumber,
+                        sortOrder: maxSort + i + 1,
+                        isActive: true,
+                        validDays: [],
+                    }),
+                })
+                if (!response.ok) throw new Error(`HTTP ${response.status}`)
+                const { data } = await response.json()
+                created.push(data)
+            } catch (err) {
+                errors.push(`${slot.name}: ${err instanceof Error ? err.message : "Error"}`)
+            }
+        }
+
+        if (created.length > 0) {
+            setTicketTypes(prev => [...prev, ...created])
+        }
+
+        setPoolGenerating(false)
+
+        if (errors.length === 0) {
+            alert(`${created.length} horarios creados exitosamente`)
+            setShowPoolGenerator(false)
+        } else {
+            alert(`Se crearon ${created.length} horarios. ${errors.length} fallaron:\n${errors.join("\n")}`)
+        }
+    }
+
     const currentServilexIndicator = (formData.servilexIndicator || "AC").toUpperCase()
     const currentServilexExtraConfig = getServilexExtraConfig(formData.servilexExtraConfig)
 
@@ -375,7 +481,7 @@ export function TicketTypeManager({
         <Card>
             <CardHeader className="space-y-3">
                 <CardTitle>Entradas</CardTitle>
-                {!isAdding && !editingId && (
+                {!isAdding && !editingId && !showPoolGenerator && (
                     <div className="flex flex-wrap gap-2">
                         <Button
                             type="button"
@@ -411,10 +517,129 @@ export function TicketTypeManager({
                             <Plus className="h-4 w-4 mr-2" />
                             Entrada con Turno
                         </Button>
+                        {usesDailyCapacity && (
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setShowPoolGenerator(true)}
+                            >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Generar Horarios
+                            </Button>
+                        )}
                     </div>
                 )}
             </CardHeader>
             <CardContent className="space-y-4">
+                {showPoolGenerator && (
+                    <div className="bg-blue-50 p-4 rounded-lg space-y-4 border border-blue-200">
+                        <h4 className="font-medium text-sm">Generar Horarios de Piscina Libre</h4>
+                        <p className="text-xs text-gray-600">
+                            Define el rango de horas y se creara una entrada por cada hora. Luego puedes ajustar la capacidad de cada horario individualmente.
+                        </p>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div>
+                                <label className="text-xs font-medium text-gray-700">Hora inicio</label>
+                                <select
+                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                                    value={poolStartHour}
+                                    onChange={e => setPoolStartHour(Number(e.target.value))}
+                                    disabled={poolGenerating}
+                                >
+                                    {Array.from({ length: 24 }, (_, i) => (
+                                        <option key={i} value={i}>
+                                            {String(i).padStart(2, "0")}:00
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-700">Hora fin</label>
+                                <select
+                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                                    value={poolEndHour}
+                                    onChange={e => setPoolEndHour(Number(e.target.value))}
+                                    disabled={poolGenerating}
+                                >
+                                    {Array.from({ length: 24 }, (_, i) => i + 1).filter(h => h > poolStartHour).map(h => (
+                                        <option key={h} value={h}>
+                                            {String(h).padStart(2, "0")}:00
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-700">Precio (S/)</label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={poolPrice}
+                                    onChange={e => setPoolPrice(e.target.value)}
+                                    disabled={poolGenerating}
+                                    placeholder="0.00"
+                                    className="mt-1"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-700">Capacidad por dia</label>
+                                <Input
+                                    type="number"
+                                    min="0"
+                                    value={poolCapacity}
+                                    onChange={e => setPoolCapacity(e.target.value)}
+                                    disabled={poolGenerating}
+                                    placeholder="30"
+                                    className="mt-1"
+                                />
+                            </div>
+                        </div>
+
+                        {poolSlotsPreview && (
+                            <div className="text-xs text-gray-600 space-y-1">
+                                <p>
+                                    <span className="font-medium">{poolSlotsPreview.newCount}</span> horarios por crear
+                                    {poolSlotsPreview.skipCount > 0 && (
+                                        <span className="text-amber-600"> ({poolSlotsPreview.skipCount} ya existen)</span>
+                                    )}
+                                </p>
+                                <p className="text-gray-400">
+                                    {poolSlotsPreview.slots.join(", ")}
+                                </p>
+                            </div>
+                        )}
+
+                        {poolGenerating && (
+                            <div className="text-sm text-blue-700 font-medium">
+                                Creando horario {poolProgress.current} de {poolProgress.total}...
+                            </div>
+                        )}
+
+                        <div className="flex justify-end gap-2">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowPoolGenerator(false)}
+                                disabled={poolGenerating}
+                            >
+                                Cancelar
+                            </Button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                onClick={handlePoolGenerate}
+                                disabled={poolGenerating || !poolSlotsPreview || poolSlotsPreview.newCount === 0}
+                            >
+                                {poolGenerating
+                                    ? "Generando..."
+                                    : `Generar ${poolSlotsPreview?.newCount ?? 0} horarios`}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
                 {(isAdding || editingId) && (
                     <div className="bg-gray-50 p-4 rounded-lg space-y-4 border">
                         <h4 className="font-medium text-sm">
@@ -452,7 +677,9 @@ export function TicketTypeManager({
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="text-xs font-medium">Capacidad (manual)</label>
+                                <label className="text-xs font-medium">
+                                    {usesDailyCapacity ? "Capacidad por dia" : "Capacidad (manual)"}
+                                </label>
                                 <Input
                                     type="text"
                                     inputMode="numeric"
@@ -490,6 +717,12 @@ export function TicketTypeManager({
                         {formData.isPackage && (
                             <div className="text-xs text-gray-600">
                                 Este ticket permitirá registrar hasta {formData.packageDaysCount || 0} días distintos del calendario que definas.
+                            </div>
+                        )}
+
+                        {usesDailyCapacity && (
+                            <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                                Para piscina libre, cada tipo de entrada representa un horario. La capacidad se aplica por cada dia del rango del evento y el comprador elegira la fecha en checkout.
                             </div>
                         )}
 
