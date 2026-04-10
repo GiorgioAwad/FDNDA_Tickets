@@ -538,6 +538,19 @@ test("sendServilexInvoice envia JSON UTF-8 con charset explicito", async (t) => 
     assert.equal(result.ok, true)
     assert.equal(headers["Content-Type"], "application/json; charset=utf-8")
     assert.equal(body.toString("utf8"), result.rawPayload)
-    assert.match(result.rawPayload, /Muñoz/)
-    assert.match(result.rawPayload, /Perú/)
+    assert.match(result.rawPayload, /Mu\\u00f1oz/)
+    assert.match(result.rawPayload, /Per\\u00fa/)
+    const parsedPayload = JSON.parse(result.rawPayload) as Record<string, unknown>
+    const cabecera = parsedPayload.cabecera as Record<string, unknown>
+    const entidad = cabecera.entidad as Record<string, unknown>
+    assert.equal(entidad.apellidoPaterno, "Muñoz")
+    assert.equal(entidad.direccion, "Av. Universitaria 2011, San Miguel, Lima, Perú")
+})
+
+test("stringifyServilexJson preserva fechas y evita objetos vacios para Date", () => {
+    const raw = stringifyServilexJson({
+        paidAt: new Date("2026-04-10T18:09:20Z"),
+    })
+
+    assert.match(raw, /"paidAt":"2026-04-10T18:09:20\.000Z"/)
 })

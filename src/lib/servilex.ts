@@ -463,6 +463,10 @@ function normalizeReferenceCode(raw: unknown, fallbackSeed: string): string {
 }
 
 function normalizeServilexJsonValue(value: unknown): unknown {
+    if (value instanceof Date) {
+        return value.toJSON()
+    }
+
     if (typeof value === "string") {
         return normalizeUnicodeText(value)
     }
@@ -481,6 +485,37 @@ function normalizeServilexJsonValue(value: unknown): unknown {
             normalizeServilexJsonValue(entry),
         ])
     )
+}
+
+function escapeJsonToAscii(json: string): string {
+    let escaped = ""
+
+    for (const char of json) {
+        const codePoint = char.codePointAt(0)
+
+        if (codePoint === undefined) {
+            continue
+        }
+
+        if (codePoint >= 0x20 && codePoint <= 0x7e) {
+            escaped += char
+            continue
+        }
+
+        if (codePoint <= 0xffff) {
+            escaped += `\\u${codePoint.toString(16).padStart(4, "0")}`
+            continue
+        }
+
+        const adjusted = codePoint - 0x10000
+        const highSurrogate = 0xd800 + (adjusted >> 10)
+        const lowSurrogate = 0xdc00 + (adjusted & 0x3ff)
+        escaped += `\\u${highSurrogate.toString(16).padStart(4, "0")}\\u${lowSurrogate
+            .toString(16)
+            .padStart(4, "0")}`
+    }
+
+    return escaped
 }
 
 function normalizeCardBrand(raw: unknown): string | null {
@@ -1229,10 +1264,12 @@ export function stringifyServilexJson(value: unknown): string {
         return currentValue
     })
 
-    return json.replace(
+    const withFormattedDecimals = json.replace(
         new RegExp(`"${SERVILEX_DECIMAL_TOKEN_PREFIX}(-?\\d+\\.\\d{2})"`, "g"),
         "$1"
     )
+
+    return escapeJsonToAscii(withFormattedDecimals)
 }
 
 export function formatServilexJsonForDisplay(value: unknown): unknown {
