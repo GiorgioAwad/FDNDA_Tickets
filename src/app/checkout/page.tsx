@@ -74,6 +74,11 @@ export default function CheckoutPage() {
         return item.scheduleConfig.dates.length > 0 ? 1 : 0
     }, [])
 
+    const getCartLineKey = useCallback(
+        (item: (typeof items)[number]) => item.lineKey || item.ticketTypeId,
+        []
+    )
+
     const boletaFullName = useMemo(
         () =>
             buildNaturalPersonFullName({
@@ -553,7 +558,7 @@ export default function CheckoutPage() {
                             </CardHeader>
                             <CardContent className="space-y-6">
                                 {items.map((item) => (
-                                    <div key={item.ticketTypeId} className="border-b last:border-0 pb-6 last:pb-0">
+                                    <div key={getCartLineKey(item)} className="border-b last:border-0 pb-6 last:pb-0">
                                         <div className="flex justify-between items-start mb-4">
                                             <div>
                                                 <h3 className="font-bold text-lg">{item.eventTitle}</h3>
@@ -571,14 +576,14 @@ export default function CheckoutPage() {
                                             <div className="flex items-center border rounded-md">
                                                 <button
                                                     className="px-3 py-1 hover:bg-gray-100"
-                                                    onClick={() => updateQuantity(item.ticketTypeId, item.quantity - 1)}
+                                                    onClick={() => updateQuantity(getCartLineKey(item), item.quantity - 1)}
                                                 >
                                                     -
                                                 </button>
                                                 <span className="px-3 py-1 font-medium">{item.quantity}</span>
                                                 <button
                                                     className="px-3 py-1 hover:bg-gray-100"
-                                                    onClick={() => updateQuantity(item.ticketTypeId, item.quantity + 1)}
+                                                    onClick={() => updateQuantity(getCartLineKey(item), item.quantity + 1)}
                                                 >
                                                     +
                                                 </button>
@@ -587,7 +592,7 @@ export default function CheckoutPage() {
                                                 variant="ghost"
                                                 size="sm"
                                                 className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                                                onClick={() => removeItem(item.ticketTypeId)}
+                                                onClick={() => removeItem(getCartLineKey(item))}
                                             >
                                                 <Trash2 className="h-4 w-4 mr-2" />
                                                 Eliminar
@@ -603,6 +608,9 @@ export default function CheckoutPage() {
                                             {item.attendees.map((attendee, attendeeIndex) => {
                                                 const requiredSelections = getRequiredSelections(item)
                                                 const scheduleConfig = item.scheduleConfig
+                                                const itemKey = getCartLineKey(item)
+                                                const hasLockedSingleDate =
+                                                    scheduleConfig?.dates.length === 1 && scheduleConfig.shifts.length === 0
                                                 const attendeeFullName = buildNaturalPersonFullName({
                                                     firstName: attendee.firstName,
                                                     secondName: attendee.secondName,
@@ -621,7 +629,7 @@ export default function CheckoutPage() {
                                                                 value={attendee.firstName}
                                                                 onChange={(e) =>
                                                                     updateAttendee(
-                                                                        item.ticketTypeId,
+                                                                        itemKey,
                                                                         attendeeIndex,
                                                                         "firstName",
                                                                         e.target.value
@@ -639,7 +647,7 @@ export default function CheckoutPage() {
                                                                 value={attendee.secondName}
                                                                 onChange={(e) =>
                                                                     updateAttendee(
-                                                                        item.ticketTypeId,
+                                                                        itemKey,
                                                                         attendeeIndex,
                                                                         "secondName",
                                                                         e.target.value
@@ -657,7 +665,7 @@ export default function CheckoutPage() {
                                                                 value={attendee.lastNamePaternal}
                                                                 onChange={(e) =>
                                                                     updateAttendee(
-                                                                        item.ticketTypeId,
+                                                                        itemKey,
                                                                         attendeeIndex,
                                                                         "lastNamePaternal",
                                                                         e.target.value
@@ -675,7 +683,7 @@ export default function CheckoutPage() {
                                                                 value={attendee.lastNameMaternal}
                                                                 onChange={(e) =>
                                                                     updateAttendee(
-                                                                        item.ticketTypeId,
+                                                                        itemKey,
                                                                         attendeeIndex,
                                                                         "lastNameMaternal",
                                                                         e.target.value
@@ -693,7 +701,7 @@ export default function CheckoutPage() {
                                                                 value={attendee.dni}
                                                                 onChange={(e) =>
                                                                     updateAttendee(
-                                                                        item.ticketTypeId,
+                                                                        itemKey,
                                                                         attendeeIndex,
                                                                         "dni",
                                                                         e.target.value
@@ -714,7 +722,7 @@ export default function CheckoutPage() {
                                                         </div>
                                                     )}
 
-                                                        {requiredSelections > 0 && scheduleConfig && (
+                                                        {requiredSelections > 0 && scheduleConfig && !hasLockedSingleDate && (
                                                         <div className="rounded-md border border-dashed border-gray-300 p-3 bg-white">
                                                             <p className="text-xs font-medium text-gray-700 mb-2">
                                                                 Selecciona dia y turno
@@ -733,7 +741,7 @@ export default function CheckoutPage() {
                                                                                     value={selection.date}
                                                                                     onChange={(e) =>
                                                                                         updateAttendeeScheduleSelection(
-                                                                                            item.ticketTypeId,
+                                                                                            itemKey,
                                                                                             attendeeIndex,
                                                                                             selectionIndex,
                                                                                             "date",
@@ -759,7 +767,7 @@ export default function CheckoutPage() {
                                                                                         value={selection.shift}
                                                                                         onChange={(e) =>
                                                                                             updateAttendeeScheduleSelection(
-                                                                                                item.ticketTypeId,
+                                                                                                itemKey,
                                                                                                 attendeeIndex,
                                                                                                 selectionIndex,
                                                                                                 "shift",
@@ -786,6 +794,14 @@ export default function CheckoutPage() {
                                                                     )
                                                                 })}
                                                             </div>
+                                                        </div>
+                                                    )}
+                                                    {requiredSelections > 0 && scheduleConfig && hasLockedSingleDate && (
+                                                        <div className="rounded-md border border-dashed border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                                                            Fecha seleccionada para esta entrada:{" "}
+                                                            <span className="font-medium">
+                                                                {formatDate(scheduleConfig.dates[0], { dateStyle: "full" })}
+                                                            </span>
                                                         </div>
                                                     )}
                                                     </div>

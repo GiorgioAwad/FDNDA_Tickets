@@ -13,6 +13,7 @@ const reserveExistingDateInventory = async (
             "updatedAt" = CURRENT_TIMESTAMP
         WHERE "ticketTypeId" = ${ticketTypeId}
           AND "date" = ${date}
+          AND "isEnabled" = true
           AND ("capacity" = 0 OR "sold" + ${quantity} <= "capacity")
         RETURNING "id"
     `)
@@ -42,13 +43,14 @@ export async function reserveTicketTypeDateInventory(
 
         const inserted = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
             INSERT INTO "ticket_type_date_inventories"
-                ("id", "ticketTypeId", "date", "capacity", "sold", "createdAt", "updatedAt")
+                ("id", "ticketTypeId", "date", "capacity", "sold", "isEnabled", "createdAt", "updatedAt")
             SELECT
                 ${crypto.randomUUID()},
                 ${input.ticketTypeId},
                 ${dateValue},
                 ${input.templateCapacity},
                 ${quantity},
+                true,
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
             WHERE ${input.templateCapacity} = 0 OR ${quantity} <= ${input.templateCapacity}

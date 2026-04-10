@@ -5,7 +5,7 @@ import Link from "next/link"
 import { ShoppingCart } from "lucide-react"
 import { useCart } from "@/hooks/cart-context"
 import { useSession } from "next-auth/react"
-import { formatPrice } from "@/lib/utils"
+import { formatDate, formatPrice } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
 export default function CartFloatingButton() {
@@ -91,7 +91,7 @@ export default function CartFloatingButton() {
                         <div className="text-sm font-semibold text-gray-900">Tu carrito</div>
                         <div className="mt-3 space-y-3 max-h-60 overflow-auto pr-1">
                             {items.map((item) => (
-                                <div key={item.ticketTypeId} className="flex gap-3">
+                                <div key={item.lineKey || item.ticketTypeId} className="flex gap-3">
                                     <div className="flex-1">
                                         <div className="text-sm font-medium text-gray-900 line-clamp-1">
                                             {item.ticketTypeName}
@@ -99,6 +99,11 @@ export default function CartFloatingButton() {
                                         <div className="text-xs text-gray-500 line-clamp-1">
                                             {item.eventTitle}
                                         </div>
+                                        {item.scheduleConfig?.dates.length === 1 && (
+                                            <div className="text-xs text-gray-500 mt-1">
+                                                {formatDate(item.scheduleConfig.dates[0], { dateStyle: "medium" })}
+                                            </div>
+                                        )}
                                         <div className="text-xs text-gray-500 mt-1">
                                             {item.quantity} x {formatPrice(item.price)}
                                         </div>

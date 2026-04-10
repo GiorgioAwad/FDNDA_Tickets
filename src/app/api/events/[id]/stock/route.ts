@@ -21,6 +21,15 @@ export async function GET(
                 capacity: true,
                 isActive: true,
                 updatedAt: true,
+                dateInventories: {
+                    select: {
+                        date: true,
+                        sold: true,
+                        capacity: true,
+                        isEnabled: true,
+                    },
+                    orderBy: { date: "asc" },
+                },
             },
             orderBy: { sortOrder: "asc" },
         })

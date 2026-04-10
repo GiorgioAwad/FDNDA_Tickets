@@ -39,6 +39,11 @@ async function getEvent(slug: string) {
             ticketTypes: {
                 where: { isActive: true },
                 orderBy: { sortOrder: "asc" },
+                include: {
+                    dateInventories: {
+                        orderBy: { date: "asc" },
+                    },
+                },
             },
         },
     })
@@ -66,6 +71,13 @@ export default async function EventDetailPage({ params }: EventPageProps) {
         validDays: ticket.validDays,
         servilexEnabled: ticket.servilexEnabled,
         servilexIndicator: ticket.servilexIndicator,
+        servilexExtraConfig: ticket.servilexExtraConfig,
+        dateInventories: ticket.dateInventories.map((inventory) => ({
+            date: inventory.date.toISOString(),
+            sold: inventory.sold,
+            capacity: inventory.capacity,
+            isEnabled: inventory.isEnabled,
+        })),
     }))
 
     return (

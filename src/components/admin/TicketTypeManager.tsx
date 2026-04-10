@@ -31,6 +31,13 @@ interface TicketType {
     servilexPoolCode?: string | null
     servilexExtraConfig?: unknown
     servilexServiceId?: string | null
+    dateInventories?: Array<{
+        id?: string
+        date: string | Date
+        capacity: number
+        sold: number
+        isEnabled: boolean
+    }>
 }
 
 interface TicketTypeManagerProps {
@@ -98,6 +105,15 @@ const toUTCDateOnly = (value: string | Date): Date | null => {
     const parsed = value instanceof Date ? new Date(value) : new Date(value)
     if (Number.isNaN(parsed.getTime())) return null
     return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()))
+}
+
+const toDateKeyUTC = (value: string | Date): string | null => {
+    const parsed = toUTCDateOnly(value)
+    if (!parsed) return null
+    const year = parsed.getUTCFullYear()
+    const month = String(parsed.getUTCMonth() + 1).padStart(2, "0")
+    const day = String(parsed.getUTCDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
 }
 
 const getServilexExtraConfig = (value: unknown): ServilexExtraConfig => {
@@ -168,6 +184,7 @@ export function TicketTypeManager({
     const [poolCapacity, setPoolCapacity] = useState("30")
     const [poolGenerating, setPoolGenerating] = useState(false)
     const [poolProgress, setPoolProgress] = useState({ current: 0, total: 0 })
+    const [dateToggleLoading, setDateToggleLoading] = useState<Record<string, boolean>>({})
 
     const isShiftTicketType = (ticket: TicketType) => {
         const schedule = parseTicketScheduleConfig(ticket.validDays)
@@ -396,6 +413,74 @@ export function TicketTypeManager({
         } catch (error) {
             console.error(error)
             alert("Error al cambiar estado")
+        }
+    }
+
+    const handleToggleDateAvailability = async (
+        ticketId: string,
+        date: string,
+        nextEnabled: boolean
+    ) => {
+        const loadingKey = `${ticketId}:${date}`
+        setDateToggleLoading((prev) => ({ ...prev, [loadingKey]: true }))
+
+        try {
+            const response = await fetch("/api/ticket-types", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: ticketId,
+                    dateInventoryDate: date,
+                    dateInventoryEnabled: nextEnabled,
+                }),
+            })
+
+            if (!response.ok) throw new Error("Error al actualizar disponibilidad")
+
+            const { data } = await response.json()
+            const normalizedDateKey = toDateKeyUTC(data?.date || date) || date
+
+            setTicketTypes((prev) =>
+                prev.map((ticket) => {
+                    if (ticket.id !== ticketId) return ticket
+
+                    const currentInventories = ticket.dateInventories ?? []
+                    const existingIndex = currentInventories.findIndex(
+                        (inventory) => toDateKeyUTC(inventory.date) === normalizedDateKey
+                    )
+
+                    const nextInventory = {
+                        id: data?.id,
+                        date: data?.date || date,
+                        capacity: Number(data?.capacity ?? ticket.capacity),
+                        sold: Number(data?.sold ?? 0),
+                        isEnabled: Boolean(data?.isEnabled),
+                    }
+
+                    if (existingIndex === -1) {
+                        return {
+                            ...ticket,
+                            dateInventories: [...currentInventories, nextInventory],
+                        }
+                    }
+
+                    return {
+                        ...ticket,
+                        dateInventories: currentInventories.map((inventory, index) =>
+                            index === existingIndex ? nextInventory : inventory
+                        ),
+                    }
+                })
+            )
+        } catch (error) {
+            console.error(error)
+            alert("No se pudo actualizar la fecha para este horario")
+        } finally {
+            setDateToggleLoading((prev) => {
+                const next = { ...prev }
+                delete next[loadingKey]
+                return next
+            })
         }
     }
 
@@ -1309,6 +1394,14 @@ export function TicketTypeManager({
                         <h4 className="text-sm font-semibold text-gray-700">{section.title}</h4>
                         {section.items.map((ticket) => {
                             const schedule = parseTicketScheduleConfig(ticket.validDays)
+                            const inventoryByDate = new Map(
+                                (ticket.dateInventories ?? [])
+                                    .map((inventory) => {
+                                        const dateKey = toDateKeyUTC(inventory.date)
+                                        return dateKey ? [dateKey, inventory] : null
+                                    })
+                                    .filter(Boolean) as Array<[string, NonNullable<TicketType["dateInventories"]>[number]]>
+                            )
 
                             return (
                                 <div
@@ -1350,7 +1443,10 @@ export function TicketTypeManager({
                                                 )}
                                             </div>
                                             <div className="text-sm text-gray-500 break-words">
-                                                {formatPrice(ticket.price)} • {ticket.sold || 0} / {ticket.capacity} vendidos
+                                                {formatPrice(ticket.price)} • {ticket.sold || 0} vendidos
+                                                {usesDailyCapacity
+                                                    ? ` totales · capacidad diaria ${ticket.capacity}`
+                                                    : ` / ${ticket.capacity} vendidos`}
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-1 self-end shrink-0 sm:self-auto">
@@ -1407,6 +1503,49 @@ export function TicketTypeManager({
                                             </Button>
                                         </div>
                                     </div>
+
+                                    {usesDailyCapacity && dateOptions.length > 0 && (
+                                        <div className="mt-4 space-y-2 rounded-md border border-dashed bg-gray-50 p-3">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="text-xs font-semibold text-gray-700">
+                                                    Disponibilidad por fecha
+                                                </div>
+                                                <div className="text-[11px] text-gray-500">
+                                                    Haz clic para habilitar o deshabilitar este horario por día
+                                                </div>
+                                            </div>
+                                            <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
+                                                {dateOptions.map((date) => {
+                                                    const inventory = inventoryByDate.get(date)
+                                                    const isEnabled = inventory?.isEnabled ?? true
+                                                    const loadingKey = `${ticket.id}:${date}`
+
+                                                    return (
+                                                        <Button
+                                                            key={`${ticket.id}-${date}`}
+                                                            type="button"
+                                                            size="sm"
+                                                            variant={isEnabled ? "default" : "outline"}
+                                                            className={isEnabled ? "bg-emerald-600 hover:bg-emerald-700" : ""}
+                                                            disabled={Boolean(dateToggleLoading[loadingKey])}
+                                                            onClick={() =>
+                                                                handleToggleDateAvailability(ticket.id!, date, !isEnabled)
+                                                            }
+                                                        >
+                                                            {formatDate(date, { dateStyle: "medium" })}
+                                                            <span className="ml-2 text-[10px] uppercase">
+                                                                {dateToggleLoading[loadingKey]
+                                                                    ? "..."
+                                                                    : isEnabled
+                                                                      ? "On"
+                                                                      : "Off"}
+                                                            </span>
+                                                        </Button>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )
                         })}

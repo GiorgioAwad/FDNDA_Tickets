@@ -24,7 +24,13 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
     const event = await prisma.event.findUnique({
         where: { id },
         include: {
-            ticketTypes: true,
+            ticketTypes: {
+                include: {
+                    dateInventories: {
+                        orderBy: { date: "asc" },
+                    },
+                },
+            },
             eventDays: true,
         },
     })
@@ -49,6 +55,12 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
             price: Number(ticketType.price),
             createdAt: ticketType.createdAt.toISOString(),
             updatedAt: ticketType.updatedAt.toISOString(),
+            dateInventories: ticketType.dateInventories.map((inventory) => ({
+                ...inventory,
+                date: inventory.date.toISOString(),
+                createdAt: inventory.createdAt.toISOString(),
+                updatedAt: inventory.updatedAt.toISOString(),
+            })),
         })),
         eventDays: event.eventDays.map((day) => ({
             ...day,

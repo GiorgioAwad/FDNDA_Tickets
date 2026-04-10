@@ -10,9 +10,16 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { getPoolFreeSelectableDates, isPoolFreeEventCategory } from "@/lib/pool-free"
-import { formatPrice } from "@/lib/utils"
+import { formatDate, formatPrice } from "@/lib/utils"
 import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
-import { Info, ShoppingCart, Minus, Plus, Gift, CheckCircle, AlertCircle, Ticket } from "lucide-react"
+import { Info, ShoppingCart, Minus, Plus, Gift, CheckCircle, AlertCircle, Ticket, Calendar, Clock, ChevronRight } from "lucide-react"
+
+type DateInventoryClient = {
+    date: string | Date
+    capacity: number
+    sold: number
+    isEnabled: boolean
+}
 
 export type TicketTypeClient = {
     id: string
@@ -27,6 +34,8 @@ export type TicketTypeClient = {
     validDays?: unknown
     servilexEnabled?: boolean
     servilexIndicator?: string | null
+    servilexExtraConfig?: unknown
+    dateInventories?: DateInventoryClient[]
 }
 
 type TicketPurchaseCardProps = {
@@ -36,6 +45,16 @@ type TicketPurchaseCardProps = {
     ticketTypes: TicketTypeClient[]
     eventStartDate?: string | Date
     eventEndDate?: string | Date
+}
+
+type PoolSlotOption = {
+    key: string
+    ticketId: string
+    date: string
+    label: string
+    price: number
+    selectable: boolean
+    ticketName: string
 }
 
 const MAX_UNLIMITED_QTY = 10
@@ -57,6 +76,30 @@ const addDaysToDateKey = (value: string, days: number): string => {
     const month = String(date.getUTCMonth() + 1).padStart(2, "0")
     const day = String(date.getUTCDate()).padStart(2, "0")
     return `${year}-${month}-${day}`
+}
+
+const normalizeTimeLabel = (value: string): string => {
+    const trimmed = value.trim()
+    if (!/^\d{2}:\d{2}$/.test(trimmed)) return trimmed
+
+    return new Intl.DateTimeFormat("es-PE", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: "UTC",
+    }).format(new Date(`1970-01-01T${trimmed}:00Z`))
+}
+
+const getPoolSlotLabel = (ticket: TicketTypeClient): string => {
+    if (ticket.servilexExtraConfig && typeof ticket.servilexExtraConfig === "object" && !Array.isArray(ticket.servilexExtraConfig)) {
+        const record = ticket.servilexExtraConfig as Record<string, unknown>
+        const horaInicio = typeof record.horaInicio === "string" ? record.horaInicio.trim() : ""
+        const horaFin = typeof record.horaFin === "string" ? record.horaFin.trim() : ""
+        if (horaInicio && horaFin) {
+            return `${normalizeTimeLabel(horaInicio)} - ${normalizeTimeLabel(horaFin)}`
+        }
+    }
+    return ticket.name
 }
 
 const normalizeScheduleDatesForEventRange = (
@@ -112,8 +155,10 @@ export default function TicketPurchaseCard({
     const [attendeeDni, setAttendeeDni] = useState("")
 
     const [liveStockById, setLiveStockById] = useState<
-        Record<string, { sold: number; capacity: number; isActive: boolean }>
+        Record<string, { sold: number; capacity: number; isActive: boolean; dateInventories?: DateInventoryClient[] }>
     >({})
+    const [showAllPoolSlots, setShowAllPoolSlots] = useState(false)
+    const [selectedPoolSlotKey, setSelectedPoolSlotKey] = useState<string | null>(null)
 
     useEffect(() => {
         let cancelled = false
@@ -127,17 +172,24 @@ export default function TicketPurchaseCard({
 
                 const payload = await response.json() as {
                     success?: boolean
-                    data?: Array<{ id: string; sold: number; capacity: number; isActive: boolean }>
+                    data?: Array<{
+                        id: string
+                        sold: number
+                        capacity: number
+                        isActive: boolean
+                        dateInventories?: DateInventoryClient[]
+                    }>
                 }
 
                 if (!payload.success || !Array.isArray(payload.data) || cancelled) return
 
-                const nextState: Record<string, { sold: number; capacity: number; isActive: boolean }> = {}
+                const nextState: Record<string, { sold: number; capacity: number; isActive: boolean; dateInventories?: DateInventoryClient[] }> = {}
                 for (const item of payload.data) {
                     nextState[item.id] = {
                         sold: item.sold,
                         capacity: item.capacity,
                         isActive: item.isActive,
+                        dateInventories: item.dateInventories,
                     }
                 }
 
@@ -167,6 +219,7 @@ export default function TicketPurchaseCard({
                 sold: live.sold,
                 capacity: live.capacity,
                 isActive: live.isActive,
+                dateInventories: live.dateInventories ?? ticket.dateInventories,
             }
         })
     }, [ticketTypes, liveStockById])
@@ -193,6 +246,14 @@ export default function TicketPurchaseCard({
                 })
             }
 
+            const inventoryByDate = new Map(
+                (ticket.dateInventories ?? [])
+                    .map((inventory) => {
+                        const dateKey = toDateKeyUTC(inventory.date)
+                        return dateKey ? [dateKey, inventory] : null
+                    })
+                    .filter(Boolean) as Array<[string, DateInventoryClient]>
+            )
             const available = usesDailyCapacity
                 ? (ticket.capacity === 0 ? null : ticket.capacity)
                 : (ticket.capacity === 0 ? null : ticket.capacity - ticket.sold)
@@ -200,12 +261,29 @@ export default function TicketPurchaseCard({
             const soldOut = usesDailyCapacity
                 ? ticket.isActive === false
                 : ticket.isActive === false || (available !== null && available <= 0)
+            const dateStates = normalizedDates.map((date) => {
+                const inventory = inventoryByDate.get(date)
+                const capacity = inventory?.capacity ?? ticket.capacity
+                const sold = inventory?.sold ?? 0
+                const isEnabled = ticket.isActive !== false && (inventory?.isEnabled ?? true)
+                const dateSoldOut = capacity !== 0 && sold >= capacity
+
+                return {
+                    date,
+                    capacity,
+                    sold,
+                    isEnabled,
+                    soldOut: dateSoldOut,
+                    available: capacity === 0 ? null : Math.max(0, capacity - sold),
+                }
+            })
             return {
                 ticket,
                 available,
                 maxQty,
                 soldOut,
                 usesDailyCapacity,
+                dateStates,
                 schedule: {
                     ...schedule,
                     dates: normalizedDates,
@@ -214,21 +292,70 @@ export default function TicketPurchaseCard({
         })
     }, [ticketTypesWithLiveStock, eventCategory, eventStartDate, eventEndDate])
 
-    const getCartQuantity = (ticketId: string) => {
-        const found = items.find((item) => item.ticketTypeId === ticketId)
+    const poolSlotOptions = useMemo<PoolSlotOption[]>(() => {
+        if (!isPoolFreeEventCategory(eventCategory)) return []
+
+        return ticketMeta.flatMap((entry) =>
+            entry.dateStates
+                .filter((dateState) => dateState.isEnabled)
+                .map((dateState) => ({
+                    key: `${entry.ticket.id}:${dateState.date}`,
+                    ticketId: entry.ticket.id,
+                    date: dateState.date,
+                    label: getPoolSlotLabel(entry.ticket),
+                    price: entry.ticket.price,
+                    selectable: !dateState.soldOut,
+                    ticketName: entry.ticket.name,
+                }))
+        ).sort((a, b) => {
+            if (a.date !== b.date) return a.date.localeCompare(b.date)
+            return a.label.localeCompare(b.label)
+        })
+    }, [eventCategory, ticketMeta])
+
+    useEffect(() => {
+        if (!isPoolFreeEventCategory(eventCategory)) return
+        if (poolSlotOptions.length === 0) {
+            setSelectedPoolSlotKey(null)
+            return
+        }
+
+        setSelectedPoolSlotKey((prev) => {
+            if (prev && poolSlotOptions.some((slot) => slot.key === prev && slot.selectable)) {
+                return prev
+            }
+            return poolSlotOptions.find((slot) => slot.selectable)?.key ?? poolSlotOptions[0]?.key ?? null
+        })
+    }, [eventCategory, poolSlotOptions])
+
+    const selectedPoolSlot = useMemo(
+        () => poolSlotOptions.find((slot) => slot.key === selectedPoolSlotKey) ?? null,
+        [poolSlotOptions, selectedPoolSlotKey]
+    )
+
+    const visibleTicketMeta = useMemo(() => {
+        if (!isPoolFreeEventCategory(eventCategory)) return ticketMeta
+        if (!selectedPoolSlot) return []
+        return ticketMeta.filter((entry) => entry.ticket.id === selectedPoolSlot.ticketId)
+    }, [eventCategory, selectedPoolSlot, ticketMeta])
+
+    const getCartQuantity = (itemKey: string) => {
+        const found = items.find((item) => (item.lineKey || item.ticketTypeId) === itemKey)
         return found?.quantity || 0
     }
 
-    const handleIncrement = (ticketId: string, maxQty: number) => {
+    const handleIncrement = (ticketId: string, maxQty: number, selectedDate?: string) => {
         const metadata = ticketMeta.find((entry) => entry.ticket.id === ticketId)
         if (!metadata) return
         const ticket = metadata.ticket
         if (maxQty <= 0) return
+        const itemKey = selectedDate ? `${ticketId}:${selectedDate}` : ticketId
 
-        const currentQty = getCartQuantity(ticketId)
+        const currentQty = getCartQuantity(itemKey)
         const nextQty = Math.min(currentQty + 1, maxQty)
         if (currentQty === 0) {
             addItem({
+                lineKey: itemKey,
                 ticketTypeId: ticket.id,
                 ticketTypeName: ticket.name,
                 eventId,
@@ -236,7 +363,7 @@ export default function TicketPurchaseCard({
                 price: ticket.price,
                 quantity: 1,
                 scheduleConfig: {
-                    dates: metadata.schedule.dates,
+                    dates: selectedDate ? [selectedDate] : metadata.schedule.dates,
                     shifts: metadata.schedule.shifts,
                     requiredDays: ticket.isPackage ? (ticket.packageDaysCount ?? null) : null,
                     requireShiftSelection: metadata.schedule.requireShiftSelection,
@@ -246,16 +373,17 @@ export default function TicketPurchaseCard({
             })
             return
         }
-        updateQuantity(ticketId, nextQty)
+        updateQuantity(itemKey, nextQty)
     }
 
-    const handleDecrement = (ticketId: string) => {
-        const currentQty = getCartQuantity(ticketId)
+    const handleDecrement = (ticketId: string, selectedDate?: string) => {
+        const itemKey = selectedDate ? `${ticketId}:${selectedDate}` : ticketId
+        const currentQty = getCartQuantity(itemKey)
         if (currentQty <= 1) {
-            removeItem(ticketId)
+            removeItem(itemKey)
             return
         }
-        updateQuantity(ticketId, currentQty - 1)
+        updateQuantity(itemKey, currentQty - 1)
     }
 
     // Courtesy functions
@@ -343,11 +471,94 @@ export default function TicketPurchaseCard({
             <CardContent className="space-y-4">
                 {ticketTypes.length > 0 ? (
                     <>
-                        {ticketMeta.map(({ ticket, available, maxQty, soldOut, usesDailyCapacity, schedule }) => (
+                        {isPoolFreeEventCategory(eventCategory) && (
+                            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <h4 className="text-xl font-bold text-slate-900">Fecha y Hora</h4>
+                                        <p className="text-sm text-slate-500">
+                                            Selecciona el día y horario para habilitar la compra.
+                                        </p>
+                                    </div>
+                                    {poolSlotOptions.length > 6 && (
+                                        <button
+                                            type="button"
+                                            className="text-sm font-semibold text-emerald-600 hover:text-emerald-700"
+                                            onClick={() => setShowAllPoolSlots((prev) => !prev)}
+                                        >
+                                            {showAllPoolSlots ? "Ver menos" : "Ver todas"}
+                                        </button>
+                                    )}
+                                </div>
+
+                                {poolSlotOptions.length > 0 ? (
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                        {(showAllPoolSlots ? poolSlotOptions : poolSlotOptions.slice(0, 6)).map((slot) => {
+                                            const isSelected = slot.key === selectedPoolSlotKey
+                                            return (
+                                                <button
+                                                    key={slot.key}
+                                                    type="button"
+                                                    className={`rounded-2xl border p-4 text-left transition ${
+                                                        isSelected
+                                                            ? "border-emerald-500 bg-emerald-50 shadow-sm"
+                                                            : slot.selectable
+                                                              ? "border-slate-200 bg-white hover:border-emerald-300"
+                                                              : "border-slate-200 bg-slate-100 opacity-60"
+                                                    }`}
+                                                    onClick={() => slot.selectable && setSelectedPoolSlotKey(slot.key)}
+                                                    disabled={!slot.selectable}
+                                                >
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="space-y-1">
+                                                            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                                                <Calendar className="h-4 w-4 text-slate-500" />
+                                                                {formatDate(slot.date, { weekday: "short", day: "2-digit", month: "short", year: "2-digit" })}
+                                                            </div>
+                                                            <div className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                                                                <Clock className="h-4 w-4 text-slate-500" />
+                                                                {slot.label}
+                                                            </div>
+                                                        </div>
+                                                        {isSelected ? (
+                                                            <CheckCircle className="h-5 w-5 text-emerald-600" />
+                                                        ) : slot.selectable ? (
+                                                            <ChevronRight className="h-5 w-5 text-slate-400" />
+                                                        ) : (
+                                                            <span className="text-xs font-semibold uppercase text-slate-500">No disponible</span>
+                                                        )}
+                                                    </div>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-lg border border-dashed bg-white px-4 py-3 text-sm text-slate-500">
+                                        No hay horarios habilitados por el momento.
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {visibleTicketMeta.map(({ ticket, available, maxQty, soldOut, usesDailyCapacity, schedule, dateStates }) => {
+                            const selectedDateState = usesDailyCapacity
+                                ? dateStates.find((entry) => entry.date === selectedPoolSlot?.date)
+                                : null
+                            const effectiveSoldOut = usesDailyCapacity
+                                ? !selectedPoolSlot || !selectedDateState || !selectedDateState.isEnabled || selectedDateState.soldOut
+                                : soldOut
+                            const effectiveMaxQty = usesDailyCapacity
+                                ? selectedDateState?.available === null
+                                    ? MAX_UNLIMITED_QTY
+                                    : Math.max(0, selectedDateState?.available ?? 0)
+                                : maxQty
+                            const cartKey = usesDailyCapacity && selectedPoolSlot ? selectedPoolSlot.key : ticket.id
+
+                            return (
                             <div
                                 key={ticket.id}
                                 className={`p-4 rounded-lg border ${
-                                    soldOut ? "bg-gray-50 opacity-60" : "bg-white"
+                                    effectiveSoldOut ? "bg-gray-50 opacity-60" : "bg-white"
                                 }`}
                             >
                                 <div className="flex justify-between items-start mb-2">
@@ -374,11 +585,6 @@ export default function TicketPurchaseCard({
                                         {schedule.dates.length} días seleccionables
                                     </Badge>
                                 )}
-                                {usesDailyCapacity && (
-                                    <Badge variant="secondary" className="mb-2 ml-2">
-                                        {ticket.capacity === 0 ? "Cupos por día ilimitados" : `Cupos por día: ${ticket.capacity}`}
-                                    </Badge>
-                                )}
                                 {schedule.shifts.length > 0 && (
                                     <Badge variant="secondary" className="mb-2 ml-2">
                                         Turnos configurados
@@ -392,13 +598,13 @@ export default function TicketPurchaseCard({
                                 {(schedule.dates.length > 0 || schedule.shifts.length > 0) && (
                                     <p className="text-xs text-gray-500 mt-1">
                                         {usesDailyCapacity
-                                            ? "La fecha se elige en checkout y los cupos se descuentan por día."
+                                            ? "La fecha seleccionada queda asociada a este horario."
                                             : "La selección de días/turnos se completa en checkout."}
                                     </p>
                                 )}
 
                                 {/* AGOTADO - Banner prominente */}
-                                {soldOut && (
+                                {effectiveSoldOut && (
                                     <div className="bg-red-100 border border-red-300 rounded-lg p-3 mb-3">
                                         <div className="flex items-center gap-2 text-red-700 font-bold">
                                             <AlertCircle className="h-5 w-5" />
@@ -411,27 +617,30 @@ export default function TicketPurchaseCard({
                                 )}
 
                                 <div className="flex flex-wrap items-center gap-3 mt-3">
-                                    {!soldOut && (
+                                    {!effectiveSoldOut && (
                                         <div className="ml-auto flex items-center gap-2">
                                             <span className="text-xs text-gray-500">Cantidad</span>
                                             <div className="flex items-center gap-2 rounded-full border px-2 py-1">
                                                 <button
                                                     type="button"
                                                     className="h-7 w-7 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                                                    onClick={() => handleDecrement(ticket.id)}
-                                                    disabled={getCartQuantity(ticket.id) === 0}
+                                                    onClick={() => handleDecrement(ticket.id, usesDailyCapacity ? selectedPoolSlot?.date : undefined)}
+                                                    disabled={getCartQuantity(cartKey) === 0}
                                                     aria-label="Quitar"
                                                 >
                                                     <Minus className="h-3 w-3 mx-auto" />
                                                 </button>
                                                 <span className="min-w-[1.5rem] text-center text-sm font-semibold">
-                                                    {getCartQuantity(ticket.id)}
+                                                    {getCartQuantity(cartKey)}
                                                 </span>
                                                 <button
                                                     type="button"
                                                     className="h-7 w-7 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                                                    onClick={() => handleIncrement(ticket.id, maxQty)}
-                                                    disabled={getCartQuantity(ticket.id) >= maxQty}
+                                                    onClick={() => handleIncrement(ticket.id, effectiveMaxQty, usesDailyCapacity ? selectedPoolSlot?.date : undefined)}
+                                                    disabled={
+                                                        (usesDailyCapacity && !selectedPoolSlot) ||
+                                                        getCartQuantity(cartKey) >= effectiveMaxQty
+                                                    }
                                                     aria-label="Agregar"
                                                 >
                                                     <Plus className="h-3 w-3 mx-auto" />
@@ -441,7 +650,7 @@ export default function TicketPurchaseCard({
                                     )}
                                 </div>
                             </div>
-                        ))}
+                        )})}
 
                         <div className="space-y-3 pt-2">
                             <Button asChild className="w-full" size="lg" disabled={itemCount === 0}>

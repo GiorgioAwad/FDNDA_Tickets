@@ -5,6 +5,7 @@ import { invalidateTicketTypeCache } from "@/lib/cache"
 import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { isPoolFreeEventCategory } from "@/lib/pool-free"
 import { Prisma } from "@prisma/client"
+import { parseDateOnly } from "@/lib/utils"
 
 export const runtime = "nodejs"
 
@@ -192,6 +193,8 @@ export async function PUT(request: NextRequest) {
             servilexPoolCode,
             servilexExtraConfig,
             servilexServiceId,
+            dateInventoryDate,
+            dateInventoryEnabled,
         } = body
 
         if (!id) {
@@ -199,6 +202,62 @@ export async function PUT(request: NextRequest) {
                 { success: false, error: "ID requerido" },
                 { status: 400 }
             )
+        }
+
+        if (dateInventoryDate !== undefined && dateInventoryEnabled !== undefined) {
+            const ticketType = await prisma.ticketType.findUnique({
+                where: { id },
+                select: {
+                    id: true,
+                    eventId: true,
+                    capacity: true,
+                },
+            })
+
+            if (!ticketType) {
+                return NextResponse.json(
+                    { success: false, error: "Tipo de entrada no encontrado" },
+                    { status: 404 }
+                )
+            }
+
+            const normalizedDate =
+                typeof dateInventoryDate === "string" && dateInventoryDate.trim()
+                    ? parseDateOnly(dateInventoryDate.trim())
+                    : null
+
+            if (!normalizedDate || Number.isNaN(normalizedDate.getTime())) {
+                return NextResponse.json(
+                    { success: false, error: "Fecha invalida" },
+                    { status: 400 }
+                )
+            }
+
+            const inventory = await prisma.ticketTypeDateInventory.upsert({
+                where: {
+                    ticketTypeId_date: {
+                        ticketTypeId: id,
+                        date: normalizedDate,
+                    },
+                },
+                update: {
+                    isEnabled: Boolean(dateInventoryEnabled),
+                },
+                create: {
+                    ticketTypeId: id,
+                    date: normalizedDate,
+                    capacity: ticketType.capacity,
+                    sold: 0,
+                    isEnabled: Boolean(dateInventoryEnabled),
+                },
+            })
+
+            await invalidateTicketTypeCache(ticketType.eventId)
+
+            return NextResponse.json({
+                success: true,
+                data: inventory,
+            })
         }
 
         const data: {
