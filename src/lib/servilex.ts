@@ -377,8 +377,23 @@ function formatServilexDecimal(value: number): string {
     return roundCurrency(value).toFixed(2)
 }
 
-function normalizeUnicodeText(value: string): string {
-    return value.normalize("NFC")
+function sanitizeUtf8Text(value: string): string {
+    let cleaned = value.replace(/^\uFEFF/, "")
+
+    const mojibakeMap: [string, string][] = [
+        ["Ã¡", "á"], ["Ã©", "é"], ["Ã­", "í"], ["Ã³", "ó"], ["Ãº", "ú"],
+        ["Ã±", "ñ"], ["Ã¼", "ü"],
+        ["Ã\x81", "Á"], ["Ã\x89", "É"], ["Ã\x8D", "Í"], ["Ã\x93", "Ó"], ["Ã\x9A", "Ú"],
+        ["Ã\x91", "Ñ"], ["Ã\x9C", "Ü"],
+    ]
+    for (const [broken, fixed] of mojibakeMap) {
+        cleaned = cleaned.replaceAll(broken, fixed)
+    }
+
+    cleaned = cleaned.normalize("NFC")
+    cleaned = cleaned.replace(/[\u200B-\u200F\u2028-\u202F\uFEFF]/g, "")
+
+    return cleaned
 }
 
 function toDateOnly(value: Date): string {
@@ -452,7 +467,7 @@ function normalizeReferenceCode(raw: unknown, fallbackSeed: string): string {
         (typeof raw === "number" && Number.isFinite(raw) ? String(raw) : "") ||
         fallbackSeed
 
-    const normalized = normalizeUnicodeText(source)
+    const normalized = sanitizeUtf8Text(source)
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, "")
 
@@ -469,7 +484,7 @@ function normalizeServilexJsonValue(value: unknown): unknown {
     }
 
     if (typeof value === "string") {
-        return normalizeUnicodeText(value)
+        return sanitizeUtf8Text(value)
     }
 
     if (Array.isArray(value)) {
@@ -488,36 +503,6 @@ function normalizeServilexJsonValue(value: unknown): unknown {
     )
 }
 
-function escapeJsonToAscii(json: string): string {
-    let escaped = ""
-
-    for (const char of json) {
-        const codePoint = char.codePointAt(0)
-
-        if (codePoint === undefined) {
-            continue
-        }
-
-        if (codePoint >= 0x20 && codePoint <= 0x7e) {
-            escaped += char
-            continue
-        }
-
-        if (codePoint <= 0xffff) {
-            escaped += `\\u${codePoint.toString(16).padStart(4, "0")}`
-            continue
-        }
-
-        const adjusted = codePoint - 0x10000
-        const highSurrogate = 0xd800 + (adjusted >> 10)
-        const lowSurrogate = 0xdc00 + (adjusted & 0x3ff)
-        escaped += `\\u${highSurrogate.toString(16).padStart(4, "0")}\\u${lowSurrogate
-            .toString(16)
-            .padStart(4, "0")}`
-    }
-
-    return escaped
-}
 
 function normalizeCardBrand(raw: unknown): string | null {
     const brand = asString(raw)
@@ -1265,12 +1250,10 @@ export function stringifyServilexJson(value: unknown): string {
         return currentValue
     })
 
-    const withFormattedDecimals = json.replace(
+    return json.replace(
         new RegExp(`"${SERVILEX_DECIMAL_TOKEN_PREFIX}(-?\\d+\\.\\d{2})"`, "g"),
         "$1"
     )
-
-    return escapeJsonToAscii(withFormattedDecimals)
 }
 
 export function formatServilexJsonForDisplay(value: unknown): unknown {

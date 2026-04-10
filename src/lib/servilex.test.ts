@@ -573,8 +573,8 @@ test("sendServilexInvoice envia JSON UTF-8 con charset explicito", async (t) => 
     assert.equal(result.ok, true)
     assert.equal(headers["Content-Type"], "application/json; charset=utf-8")
     assert.equal(body.toString("utf8"), result.rawPayload)
-    assert.match(result.rawPayload, /Mu\\u00f1oz/)
-    assert.match(result.rawPayload, /Per\\u00fa/)
+    assert.match(result.rawPayload, /Muñoz/)
+    assert.match(result.rawPayload, /Perú/)
     const parsedPayload = JSON.parse(result.rawPayload) as Record<string, unknown>
     const cabecera = parsedPayload.cabecera as Record<string, unknown>
     const entidad = cabecera.entidad as Record<string, unknown>
