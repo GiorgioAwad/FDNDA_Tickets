@@ -580,17 +580,17 @@ export default function TicketPurchaseCard({
                                         Paquete {ticket.packageDaysCount} clases
                                     </Badge>
                                 ) : null}
-                                {schedule.dates.length > 0 && (
+                                {!usesDailyCapacity && schedule.dates.length > 0 && (
                                     <Badge variant="secondary" className="mb-2 ml-2">
                                         {schedule.dates.length} días seleccionables
                                     </Badge>
                                 )}
-                                {schedule.shifts.length > 0 && (
+                                {!usesDailyCapacity && schedule.shifts.length > 0 && (
                                     <Badge variant="secondary" className="mb-2 ml-2">
                                         Turnos configurados
                                     </Badge>
                                 )}
-                                {schedule.shifts.length > 0 && !schedule.requireShiftSelection && (
+                                {!usesDailyCapacity && schedule.shifts.length > 0 && !schedule.requireShiftSelection && (
                                     <Badge variant="secondary" className="mb-2 ml-2">
                                         Válido en todos los turnos
                                     </Badge>
