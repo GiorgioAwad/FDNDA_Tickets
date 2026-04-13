@@ -59,6 +59,8 @@ type PoolSlotOption = {
 
 const MAX_UNLIMITED_QTY = 10
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
+const WEEKDAY_LABELS = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"] as const
+const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"] as const
 
 const toDateKeyUTC = (value: string | Date): string | null => {
     const parsed = value instanceof Date ? new Date(value) : new Date(value)
@@ -88,6 +90,18 @@ const normalizeTimeLabel = (value: string): string => {
         hour12: true,
         timeZone: "UTC",
     }).format(new Date(`1970-01-01T${trimmed}:00Z`))
+}
+
+const formatPoolSlotDateLabel = (value: string): string => {
+    const parsed = DATE_REGEX.test(value) ? new Date(`${value}T12:00:00Z`) : new Date(value)
+    if (Number.isNaN(parsed.getTime())) return value
+
+    const weekday = WEEKDAY_LABELS[parsed.getUTCDay()] ?? ""
+    const day = String(parsed.getUTCDate()).padStart(2, "0")
+    const month = MONTH_LABELS[parsed.getUTCMonth()] ?? ""
+    const year = String(parsed.getUTCFullYear()).slice(-2)
+
+    return `${weekday} ${day} ${month}, '${year}`
 }
 
 const getPoolSlotLabel = (ticket: TicketTypeClient): string => {
@@ -513,7 +527,7 @@ export default function TicketPurchaseCard({
                                                         <div className="space-y-1">
                                                             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                                                                 <Calendar className="h-4 w-4 text-slate-500" />
-                                                                {formatDate(slot.date, { weekday: "short", day: "2-digit", month: "short", year: "2-digit" })}
+                                                                {formatPoolSlotDateLabel(slot.date)}
                                                             </div>
                                                             <div className="flex items-center gap-2 text-lg font-bold text-slate-900">
                                                                 <Clock className="h-4 w-4 text-slate-500" />
