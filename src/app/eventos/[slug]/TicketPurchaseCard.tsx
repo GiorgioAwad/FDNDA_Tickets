@@ -57,6 +57,13 @@ type PoolSlotOption = {
     ticketName: string
 }
 
+type PoolDateOption = {
+    date: string
+    label: string
+    hasSelectableSlots: boolean
+    totalSlots: number
+}
+
 type LimaClock = {
     dateKey: string
     minutes: number
@@ -216,6 +223,7 @@ export default function TicketPurchaseCard({
         Record<string, { sold: number; capacity: number; isActive: boolean; dateInventories?: DateInventoryClient[] }>
     >({})
     const [showAllPoolSlots, setShowAllPoolSlots] = useState(false)
+    const [selectedPoolDate, setSelectedPoolDate] = useState<string | null>(null)
     const [selectedPoolSlotKey, setSelectedPoolSlotKey] = useState<string | null>(null)
     const [mounted, setMounted] = useState(false)
     const [limaClock, setLimaClock] = useState<LimaClock | null>(null)
@@ -396,20 +404,64 @@ export default function TicketPurchaseCard({
         })
     }, [eventCategory, limaClock, ticketMeta])
 
+    const poolDateOptions = useMemo<PoolDateOption[]>(() => {
+        if (!isPoolFreeEventCategory(eventCategory)) return []
+
+        const grouped = new Map<string, PoolSlotOption[]>()
+        for (const slot of poolSlotOptions) {
+            const list = grouped.get(slot.date)
+            if (list) {
+                list.push(slot)
+            } else {
+                grouped.set(slot.date, [slot])
+            }
+        }
+
+        return Array.from(grouped.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, slots]) => ({
+                date,
+                label: formatPoolSlotDateLabel(date),
+                hasSelectableSlots: slots.some((slot) => slot.selectable),
+                totalSlots: slots.length,
+            }))
+    }, [eventCategory, poolSlotOptions])
+
+    const visiblePoolSlots = useMemo(() => {
+        if (!isPoolFreeEventCategory(eventCategory) || !selectedPoolDate) return []
+        return poolSlotOptions.filter((slot) => slot.date === selectedPoolDate)
+    }, [eventCategory, poolSlotOptions, selectedPoolDate])
+
     useEffect(() => {
         if (!isPoolFreeEventCategory(eventCategory)) return
-        if (poolSlotOptions.length === 0) {
+        if (poolDateOptions.length === 0) {
+            setSelectedPoolDate(null)
+            setSelectedPoolSlotKey(null)
+            return
+        }
+
+        setSelectedPoolDate((prev) => {
+            if (prev && poolDateOptions.some((option) => option.date === prev && option.hasSelectableSlots)) {
+                return prev
+            }
+            return poolDateOptions.find((option) => option.hasSelectableSlots)?.date ?? poolDateOptions[0]?.date ?? null
+        })
+    }, [eventCategory, poolDateOptions])
+
+    useEffect(() => {
+        if (!isPoolFreeEventCategory(eventCategory)) return
+        if (!selectedPoolDate) {
             setSelectedPoolSlotKey(null)
             return
         }
 
         setSelectedPoolSlotKey((prev) => {
-            if (prev && poolSlotOptions.some((slot) => slot.key === prev && slot.selectable)) {
+            if (prev && visiblePoolSlots.some((slot) => slot.key === prev && slot.selectable)) {
                 return prev
             }
-            return poolSlotOptions.find((slot) => slot.selectable)?.key ?? poolSlotOptions[0]?.key ?? null
+            return visiblePoolSlots.find((slot) => slot.selectable)?.key ?? visiblePoolSlots[0]?.key ?? null
         })
-    }, [eventCategory, poolSlotOptions])
+    }, [eventCategory, selectedPoolDate, visiblePoolSlots])
 
     const selectedPoolSlot = useMemo(
         () => poolSlotOptions.find((slot) => slot.key === selectedPoolSlotKey) ?? null,
@@ -696,10 +748,10 @@ export default function TicketPurchaseCard({
                                         <div>
                                             <h4 className="text-2xl font-bold text-slate-900">Fecha y Hora</h4>
                                             <p className="text-sm text-slate-500">
-                                                Selecciona el día y horario para habilitar la compra.
+                                                Primero elige una fecha. Luego verás solo los horarios habilitados de ese día.
                                             </p>
                                         </div>
-                                        {poolSlotOptions.length > 6 && (
+                                        {poolDateOptions.length > 7 && (
                                             <button
                                                 type="button"
                                                 className="text-sm font-semibold text-emerald-600 hover:text-emerald-700"
@@ -710,50 +762,103 @@ export default function TicketPurchaseCard({
                                         )}
                                     </div>
 
-                                    {poolSlotOptions.length > 0 ? (
-                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                                            {(showAllPoolSlots ? poolSlotOptions : poolSlotOptions.slice(0, 6)).map((slot) => {
-                                                const isSelected = slot.key === selectedPoolSlotKey
-                                                return (
-                                                    <button
-                                                        key={slot.key}
-                                                        type="button"
-                                                        className={`rounded-2xl border p-5 text-left transition ${
-                                                            isSelected
-                                                                ? "border-emerald-500 bg-emerald-50 shadow-sm"
-                                                                : slot.selectable
-                                                                  ? "border-slate-200 bg-white hover:border-emerald-300"
-                                                                  : "border-slate-200 bg-slate-100 opacity-60"
-                                                        }`}
-                                                        onClick={() => slot.selectable && setSelectedPoolSlotKey(slot.key)}
-                                                        disabled={!slot.selectable}
-                                                    >
-                                                        <div className="flex items-start justify-between gap-3">
-                                                            <div className="space-y-2">
-                                                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                                                    <Calendar className="h-4 w-4 text-slate-500" />
-                                                                    {formatPoolSlotDateLabel(slot.date)}
+                                    {poolDateOptions.length > 0 ? (
+                                        <div className="space-y-5">
+                                            <div className="space-y-2">
+                                                <div className="text-sm font-semibold text-slate-700">Fecha</div>
+                                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                                    {(showAllPoolSlots ? poolDateOptions : poolDateOptions.slice(0, 7)).map((option) => {
+                                                        const isSelected = option.date === selectedPoolDate
+                                                        return (
+                                                            <button
+                                                                key={option.date}
+                                                                type="button"
+                                                                className={`rounded-2xl border p-4 text-left transition ${
+                                                                    isSelected
+                                                                        ? "border-emerald-500 bg-emerald-50 shadow-sm"
+                                                                        : option.hasSelectableSlots
+                                                                          ? "border-slate-200 bg-white hover:border-emerald-300"
+                                                                          : "border-slate-200 bg-slate-100 opacity-60"
+                                                                }`}
+                                                                onClick={() => option.hasSelectableSlots && setSelectedPoolDate(option.date)}
+                                                                disabled={!option.hasSelectableSlots}
+                                                            >
+                                                                <div className="flex items-start justify-between gap-3">
+                                                                    <div className="space-y-1">
+                                                                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                                                            <Calendar className="h-4 w-4 text-slate-500" />
+                                                                            {option.label}
+                                                                        </div>
+                                                                        <div className="text-sm text-slate-500">
+                                                                            {option.totalSlots} horario{option.totalSlots === 1 ? "" : "s"} disponible{option.totalSlots === 1 ? "" : "s"}
+                                                                        </div>
+                                                                    </div>
+                                                                    {isSelected ? (
+                                                                        <CheckCircle className="h-5 w-5 text-emerald-600" />
+                                                                    ) : option.hasSelectableSlots ? (
+                                                                        <ChevronRight className="h-5 w-5 text-slate-400" />
+                                                                    ) : (
+                                                                        <span className="text-xs font-semibold uppercase text-slate-500">No disponible</span>
+                                                                    )}
                                                                 </div>
-                                                                <div className="flex items-center gap-2 text-2xl font-bold leading-tight text-slate-900">
-                                                                    <Clock className="h-5 w-5 text-slate-500" />
-                                                                    <span>{slot.label}</span>
-                                                                </div>
-                                                            </div>
-                                                            {isSelected ? (
-                                                                <CheckCircle className="h-5 w-5 text-emerald-600" />
-                                                            ) : slot.selectable ? (
-                                                                <ChevronRight className="h-5 w-5 text-slate-400" />
-                                                            ) : (
-                                                                <span className="text-xs font-semibold uppercase text-slate-500">No disponible</span>
-                                                            )}
-                                                        </div>
-                                                    </button>
-                                                )
-                                            })}
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <div className="text-sm font-semibold text-slate-700">Horarios</div>
+                                                {visiblePoolSlots.length > 0 ? (
+                                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                                                        {visiblePoolSlots.map((slot) => {
+                                                            const isSelected = slot.key === selectedPoolSlotKey
+                                                            return (
+                                                                <button
+                                                                    key={slot.key}
+                                                                    type="button"
+                                                                    className={`rounded-2xl border p-5 text-left transition ${
+                                                                        isSelected
+                                                                            ? "border-emerald-500 bg-emerald-50 shadow-sm"
+                                                                            : slot.selectable
+                                                                              ? "border-slate-200 bg-white hover:border-emerald-300"
+                                                                              : "border-slate-200 bg-slate-100 opacity-60"
+                                                                    }`}
+                                                                    onClick={() => slot.selectable && setSelectedPoolSlotKey(slot.key)}
+                                                                    disabled={!slot.selectable}
+                                                                >
+                                                                    <div className="flex items-start justify-between gap-3">
+                                                                        <div className="space-y-2">
+                                                                            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                                                                <Clock className="h-4 w-4 text-slate-500" />
+                                                                                Horario
+                                                                            </div>
+                                                                            <div className="text-2xl font-bold leading-tight text-slate-900">
+                                                                                {slot.label}
+                                                                            </div>
+                                                                        </div>
+                                                                        {isSelected ? (
+                                                                            <CheckCircle className="h-5 w-5 text-emerald-600" />
+                                                                        ) : slot.selectable ? (
+                                                                            <ChevronRight className="h-5 w-5 text-slate-400" />
+                                                                        ) : (
+                                                                            <span className="text-xs font-semibold uppercase text-slate-500">No disponible</span>
+                                                                        )}
+                                                                    </div>
+                                                                </button>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                ) : (
+                                                    <div className="rounded-lg border border-dashed bg-white px-4 py-3 text-sm text-slate-500">
+                                                        No hay horarios habilitados para la fecha seleccionada.
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="rounded-lg border border-dashed bg-white px-4 py-3 text-sm text-slate-500">
-                                            No hay horarios habilitados por el momento.
+                                            No hay fechas habilitadas por el momento.
                                         </div>
                                     )}
                                 </div>
