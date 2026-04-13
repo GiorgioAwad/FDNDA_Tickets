@@ -1,7 +1,7 @@
 ﻿import { notFound } from "next/navigation"
 import Link from "next/link"
 import { prisma } from "@/lib/prisma"
-import { formatDate } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
 import { EventBannerMedia } from "@/components/events/EventBannerMedia"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -57,6 +57,8 @@ export default async function EventDetailPage({ params }: EventPageProps) {
     if (!event || !event.isPublished) {
         notFound()
     }
+
+    const isPoolFreeEvent = event.category === "PISCINA_LIBRE"
 
     const ticketTypes: TicketTypeClient[] = event.ticketTypes.map((ticket) => ({
         id: ticket.id,
@@ -126,9 +128,9 @@ export default async function EventDetailPage({ params }: EventPageProps) {
             </div>
 
             <div className="container mx-auto px-4 py-8">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className={cn("grid grid-cols-1 gap-8", isPoolFreeEvent ? "" : "lg:grid-cols-3")}>
                     {/* Main Content */}
-                    <div className="lg:col-span-2 space-y-6">
+                    <div className={cn("space-y-6", isPoolFreeEvent ? "" : "lg:col-span-2")}>
                         {/* Event Info */}
                         <Card>
                             <CardContent className="p-6">
@@ -197,19 +199,32 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                                 </CardContent>
                             </Card>
                         )}
+
+                        {isPoolFreeEvent && (
+                            <TicketPurchaseCard
+                                eventId={event.id}
+                                eventTitle={event.title}
+                                eventCategory={event.category}
+                                ticketTypes={ticketTypes}
+                                eventStartDate={event.startDate}
+                                eventEndDate={event.endDate}
+                            />
+                        )}
                     </div>
 
                     {/* Sidebar - Tickets */}
-                    <div className="space-y-6">
-                        <TicketPurchaseCard
-                            eventId={event.id}
-                            eventTitle={event.title}
-                            eventCategory={event.category}
-                            ticketTypes={ticketTypes}
-                            eventStartDate={event.startDate}
-                            eventEndDate={event.endDate}
-                        />
-                    </div>
+                    {!isPoolFreeEvent && (
+                        <div className="space-y-6">
+                            <TicketPurchaseCard
+                                eventId={event.id}
+                                eventTitle={event.title}
+                                eventCategory={event.category}
+                                ticketTypes={ticketTypes}
+                                eventStartDate={event.startDate}
+                                eventEndDate={event.endDate}
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

@@ -83,13 +83,14 @@ const addDaysToDateKey = (value: string, days: number): string => {
 const normalizeTimeLabel = (value: string): string => {
     const trimmed = value.trim()
     if (!/^\d{2}:\d{2}$/.test(trimmed)) return trimmed
+    const [rawHour, rawMinute] = trimmed.split(":")
+    const hour24 = Number(rawHour)
+    const minute = Number(rawMinute)
+    if (Number.isNaN(hour24) || Number.isNaN(minute)) return trimmed
 
-    return new Intl.DateTimeFormat("es-PE", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-        timeZone: "UTC",
-    }).format(new Date(`1970-01-01T${trimmed}:00Z`))
+    const suffix = hour24 >= 12 ? "p. m." : "a. m."
+    const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12
+    return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${suffix}`
 }
 
 const formatPoolSlotDateLabel = (value: string): string => {
@@ -173,6 +174,11 @@ export default function TicketPurchaseCard({
     >({})
     const [showAllPoolSlots, setShowAllPoolSlots] = useState(false)
     const [selectedPoolSlotKey, setSelectedPoolSlotKey] = useState<string | null>(null)
+    const [mounted, setMounted] = useState(false)
+
+    useEffect(() => {
+        setMounted(true)
+    }, [])
 
     useEffect(() => {
         let cancelled = false
@@ -346,6 +352,7 @@ export default function TicketPurchaseCard({
         () => poolSlotOptions.find((slot) => slot.key === selectedPoolSlotKey) ?? null,
         [poolSlotOptions, selectedPoolSlotKey]
     )
+    const safeItemCount = mounted ? itemCount : 0
 
     const visibleTicketMeta = useMemo(() => {
         if (!isPoolFreeEventCategory(eventCategory)) return ticketMeta
@@ -354,6 +361,7 @@ export default function TicketPurchaseCard({
     }, [eventCategory, selectedPoolSlot, ticketMeta])
 
     const getCartQuantity = (itemKey: string) => {
+        if (!mounted) return 0
         const found = items.find((item) => (item.lineKey || item.ticketTypeId) === itemKey)
         return found?.quantity || 0
     }
@@ -506,7 +514,7 @@ export default function TicketPurchaseCard({
                                 </div>
 
                                 {poolSlotOptions.length > 0 ? (
-                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                                         {(showAllPoolSlots ? poolSlotOptions : poolSlotOptions.slice(0, 6)).map((slot) => {
                                             const isSelected = slot.key === selectedPoolSlotKey
                                             return (
@@ -667,7 +675,7 @@ export default function TicketPurchaseCard({
                         )})}
 
                         <div className="space-y-3 pt-2">
-                            <Button asChild className="w-full" size="lg" disabled={itemCount === 0}>
+                            <Button asChild className="w-full" size="lg" disabled={safeItemCount === 0}>
                                 <Link href="/checkout">Ir a pagar</Link>
                             </Button>
                             <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 text-blue-800 text-sm">
