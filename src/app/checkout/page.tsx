@@ -725,8 +725,15 @@ export default function CheckoutPage() {
                                                         {requiredSelections > 0 && scheduleConfig && !hasLockedSingleDate && (
                                                         <div className="rounded-md border border-dashed border-gray-300 p-3 bg-white">
                                                             <p className="text-xs font-medium text-gray-700 mb-2">
-                                                                Selecciona dia y turno
+                                                                {scheduleConfig.shifts.length > 0 && !(scheduleConfig.requireShiftSelection ?? true)
+                                                                    ? "Selecciona los dias"
+                                                                    : "Selecciona dia y turno"}
                                                             </p>
+                                                            {scheduleConfig.shifts.length > 0 && !(scheduleConfig.requireShiftSelection ?? true) && (
+                                                                <div className="mb-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-700">
+                                                                    Cada dia seleccionado incluye todos los turnos configurados ({scheduleConfig.shifts.length} turno(s): {scheduleConfig.shifts.join(", ")}).
+                                                                </div>
+                                                            )}
                                                             <div className="space-y-2">
                                                                 {Array.from({ length: requiredSelections }).map((_, selectionIndex) => {
                                                                     const selection =
@@ -735,7 +742,9 @@ export default function CheckoutPage() {
                                                                         <div key={selectionIndex} className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                                             <div>
                                                                                 <label className="text-[11px] text-gray-500 mb-1 block">
-                                                                                    Dia {selectionIndex + 1}
+                                                                                    {scheduleConfig.shifts.length > 0 && !(scheduleConfig.requireShiftSelection ?? true)
+                                                                                        ? `Dia ${selectionIndex + 1}`
+                                                                                        : `Dia ${selectionIndex + 1}`}
                                                                                 </label>
                                                                                 <select
                                                                                     value={selection.date}

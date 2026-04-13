@@ -186,6 +186,9 @@ export function TicketTypeManager({
     const [poolProgress, setPoolProgress] = useState({ current: 0, total: 0 })
     const [dateToggleLoading, setDateToggleLoading] = useState<Record<string, boolean>>({})
 
+    const configuredShiftCount = shiftEntries.filter((entry) => entry.name.trim()).length
+    const scheduleMode = requireShiftSelection ? "per_shift" : "full_day"
+
     const isShiftTicketType = (ticket: TicketType) => {
         const schedule = parseTicketScheduleConfig(ticket.validDays)
         return schedule.dates.length > 0 || schedule.shifts.length > 0
@@ -971,7 +974,9 @@ export function TicketTypeManager({
                                     onChange={(e) => setFormData({ ...formData, isPackage: e.target.checked })}
                                     className="h-4 w-4 rounded border-gray-300"
                                 />
-                                <label htmlFor="isPackage" className="text-sm">Paquete por cantidad de días</label>
+                                <label htmlFor="isPackage" className="text-sm">
+                                    {scheduleMode === "full_day" ? "Paquete por cantidad de dias" : "Paquete de selecciones"}
+                                </label>
 
                                 {formData.isPackage && (
                                     <Input
@@ -987,7 +992,9 @@ export function TicketTypeManager({
                         </div>
                         {formData.isPackage && (
                             <div className="text-xs text-gray-600">
-                                Este ticket permitirá registrar hasta {formData.packageDaysCount || 0} días distintos del calendario que definas.
+                                {scheduleMode === "full_day"
+                                    ? `Este ticket permitira registrar hasta ${formData.packageDaysCount || 0} dias distintos del calendario que definas.`
+                                    : `Este ticket permitira registrar hasta ${formData.packageDaysCount || 0} seleccion(es) de dia + turno.`}
                             </div>
                         )}
 
@@ -1307,17 +1314,38 @@ export function TicketTypeManager({
                             <div className="rounded-lg border bg-white p-3 space-y-3">
                                 <div className="text-xs font-semibold text-gray-700">Turnos</div>
 
-                                <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-                                    <input
-                                        type="checkbox"
-                                        id="requireShiftSelection"
-                                        checked={requireShiftSelection}
-                                        onChange={(e) => setRequireShiftSelection(e.target.checked)}
-                                        className="h-4 w-4 rounded border-gray-300"
-                                    />
-                                    <label htmlFor="requireShiftSelection" className="text-xs text-gray-700">
-                                        Requerir elegir turno en checkout
-                                    </label>
+                                <div className="space-y-2">
+                                    <div className="text-xs font-semibold text-gray-700">Modalidad de venta</div>
+                                    <div className="grid gap-2 md:grid-cols-2">
+                                        <button
+                                            type="button"
+                                            className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                                                scheduleMode === "per_shift"
+                                                    ? "border-blue-500 bg-blue-50 text-blue-900"
+                                                    : "border-gray-200 bg-gray-50 text-gray-700"
+                                            }`}
+                                            onClick={() => setRequireShiftSelection(true)}
+                                        >
+                                            <div className="font-medium">Entrada individual por turno</div>
+                                            <div className="text-xs text-gray-500">
+                                                El comprador elige un dia y un turno especifico por cada entrada.
+                                            </div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                                                scheduleMode === "full_day"
+                                                    ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                                                    : "border-gray-200 bg-gray-50 text-gray-700"
+                                            }`}
+                                            onClick={() => setRequireShiftSelection(false)}
+                                        >
+                                            <div className="font-medium">Dia completo / paquete de dias</div>
+                                            <div className="text-xs text-gray-500">
+                                                El comprador elige dias. Cada dia incluye todos los turnos configurados.
+                                            </div>
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="space-y-2">
@@ -1365,9 +1393,18 @@ export function TicketTypeManager({
                                     Agregar turno
                                 </Button>
 
-                                {!requireShiftSelection && shiftEntries.length > 0 && (
-                                    <div className="text-xs text-blue-700">
-                                        Modo full day: con un solo QR del día, el ticket será válido para todos los turnos configurados.
+                                {shiftEntries.length > 0 && (
+                                    <div className={`text-xs ${scheduleMode === "full_day" ? "text-blue-700" : "text-gray-600"}`}>
+                                        {scheduleMode === "full_day"
+                                            ? `Modo dia completo: con un solo QR del dia, el ticket sera valido para los ${configuredShiftCount} turno(s) configurados.`
+                                            : "Modo por turno: cada entrada requerira seleccionar un turno especifico en checkout."}
+                                    </div>
+                                )}
+                                {selectedValidDays.length > 0 && shiftEntries.length > 0 && formData.isPackage && (
+                                    <div className="text-xs text-gray-600">
+                                        {scheduleMode === "full_day"
+                                            ? `Cobertura esperada: ${formData.packageDaysCount || 0} dia(s) x ${configuredShiftCount} turno(s) configurados por dia.`
+                                            : `Cobertura esperada: ${formData.packageDaysCount || 0} seleccion(es) de dia + turno.`}
                                     </div>
                                 )}
                             </div>
@@ -1427,9 +1464,14 @@ export function TicketTypeManager({
                                                         {schedule.shifts.length} turnos
                                                     </Badge>
                                                 )}
+                                                {schedule.shifts.length > 0 && schedule.requireShiftSelection && (
+                                                    <Badge variant="secondary" className="text-xs">
+                                                        Por turno
+                                                    </Badge>
+                                                )}
                                                 {schedule.shifts.length > 0 && !schedule.requireShiftSelection && (
                                                     <Badge variant="secondary" className="text-xs">
-                                                        Todos los turnos
+                                                        Dia completo
                                                     </Badge>
                                                 )}
                                                 {ticket.servilexEnabled && (
