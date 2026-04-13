@@ -51,11 +51,22 @@ export function formatDateInput(date: Date | string): string {
 
 export function formatDate(date: Date | string, options?: Intl.DateTimeFormatOptions): string {
     const d = parseDateInput(date)
-    return new Intl.DateTimeFormat("es-PE", {
-        dateStyle: "long",
+    const formatterOptions: Intl.DateTimeFormatOptions = {
         timeZone: "UTC",
         ...options,
-    }).format(d)
+    }
+
+    const hasExplicitDateParts =
+        formatterOptions.weekday !== undefined ||
+        formatterOptions.year !== undefined ||
+        formatterOptions.month !== undefined ||
+        formatterOptions.day !== undefined
+
+    if (!hasExplicitDateParts && formatterOptions.dateStyle === undefined) {
+        formatterOptions.dateStyle = "long"
+    }
+
+    return new Intl.DateTimeFormat("es-PE", formatterOptions).format(d)
 }
 
 export function formatDateTime(date: Date | string): string {
