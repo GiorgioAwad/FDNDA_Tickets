@@ -194,12 +194,24 @@ export function TicketTypeManager({
         return schedule.dates.length > 0 || schedule.shifts.length > 0
     }
 
+    const getScheduleModeForTicket = (ticket: TicketType) => {
+        const schedule = parseTicketScheduleConfig(ticket.validDays)
+        if (schedule.dates.length === 0 && schedule.shifts.length === 0) return "standard" as const
+        if (schedule.shifts.length === 0) return "full_day" as const
+        if (schedule.requireShiftSelection) return "per_shift" as const
+        return "full_day" as const
+    }
+
     const standardTicketTypes = useMemo(
-        () => ticketTypes.filter((ticket) => !isShiftTicketType(ticket)),
+        () => ticketTypes.filter((ticket) => getScheduleModeForTicket(ticket) === "standard"),
         [ticketTypes]
     )
-    const shiftTicketTypes = useMemo(
-        () => ticketTypes.filter((ticket) => isShiftTicketType(ticket)),
+    const perShiftTicketTypes = useMemo(
+        () => ticketTypes.filter((ticket) => getScheduleModeForTicket(ticket) === "per_shift"),
+        [ticketTypes]
+    )
+    const fullDayTicketTypes = useMemo(
+        () => ticketTypes.filter((ticket) => getScheduleModeForTicket(ticket) === "full_day"),
         [ticketTypes]
     )
 
@@ -252,6 +264,47 @@ export function TicketTypeManager({
         setEntryMode("standard")
         setIsAdding(false)
         setEditingId(null)
+    }
+
+    const startStandardTicket = () => {
+        setEntryMode("standard")
+        setFormData(buildEmptyFormData())
+        setCapacityInput("100")
+        setSelectedValidDays([])
+        setShiftEntries([])
+        setRequireShiftSelection(true)
+        setFullDayPackageDays(4)
+        setIsAdding(true)
+    }
+
+    const startPerShiftTicket = () => {
+        setEntryMode("shift")
+        setFormData({
+            ...buildEmptyFormData(),
+            isPackage: false,
+            packageDaysCount: 0,
+        })
+        setCapacityInput("100")
+        setSelectedValidDays([])
+        setShiftEntries([])
+        setRequireShiftSelection(true)
+        setFullDayPackageDays(4)
+        setIsAdding(true)
+    }
+
+    const startFullDayTicket = () => {
+        setEntryMode("shift")
+        setFormData({
+            ...buildEmptyFormData(),
+            isPackage: false,
+            packageDaysCount: 1,
+        })
+        setCapacityInput("100")
+        setSelectedValidDays([...dateOptions])
+        setShiftEntries([])
+        setRequireShiftSelection(false)
+        setFullDayPackageDays(4)
+        setIsAdding(true)
     }
 
     const handleSave = async () => {
@@ -634,36 +687,28 @@ export function TicketTypeManager({
                         <Button
                             type="button"
                             size="sm"
-                            onClick={() => {
-                                setEntryMode("standard")
-                                setFormData(buildEmptyFormData())
-                                setCapacityInput("100")
-                                setSelectedValidDays([])
-                                setShiftEntries([])
-                                setRequireShiftSelection(true)
-                                setIsAdding(true)
-                            }}
+                            onClick={startStandardTicket}
                         >
                             <Plus className="h-4 w-4 mr-2" />
-                            Tipo de Entrada
+                            Entrada simple
                         </Button>
                         <Button
                             type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                                setEntryMode("shift")
-                                setFormData(buildEmptyFormData())
-                                setCapacityInput("100")
-                                setSelectedValidDays([])
-                                setShiftEntries([])
-                                setRequireShiftSelection(true)
-                                setFullDayPackageDays(4)
-                                setIsAdding(true)
-                            }}
+                            onClick={startPerShiftTicket}
                         >
                             <Plus className="h-4 w-4 mr-2" />
-                            Entrada con Turno
+                            Entrada individual por turno
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={startFullDayTicket}
+                        >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Full day / paquete de dias
                         </Button>
                         {usesDailyCapacity && (
                         <Button
@@ -918,12 +963,16 @@ export function TicketTypeManager({
                     <div className="bg-gray-50 p-4 rounded-lg space-y-4 border">
                         <h4 className="font-medium text-sm">
                             {editingId
-                                ? entryMode === "shift"
-                                    ? "Editar Entrada con Turno"
-                                    : "Editar Tipo de Entrada"
-                                : entryMode === "shift"
-                                  ? "Nueva Entrada con Turno"
-                                  : "Nuevo Tipo de Entrada"}
+                                ? entryMode === "standard"
+                                    ? "Editar entrada simple"
+                                    : requireShiftSelection
+                                        ? "Editar entrada individual por turno"
+                                        : "Editar full day / paquete de dias"
+                                : entryMode === "standard"
+                                    ? "Nueva entrada simple"
+                                    : requireShiftSelection
+                                        ? "Nueva entrada individual por turno"
+                                        : "Nuevo full day / paquete de dias"}
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
@@ -975,7 +1024,7 @@ export function TicketTypeManager({
                                     className="h-4 w-4 rounded border-gray-300"
                                 />
                                 <label htmlFor="isPackage" className="text-sm">
-                                    {scheduleMode === "full_day" ? "Paquete por cantidad de dias" : "Paquete de selecciones"}
+                                    {scheduleMode === "full_day" ? "Paquete de varios dias" : "Paquete de selecciones dia + turno"}
                                 </label>
 
                                 {formData.isPackage && (
@@ -993,7 +1042,7 @@ export function TicketTypeManager({
                         {formData.isPackage && (
                             <div className="text-xs text-gray-600">
                                 {scheduleMode === "full_day"
-                                    ? `Este ticket permitira registrar hasta ${formData.packageDaysCount || 0} dias distintos del calendario que definas.`
+                                    ? `Este ticket permitira registrar hasta ${formData.packageDaysCount || 0} dia(s) distintos del calendario que definas.`
                                     : `Este ticket permitira registrar hasta ${formData.packageDaysCount || 0} seleccion(es) de dia + turno.`}
                             </div>
                         )}
@@ -1424,11 +1473,30 @@ export function TicketTypeManager({
                 )}
 
                 {[
-                    { title: "Tipos de Entrada", items: standardTicketTypes, empty: "No hay tipos de entrada registrados" },
-                    { title: "Entradas con Turno", items: shiftTicketTypes, empty: "No hay entradas con turno registradas" },
+                    {
+                        title: "Entradas simples",
+                        description: "Entradas sin calendario ni turnos en checkout.",
+                        items: standardTicketTypes,
+                        empty: "No hay entradas simples registradas",
+                    },
+                    {
+                        title: "Entradas individuales por turno",
+                        description: "El comprador elige un dia especifico y un turno concreto por cada entrada.",
+                        items: perShiftTicketTypes,
+                        empty: "No hay entradas por turno registradas",
+                    },
+                    {
+                        title: "Full day y paquetes de dias",
+                        description: "El comprador elige dias del calendario. Cada dia incluye todos los turnos configurados.",
+                        items: fullDayTicketTypes,
+                        empty: "No hay full day o paquetes de dias registrados",
+                    },
                 ].map((section) => (
                     <div key={section.title} className="space-y-2">
-                        <h4 className="text-sm font-semibold text-gray-700">{section.title}</h4>
+                        <div className="space-y-1">
+                            <h4 className="text-sm font-semibold text-gray-700">{section.title}</h4>
+                            <p className="text-xs text-gray-500">{section.description}</p>
+                        </div>
                         {section.items.map((ticket) => {
                             const schedule = parseTicketScheduleConfig(ticket.validDays)
                             const inventoryByDate = new Map(
@@ -1456,22 +1524,22 @@ export function TicketTypeManager({
                                                 )}
                                                 {schedule.dates.length > 0 && (
                                                     <Badge variant="secondary" className="text-xs">
-                                                        {schedule.dates.length} dias
+                                                        {schedule.dates.length} dias habilitados
                                                     </Badge>
                                                 )}
                                                 {schedule.shifts.length > 0 && (
                                                     <Badge variant="secondary" className="text-xs">
-                                                        {schedule.shifts.length} turnos
+                                                        {schedule.shifts.length} turnos por dia
                                                     </Badge>
                                                 )}
                                                 {schedule.shifts.length > 0 && schedule.requireShiftSelection && (
                                                     <Badge variant="secondary" className="text-xs">
-                                                        Por turno
+                                                        Seleccion individual
                                                     </Badge>
                                                 )}
                                                 {schedule.shifts.length > 0 && !schedule.requireShiftSelection && (
                                                     <Badge variant="secondary" className="text-xs">
-                                                        Dia completo
+                                                        Full day
                                                     </Badge>
                                                 )}
                                                 {ticket.servilexEnabled && (
@@ -1490,6 +1558,13 @@ export function TicketTypeManager({
                                                     ? ` totales · capacidad diaria ${ticket.capacity}`
                                                     : ` / ${ticket.capacity} vendidos`}
                                             </div>
+                                            {schedule.dates.length > 0 && (
+                                                <div className="mt-1 text-xs text-gray-500">
+                                                    {schedule.requireShiftSelection
+                                                        ? "Configurado para vender una entrada por turno en los dias habilitados."
+                                                        : "Configurado para full day: cada dia seleccionado incluye todos los turnos activos."}
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-1 self-end shrink-0 sm:self-auto">
                                             <Button
