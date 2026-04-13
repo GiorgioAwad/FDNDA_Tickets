@@ -57,6 +57,11 @@ type PoolSlotOption = {
     ticketName: string
 }
 
+type LimaClock = {
+    dateKey: string
+    minutes: number
+}
+
 const MAX_UNLIMITED_QTY = 10
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
 const WEEKDAY_LABELS = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"] as const
@@ -103,6 +108,44 @@ const formatPoolSlotDateLabel = (value: string): string => {
     const year = String(parsed.getUTCFullYear()).slice(-2)
 
     return `${weekday} ${day} ${month}, '${year}`
+}
+
+const getCurrentLimaClock = (): LimaClock => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Lima",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).formatToParts(new Date())
+
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+    const dateKey = `${values.year}-${values.month}-${values.day}`
+    const hours = Number(values.hour ?? "0")
+    const minutes = Number(values.minute ?? "0")
+
+    return {
+        dateKey,
+        minutes: hours * 60 + minutes,
+    }
+}
+
+const getPoolSlotStartMinutes = (ticket: TicketTypeClient): number | null => {
+    if (!ticket.servilexExtraConfig || typeof ticket.servilexExtraConfig !== "object" || Array.isArray(ticket.servilexExtraConfig)) {
+        return null
+    }
+
+    const raw = (ticket.servilexExtraConfig as Record<string, unknown>).horaInicio
+    if (typeof raw !== "string") return null
+    const match = /^(\d{2}):(\d{2})$/.exec(raw.trim())
+    if (!match) return null
+
+    const hours = Number(match[1])
+    const minutes = Number(match[2])
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+    return hours * 60 + minutes
 }
 
 const getPoolSlotLabel = (ticket: TicketTypeClient): string => {
@@ -175,10 +218,21 @@ export default function TicketPurchaseCard({
     const [showAllPoolSlots, setShowAllPoolSlots] = useState(false)
     const [selectedPoolSlotKey, setSelectedPoolSlotKey] = useState<string | null>(null)
     const [mounted, setMounted] = useState(false)
+    const [limaClock, setLimaClock] = useState<LimaClock | null>(null)
 
     useEffect(() => {
         setMounted(true)
     }, [])
+
+    useEffect(() => {
+        if (!isPoolFreeEventCategory(eventCategory)) return
+
+        const updateClock = () => setLimaClock(getCurrentLimaClock())
+        updateClock()
+
+        const interval = window.setInterval(updateClock, 60_000)
+        return () => window.clearInterval(interval)
+    }, [eventCategory])
 
     useEffect(() => {
         let cancelled = false
@@ -317,7 +371,16 @@ export default function TicketPurchaseCard({
 
         return ticketMeta.flatMap((entry) =>
             entry.dateStates
-                .filter((dateState) => dateState.isEnabled)
+                .filter((dateState) => {
+                    if (!dateState.isEnabled) return false
+                    if (!limaClock) return true
+                    if (dateState.date < limaClock.dateKey) return false
+                    if (dateState.date > limaClock.dateKey) return true
+
+                    const startMinutes = getPoolSlotStartMinutes(entry.ticket)
+                    if (startMinutes === null) return true
+                    return startMinutes > limaClock.minutes
+                })
                 .map((dateState) => ({
                     key: `${entry.ticket.id}:${dateState.date}`,
                     ticketId: entry.ticket.id,
@@ -331,7 +394,7 @@ export default function TicketPurchaseCard({
             if (a.date !== b.date) return a.date.localeCompare(b.date)
             return a.label.localeCompare(b.label)
         })
-    }, [eventCategory, ticketMeta])
+    }, [eventCategory, limaClock, ticketMeta])
 
     useEffect(() => {
         if (!isPoolFreeEventCategory(eventCategory)) return
@@ -482,8 +545,141 @@ export default function TicketPurchaseCard({
         setAttendeeDni("")
     }
 
+    const isPoolFreeView = isPoolFreeEventCategory(eventCategory)
+
+    const purchasePanel = (
+        <>
+            {visibleTicketMeta.map(({ ticket, available, maxQty, soldOut, usesDailyCapacity, schedule, dateStates }) => {
+                const selectedDateState = usesDailyCapacity
+                    ? dateStates.find((entry) => entry.date === selectedPoolSlot?.date)
+                    : null
+                const effectiveSoldOut = usesDailyCapacity
+                    ? !selectedPoolSlot || !selectedDateState || !selectedDateState.isEnabled || selectedDateState.soldOut
+                    : soldOut
+                const effectiveMaxQty = usesDailyCapacity
+                    ? selectedDateState?.available === null
+                        ? MAX_UNLIMITED_QTY
+                        : Math.max(0, selectedDateState?.available ?? 0)
+                    : maxQty
+                const cartKey = usesDailyCapacity && selectedPoolSlot ? selectedPoolSlot.key : ticket.id
+
+                return (
+                    <div
+                        key={ticket.id}
+                        className={`rounded-2xl border p-4 ${effectiveSoldOut ? "bg-gray-50 opacity-60" : "bg-white"}`}
+                    >
+                        <div className="mb-2 flex justify-between items-start">
+                            <div>
+                                <h4 className="font-semibold">{ticket.name}</h4>
+                                {ticket.description && <p className="text-sm text-gray-500">{ticket.description}</p>}
+                            </div>
+                            <div className="text-right">
+                                <div className="font-bold text-lg text-[hsl(210,100%,40%)]">{formatPrice(ticket.price)}</div>
+                            </div>
+                        </div>
+
+                        {isPoolFreeView && selectedPoolSlot && (
+                            <div className="mb-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                                <div className="font-semibold text-slate-900">{formatPoolSlotDateLabel(selectedPoolSlot.date)}</div>
+                                <div>{selectedPoolSlot.label}</div>
+                            </div>
+                        )}
+
+                        {ticket.isPackage && ticket.packageDaysCount ? (
+                            <Badge variant="info" className="mb-2">
+                                Paquete {ticket.packageDaysCount} clases
+                            </Badge>
+                        ) : null}
+                        {!usesDailyCapacity && schedule.dates.length > 0 && (
+                            <Badge variant="secondary" className="mb-2 ml-2">
+                                {schedule.dates.length} días seleccionables
+                            </Badge>
+                        )}
+                        {!usesDailyCapacity && schedule.shifts.length > 0 && (
+                            <Badge variant="secondary" className="mb-2 ml-2">
+                                Turnos configurados
+                            </Badge>
+                        )}
+                        {!usesDailyCapacity && schedule.shifts.length > 0 && !schedule.requireShiftSelection && (
+                            <Badge variant="secondary" className="mb-2 ml-2">
+                                Válido en todos los turnos
+                            </Badge>
+                        )}
+                        {(schedule.dates.length > 0 || schedule.shifts.length > 0) && (
+                            <p className="text-xs text-gray-500 mt-1">
+                                {usesDailyCapacity
+                                    ? "La fecha seleccionada queda asociada a este horario."
+                                    : "La selección de días/turnos se completa en checkout."}
+                            </p>
+                        )}
+
+                        {effectiveSoldOut && (
+                            <div className="bg-red-100 border border-red-300 rounded-lg p-3 mb-3 mt-3">
+                                <div className="flex items-center gap-2 text-red-700 font-bold">
+                                    <AlertCircle className="h-5 w-5" />
+                                    <span className="text-lg">AGOTADO</span>
+                                </div>
+                                <p className="text-red-600 text-sm mt-1">No hay entradas disponibles para este tipo.</p>
+                            </div>
+                        )}
+
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                            {!effectiveSoldOut && (
+                                <div className="ml-auto flex items-center gap-2">
+                                    <span className="text-xs text-gray-500">Cantidad</span>
+                                    <div className="flex items-center gap-2 rounded-full border px-2 py-1">
+                                        <button
+                                            type="button"
+                                            className="h-7 w-7 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                                            onClick={() => handleDecrement(ticket.id, usesDailyCapacity ? selectedPoolSlot?.date : undefined)}
+                                            disabled={getCartQuantity(cartKey) === 0}
+                                            aria-label="Quitar"
+                                        >
+                                            <Minus className="h-3 w-3 mx-auto" />
+                                        </button>
+                                        <span className="min-w-[1.5rem] text-center text-sm font-semibold">
+                                            {getCartQuantity(cartKey)}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            className="h-7 w-7 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                                            onClick={() => handleIncrement(ticket.id, effectiveMaxQty, usesDailyCapacity ? selectedPoolSlot?.date : undefined)}
+                                            disabled={
+                                                (usesDailyCapacity && !selectedPoolSlot) ||
+                                                getCartQuantity(cartKey) >= effectiveMaxQty
+                                            }
+                                            aria-label="Agregar"
+                                        >
+                                            <Plus className="h-3 w-3 mx-auto" />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )
+            })}
+
+            {isPoolFreeView && !selectedPoolSlot && (
+                <div className="rounded-2xl border border-dashed bg-white p-4 text-sm text-slate-500">
+                    Selecciona un horario para habilitar la compra.
+                </div>
+            )}
+
+            <div className="space-y-3 pt-2">
+                <Button asChild className="w-full" size="lg" disabled={safeItemCount === 0}>
+                    <Link href="/checkout">Ir a pagar</Link>
+                </Button>
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 text-blue-800 text-sm">
+                    <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <span>Podrás crear tu cuenta o iniciar sesión al momento de pagar.</span>
+                </div>
+            </div>
+        </>
+    )
+
     return (
-        <Card className="sticky top-24">
+        <Card className={isPoolFreeView ? "" : "sticky top-24"}>
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <ShoppingCart className="h-5 w-5" />
@@ -493,196 +689,82 @@ export default function TicketPurchaseCard({
             <CardContent className="space-y-4">
                 {ticketTypes.length > 0 ? (
                     <>
-                        {isPoolFreeEventCategory(eventCategory) && (
-                            <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div>
-                                        <h4 className="text-xl font-bold text-slate-900">Fecha y Hora</h4>
-                                        <p className="text-sm text-slate-500">
-                                            Selecciona el día y horario para habilitar la compra.
-                                        </p>
-                                    </div>
-                                    {poolSlotOptions.length > 6 && (
-                                        <button
-                                            type="button"
-                                            className="text-sm font-semibold text-emerald-600 hover:text-emerald-700"
-                                            onClick={() => setShowAllPoolSlots((prev) => !prev)}
-                                        >
-                                            {showAllPoolSlots ? "Ver menos" : "Ver todas"}
-                                        </button>
-                                    )}
-                                </div>
-
-                                {poolSlotOptions.length > 0 ? (
-                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                                        {(showAllPoolSlots ? poolSlotOptions : poolSlotOptions.slice(0, 6)).map((slot) => {
-                                            const isSelected = slot.key === selectedPoolSlotKey
-                                            return (
-                                                <button
-                                                    key={slot.key}
-                                                    type="button"
-                                                    className={`rounded-2xl border p-4 text-left transition ${
-                                                        isSelected
-                                                            ? "border-emerald-500 bg-emerald-50 shadow-sm"
-                                                            : slot.selectable
-                                                              ? "border-slate-200 bg-white hover:border-emerald-300"
-                                                              : "border-slate-200 bg-slate-100 opacity-60"
-                                                    }`}
-                                                    onClick={() => slot.selectable && setSelectedPoolSlotKey(slot.key)}
-                                                    disabled={!slot.selectable}
-                                                >
-                                                    <div className="flex items-start justify-between gap-3">
-                                                        <div className="space-y-1">
-                                                            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                                                <Calendar className="h-4 w-4 text-slate-500" />
-                                                                {formatPoolSlotDateLabel(slot.date)}
-                                                            </div>
-                                                            <div className="flex items-center gap-2 text-lg font-bold text-slate-900">
-                                                                <Clock className="h-4 w-4 text-slate-500" />
-                                                                {slot.label}
-                                                            </div>
-                                                        </div>
-                                                        {isSelected ? (
-                                                            <CheckCircle className="h-5 w-5 text-emerald-600" />
-                                                        ) : slot.selectable ? (
-                                                            <ChevronRight className="h-5 w-5 text-slate-400" />
-                                                        ) : (
-                                                            <span className="text-xs font-semibold uppercase text-slate-500">No disponible</span>
-                                                        )}
-                                                    </div>
-                                                </button>
-                                            )
-                                        })}
-                                    </div>
-                                ) : (
-                                    <div className="rounded-lg border border-dashed bg-white px-4 py-3 text-sm text-slate-500">
-                                        No hay horarios habilitados por el momento.
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {visibleTicketMeta.map(({ ticket, available, maxQty, soldOut, usesDailyCapacity, schedule, dateStates }) => {
-                            const selectedDateState = usesDailyCapacity
-                                ? dateStates.find((entry) => entry.date === selectedPoolSlot?.date)
-                                : null
-                            const effectiveSoldOut = usesDailyCapacity
-                                ? !selectedPoolSlot || !selectedDateState || !selectedDateState.isEnabled || selectedDateState.soldOut
-                                : soldOut
-                            const effectiveMaxQty = usesDailyCapacity
-                                ? selectedDateState?.available === null
-                                    ? MAX_UNLIMITED_QTY
-                                    : Math.max(0, selectedDateState?.available ?? 0)
-                                : maxQty
-                            const cartKey = usesDailyCapacity && selectedPoolSlot ? selectedPoolSlot.key : ticket.id
-
-                            return (
-                            <div
-                                key={ticket.id}
-                                className={`p-4 rounded-lg border ${
-                                    effectiveSoldOut ? "bg-gray-50 opacity-60" : "bg-white"
-                                }`}
-                            >
-                                <div className="flex justify-between items-start mb-2">
-                                    <div>
-                                        <h4 className="font-semibold">{ticket.name}</h4>
-                                        {ticket.description && (
-                                            <p className="text-sm text-gray-500">{ticket.description}</p>
+                        {isPoolFreeView ? (
+                            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,380px)] xl:items-start">
+                                <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <h4 className="text-2xl font-bold text-slate-900">Fecha y Hora</h4>
+                                            <p className="text-sm text-slate-500">
+                                                Selecciona el día y horario para habilitar la compra.
+                                            </p>
+                                        </div>
+                                        {poolSlotOptions.length > 6 && (
+                                            <button
+                                                type="button"
+                                                className="text-sm font-semibold text-emerald-600 hover:text-emerald-700"
+                                                onClick={() => setShowAllPoolSlots((prev) => !prev)}
+                                            >
+                                                {showAllPoolSlots ? "Ver menos" : "Ver todas"}
+                                            </button>
                                         )}
                                     </div>
-                                    <div className="text-right">
-                                        <div className="font-bold text-lg text-[hsl(210,100%,40%)]">
-                                            {formatPrice(ticket.price)}
+
+                                    {poolSlotOptions.length > 0 ? (
+                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                                            {(showAllPoolSlots ? poolSlotOptions : poolSlotOptions.slice(0, 6)).map((slot) => {
+                                                const isSelected = slot.key === selectedPoolSlotKey
+                                                return (
+                                                    <button
+                                                        key={slot.key}
+                                                        type="button"
+                                                        className={`rounded-2xl border p-5 text-left transition ${
+                                                            isSelected
+                                                                ? "border-emerald-500 bg-emerald-50 shadow-sm"
+                                                                : slot.selectable
+                                                                  ? "border-slate-200 bg-white hover:border-emerald-300"
+                                                                  : "border-slate-200 bg-slate-100 opacity-60"
+                                                        }`}
+                                                        onClick={() => slot.selectable && setSelectedPoolSlotKey(slot.key)}
+                                                        disabled={!slot.selectable}
+                                                    >
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="space-y-2">
+                                                                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                                                    <Calendar className="h-4 w-4 text-slate-500" />
+                                                                    {formatPoolSlotDateLabel(slot.date)}
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-2xl font-bold leading-tight text-slate-900">
+                                                                    <Clock className="h-5 w-5 text-slate-500" />
+                                                                    <span>{slot.label}</span>
+                                                                </div>
+                                                            </div>
+                                                            {isSelected ? (
+                                                                <CheckCircle className="h-5 w-5 text-emerald-600" />
+                                                            ) : slot.selectable ? (
+                                                                <ChevronRight className="h-5 w-5 text-slate-400" />
+                                                            ) : (
+                                                                <span className="text-xs font-semibold uppercase text-slate-500">No disponible</span>
+                                                            )}
+                                                        </div>
+                                                    </button>
+                                                )
+                                            })}
                                         </div>
-                                    </div>
-                                </div>
-
-                                {ticket.isPackage && ticket.packageDaysCount ? (
-                                    <Badge variant="info" className="mb-2">
-                                        Paquete {ticket.packageDaysCount} clases
-                                    </Badge>
-                                ) : null}
-                                {!usesDailyCapacity && schedule.dates.length > 0 && (
-                                    <Badge variant="secondary" className="mb-2 ml-2">
-                                        {schedule.dates.length} días seleccionables
-                                    </Badge>
-                                )}
-                                {!usesDailyCapacity && schedule.shifts.length > 0 && (
-                                    <Badge variant="secondary" className="mb-2 ml-2">
-                                        Turnos configurados
-                                    </Badge>
-                                )}
-                                {!usesDailyCapacity && schedule.shifts.length > 0 && !schedule.requireShiftSelection && (
-                                    <Badge variant="secondary" className="mb-2 ml-2">
-                                        Válido en todos los turnos
-                                    </Badge>
-                                )}
-                                {(schedule.dates.length > 0 || schedule.shifts.length > 0) && (
-                                    <p className="text-xs text-gray-500 mt-1">
-                                        {usesDailyCapacity
-                                            ? "La fecha seleccionada queda asociada a este horario."
-                                            : "La selección de días/turnos se completa en checkout."}
-                                    </p>
-                                )}
-
-                                {/* AGOTADO - Banner prominente */}
-                                {effectiveSoldOut && (
-                                    <div className="bg-red-100 border border-red-300 rounded-lg p-3 mb-3">
-                                        <div className="flex items-center gap-2 text-red-700 font-bold">
-                                            <AlertCircle className="h-5 w-5" />
-                                            <span className="text-lg">AGOTADO</span>
-                                        </div>
-                                        <p className="text-red-600 text-sm mt-1">
-                                            No hay entradas disponibles para este tipo.
-                                        </p>
-                                    </div>
-                                )}
-
-                                <div className="flex flex-wrap items-center gap-3 mt-3">
-                                    {!effectiveSoldOut && (
-                                        <div className="ml-auto flex items-center gap-2">
-                                            <span className="text-xs text-gray-500">Cantidad</span>
-                                            <div className="flex items-center gap-2 rounded-full border px-2 py-1">
-                                                <button
-                                                    type="button"
-                                                    className="h-7 w-7 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                                                    onClick={() => handleDecrement(ticket.id, usesDailyCapacity ? selectedPoolSlot?.date : undefined)}
-                                                    disabled={getCartQuantity(cartKey) === 0}
-                                                    aria-label="Quitar"
-                                                >
-                                                    <Minus className="h-3 w-3 mx-auto" />
-                                                </button>
-                                                <span className="min-w-[1.5rem] text-center text-sm font-semibold">
-                                                    {getCartQuantity(cartKey)}
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    className="h-7 w-7 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                                                    onClick={() => handleIncrement(ticket.id, effectiveMaxQty, usesDailyCapacity ? selectedPoolSlot?.date : undefined)}
-                                                    disabled={
-                                                        (usesDailyCapacity && !selectedPoolSlot) ||
-                                                        getCartQuantity(cartKey) >= effectiveMaxQty
-                                                    }
-                                                    aria-label="Agregar"
-                                                >
-                                                    <Plus className="h-3 w-3 mx-auto" />
-                                                </button>
-                                            </div>
+                                    ) : (
+                                        <div className="rounded-lg border border-dashed bg-white px-4 py-3 text-sm text-slate-500">
+                                            No hay horarios habilitados por el momento.
                                         </div>
                                     )}
                                 </div>
-                            </div>
-                        )})}
 
-                        <div className="space-y-3 pt-2">
-                            <Button asChild className="w-full" size="lg" disabled={safeItemCount === 0}>
-                                <Link href="/checkout">Ir a pagar</Link>
-                            </Button>
-                            <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 text-blue-800 text-sm">
-                                <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                                <span>Podrás crear tu cuenta o iniciar sesión al momento de pagar.</span>
+                                <div className="space-y-4 xl:sticky xl:top-24">
+                                    {purchasePanel}
+                                </div>
                             </div>
-                        </div>
+                        ) : (
+                            purchasePanel
+                        )}
                     </>
                 ) : (
                     <div className="text-center py-6 text-gray-500">
