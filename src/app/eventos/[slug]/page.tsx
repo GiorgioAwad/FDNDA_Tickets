@@ -90,7 +90,7 @@ export default async function EventDetailPage({ params }: EventPageProps) {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Hero */}
-            <div className="relative h-64 md:h-96 bg-gradient-fdnda overflow-hidden">
+            <div className="relative h-56 sm:h-64 md:h-96 bg-gradient-fdnda overflow-hidden">
                 <div className="absolute top-4 left-0 right-0 z-10">
                     <div className="container mx-auto px-4">
                         <Link
@@ -117,7 +117,7 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
 
-                <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
+                <div className="absolute bottom-0 left-0 right-0 p-4 text-white sm:p-6">
                     <div className="container mx-auto">
                         <div className="flex flex-wrap gap-2 mb-3">
                             {event.discipline && (
@@ -127,19 +127,19 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                             )}
                         </div>
 
-                        <h1 className="text-3xl md:text-4xl font-bold">{event.title}</h1>
+                        <h1 className="text-2xl font-bold sm:text-3xl md:text-4xl">{event.title}</h1>
                     </div>
                 </div>
             </div>
 
-            <div className="container mx-auto px-4 py-8">
-                <div className={cn("grid grid-cols-1 gap-8", isPoolFreeEvent ? "" : "lg:grid-cols-3")}>
+            <div className="container mx-auto px-4 py-5 sm:py-8">
+                <div className={cn("grid grid-cols-1 gap-6 sm:gap-8", isPoolFreeEvent ? "" : "lg:grid-cols-3")}>
                     {/* Main Content */}
                     <div className={cn("space-y-6", isPoolFreeEvent ? "" : "lg:col-span-2")}>
                         {/* Event Info */}
                         <Card>
-                            <CardContent className="p-6">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                            <CardContent className="p-4 sm:p-6">
+                                <div className="mb-5 grid grid-cols-1 gap-4 sm:mb-6 sm:grid-cols-2">
                                     <div className="flex items-start gap-3">
                                         <div className="p-2 rounded-lg bg-blue-50">
                                             <Calendar className="h-5 w-5 text-blue-600" />
@@ -167,7 +167,7 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                                     </div>
                                 </div>
 
-                                <h2 className="text-lg font-semibold mb-3">Descripción</h2>
+                                <h2 className="mb-3 text-base font-semibold sm:text-lg">Descripción</h2>
                                 <div className="prose prose-gray max-w-none">
                                     <p className="whitespace-pre-wrap">{event.description}</p>
                                 </div>
@@ -178,17 +178,17 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                         {event.eventDays.length > 0 && (
                             <Card>
                                 <CardHeader>
-                                    <CardTitle className="text-lg flex items-center gap-2">
+                                    <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
                                         <Clock className="h-5 w-5" />
                                         Días del Evento
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
                                         {event.eventDays.map((day: EventDayItem) => (
                                             <div
                                                 key={day.id}
-                                                className="flex items-center justify-between p-3 rounded-lg bg-gray-50"
+                                                className="flex items-center justify-between rounded-lg bg-gray-50 p-2.5 sm:p-3"
                                             >
                                                 <div>
                                                     <div className="font-medium">

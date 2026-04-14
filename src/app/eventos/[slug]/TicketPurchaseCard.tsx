@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { getPoolFreeSelectableDates, isPoolFreeEventCategory } from "@/lib/pool-free"
-import { formatDate, formatPrice } from "@/lib/utils"
+import { formatPrice } from "@/lib/utils"
 import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { Info, ShoppingCart, Minus, Plus, Gift, CheckCircle, AlertCircle, Ticket, Calendar, Clock, ChevronRight } from "lucide-react"
 
@@ -205,7 +205,6 @@ export default function TicketPurchaseCard({
     const router = useRouter()
 
     // Courtesy claim state
-    const [showCourtesy, setShowCourtesy] = useState(false)
     const [courtesyCode, setCourtesyCode] = useState("")
     const [courtesyLoading, setCourtesyLoading] = useState(false)
     const [courtesyError, setCourtesyError] = useState("")
@@ -588,7 +587,6 @@ export default function TicketPurchaseCard({
     }
 
     const resetCourtesy = () => {
-        setShowCourtesy(false)
         setCourtesyCode("")
         setCourtesyData(null)
         setCourtesyError("")
@@ -601,7 +599,7 @@ export default function TicketPurchaseCard({
 
     const purchasePanel = (
         <>
-            {visibleTicketMeta.map(({ ticket, available, maxQty, soldOut, usesDailyCapacity, schedule, dateStates }) => {
+            {visibleTicketMeta.map(({ ticket, maxQty, soldOut, usesDailyCapacity, schedule, dateStates }) => {
                 const selectedDateState = usesDailyCapacity
                     ? dateStates.find((entry) => entry.date === selectedPoolSlot?.date)
                     : null
@@ -618,20 +616,20 @@ export default function TicketPurchaseCard({
                 return (
                     <div
                         key={ticket.id}
-                        className={`rounded-2xl border p-4 ${effectiveSoldOut ? "bg-gray-50 opacity-60" : "bg-white"}`}
+                        className={`rounded-xl border p-3 sm:rounded-2xl sm:p-4 ${effectiveSoldOut ? "bg-gray-50 opacity-60" : "bg-white"}`}
                     >
-                        <div className="mb-2 flex justify-between items-start">
+                        <div className="mb-2 flex items-start justify-between gap-3">
                             <div>
-                                <h4 className="font-semibold">{ticket.name}</h4>
-                                {ticket.description && <p className="text-sm text-gray-500">{ticket.description}</p>}
+                                <h4 className="text-sm font-semibold sm:text-base">{ticket.name}</h4>
+                                {ticket.description && <p className="text-xs text-gray-500 sm:text-sm">{ticket.description}</p>}
                             </div>
                             <div className="text-right">
-                                <div className="font-bold text-lg text-[hsl(210,100%,40%)]">{formatPrice(ticket.price)}</div>
+                                <div className="text-base font-bold text-[hsl(210,100%,40%)] sm:text-lg">{formatPrice(ticket.price)}</div>
                             </div>
                         </div>
 
                         {isPoolFreeView && selectedPoolSlot && (
-                            <div className="mb-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                            <div className="mb-3 rounded-xl bg-slate-50 p-2.5 text-xs text-slate-700 sm:p-3 sm:text-sm">
                                 <div className="font-semibold text-slate-900">{formatPoolSlotDateLabel(selectedPoolSlot.date)}</div>
                                 <div>{selectedPoolSlot.label}</div>
                             </div>
@@ -669,9 +667,9 @@ export default function TicketPurchaseCard({
                             <div className="bg-red-100 border border-red-300 rounded-lg p-3 mb-3 mt-3">
                                 <div className="flex items-center gap-2 text-red-700 font-bold">
                                     <AlertCircle className="h-5 w-5" />
-                                    <span className="text-lg">AGOTADO</span>
+                                    <span className="text-base sm:text-lg">AGOTADO</span>
                                 </div>
-                                <p className="text-red-600 text-sm mt-1">No hay entradas disponibles para este tipo.</p>
+                                <p className="mt-1 text-xs text-red-600 sm:text-sm">No hay entradas disponibles para este tipo.</p>
                             </div>
                         )}
 
@@ -742,19 +740,19 @@ export default function TicketPurchaseCard({
                 {ticketTypes.length > 0 ? (
                     <>
                         {isPoolFreeView ? (
-                            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,380px)] xl:items-start">
-                                <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                                    <div className="flex items-center justify-between gap-3">
+                            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,380px)] xl:items-start xl:gap-6">
+                                <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:rounded-2xl sm:p-5">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                                         <div>
-                                            <h4 className="text-2xl font-bold text-slate-900">Fecha y Hora</h4>
-                                            <p className="text-sm text-slate-500">
+                                            <h4 className="text-lg font-bold text-slate-900 sm:text-2xl">Fecha y Hora</h4>
+                                            <p className="text-xs text-slate-500 sm:text-sm">
                                                 Primero elige una fecha. Luego verás solo los horarios habilitados de ese día.
                                             </p>
                                         </div>
                                         {poolDateOptions.length > 7 && (
                                             <button
                                                 type="button"
-                                                className="text-sm font-semibold text-emerald-600 hover:text-emerald-700"
+                                                className="self-start text-xs font-semibold text-emerald-600 hover:text-emerald-700 sm:text-sm"
                                                 onClick={() => setShowAllPoolSlots((prev) => !prev)}
                                             >
                                                 {showAllPoolSlots ? "Ver menos" : "Ver todas"}
@@ -763,17 +761,19 @@ export default function TicketPurchaseCard({
                                     </div>
 
                                     {poolDateOptions.length > 0 ? (
-                                        <div className="space-y-5">
+                                        <div className="space-y-4 sm:space-y-5">
                                             <div className="space-y-2">
-                                                <div className="text-sm font-semibold text-slate-700">Fecha</div>
-                                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 sm:text-sm sm:normal-case sm:tracking-normal">
+                                                    Fecha
+                                                </div>
+                                                <div className="flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible xl:grid-cols-3">
                                                     {(showAllPoolSlots ? poolDateOptions : poolDateOptions.slice(0, 7)).map((option) => {
                                                         const isSelected = option.date === selectedPoolDate
                                                         return (
                                                             <button
                                                                 key={option.date}
                                                                 type="button"
-                                                                className={`rounded-2xl border p-4 text-left transition ${
+                                                                className={`min-w-[13rem] shrink-0 rounded-xl border p-3 text-left transition sm:min-w-0 sm:rounded-2xl sm:p-4 ${
                                                                     isSelected
                                                                         ? "border-emerald-500 bg-emerald-50 shadow-sm"
                                                                         : option.hasSelectableSlots
@@ -786,17 +786,17 @@ export default function TicketPurchaseCard({
                                                                 <div className="flex items-start justify-between gap-3">
                                                                     <div className="space-y-1">
                                                                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                                                            <Calendar className="h-4 w-4 text-slate-500" />
+                                                                            <Calendar className="h-3.5 w-3.5 text-slate-500 sm:h-4 sm:w-4" />
                                                                             {option.label}
                                                                         </div>
-                                                                        <div className="text-sm text-slate-500">
+                                                                        <div className="text-xs text-slate-500 sm:text-sm">
                                                                             {option.totalSlots} horario{option.totalSlots === 1 ? "" : "s"} disponible{option.totalSlots === 1 ? "" : "s"}
                                                                         </div>
                                                                     </div>
                                                                     {isSelected ? (
-                                                                        <CheckCircle className="h-5 w-5 text-emerald-600" />
+                                                                        <CheckCircle className="h-4 w-4 text-emerald-600 sm:h-5 sm:w-5" />
                                                                     ) : option.hasSelectableSlots ? (
-                                                                        <ChevronRight className="h-5 w-5 text-slate-400" />
+                                                                        <ChevronRight className="h-4 w-4 text-slate-400 sm:h-5 sm:w-5" />
                                                                     ) : (
                                                                         <span className="text-xs font-semibold uppercase text-slate-500">No disponible</span>
                                                                     )}
@@ -808,16 +808,19 @@ export default function TicketPurchaseCard({
                                             </div>
 
                                             <div className="space-y-2">
-                                                <div className="text-sm font-semibold text-slate-700">Horarios</div>
+                                                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 sm:text-sm sm:normal-case sm:tracking-normal">
+                                                    Horarios
+                                                </div>
                                                 {visiblePoolSlots.length > 0 ? (
-                                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                                                    <div className="max-h-[20rem] overflow-y-auto pr-1 sm:max-h-none sm:overflow-visible sm:pr-0">
+                                                        <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 2xl:grid-cols-3">
                                                         {visiblePoolSlots.map((slot) => {
                                                             const isSelected = slot.key === selectedPoolSlotKey
                                                             return (
                                                                 <button
                                                                     key={slot.key}
                                                                     type="button"
-                                                                    className={`rounded-2xl border p-5 text-left transition ${
+                                                                    className={`rounded-xl border p-3.5 text-left transition sm:rounded-2xl sm:p-5 ${
                                                                         isSelected
                                                                             ? "border-emerald-500 bg-emerald-50 shadow-sm"
                                                                             : slot.selectable
@@ -828,19 +831,19 @@ export default function TicketPurchaseCard({
                                                                     disabled={!slot.selectable}
                                                                 >
                                                                     <div className="flex items-start justify-between gap-3">
-                                                                        <div className="space-y-2">
-                                                                            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                                                                <Clock className="h-4 w-4 text-slate-500" />
+                                                                    <div className="space-y-2">
+                                                                            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-900 sm:text-sm sm:normal-case sm:tracking-normal">
+                                                                                <Clock className="h-3.5 w-3.5 text-slate-500 sm:h-4 sm:w-4" />
                                                                                 Horario
                                                                             </div>
-                                                                            <div className="text-2xl font-bold leading-tight text-slate-900">
+                                                                            <div className="text-lg font-bold leading-tight text-slate-900 sm:text-2xl">
                                                                                 {slot.label}
                                                                             </div>
                                                                         </div>
                                                                         {isSelected ? (
-                                                                            <CheckCircle className="h-5 w-5 text-emerald-600" />
+                                                                            <CheckCircle className="h-4 w-4 text-emerald-600 sm:h-5 sm:w-5" />
                                                                         ) : slot.selectable ? (
-                                                                            <ChevronRight className="h-5 w-5 text-slate-400" />
+                                                                            <ChevronRight className="h-4 w-4 text-slate-400 sm:h-5 sm:w-5" />
                                                                         ) : (
                                                                             <span className="text-xs font-semibold uppercase text-slate-500">No disponible</span>
                                                                         )}
@@ -848,16 +851,17 @@ export default function TicketPurchaseCard({
                                                                 </button>
                                                             )
                                                         })}
+                                                        </div>
                                                     </div>
                                                 ) : (
-                                                    <div className="rounded-lg border border-dashed bg-white px-4 py-3 text-sm text-slate-500">
+                                                    <div className="rounded-lg border border-dashed bg-white px-3 py-2.5 text-xs text-slate-500 sm:px-4 sm:py-3 sm:text-sm">
                                                         No hay horarios habilitados para la fecha seleccionada.
                                                     </div>
                                                 )}
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="rounded-lg border border-dashed bg-white px-4 py-3 text-sm text-slate-500">
+                                        <div className="rounded-lg border border-dashed bg-white px-3 py-2.5 text-xs text-slate-500 sm:px-4 sm:py-3 sm:text-sm">
                                             No hay fechas habilitadas por el momento.
                                         </div>
                                     )}
