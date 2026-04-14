@@ -191,7 +191,9 @@ export function TicketTypeManager({
     const [poolProgress, setPoolProgress] = useState({ current: 0, total: 0 })
     const [dateToggleLoading, setDateToggleLoading] = useState<Record<string, boolean>>({})
     const [catalogRefreshKey, setCatalogRefreshKey] = useState(0)
+    const [showInactive, setShowInactive] = useState(false)
 
+    const inactiveCount = ticketTypes.filter((t) => t.isActive === false).length
     const configuredShiftCount = shiftEntries.filter((entry) => entry.name.trim()).length
     const scheduleMode = requireShiftSelection ? "per_shift" : "full_day"
 
@@ -208,17 +210,21 @@ export function TicketTypeManager({
         return "full_day" as const
     }
 
+    const visibleTicketTypes = useMemo(
+        () => showInactive ? ticketTypes : ticketTypes.filter((t) => t.isActive !== false),
+        [ticketTypes, showInactive]
+    )
     const standardTicketTypes = useMemo(
-        () => ticketTypes.filter((ticket) => getScheduleModeForTicket(ticket) === "standard"),
-        [ticketTypes]
+        () => visibleTicketTypes.filter((ticket) => getScheduleModeForTicket(ticket) === "standard"),
+        [visibleTicketTypes]
     )
     const perShiftTicketTypes = useMemo(
-        () => ticketTypes.filter((ticket) => getScheduleModeForTicket(ticket) === "per_shift"),
-        [ticketTypes]
+        () => visibleTicketTypes.filter((ticket) => getScheduleModeForTicket(ticket) === "per_shift"),
+        [visibleTicketTypes]
     )
     const fullDayTicketTypes = useMemo(
-        () => ticketTypes.filter((ticket) => getScheduleModeForTicket(ticket) === "full_day"),
-        [ticketTypes]
+        () => visibleTicketTypes.filter((ticket) => getScheduleModeForTicket(ticket) === "full_day"),
+        [visibleTicketTypes]
     )
 
     const dateOptions = useMemo(() => {
@@ -438,7 +444,12 @@ export function TicketTypeManager({
     }
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Estas seguro?")) return
+        const ticket = ticketTypes.find((t) => t.id === id)
+        const hasSales = ticket && (ticket.sold ?? 0) > 0
+        const message = hasSales
+            ? `"${ticket.name}" tiene ${ticket.sold} ventas. Se desactivara (no se puede eliminar con ventas). Continuar?`
+            : `Eliminar "${ticket?.name || "entrada"}" permanentemente?`
+        if (!confirm(message)) return
 
         try {
             const response = await fetch(`/api/ticket-types?id=${id}`, {
@@ -709,7 +720,22 @@ export function TicketTypeManager({
     return (
         <Card>
             <CardHeader className="space-y-3">
-                <CardTitle>Entradas</CardTitle>
+                <div className="flex items-center justify-between">
+                    <CardTitle>Entradas</CardTitle>
+                    {inactiveCount > 0 && (
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="text-xs text-gray-500"
+                            onClick={() => setShowInactive(!showInactive)}
+                        >
+                            {showInactive
+                                ? "Ocultar inactivos"
+                                : `Mostrar ${inactiveCount} inactivo${inactiveCount > 1 ? "s" : ""}`}
+                        </Button>
+                    )}
+                </div>
                 {!isAdding && !editingId && !showPoolGenerator && (
                     <div className="flex flex-wrap gap-2">
                         <Button
