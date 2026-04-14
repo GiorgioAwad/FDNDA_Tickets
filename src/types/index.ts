@@ -45,8 +45,9 @@ export type EventWithDetails = Event & {
 
 export type EventWithDetailsSerialized = Omit<
     EventWithDetails,
-    "startDate" | "endDate" | "createdAt" | "updatedAt" | "ticketTypes" | "eventDays"
+    "startDate" | "endDate" | "createdAt" | "updatedAt" | "advanceAmount" | "ticketTypes" | "eventDays"
 > & {
+    advanceAmount: number
     startDate: string
     endDate: string
     createdAt: string

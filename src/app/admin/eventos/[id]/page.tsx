@@ -21,19 +21,25 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
     }
 
     const { id } = await params
-    const event = await prisma.event.findUnique({
-        where: { id },
-        include: {
-            ticketTypes: {
-                include: {
-                    dateInventories: {
-                        orderBy: { date: "asc" },
+    let event
+    try {
+        event = await prisma.event.findUnique({
+            where: { id },
+            include: {
+                ticketTypes: {
+                    include: {
+                        dateInventories: {
+                            orderBy: { date: "asc" },
+                        },
                     },
                 },
+                eventDays: true,
             },
-            eventDays: true,
-        },
-    })
+        })
+    } catch (error) {
+        console.error("[AdminEditEvent]", id, error)
+        throw error
+    }
 
     if (!event) {
         notFound()
@@ -46,6 +52,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
 
     const serializedEvent = {
         ...event,
+        advanceAmount: Number(event.advanceAmount),
         startDate: event.startDate.toISOString(),
         endDate: event.endDate.toISOString(),
         createdAt: event.createdAt.toISOString(),

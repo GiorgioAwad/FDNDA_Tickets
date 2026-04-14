@@ -30,24 +30,29 @@ type EventDayItem = {
 }
 
 async function getEvent(slug: string) {
-    const event = await prisma.event.findUnique({
-        where: { slug },
-        include: {
-            eventDays: {
-                orderBy: { date: "asc" },
-            },
-            ticketTypes: {
-                where: { isActive: true },
-                orderBy: { sortOrder: "asc" },
-                include: {
-                    dateInventories: {
-                        orderBy: { date: "asc" },
+    try {
+        const event = await prisma.event.findUnique({
+            where: { slug },
+            include: {
+                eventDays: {
+                    orderBy: { date: "asc" },
+                },
+                ticketTypes: {
+                    where: { isActive: true },
+                    orderBy: { sortOrder: "asc" },
+                    include: {
+                        dateInventories: {
+                            orderBy: { date: "asc" },
+                        },
                     },
                 },
             },
-        },
-    })
-    return event
+        })
+        return event
+    } catch (error) {
+        console.error("[getEvent]", slug, error)
+        throw error
+    }
 }
 
 export default async function EventDetailPage({ params }: EventPageProps) {

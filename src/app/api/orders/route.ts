@@ -246,6 +246,7 @@ export async function POST(request: NextRequest) {
                             servilexScheduleCode: string | null
                             servilexPoolCode: string | null
                             servilexExtraConfig: Prisma.JsonValue | null
+                            servilexBindingId: string | null
                         }>
                     >(Prisma.sql`
                         UPDATE "ticket_types"
@@ -268,7 +269,8 @@ export async function POST(request: NextRequest) {
                             "servilexDisciplineCode",
                             "servilexScheduleCode",
                             "servilexPoolCode",
-                            "servilexExtraConfig"
+                            "servilexExtraConfig",
+                            "servilexBindingId"
                     `)
 
                     reservedTicketType = reservedRows[0]

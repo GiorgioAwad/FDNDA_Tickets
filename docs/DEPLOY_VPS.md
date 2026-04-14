@@ -259,10 +259,15 @@ Abre tu navegador en `https://ticketingfdnda.pe` y verifica que todo funciona.
 
 ### Actualizar la app (tras push a GitHub):
 
+> **Importante**: Siempre ejecuta las migraciones ANTES de reiniciar la app.
+> Si omites este paso y hay cambios de esquema, la app fallara al intentar
+> consultar columnas que no existen en la base de datos.
+
 ```bash
 cd ~/fdnda-tickets
 git pull
 docker compose -f docker-compose.prod.yml build app
+docker compose --profile tools -f docker-compose.prod.yml --env-file .env.production run --rm migrate
 docker compose -f docker-compose.prod.yml up -d app
 ```
 
