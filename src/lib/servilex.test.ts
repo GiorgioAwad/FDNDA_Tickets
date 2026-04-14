@@ -130,6 +130,7 @@ test("AC genera un comprobante por alumno y payload v1.2 sin campos legacy", () 
         assert.equal(Object.hasOwn(payload.meta, "hash"), false)
         assert.equal(Object.hasOwn(payload.cabecera.comprobante, "numero"), false)
         assert.equal(payload.cabecera.indicador, "AC")
+        assert.equal(payload.cabecera.tipoTributo, "9998")
         assert.ok(payload.cabecera.alumno)
         assert.equal(payload.detalle.length, 1)
         assert.equal(payload.cabecera.total, payload.cobranza.totalPago)
@@ -159,6 +160,7 @@ test("OS genera detalle con servicio, cantidad, descuento y precio", () => {
     const detalle = payload.detalle[0] as unknown as Record<string, unknown>
 
     assert.equal(payload.cabecera.indicador, "OS")
+    assert.equal(payload.cabecera.tipoTributo, "1000")
     assert.deepEqual(Object.keys(detalle).sort(), ["cantidad", "descuento", "precio", "servicio"])
     assert.equal(detalle.cantidad, 2)
     assert.equal(detalle.descuento, 5)
@@ -433,6 +435,7 @@ for (const indicator of ["PN", "PA"] as const) {
         const detalle = payload.detalle[0] as unknown as Record<string, unknown>
 
         assert.equal(payload.cabecera.indicador, indicator)
+        assert.equal(payload.cabecera.tipoTributo, "9998")
         assert.deepEqual(
             Object.keys(detalle).sort(),
             ["cantidad", "duracion", "horaFin", "horaInicio", "piscina", "precio", "servicio"]

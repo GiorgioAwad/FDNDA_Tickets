@@ -339,6 +339,25 @@ type ServilexInvoiceUnit =
     | ServilexOtrosServiciosUnit
     | ServilexPiscinaLibreUnit
 
+function getServilexTipoTributo(indicator: ServilexIndicator, config: ServilexConfig): string {
+    const perIndicatorOverride =
+        process.env[`SERVILEX_TIPO_TRIBUTO_${indicator}` as keyof NodeJS.ProcessEnv]
+
+    if (perIndicatorOverride && perIndicatorOverride.trim()) {
+        return perIndicatorOverride.trim()
+    }
+
+    if (indicator === "OS") {
+        return "1000"
+    }
+
+    if (indicator === "AC" || indicator === "PN" || indicator === "PA") {
+        return "9998"
+    }
+
+    return config.tipoTributo
+}
+
 export function getServilexConfig(): ServilexConfig {
     const maxRetriesRaw = Number(process.env.SERVILEX_MAX_RETRIES || "3")
     return {
@@ -1213,7 +1232,7 @@ export function buildServilexPayload(
         total,
         ejecutivo: config.ejecutivo,
         condicionPago: config.condicionPago,
-        tipoTributo: config.tipoTributo,
+        tipoTributo: getServilexTipoTributo(snapshot.indicator, config),
         referencia: config.referencia,
         tipoRegistro: config.tipoRegistro,
     }
