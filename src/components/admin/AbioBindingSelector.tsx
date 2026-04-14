@@ -68,9 +68,10 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
     const [disciplines, setDisciplines] = useState<DisciplineOption[]>([])
     const [schedules, setSchedules] = useState<ScheduleOption[]>([])
     const [bindings, setBindings] = useState<BindingOption[]>([])
-    const [loading, setLoading] = useState(false)
+    const [loadingBindings, setLoadingBindings] = useState(false)
 
-    const requiresBinding = props.indicator === "AC" || props.indicator === "PN" || props.indicator === "PA"
+    const usesStructuredCatalog =
+        props.indicator === "AC" || props.indicator === "PN" || props.indicator === "PA"
 
     useEffect(() => {
         if (!props.sucursalCode) {
@@ -87,16 +88,21 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
     }, [props.sucursalCode])
 
     useEffect(() => {
+        if (!usesStructuredCatalog) {
+            setDisciplines([])
+            return
+        }
+
         void fetch("/api/admin/abio-catalog/disciplines", {
             cache: "no-store",
         })
             .then((res) => res.json())
             .then((payload) => setDisciplines(payload.data || []))
             .catch((error) => console.error("Error loading ABIO disciplines", error))
-    }, [])
+    }, [usesStructuredCatalog])
 
     useEffect(() => {
-        if (!props.disciplineCode) {
+        if (!usesStructuredCatalog || !props.disciplineCode) {
             setSchedules([])
             return
         }
@@ -108,10 +114,10 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
             .then((res) => res.json())
             .then((payload) => setSchedules(payload.data || []))
             .catch((error) => console.error("Error loading ABIO schedules", error))
-    }, [props.disciplineCode])
+    }, [usesStructuredCatalog, props.disciplineCode])
 
     useEffect(() => {
-        if (!requiresBinding || !props.sucursalCode || !props.serviceCode) {
+        if (!usesStructuredCatalog || !props.sucursalCode || !props.serviceCode) {
             setBindings([])
             return
         }
@@ -124,16 +130,16 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
         if (props.scheduleCode) query.set("horario", props.scheduleCode)
         if (props.poolCode) query.set("piscina", props.poolCode)
 
-        setLoading(true)
+        setLoadingBindings(true)
         void fetch(`/api/admin/abio-catalog/bindings?${query.toString()}`, {
             cache: "no-store",
         })
             .then((res) => res.json())
             .then((payload) => setBindings(payload.data || []))
-            .catch((error) => console.error("Error loading ABIO bindings", error))
-            .finally(() => setLoading(false))
+            .catch((error) => console.error("Error loading optional ABIO bindings", error))
+            .finally(() => setLoadingBindings(false))
     }, [
-        requiresBinding,
+        usesStructuredCatalog,
         props.sucursalCode,
         props.serviceCode,
         props.disciplineCode,
@@ -145,6 +151,7 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
         () => services.find((item) => item.servicioCodigo === props.serviceCode) || null,
         [services, props.serviceCode]
     )
+
     const selectedBinding = useMemo(
         () => bindings.find((item) => item.id === props.bindingId) || null,
         [bindings, props.bindingId]
@@ -176,7 +183,6 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
             servilexDisciplineCode: binding.disciplinaCodigo,
             servilexScheduleCode: binding.horarioCodigo,
             servilexPoolCode: binding.piscinaCodigo,
-            capacity: binding.numeroCupos,
             ...(extraConfigPatch ? { servilexExtraConfig: extraConfigPatch } : {}),
         })
     }
@@ -184,9 +190,9 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
     return (
         <div className="space-y-4 rounded-md border border-dashed bg-gray-50 p-4">
             <div className="space-y-1">
-                <p className="text-xs font-semibold text-gray-800">Catálogo ABIO</p>
+                <p className="text-xs font-semibold text-gray-800">Catalogo ABIO</p>
                 <p className="text-xs text-gray-600">
-                    Selecciona catálogo y tabla de amarre para autocompletar códigos válidos y sembrar capacidad desde <span className="font-medium">numero_cupos</span>.
+                    Selecciona servicio, disciplina y horario desde el catalogo sincronizado. Si mas adelante recibes una tabla de amarre oficial, puedes usarla como apoyo opcional.
                 </p>
             </div>
 
@@ -212,7 +218,7 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
                     </select>
                 </div>
 
-                {requiresBinding && (
+                {usesStructuredCatalog && (
                     <div className="space-y-2">
                         <label className="text-xs font-medium">Disciplina ABIO</label>
                         <select
@@ -221,7 +227,6 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
                                 props.onPatch({
                                     servilexDisciplineCode: e.target.value,
                                     servilexScheduleCode: "",
-                                    servilexPoolCode: "",
                                     servilexBindingId: null,
                                 })
                             }
@@ -237,17 +242,35 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
                     </div>
                 )}
 
-                {requiresBinding && (
+                {usesStructuredCatalog && (
                     <div className="space-y-2">
                         <label className="text-xs font-medium">Horario ABIO</label>
                         <select
                             value={props.scheduleCode || ""}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                                const nextScheduleCode = e.target.value
+                                const selectedSchedule =
+                                    schedules.find((schedule) => schedule.horarioCodigo === nextScheduleCode) || null
+
                                 props.onPatch({
-                                    servilexScheduleCode: e.target.value,
+                                    servilexScheduleCode: nextScheduleCode,
                                     servilexBindingId: null,
+                                    ...(props.indicator === "PN" || props.indicator === "PA"
+                                        ? {
+                                              servilexExtraConfig: {
+                                                  cantidad: 1,
+                                                  horaInicio: selectedSchedule?.horaInicio || "",
+                                                  horaFin: selectedSchedule?.horaFin || "",
+                                                  duracion:
+                                                      selectedSchedule?.duracionHoras !== null &&
+                                                      selectedSchedule?.duracionHoras !== undefined
+                                                          ? selectedSchedule.duracionHoras
+                                                          : 1,
+                                              },
+                                          }
+                                        : {}),
                                 })
-                            }
+                            }}
                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         >
                             <option value="">Seleccionar horario</option>
@@ -261,9 +284,9 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
                 )}
             </div>
 
-            {requiresBinding && (
+            {(bindings.length > 0 || props.bindingId) && (
                 <div className="space-y-2">
-                    <label className="text-xs font-medium">Tabla de amarre</label>
+                    <label className="text-xs font-medium">Tabla de amarre opcional</label>
                     <select
                         value={props.bindingId || ""}
                         onChange={(e) => {
@@ -274,27 +297,27 @@ export function AbioBindingSelector(props: AbioBindingSelectorProps) {
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
                         <option value="">
-                            {loading
+                            {loadingBindings
                                 ? "Cargando bindings..."
                                 : bindings.length > 0
-                                  ? "Seleccionar combinación válida"
-                                  : "No hay bindings para este filtro"}
+                                    ? "Seleccionar combinacion valida (opcional)"
+                                    : "No hay bindings para este filtro"}
                         </option>
                         {bindings.map((binding) => (
                             <option key={binding.id} value={binding.id}>
-                                [{binding.horarioCodigo}] Piscina {binding.piscinaCodigo} · {binding.scheduleDescription || "Sin descripción"} · Cupos {binding.numeroCupos}
+                                [{binding.horarioCodigo}] Piscina {binding.piscinaCodigo} - {binding.scheduleDescription || "Sin descripcion"}
                             </option>
                         ))}
                     </select>
                     {selectedBinding && (
                         <p className="text-xs text-gray-600">
-                            Binding aplicado: piscina {selectedBinding.piscinaCodigo}, horario {selectedBinding.horarioCodigo}, cupos {selectedBinding.numeroCupos}.
+                            Binding aplicado: piscina {selectedBinding.piscinaCodigo}, horario {selectedBinding.horarioCodigo}.
                         </p>
                     )}
                 </div>
             )}
 
-            {!requiresBinding && selectedService && (
+            {!usesStructuredCatalog && selectedService && (
                 <p className="text-xs text-gray-600">
                     Servicio seleccionado: [{selectedService.servicioCodigo}] {selectedService.servicioDescripcion}
                 </p>

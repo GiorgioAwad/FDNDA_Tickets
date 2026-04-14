@@ -132,11 +132,9 @@ type PoolGeneratedSlot = {
     duration: number
 }
 
-type PoolGeneratorBinding = {
+type PoolCatalogSchedule = {
     id: string
-    piscinaCodigo: string
     horarioCodigo: string
-    numeroCupos: number
     scheduleDescription?: string | null
     horaInicio?: string | null
     horaFin?: string | null
@@ -158,18 +156,18 @@ const buildPoolGeneratedSlots = (startHour: number, endHour: number): PoolGenera
     return slots
 }
 
-const buildPoolSlotNameFromBinding = (binding: PoolGeneratorBinding): string => {
-    const horaInicio = typeof binding.horaInicio === "string" ? binding.horaInicio.trim() : ""
-    const horaFin = typeof binding.horaFin === "string" ? binding.horaFin.trim() : ""
+const buildPoolSlotNameFromSchedule = (schedule: PoolCatalogSchedule): string => {
+    const horaInicio = typeof schedule.horaInicio === "string" ? schedule.horaInicio.trim() : ""
+    const horaFin = typeof schedule.horaFin === "string" ? schedule.horaFin.trim() : ""
     if (horaInicio && horaFin) {
         return `${horaInicio} - ${horaFin}`
     }
 
-    if (binding.scheduleDescription && binding.scheduleDescription.trim()) {
-        return binding.scheduleDescription.trim()
+    if (schedule.scheduleDescription && schedule.scheduleDescription.trim()) {
+        return schedule.scheduleDescription.trim()
     }
 
-    return `Horario ${binding.horarioCodigo}`
+    return `Horario ${schedule.horarioCodigo}`
 }
 
 const normalizeTicketTypeForForm = (ticket: TicketType): Partial<TicketType> => ({
@@ -214,8 +212,8 @@ export function TicketTypeManager({
     const [poolCapacity, setPoolCapacity] = useState("30")
     const [poolGenerating, setPoolGenerating] = useState(false)
     const [poolProgress, setPoolProgress] = useState({ current: 0, total: 0 })
-    const [poolBindings, setPoolBindings] = useState<PoolGeneratorBinding[]>([])
-    const [poolBindingsLoading, setPoolBindingsLoading] = useState(false)
+    const [poolCatalogSchedules, setPoolCatalogSchedules] = useState<PoolCatalogSchedule[]>([])
+    const [poolCatalogSchedulesLoading, setPoolCatalogSchedulesLoading] = useState(false)
     const [dateToggleLoading, setDateToggleLoading] = useState<Record<string, boolean>>({})
     const [catalogRefreshKey, setCatalogRefreshKey] = useState(0)
     const [showInactive, setShowInactive] = useState(false)
@@ -274,124 +272,114 @@ export function TicketTypeManager({
 
     useEffect(() => {
         const currentPoolIndicator = (formData.servilexIndicator || "PN").toUpperCase()
-        const shouldLoadBindings =
+        const shouldLoadSchedules =
             showPoolGenerator &&
             usesDailyCapacity &&
             Boolean(formData.servilexEnabled) &&
             (currentPoolIndicator === "PN" || currentPoolIndicator === "PA") &&
-            Boolean(String(formData.servilexSucursalCode || "").trim()) &&
-            Boolean(String(formData.servilexServiceCode || "").trim())
+            Boolean(String(formData.servilexDisciplineCode || "").trim())
 
-        if (!shouldLoadBindings) {
-            setPoolBindings([])
-            setPoolBindingsLoading(false)
+        if (!shouldLoadSchedules) {
+            setPoolCatalogSchedules([])
+            setPoolCatalogSchedulesLoading(false)
             return
         }
 
         const query = new URLSearchParams({
-            sucursal: String(formData.servilexSucursalCode || "").trim(),
-            servicio: String(formData.servilexServiceCode || "").trim(),
+            disciplina: String(formData.servilexDisciplineCode || "").trim(),
         })
-        if (formData.servilexDisciplineCode) {
-            query.set("disciplina", String(formData.servilexDisciplineCode).trim())
-        }
-        if (formData.servilexPoolCode) {
-            query.set("piscina", String(formData.servilexPoolCode).trim())
-        }
 
         let ignore = false
-        setPoolBindingsLoading(true)
-        void fetch(`/api/admin/abio-catalog/bindings?${query.toString()}`, {
+        setPoolCatalogSchedulesLoading(true)
+        void fetch(`/api/admin/abio-catalog/schedules?${query.toString()}`, {
             cache: "no-store",
         })
             .then(async (response) => {
                 const payload = await response.json().catch(() => ({}))
                 if (!response.ok) {
-                    throw new Error(payload.error || "No se pudieron cargar los bindings ABIO")
+                    throw new Error(payload.error || "No se pudieron cargar los horarios ABIO")
                 }
                 if (ignore) return
-                setPoolBindings(
+                setPoolCatalogSchedules(
                     Array.isArray(payload.data)
-                        ? payload.data.map((binding: Record<string, unknown>) => ({
-                              id: String(binding.id),
-                              piscinaCodigo: String(binding.piscinaCodigo || ""),
-                              horarioCodigo: String(binding.horarioCodigo || ""),
-                              numeroCupos: Number(binding.numeroCupos || 0),
+                        ? payload.data.map((schedule: Record<string, unknown>) => ({
+                              id: String(schedule.id || schedule.horarioCodigo || ""),
+                              horarioCodigo: String(schedule.horarioCodigo || ""),
                               scheduleDescription:
-                                  typeof binding.scheduleDescription === "string"
-                                      ? binding.scheduleDescription
+                                  typeof schedule.diaDescripcion === "string"
+                                      ? schedule.diaDescripcion
                                       : null,
                               horaInicio:
-                                  typeof binding.horaInicio === "string" ? binding.horaInicio : null,
-                              horaFin: typeof binding.horaFin === "string" ? binding.horaFin : null,
+                                  typeof schedule.horaInicio === "string" ? schedule.horaInicio : null,
+                              horaFin: typeof schedule.horaFin === "string" ? schedule.horaFin : null,
                               duracionHoras:
-                                  binding.duracionHoras !== null &&
-                                  binding.duracionHoras !== undefined &&
-                                  Number.isFinite(Number(binding.duracionHoras))
-                                      ? Number(binding.duracionHoras)
+                                  schedule.duracionHoras !== null &&
+                                  schedule.duracionHoras !== undefined &&
+                                  Number.isFinite(Number(schedule.duracionHoras))
+                                      ? Number(schedule.duracionHoras)
                                       : null,
                           }))
                         : []
                 )
             })
             .catch((error) => {
-                console.error("Error loading pool ABIO bindings", error)
+                console.error("Error loading pool ABIO schedules", error)
                 if (!ignore) {
-                    setPoolBindings([])
+                    setPoolCatalogSchedules([])
                 }
             })
             .finally(() => {
                 if (!ignore) {
-                    setPoolBindingsLoading(false)
+                    setPoolCatalogSchedulesLoading(false)
                 }
             })
 
         return () => {
             ignore = true
         }
-    }, [
+        }, [
         showPoolGenerator,
         usesDailyCapacity,
         formData.servilexEnabled,
         formData.servilexIndicator,
-        formData.servilexSucursalCode,
-        formData.servilexServiceCode,
         formData.servilexDisciplineCode,
-        formData.servilexPoolCode,
     ])
 
     const currentPoolIndicatorForGenerator = (formData.servilexIndicator || "PN").toUpperCase()
-    const poolBindingMode =
+    const poolCatalogMode =
         usesDailyCapacity &&
         Boolean(formData.servilexEnabled) &&
         (currentPoolIndicatorForGenerator === "PN" || currentPoolIndicatorForGenerator === "PA")
-    const existingBindingIds = useMemo(
-        () => new Set(ticketTypes.map((ticket) => ticket.servilexBindingId).filter(Boolean)),
-        [ticketTypes]
-    )
     const existingTicketNames = useMemo(
         () => new Set(ticketTypes.map((ticket) => ticket.name.trim())),
         [ticketTypes]
     )
-    const poolBindingsToCreate = useMemo(
+    const existingScheduleCodes = useMemo(
+        () => new Set(ticketTypes.map((ticket) => ticket.servilexScheduleCode).filter(Boolean)),
+        [ticketTypes]
+    )
+    const poolSchedulesToCreate = useMemo(
         () =>
-            poolBindings.filter((binding) => {
-                const bindingName = buildPoolSlotNameFromBinding(binding)
-                return !existingBindingIds.has(binding.id) && !existingTicketNames.has(bindingName)
+            poolCatalogSchedules.filter((schedule) => {
+                const scheduleName = buildPoolSlotNameFromSchedule(schedule)
+                return (
+                    !existingScheduleCodes.has(schedule.horarioCodigo) &&
+                    !existingTicketNames.has(scheduleName)
+                )
             }),
-        [poolBindings, existingBindingIds, existingTicketNames]
+        [poolCatalogSchedules, existingScheduleCodes, existingTicketNames]
     )
 
     const poolSlotsPreview = useMemo(() => {
-        if (poolBindingMode) {
+        if (poolCatalogMode) {
             return {
-                mode: "bindings" as const,
-                rows: poolBindings.map((binding) => ({
-                    id: binding.id,
-                    label: `${buildPoolSlotNameFromBinding(binding)} · Piscina ${binding.piscinaCodigo} · Cupos ${binding.numeroCupos}`,
+                mode: "catalog" as const,
+                rows: poolCatalogSchedules.map((schedule) => ({
+                    id: schedule.id,
+                    label: `${buildPoolSlotNameFromSchedule(schedule)} · Codigo ${schedule.horarioCodigo}`,
                 })),
-                newCount: poolBindingsToCreate.length,
-                skipCount: poolBindings.length - poolBindingsToCreate.length,
+                newCount: poolSchedulesToCreate.length,
+                skipCount: poolCatalogSchedules.length - poolSchedulesToCreate.length,
             }
         }
 
@@ -408,9 +396,9 @@ export function TicketTypeManager({
             skipCount: slots.length - newSlots.length,
         }
     }, [
-        poolBindingMode,
-        poolBindings,
-        poolBindingsToCreate,
+        poolCatalogMode,
+        poolCatalogSchedules,
+        poolSchedulesToCreate,
         poolStartHour,
         poolEndHour,
         existingTicketNames,
@@ -726,7 +714,7 @@ export function TicketTypeManager({
 
         const currentPoolExtraConfig = getServilexExtraConfig(formData.servilexExtraConfig)
         const currentPoolIndicator = (formData.servilexIndicator || "PN").toUpperCase()
-        const useBindingGeneration =
+        const useCatalogGeneration =
             Boolean(formData.servilexEnabled) &&
             usesDailyCapacity &&
             (currentPoolIndicator === "PN" || currentPoolIndicator === "PA")
@@ -757,9 +745,13 @@ export function TicketTypeManager({
             }
         }
 
-        if (useBindingGeneration) {
-            if (poolBindings.length === 0) {
-                alert("No hay bindings ABIO activos para este servicio de piscina libre. Sincroniza catalogo, importa la tabla de amarre o ajusta sucursal/servicio/piscina.")
+        if (useCatalogGeneration) {
+            if (!String(formData.servilexDisciplineCode || "").trim()) {
+                alert("Selecciona la disciplina ABIO para generar horarios de piscina libre")
+                return
+            }
+            if (poolCatalogSchedules.length === 0) {
+                alert("No hay horarios ABIO activos para esta disciplina. Sincroniza catalogo o ajusta la disciplina.")
                 return
             }
         } else {
@@ -774,25 +766,25 @@ export function TicketTypeManager({
             }
         }
 
-        const slots = useBindingGeneration ? [] : buildPoolGeneratedSlots(poolStartHour, poolEndHour)
-        const slotsToCreate = useBindingGeneration
-            ? poolBindingsToCreate
+        const slots = useCatalogGeneration ? [] : buildPoolGeneratedSlots(poolStartHour, poolEndHour)
+        const slotsToCreate = useCatalogGeneration
+            ? poolSchedulesToCreate
             : slots.filter((slot) => !existingTicketNames.has(slot.name))
 
         if (slotsToCreate.length === 0) {
-            alert(useBindingGeneration ? "Todos los bindings ABIO de piscina libre ya existen como entradas" : "Todos los horarios ya existen")
+            alert(useCatalogGeneration ? "Todos los horarios ABIO de piscina libre ya existen como entradas" : "Todos los horarios ya existen")
             return
         }
 
-        const skipped = useBindingGeneration
-            ? poolBindings.length - poolBindingsToCreate.length
+        const skipped = useCatalogGeneration
+            ? poolCatalogSchedules.length - poolSchedulesToCreate.length
             : slots.length - slotsToCreate.length
         const msg = skipped > 0
-            ? useBindingGeneration
-                ? `Se crearan ${slotsToCreate.length} horarios desde ABIO (${skipped} ya existen y se omitiran). Continuar?`
+            ? useCatalogGeneration
+                ? `Se crearan ${slotsToCreate.length} horarios desde el catalogo ABIO (${skipped} ya existen y se omitiran). Continuar?`
                 : `Se crearan ${slotsToCreate.length} horarios (${skipped} ya existen y se omitiran). Continuar?`
-            : useBindingGeneration
-                ? `Se crearan ${slotsToCreate.length} horarios desde la tabla de amarre ABIO. Continuar?`
+            : useCatalogGeneration
+                ? `Se crearan ${slotsToCreate.length} horarios desde el catalogo ABIO. Continuar?`
                 : `Se crearan ${slotsToCreate.length} horarios de 1 hora. Continuar?`
         if (!confirm(msg)) return
 
@@ -809,10 +801,10 @@ export function TicketTypeManager({
 
             try {
                 const extraConfig = getServilexExtraConfig(formData.servilexExtraConfig)
-                const bindingSlot = useBindingGeneration ? (slot as PoolGeneratorBinding) : null
-                const manualSlot = useBindingGeneration ? null : (slot as PoolGeneratedSlot)
-                const ticketName = bindingSlot
-                    ? buildPoolSlotNameFromBinding(bindingSlot)
+                const catalogSchedule = useCatalogGeneration ? (slot as PoolCatalogSchedule) : null
+                const manualSlot = useCatalogGeneration ? null : (slot as PoolGeneratedSlot)
+                const ticketName = catalogSchedule
+                    ? buildPoolSlotNameFromSchedule(catalogSchedule)
                     : manualSlot?.name || ""
                 const response = await fetch("/api/ticket-types", {
                     method: "POST",
@@ -821,25 +813,27 @@ export function TicketTypeManager({
                         eventId,
                         name: ticketName,
                         price: priceNumber,
-                        capacity: bindingSlot?.numeroCupos ?? Number(poolCapacity),
+                        capacity: Number(poolCapacity),
                         sortOrder: maxSort + i + 1,
                         isActive: true,
                         validDays: [],
                         servilexEnabled: Boolean(formData.servilexEnabled),
                         servilexIndicator: currentPoolIndicator,
-                        servilexBindingId: bindingSlot?.id || null,
+                        servilexBindingId: null,
                         servilexSucursalCode: formData.servilexSucursalCode,
                         servilexServiceCode: formData.servilexServiceCode,
-                        servilexPoolCode: bindingSlot?.piscinaCodigo || formData.servilexPoolCode,
+                        servilexDisciplineCode: formData.servilexDisciplineCode,
+                        servilexScheduleCode: catalogSchedule?.horarioCodigo || formData.servilexScheduleCode,
+                        servilexPoolCode: formData.servilexPoolCode,
                         servilexExtraConfig: formData.servilexEnabled
                             ? {
                                 ...extraConfig,
                                 cantidad: Number(extraConfig.cantidad) > 0 ? Number(extraConfig.cantidad) : 1,
-                                horaInicio: bindingSlot?.horaInicio || manualSlot?.startTime || "",
-                                horaFin: bindingSlot?.horaFin || manualSlot?.endTime || "",
+                                horaInicio: catalogSchedule?.horaInicio || manualSlot?.startTime || "",
+                                horaFin: catalogSchedule?.horaFin || manualSlot?.endTime || "",
                                 duracion:
-                                    bindingSlot?.duracionHoras && Number.isFinite(bindingSlot.duracionHoras)
-                                        ? bindingSlot.duracionHoras
+                                    catalogSchedule?.duracionHoras && Number.isFinite(catalogSchedule.duracionHoras)
+                                        ? catalogSchedule.duracionHoras
                                         : manualSlot?.duration || 1,
                             }
                             : {},
@@ -849,8 +843,8 @@ export function TicketTypeManager({
                 const { data } = await response.json()
                 created.push(data)
             } catch (err) {
-                const label = useBindingGeneration
-                    ? buildPoolSlotNameFromBinding(slot as PoolGeneratorBinding)
+                const label = useCatalogGeneration
+                    ? buildPoolSlotNameFromSchedule(slot as PoolCatalogSchedule)
                     : (slot as PoolGeneratedSlot).name
                 errors.push(`${label}: ${err instanceof Error ? err.message : "Error"}`)
             }
@@ -990,11 +984,11 @@ export function TicketTypeManager({
                     <div className="bg-blue-50 p-4 rounded-lg space-y-4 border border-blue-200">
                         <h4 className="font-medium text-sm">Generar Horarios de Piscina Libre</h4>
                         <p className="text-xs text-gray-600">
-                            {poolBindingMode
-                                ? "Genera un horario por cada binding ABIO valido. La hora y la capacidad salen de la tabla de amarre; aqui solo defines el precio comercial."
+                            {poolCatalogMode
+                                ? "Genera un horario por cada horario ABIO sincronizado de la disciplina elegida. La capacidad sigue siendo local; aqui defines el precio y la capacidad comercial."
                                 : "Define el rango de horas y se creara una entrada por cada hora. Luego puedes ajustar la capacidad de cada horario individualmente."}
                         </p>
-                        {poolBindingMode ? (
+                        {poolCatalogMode ? (
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <div>
                                     <label className="text-xs font-medium text-gray-700">Precio (S/)</label>
@@ -1010,11 +1004,11 @@ export function TicketTypeManager({
                                     />
                                 </div>
                                 <div className="rounded-md border border-dashed bg-white p-3 text-xs text-gray-600">
-                                    {poolBindingsLoading
-                                        ? "Cargando bindings ABIO de piscina libre..."
-                                        : poolBindings.length > 0
-                                            ? `Se detectaron ${poolBindings.length} combinaciones validas desde la tabla de amarre.`
-                                            : "No hay bindings ABIO activos para este servicio y piscina. Debes sincronizar/importar antes de generar."}
+                                    {poolCatalogSchedulesLoading
+                                        ? "Cargando horarios ABIO de piscina libre..."
+                                        : poolCatalogSchedules.length > 0
+                                            ? `Se detectaron ${poolCatalogSchedules.length} horarios ABIO activos para la disciplina seleccionada.`
+                                            : "No hay horarios ABIO activos para la disciplina seleccionada. Debes sincronizar el catalogo antes de generar."}
                                 </div>
                             </div>
                         ) : (
@@ -1178,10 +1172,10 @@ export function TicketTypeManager({
                                             />
                                         </div>
                                         <div className="rounded-md border border-dashed bg-gray-50 p-3 text-xs text-gray-600 md:col-span-2">
-                                            {poolBindingMode ? (
+                                            {poolCatalogMode ? (
                                                 <>
-                                                    Cada horario generado heredara el <span className="font-medium">binding ABIO</span>,
-                                                    la piscina, el horario y la capacidad real desde <span className="font-medium">numero_cupos</span>.
+                                                    Cada horario generado heredara el <span className="font-medium">servicio, disciplina y horario ABIO</span>.
+                                                    La piscina y la capacidad seguiran siendo las que definas localmente.
                                                 </>
                                             ) : (
                                                 <>
@@ -1204,7 +1198,7 @@ export function TicketTypeManager({
                                         <span className="text-amber-600"> ({poolSlotsPreview.skipCount} ya existen)</span>
                                     )}
                                 </p>
-                                {poolSlotsPreview.mode === "bindings" ? (
+                                {poolSlotsPreview.mode === "catalog" ? (
                                     <div className="grid gap-1 text-gray-500 sm:grid-cols-2">
                                         {poolSlotsPreview.rows.slice(0, 8).map((row) => (
                                             <div key={row.id}>{row.label}</div>
@@ -1245,14 +1239,14 @@ export function TicketTypeManager({
                                 onClick={handlePoolGenerate}
                                 disabled={
                                     poolGenerating ||
-                                    poolBindingsLoading ||
+                                    poolCatalogSchedulesLoading ||
                                     !poolSlotsPreview ||
                                     poolSlotsPreview.newCount === 0
                                 }
                             >
                                 {poolGenerating
                                     ? "Generando..."
-                                    : poolBindingMode
+                                    : poolCatalogMode
                                         ? `Generar ${poolSlotsPreview?.newCount ?? 0} horarios desde ABIO`
                                         : `Generar ${poolSlotsPreview?.newCount ?? 0} horarios`}
                             </Button>
