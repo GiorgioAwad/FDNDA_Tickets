@@ -150,7 +150,8 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                 </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Event details + Banner */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
                     <Card>
                         <CardHeader>
@@ -240,14 +241,7 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                                     </select>
                                 </div>
                             </div>
-                        </CardContent>
-                    </Card>
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Ubicación y Fechas</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium">Sede (Venue)</label>
@@ -297,7 +291,7 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                     </Card>
                 </div>
 
-                <div className="space-y-6">
+                <div>
                     <Card>
                         <CardHeader>
                             <CardTitle>Banner del Evento</CardTitle>
@@ -312,47 +306,47 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                             />
                         </CardContent>
                     </Card>
-
-                    {/* Ticket Types & Days management */}
-                    {isEditing && initialData?.id && (
-                        <div className="space-y-6">
-                            <TicketTypeManager
-                                eventId={initialData.id}
-                                initialTicketTypes={ticketTypes}
-                                eventCategory={formData.category}
-                                eventStartDate={formData.startDate || initialData.startDate}
-                                eventEndDate={formData.endDate || initialData.endDate}
-                            />
-
-                            <EventDaysManager
-                                eventId={initialData.id}
-                                initialDays={initialData.eventDays.map((day) => ({
-                                    id: day.id,
-                                    date: typeof day.date === "string" ? day.date : new Date(day.date).toISOString(),
-                                    openTime: day.openTime,
-                                    closeTime: day.closeTime,
-                                    capacity: day.capacity,
-                                }))}
-                                eventStartDate={formData.startDate || initialData.startDate}
-                                eventEndDate={formData.endDate || initialData.endDate}
-                            />
-                        </div>
-                    )}
-
-                    {!isEditing && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Gestión Avanzada</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2">
-                                <p className="text-sm text-gray-500">
-                                    Para gestionar tipos de entradas y días específicos, guarda primero el evento.
-                                </p>
-                            </CardContent>
-                        </Card>
-                    )}
                 </div>
             </div>
+
+            {/* Ticket Types & Days - full width */}
+            {isEditing && initialData?.id && (
+                <div className="space-y-6">
+                    <TicketTypeManager
+                        eventId={initialData.id}
+                        initialTicketTypes={ticketTypes}
+                        eventCategory={formData.category}
+                        eventStartDate={formData.startDate || initialData.startDate}
+                        eventEndDate={formData.endDate || initialData.endDate}
+                    />
+
+                    <EventDaysManager
+                        eventId={initialData.id}
+                        initialDays={initialData.eventDays.map((day) => ({
+                            id: day.id,
+                            date: typeof day.date === "string" ? day.date : new Date(day.date).toISOString(),
+                            openTime: day.openTime,
+                            closeTime: day.closeTime,
+                            capacity: day.capacity,
+                        }))}
+                        eventStartDate={formData.startDate || initialData.startDate}
+                        eventEndDate={formData.endDate || initialData.endDate}
+                    />
+                </div>
+            )}
+
+            {!isEditing && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Gestión Avanzada</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        <p className="text-sm text-gray-500">
+                            Para gestionar tipos de entradas y días específicos, guarda primero el evento.
+                        </p>
+                    </CardContent>
+                </Card>
+            )}
         </form>
     )
 }
