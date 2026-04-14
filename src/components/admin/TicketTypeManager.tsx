@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -132,6 +132,17 @@ type PoolGeneratedSlot = {
     duration: number
 }
 
+type PoolGeneratorBinding = {
+    id: string
+    piscinaCodigo: string
+    horarioCodigo: string
+    numeroCupos: number
+    scheduleDescription?: string | null
+    horaInicio?: string | null
+    horaFin?: string | null
+    duracionHoras?: number | null
+}
+
 const buildPoolGeneratedSlots = (startHour: number, endHour: number): PoolGeneratedSlot[] => {
     const slots: PoolGeneratedSlot[] = []
     for (let h = startHour; h < endHour; h++) {
@@ -145,6 +156,20 @@ const buildPoolGeneratedSlots = (startHour: number, endHour: number): PoolGenera
         })
     }
     return slots
+}
+
+const buildPoolSlotNameFromBinding = (binding: PoolGeneratorBinding): string => {
+    const horaInicio = typeof binding.horaInicio === "string" ? binding.horaInicio.trim() : ""
+    const horaFin = typeof binding.horaFin === "string" ? binding.horaFin.trim() : ""
+    if (horaInicio && horaFin) {
+        return `${horaInicio} - ${horaFin}`
+    }
+
+    if (binding.scheduleDescription && binding.scheduleDescription.trim()) {
+        return binding.scheduleDescription.trim()
+    }
+
+    return `Horario ${binding.horarioCodigo}`
 }
 
 const normalizeTicketTypeForForm = (ticket: TicketType): Partial<TicketType> => ({
@@ -189,6 +214,8 @@ export function TicketTypeManager({
     const [poolCapacity, setPoolCapacity] = useState("30")
     const [poolGenerating, setPoolGenerating] = useState(false)
     const [poolProgress, setPoolProgress] = useState({ current: 0, total: 0 })
+    const [poolBindings, setPoolBindings] = useState<PoolGeneratorBinding[]>([])
+    const [poolBindingsLoading, setPoolBindingsLoading] = useState(false)
     const [dateToggleLoading, setDateToggleLoading] = useState<Record<string, boolean>>({})
     const [catalogRefreshKey, setCatalogRefreshKey] = useState(0)
     const [showInactive, setShowInactive] = useState(false)
@@ -245,16 +272,149 @@ export function TicketTypeManager({
         return options
     }, [eventStartDate, eventEndDate])
 
+    useEffect(() => {
+        const currentPoolIndicator = (formData.servilexIndicator || "PN").toUpperCase()
+        const shouldLoadBindings =
+            showPoolGenerator &&
+            usesDailyCapacity &&
+            Boolean(formData.servilexEnabled) &&
+            (currentPoolIndicator === "PN" || currentPoolIndicator === "PA") &&
+            Boolean(String(formData.servilexSucursalCode || "").trim()) &&
+            Boolean(String(formData.servilexServiceCode || "").trim())
+
+        if (!shouldLoadBindings) {
+            setPoolBindings([])
+            setPoolBindingsLoading(false)
+            return
+        }
+
+        const query = new URLSearchParams({
+            sucursal: String(formData.servilexSucursalCode || "").trim(),
+            servicio: String(formData.servilexServiceCode || "").trim(),
+        })
+        if (formData.servilexDisciplineCode) {
+            query.set("disciplina", String(formData.servilexDisciplineCode).trim())
+        }
+        if (formData.servilexPoolCode) {
+            query.set("piscina", String(formData.servilexPoolCode).trim())
+        }
+
+        let ignore = false
+        setPoolBindingsLoading(true)
+        void fetch(`/api/admin/abio-catalog/bindings?${query.toString()}`, {
+            cache: "no-store",
+        })
+            .then(async (response) => {
+                const payload = await response.json().catch(() => ({}))
+                if (!response.ok) {
+                    throw new Error(payload.error || "No se pudieron cargar los bindings ABIO")
+                }
+                if (ignore) return
+                setPoolBindings(
+                    Array.isArray(payload.data)
+                        ? payload.data.map((binding: Record<string, unknown>) => ({
+                              id: String(binding.id),
+                              piscinaCodigo: String(binding.piscinaCodigo || ""),
+                              horarioCodigo: String(binding.horarioCodigo || ""),
+                              numeroCupos: Number(binding.numeroCupos || 0),
+                              scheduleDescription:
+                                  typeof binding.scheduleDescription === "string"
+                                      ? binding.scheduleDescription
+                                      : null,
+                              horaInicio:
+                                  typeof binding.horaInicio === "string" ? binding.horaInicio : null,
+                              horaFin: typeof binding.horaFin === "string" ? binding.horaFin : null,
+                              duracionHoras:
+                                  binding.duracionHoras !== null &&
+                                  binding.duracionHoras !== undefined &&
+                                  Number.isFinite(Number(binding.duracionHoras))
+                                      ? Number(binding.duracionHoras)
+                                      : null,
+                          }))
+                        : []
+                )
+            })
+            .catch((error) => {
+                console.error("Error loading pool ABIO bindings", error)
+                if (!ignore) {
+                    setPoolBindings([])
+                }
+            })
+            .finally(() => {
+                if (!ignore) {
+                    setPoolBindingsLoading(false)
+                }
+            })
+
+        return () => {
+            ignore = true
+        }
+    }, [
+        showPoolGenerator,
+        usesDailyCapacity,
+        formData.servilexEnabled,
+        formData.servilexIndicator,
+        formData.servilexSucursalCode,
+        formData.servilexServiceCode,
+        formData.servilexDisciplineCode,
+        formData.servilexPoolCode,
+    ])
+
+    const currentPoolIndicatorForGenerator = (formData.servilexIndicator || "PN").toUpperCase()
+    const poolBindingMode =
+        usesDailyCapacity &&
+        Boolean(formData.servilexEnabled) &&
+        (currentPoolIndicatorForGenerator === "PN" || currentPoolIndicatorForGenerator === "PA")
+    const existingBindingIds = useMemo(
+        () => new Set(ticketTypes.map((ticket) => ticket.servilexBindingId).filter(Boolean)),
+        [ticketTypes]
+    )
+    const existingTicketNames = useMemo(
+        () => new Set(ticketTypes.map((ticket) => ticket.name.trim())),
+        [ticketTypes]
+    )
+    const poolBindingsToCreate = useMemo(
+        () =>
+            poolBindings.filter((binding) => {
+                const bindingName = buildPoolSlotNameFromBinding(binding)
+                return !existingBindingIds.has(binding.id) && !existingTicketNames.has(bindingName)
+            }),
+        [poolBindings, existingBindingIds, existingTicketNames]
+    )
+
     const poolSlotsPreview = useMemo(() => {
+        if (poolBindingMode) {
+            return {
+                mode: "bindings" as const,
+                rows: poolBindings.map((binding) => ({
+                    id: binding.id,
+                    label: `${buildPoolSlotNameFromBinding(binding)} · Piscina ${binding.piscinaCodigo} · Cupos ${binding.numeroCupos}`,
+                })),
+                newCount: poolBindingsToCreate.length,
+                skipCount: poolBindings.length - poolBindingsToCreate.length,
+            }
+        }
+
         if (poolStartHour >= poolEndHour) return null
         const slots: string[] = []
         for (let h = poolStartHour; h < poolEndHour; h++) {
             slots.push(`${String(h).padStart(2, "0")}:00 - ${String(h + 1).padStart(2, "0")}:00`)
         }
-        const existingNames = new Set(ticketTypes.map(t => t.name.trim()))
-        const newSlots = slots.filter(s => !existingNames.has(s))
-        return { slots, newCount: newSlots.length, skipCount: slots.length - newSlots.length }
-    }, [poolStartHour, poolEndHour, ticketTypes])
+        const newSlots = slots.filter((slot) => !existingTicketNames.has(slot))
+        return {
+            mode: "manual" as const,
+            slots,
+            newCount: newSlots.length,
+            skipCount: slots.length - newSlots.length,
+        }
+    }, [
+        poolBindingMode,
+        poolBindings,
+        poolBindingsToCreate,
+        poolStartHour,
+        poolEndHour,
+        existingTicketNames,
+    ])
 
     const updateShiftEntry = (index: number, field: keyof ShiftEntry, value: string) => {
         setShiftEntries((prev) =>
@@ -558,27 +718,18 @@ export function TicketTypeManager({
     }
 
     const handlePoolGenerate = async () => {
-        if (poolStartHour >= poolEndHour) {
-            alert("La hora de inicio debe ser menor a la hora de fin")
-            return
-        }
         const priceNumber = Number(poolPrice)
         if (!Number.isFinite(priceNumber) || priceNumber < 0) {
             alert("Precio invalido")
             return
         }
-        const capNumber = Number(poolCapacity)
-        if (!Number.isFinite(capNumber) || capNumber < 0) {
-            alert("Capacidad invalida")
-            return
-        }
 
         const currentPoolExtraConfig = getServilexExtraConfig(formData.servilexExtraConfig)
         const currentPoolIndicator = (formData.servilexIndicator || "PN").toUpperCase()
-        const slots = buildPoolGeneratedSlots(poolStartHour, poolEndHour)
-
-        const existingNames = new Set(ticketTypes.map(t => t.name.trim()))
-        const slotsToCreate = slots.filter(s => !existingNames.has(s.name))
+        const useBindingGeneration =
+            Boolean(formData.servilexEnabled) &&
+            usesDailyCapacity &&
+            (currentPoolIndicator === "PN" || currentPoolIndicator === "PA")
 
         if (formData.servilexEnabled) {
             if (currentPoolIndicator !== "PN" && currentPoolIndicator !== "PA") {
@@ -606,15 +757,43 @@ export function TicketTypeManager({
             }
         }
 
+        if (useBindingGeneration) {
+            if (poolBindings.length === 0) {
+                alert("No hay bindings ABIO activos para este servicio de piscina libre. Sincroniza catalogo, importa la tabla de amarre o ajusta sucursal/servicio/piscina.")
+                return
+            }
+        } else {
+            if (poolStartHour >= poolEndHour) {
+                alert("La hora de inicio debe ser menor a la hora de fin")
+                return
+            }
+            const capNumber = Number(poolCapacity)
+            if (!Number.isFinite(capNumber) || capNumber < 0) {
+                alert("Capacidad invalida")
+                return
+            }
+        }
+
+        const slots = useBindingGeneration ? [] : buildPoolGeneratedSlots(poolStartHour, poolEndHour)
+        const slotsToCreate = useBindingGeneration
+            ? poolBindingsToCreate
+            : slots.filter((slot) => !existingTicketNames.has(slot.name))
+
         if (slotsToCreate.length === 0) {
-            alert("Todos los horarios ya existen")
+            alert(useBindingGeneration ? "Todos los bindings ABIO de piscina libre ya existen como entradas" : "Todos los horarios ya existen")
             return
         }
 
-        const skipped = slots.length - slotsToCreate.length
+        const skipped = useBindingGeneration
+            ? poolBindings.length - poolBindingsToCreate.length
+            : slots.length - slotsToCreate.length
         const msg = skipped > 0
-            ? `Se crearan ${slotsToCreate.length} horarios (${skipped} ya existen y se omitiran). Continuar?`
-            : `Se crearan ${slotsToCreate.length} horarios de 1 hora. Continuar?`
+            ? useBindingGeneration
+                ? `Se crearan ${slotsToCreate.length} horarios desde ABIO (${skipped} ya existen y se omitiran). Continuar?`
+                : `Se crearan ${slotsToCreate.length} horarios (${skipped} ya existen y se omitiran). Continuar?`
+            : useBindingGeneration
+                ? `Se crearan ${slotsToCreate.length} horarios desde la tabla de amarre ABIO. Continuar?`
+                : `Se crearan ${slotsToCreate.length} horarios de 1 hora. Continuar?`
         if (!confirm(msg)) return
 
         const maxSort = ticketTypes.reduce((max, t) => Math.max(max, t.sortOrder ?? 0), 0)
@@ -630,29 +809,38 @@ export function TicketTypeManager({
 
             try {
                 const extraConfig = getServilexExtraConfig(formData.servilexExtraConfig)
+                const bindingSlot = useBindingGeneration ? (slot as PoolGeneratorBinding) : null
+                const manualSlot = useBindingGeneration ? null : (slot as PoolGeneratedSlot)
+                const ticketName = bindingSlot
+                    ? buildPoolSlotNameFromBinding(bindingSlot)
+                    : manualSlot?.name || ""
                 const response = await fetch("/api/ticket-types", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         eventId,
-                        name: slot.name,
+                        name: ticketName,
                         price: priceNumber,
-                        capacity: capNumber,
+                        capacity: bindingSlot?.numeroCupos ?? Number(poolCapacity),
                         sortOrder: maxSort + i + 1,
                         isActive: true,
                         validDays: [],
                         servilexEnabled: Boolean(formData.servilexEnabled),
                         servilexIndicator: currentPoolIndicator,
+                        servilexBindingId: bindingSlot?.id || null,
                         servilexSucursalCode: formData.servilexSucursalCode,
                         servilexServiceCode: formData.servilexServiceCode,
-                        servilexPoolCode: formData.servilexPoolCode,
+                        servilexPoolCode: bindingSlot?.piscinaCodigo || formData.servilexPoolCode,
                         servilexExtraConfig: formData.servilexEnabled
                             ? {
                                 ...extraConfig,
                                 cantidad: Number(extraConfig.cantidad) > 0 ? Number(extraConfig.cantidad) : 1,
-                                horaInicio: slot.startTime,
-                                horaFin: slot.endTime,
-                                duracion: slot.duration,
+                                horaInicio: bindingSlot?.horaInicio || manualSlot?.startTime || "",
+                                horaFin: bindingSlot?.horaFin || manualSlot?.endTime || "",
+                                duracion:
+                                    bindingSlot?.duracionHoras && Number.isFinite(bindingSlot.duracionHoras)
+                                        ? bindingSlot.duracionHoras
+                                        : manualSlot?.duration || 1,
                             }
                             : {},
                     }),
@@ -661,7 +849,10 @@ export function TicketTypeManager({
                 const { data } = await response.json()
                 created.push(data)
             } catch (err) {
-                errors.push(`${slot.name}: ${err instanceof Error ? err.message : "Error"}`)
+                const label = useBindingGeneration
+                    ? buildPoolSlotNameFromBinding(slot as PoolGeneratorBinding)
+                    : (slot as PoolGeneratedSlot).name
+                errors.push(`${label}: ${err instanceof Error ? err.message : "Error"}`)
             }
         }
 
@@ -799,65 +990,92 @@ export function TicketTypeManager({
                     <div className="bg-blue-50 p-4 rounded-lg space-y-4 border border-blue-200">
                         <h4 className="font-medium text-sm">Generar Horarios de Piscina Libre</h4>
                         <p className="text-xs text-gray-600">
-                            Define el rango de horas y se creara una entrada por cada hora. Luego puedes ajustar la capacidad de cada horario individualmente.
+                            {poolBindingMode
+                                ? "Genera un horario por cada binding ABIO valido. La hora y la capacidad salen de la tabla de amarre; aqui solo defines el precio comercial."
+                                : "Define el rango de horas y se creara una entrada por cada hora. Luego puedes ajustar la capacidad de cada horario individualmente."}
                         </p>
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                            <div>
-                                <label className="text-xs font-medium text-gray-700">Hora inicio</label>
-                                <select
-                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                                    value={poolStartHour}
-                                    onChange={e => setPoolStartHour(Number(e.target.value))}
-                                    disabled={poolGenerating}
-                                >
-                                    {Array.from({ length: 24 }, (_, i) => (
-                                        <option key={i} value={i}>
-                                            {String(i).padStart(2, "0")}:00
-                                        </option>
-                                    ))}
-                                </select>
+                        {poolBindingMode ? (
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700">Precio (S/)</label>
+                                    <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={poolPrice}
+                                        onChange={e => setPoolPrice(e.target.value)}
+                                        disabled={poolGenerating}
+                                        placeholder="0.00"
+                                        className="mt-1"
+                                    />
+                                </div>
+                                <div className="rounded-md border border-dashed bg-white p-3 text-xs text-gray-600">
+                                    {poolBindingsLoading
+                                        ? "Cargando bindings ABIO de piscina libre..."
+                                        : poolBindings.length > 0
+                                            ? `Se detectaron ${poolBindings.length} combinaciones validas desde la tabla de amarre.`
+                                            : "No hay bindings ABIO activos para este servicio y piscina. Debes sincronizar/importar antes de generar."}
+                                </div>
                             </div>
-                            <div>
-                                <label className="text-xs font-medium text-gray-700">Hora fin</label>
-                                <select
-                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                                    value={poolEndHour}
-                                    onChange={e => setPoolEndHour(Number(e.target.value))}
-                                    disabled={poolGenerating}
-                                >
-                                    {Array.from({ length: 24 }, (_, i) => i + 1).filter(h => h > poolStartHour).map(h => (
-                                        <option key={h} value={h}>
-                                            {String(h).padStart(2, "0")}:00
-                                        </option>
-                                    ))}
-                                </select>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700">Hora inicio</label>
+                                    <select
+                                        className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                                        value={poolStartHour}
+                                        onChange={e => setPoolStartHour(Number(e.target.value))}
+                                        disabled={poolGenerating}
+                                    >
+                                        {Array.from({ length: 24 }, (_, i) => (
+                                            <option key={i} value={i}>
+                                                {String(i).padStart(2, "0")}:00
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700">Hora fin</label>
+                                    <select
+                                        className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                                        value={poolEndHour}
+                                        onChange={e => setPoolEndHour(Number(e.target.value))}
+                                        disabled={poolGenerating}
+                                    >
+                                        {Array.from({ length: 24 }, (_, i) => i + 1).filter(h => h > poolStartHour).map(h => (
+                                            <option key={h} value={h}>
+                                                {String(h).padStart(2, "0")}:00
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700">Precio (S/)</label>
+                                    <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={poolPrice}
+                                        onChange={e => setPoolPrice(e.target.value)}
+                                        disabled={poolGenerating}
+                                        placeholder="0.00"
+                                        className="mt-1"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700">Capacidad por dia</label>
+                                    <Input
+                                        type="number"
+                                        min="0"
+                                        value={poolCapacity}
+                                        onChange={e => setPoolCapacity(e.target.value)}
+                                        disabled={poolGenerating}
+                                        placeholder="30"
+                                        className="mt-1"
+                                    />
+                                </div>
                             </div>
-                            <div>
-                                <label className="text-xs font-medium text-gray-700">Precio (S/)</label>
-                                <Input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    value={poolPrice}
-                                    onChange={e => setPoolPrice(e.target.value)}
-                                    disabled={poolGenerating}
-                                    placeholder="0.00"
-                                    className="mt-1"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs font-medium text-gray-700">Capacidad por dia</label>
-                                <Input
-                                    type="number"
-                                    min="0"
-                                    value={poolCapacity}
-                                    onChange={e => setPoolCapacity(e.target.value)}
-                                    disabled={poolGenerating}
-                                    placeholder="30"
-                                    className="mt-1"
-                                />
-                            </div>
-                        </div>
+                        )}
 
                         <div className="space-y-4 rounded-md border bg-white p-4">
                             <div className="flex items-center gap-2">
@@ -960,9 +1178,18 @@ export function TicketTypeManager({
                                             />
                                         </div>
                                         <div className="rounded-md border border-dashed bg-gray-50 p-3 text-xs text-gray-600 md:col-span-2">
-                                            Cada horario generado heredara esta configuracion ABIO y completara automaticamente
-                                            <span className="font-medium"> hora inicio, hora fin y duracion </span>
-                                            segun la franja creada.
+                                            {poolBindingMode ? (
+                                                <>
+                                                    Cada horario generado heredara el <span className="font-medium">binding ABIO</span>,
+                                                    la piscina, el horario y la capacidad real desde <span className="font-medium">numero_cupos</span>.
+                                                </>
+                                            ) : (
+                                                <>
+                                                    Cada horario generado heredara esta configuracion ABIO y completara automaticamente
+                                                    <span className="font-medium"> hora inicio, hora fin y duracion </span>
+                                                    segun la franja creada.
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 </>
@@ -977,9 +1204,22 @@ export function TicketTypeManager({
                                         <span className="text-amber-600"> ({poolSlotsPreview.skipCount} ya existen)</span>
                                     )}
                                 </p>
-                                <p className="text-gray-400">
-                                    {poolSlotsPreview.slots.join(", ")}
-                                </p>
+                                {poolSlotsPreview.mode === "bindings" ? (
+                                    <div className="grid gap-1 text-gray-500 sm:grid-cols-2">
+                                        {poolSlotsPreview.rows.slice(0, 8).map((row) => (
+                                            <div key={row.id}>{row.label}</div>
+                                        ))}
+                                        {poolSlotsPreview.rows.length > 8 && (
+                                            <div className="text-gray-400">
+                                                ... y {poolSlotsPreview.rows.length - 8} horario(s) mas
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-gray-400">
+                                        {poolSlotsPreview.slots.join(", ")}
+                                    </p>
+                                )}
                             </div>
                         )}
 
@@ -1003,11 +1243,18 @@ export function TicketTypeManager({
                                 type="button"
                                 size="sm"
                                 onClick={handlePoolGenerate}
-                                disabled={poolGenerating || !poolSlotsPreview || poolSlotsPreview.newCount === 0}
+                                disabled={
+                                    poolGenerating ||
+                                    poolBindingsLoading ||
+                                    !poolSlotsPreview ||
+                                    poolSlotsPreview.newCount === 0
+                                }
                             >
                                 {poolGenerating
                                     ? "Generando..."
-                                    : `Generar ${poolSlotsPreview?.newCount ?? 0} horarios`}
+                                    : poolBindingMode
+                                        ? `Generar ${poolSlotsPreview?.newCount ?? 0} horarios desde ABIO`
+                                        : `Generar ${poolSlotsPreview?.newCount ?? 0} horarios`}
                             </Button>
                         </div>
                     </div>
