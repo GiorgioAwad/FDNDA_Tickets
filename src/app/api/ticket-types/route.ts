@@ -48,6 +48,11 @@ const normalizeExtraConfig = (
     return value as Prisma.InputJsonValue
 }
 
+const asExtraConfigRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+    return value as Record<string, unknown>
+}
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -80,6 +85,7 @@ export async function POST(request: NextRequest) {
             servilexPoolCode,
             servilexExtraConfig,
             servilexServiceId,
+            servilexBindingId,
         } = body
 
         if (!eventId || !name || price === undefined || capacity === undefined) {
@@ -108,6 +114,12 @@ export async function POST(request: NextRequest) {
         let resolvedIndicator = normalizeOptionalCode(servilexIndicator, "AC")
         let resolvedServiceCode = normalizeOptionalCode(servilexServiceCode)
         let resolvedServiceId: string | null = normalizeOptionalCode(servilexServiceId)
+        let resolvedBindingId: string | null = normalizeOptionalCode(servilexBindingId)
+        let resolvedSucursalCode = normalizeOptionalCode(servilexSucursalCode)
+        let resolvedDisciplineCode = normalizeOptionalCode(servilexDisciplineCode)
+        let resolvedScheduleCode = normalizeOptionalCode(servilexScheduleCode)
+        let resolvedPoolCode = normalizeOptionalCode(servilexPoolCode)
+        let resolvedExtraConfig = normalizeExtraConfig(servilexExtraConfig)
 
         if (resolvedServiceId) {
             const catalogEntry = await prisma.servilexService.findUnique({
@@ -118,6 +130,59 @@ export async function POST(request: NextRequest) {
                 resolvedServiceCode = catalogEntry.codigo
             } else {
                 resolvedServiceId = null
+            }
+        }
+
+        if (resolvedBindingId) {
+            const bindingEntry = await prisma.abioCatalogBinding.findUnique({
+                where: { id: resolvedBindingId },
+            })
+            if (bindingEntry) {
+                resolvedSucursalCode = bindingEntry.sucursalCodigo
+                resolvedServiceCode = bindingEntry.servicioCodigo
+                resolvedDisciplineCode = bindingEntry.disciplinaCodigo
+                resolvedScheduleCode = bindingEntry.horarioCodigo
+                resolvedPoolCode = bindingEntry.piscinaCodigo
+
+                const currentExtraConfig = asExtraConfigRecord(servilexExtraConfig)
+                if (resolvedIndicator === "PN" || resolvedIndicator === "PA") {
+                    const scheduleEntry = await prisma.abioCatalogSchedule.findFirst({
+                        where: {
+                            codigoEmp: bindingEntry.codigoEmp,
+                            disciplinaCodigo: bindingEntry.disciplinaCodigo,
+                            horarioCodigo: bindingEntry.horarioCodigo,
+                            isActive: true,
+                        },
+                        select: {
+                            horaInicio: true,
+                            horaFin: true,
+                            duracionHoras: true,
+                        },
+                    })
+                    resolvedExtraConfig = {
+                        ...currentExtraConfig,
+                        cantidad:
+                            currentExtraConfig.cantidad !== undefined
+                                ? currentExtraConfig.cantidad
+                                : 1,
+                        horaInicio:
+                            currentExtraConfig.horaInicio ||
+                            scheduleEntry?.horaInicio ||
+                            "",
+                        horaFin:
+                            currentExtraConfig.horaFin ||
+                            scheduleEntry?.horaFin ||
+                            "",
+                        duracion:
+                            currentExtraConfig.duracion !== undefined
+                                ? currentExtraConfig.duracion
+                                : scheduleEntry?.duracionHoras
+                                  ? Number(scheduleEntry.duracionHoras)
+                                  : 1,
+                    } as Prisma.InputJsonValue
+                }
+            } else {
+                resolvedBindingId = null
             }
         }
 
@@ -136,13 +201,14 @@ export async function POST(request: NextRequest) {
                 isActive: isActive === undefined ? true : Boolean(isActive),
                 servilexEnabled: Boolean(servilexEnabled),
                 servilexIndicator: resolvedIndicator,
-                servilexSucursalCode: normalizeOptionalCode(servilexSucursalCode),
+                servilexSucursalCode: resolvedSucursalCode,
                 servilexServiceCode: resolvedServiceCode,
-                servilexDisciplineCode: normalizeOptionalCode(servilexDisciplineCode),
-                servilexScheduleCode: normalizeOptionalCode(servilexScheduleCode),
-                servilexPoolCode: normalizeOptionalCode(servilexPoolCode),
-                servilexExtraConfig: normalizeExtraConfig(servilexExtraConfig),
+                servilexDisciplineCode: resolvedDisciplineCode,
+                servilexScheduleCode: resolvedScheduleCode,
+                servilexPoolCode: resolvedPoolCode,
+                servilexExtraConfig: resolvedExtraConfig,
                 servilexServiceId: resolvedServiceId,
+                servilexBindingId: resolvedBindingId,
             },
         })
 
@@ -193,6 +259,7 @@ export async function PUT(request: NextRequest) {
             servilexPoolCode,
             servilexExtraConfig,
             servilexServiceId,
+            servilexBindingId,
             dateInventoryDate,
             dateInventoryEnabled,
         } = body
@@ -279,6 +346,7 @@ export async function PUT(request: NextRequest) {
             servilexPoolCode?: string | null
             servilexExtraConfig?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput
             servilexServiceId?: string | null
+            servilexBindingId?: string | null
         } = {}
 
         if (name !== undefined) data.name = name
@@ -320,6 +388,69 @@ export async function PUT(request: NextRequest) {
         } else {
             if (servilexIndicator !== undefined) data.servilexIndicator = normalizeOptionalCode(servilexIndicator, "AC")
             if (servilexServiceCode !== undefined) data.servilexServiceCode = normalizeOptionalCode(servilexServiceCode)
+        }
+
+        if (servilexBindingId !== undefined) {
+            const resolvedBindingId = normalizeOptionalCode(servilexBindingId)
+            if (resolvedBindingId) {
+                const bindingEntry = await prisma.abioCatalogBinding.findUnique({
+                    where: { id: resolvedBindingId },
+                })
+                if (bindingEntry) {
+                    data.servilexBindingId = resolvedBindingId
+                    data.servilexSucursalCode = bindingEntry.sucursalCodigo
+                    data.servilexServiceCode = bindingEntry.servicioCodigo
+                    data.servilexDisciplineCode = bindingEntry.disciplinaCodigo
+                    data.servilexScheduleCode = bindingEntry.horarioCodigo
+                    data.servilexPoolCode = bindingEntry.piscinaCodigo
+
+                    const effectiveIndicator =
+                        data.servilexIndicator ??
+                        normalizeOptionalCode(servilexIndicator, "AC") ??
+                        "AC"
+                    if (effectiveIndicator === "PN" || effectiveIndicator === "PA") {
+                        const scheduleEntry = await prisma.abioCatalogSchedule.findFirst({
+                            where: {
+                                codigoEmp: bindingEntry.codigoEmp,
+                                disciplinaCodigo: bindingEntry.disciplinaCodigo,
+                                horarioCodigo: bindingEntry.horarioCodigo,
+                                isActive: true,
+                            },
+                            select: {
+                                horaInicio: true,
+                                horaFin: true,
+                                duracionHoras: true,
+                            },
+                        })
+                        const currentExtraConfig = asExtraConfigRecord(servilexExtraConfig)
+                        data.servilexExtraConfig = {
+                            ...currentExtraConfig,
+                            cantidad:
+                                currentExtraConfig.cantidad !== undefined
+                                    ? currentExtraConfig.cantidad
+                                    : 1,
+                            horaInicio:
+                                currentExtraConfig.horaInicio ||
+                                scheduleEntry?.horaInicio ||
+                                "",
+                            horaFin:
+                                currentExtraConfig.horaFin ||
+                                scheduleEntry?.horaFin ||
+                                "",
+                            duracion:
+                                currentExtraConfig.duracion !== undefined
+                                    ? currentExtraConfig.duracion
+                                    : scheduleEntry?.duracionHoras
+                                      ? Number(scheduleEntry.duracionHoras)
+                                      : 1,
+                        } as Prisma.InputJsonValue
+                    }
+                } else {
+                    data.servilexBindingId = null
+                }
+            } else {
+                data.servilexBindingId = null
+            }
         }
 
         if (packageDaysCount !== undefined || isPackage !== undefined) {

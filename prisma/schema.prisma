@@ -247,6 +247,7 @@ model TicketType {
   servilexPoolCode       String?
   servilexExtraConfig    Json?
   servilexServiceId      String?
+  servilexBindingId      String?
   isActive         Boolean  @default(true)
   sortOrder        Int      @default(0)
   createdAt        DateTime @default(now())
@@ -255,6 +256,7 @@ model TicketType {
   // Relations
   event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   servilexService ServilexService? @relation(fields: [servilexServiceId], references: [id])
+  servilexBinding AbioCatalogBinding? @relation(fields: [servilexBindingId], references: [id])
   dateInventories TicketTypeDateInventory[]
   orderItems      OrderItem[]
   tickets         Ticket[]
@@ -520,6 +522,112 @@ model ServilexService {
   @@index([indicador])
   @@index([isActive])
   @@map("servilex_services")
+}
+
+model AbioCatalogService {
+  id                  String   @id @default(cuid())
+  codigoEmp           String
+  sucursalCodigo      String
+  servicioCodigo      String
+  servicioDescripcion String
+  isActive            Boolean  @default(true)
+  rawPayload          Json?
+  syncedAt            DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([codigoEmp, sucursalCodigo, servicioCodigo])
+  @@index([codigoEmp, sucursalCodigo, isActive])
+  @@index([servicioCodigo])
+  @@map("abio_catalog_services")
+}
+
+model AbioCatalogDiscipline {
+  id               String   @id @default(cuid())
+  codigoEmp        String
+  disciplinaCodigo String
+  disciplinaNombre String
+  isActive         Boolean  @default(true)
+  rawPayload       Json?
+  syncedAt         DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([codigoEmp, disciplinaCodigo])
+  @@index([codigoEmp, isActive])
+  @@index([disciplinaCodigo])
+  @@map("abio_catalog_disciplines")
+}
+
+model AbioCatalogSchedule {
+  id               String   @id @default(cuid())
+  codigoEmp        String
+  disciplinaCodigo String
+  horarioCodigo    String
+  diaDescripcion   String
+  lunes            String?
+  martes           String?
+  miercoles        String?
+  jueves           String?
+  viernes          String?
+  sabado           String?
+  domingo          String?
+  horaInicio       String?
+  horaFin          String?
+  duracionHoras    Decimal? @db.Decimal(10, 2)
+  isActive         Boolean  @default(true)
+  rawPayload       Json?
+  syncedAt         DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([codigoEmp, disciplinaCodigo, horarioCodigo])
+  @@index([codigoEmp, disciplinaCodigo, isActive])
+  @@index([horarioCodigo])
+  @@map("abio_catalog_schedules")
+}
+
+model AbioCatalogBinding {
+  id               String   @id @default(cuid())
+  codigoEmp        String
+  sucursalCodigo   String
+  servicioCodigo   String
+  disciplinaCodigo String
+  piscinaCodigo    String
+  horarioCodigo    String
+  numeroCupos      Int
+  isActive         Boolean  @default(true)
+  source           String   @default("IMPORT")
+  rawPayload       Json?
+  syncedAt         DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  ticketTypes      TicketType[]
+
+  @@unique([codigoEmp, sucursalCodigo, servicioCodigo, disciplinaCodigo, piscinaCodigo, horarioCodigo])
+  @@index([codigoEmp, sucursalCodigo, servicioCodigo, isActive])
+  @@index([disciplinaCodigo, horarioCodigo])
+  @@map("abio_catalog_bindings")
+}
+
+model AbioCatalogSyncRun {
+  id               String   @id @default(cuid())
+  resource         String
+  status           String
+  requestPayload   Json?
+  responsePayload  Json?
+  importedCount    Int      @default(0)
+  deactivatedCount Int      @default(0)
+  errorMessage     String?
+  startedAt        DateTime @default(now())
+  finishedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([resource, startedAt])
+  @@index([status, startedAt])
+  @@map("abio_catalog_sync_runs")
 }
 
 model Invoice {

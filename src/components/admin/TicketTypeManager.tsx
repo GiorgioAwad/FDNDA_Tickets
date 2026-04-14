@@ -9,6 +9,8 @@ import { Plus, Trash2, Edit, Save, Power, FileJson } from "lucide-react"
 import { formatDate, formatPrice } from "@/lib/utils"
 import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import ServilexServiceCombobox from "@/components/admin/ServilexServiceCombobox"
+import { AbioCatalogControls } from "@/components/admin/AbioCatalogControls"
+import { AbioBindingSelector } from "@/components/admin/AbioBindingSelector"
 
 interface TicketType {
     id?: string
@@ -31,6 +33,7 @@ interface TicketType {
     servilexPoolCode?: string | null
     servilexExtraConfig?: unknown
     servilexServiceId?: string | null
+    servilexBindingId?: string | null
     dateInventories?: Array<{
         id?: string
         date: string | Date
@@ -79,6 +82,7 @@ const buildEmptyFormData = (): Partial<TicketType> => ({
     servilexPoolCode: "",
     servilexExtraConfig: {},
     servilexServiceId: null,
+    servilexBindingId: null,
 })
 
 const serializeShifts = (entries: ShiftEntry[]): string[] => {
@@ -153,6 +157,7 @@ const normalizeTicketTypeForForm = (ticket: TicketType): Partial<TicketType> => 
     servilexPoolCode: ticket.servilexPoolCode || "",
     servilexExtraConfig: getServilexExtraConfig(ticket.servilexExtraConfig),
     servilexServiceId: ticket.servilexServiceId || null,
+    servilexBindingId: ticket.servilexBindingId || null,
 })
 
 export function TicketTypeManager({
@@ -185,6 +190,7 @@ export function TicketTypeManager({
     const [poolGenerating, setPoolGenerating] = useState(false)
     const [poolProgress, setPoolProgress] = useState({ current: 0, total: 0 })
     const [dateToggleLoading, setDateToggleLoading] = useState<Record<string, boolean>>({})
+    const [catalogRefreshKey, setCatalogRefreshKey] = useState(0)
 
     const configuredShiftCount = shiftEntries.filter((entry) => entry.name.trim()).length
     const scheduleMode = requireShiftSelection ? "per_shift" : "full_day"
@@ -678,6 +684,28 @@ export function TicketTypeManager({
         }))
     }
 
+    const applyServilexPatch = (
+        patch: Partial<{
+            servilexSucursalCode: string
+            servilexServiceCode: string
+            servilexDisciplineCode: string
+            servilexScheduleCode: string
+            servilexPoolCode: string
+            servilexBindingId: string | null
+            capacity: number
+            servilexExtraConfig: Record<string, unknown>
+        }>
+    ) => {
+        setFormData((prev) => ({
+            ...prev,
+            ...patch,
+            servilexServiceId: null,
+        }))
+        if (patch.capacity !== undefined) {
+            setCapacityInput(String(patch.capacity))
+        }
+    }
+
     return (
         <Card>
             <CardHeader className="space-y-3">
@@ -1074,6 +1102,10 @@ export function TicketTypeManager({
                             </div>
                             {formData.servilexEnabled && (
                                 <div className="space-y-4">
+                                    <AbioCatalogControls
+                                        onCatalogChanged={() => setCatalogRefreshKey((prev) => prev + 1)}
+                                    />
+
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div className="space-y-2">
                                             <label className="text-xs font-medium">Indicador ABIO</label>
@@ -1084,6 +1116,7 @@ export function TicketTypeManager({
                                                         ...prev,
                                                         servilexIndicator: e.target.value,
                                                         servilexServiceId: null,
+                                                        servilexBindingId: null,
                                                     }))
                                                 }
                                                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -1099,7 +1132,11 @@ export function TicketTypeManager({
                                             <Input
                                                 value={formData.servilexSucursalCode || ""}
                                                 onChange={(e) =>
-                                                    setFormData({ ...formData, servilexSucursalCode: e.target.value })
+                                                    setFormData({
+                                                        ...formData,
+                                                        servilexSucursalCode: e.target.value,
+                                                        servilexBindingId: null,
+                                                    })
                                                 }
                                                 placeholder="01"
                                             />
@@ -1113,6 +1150,7 @@ export function TicketTypeManager({
                                                         ...prev,
                                                         servilexServiceCode: e.target.value,
                                                         servilexServiceId: null,
+                                                        servilexBindingId: null,
                                                     }))
                                                 }
                                                 placeholder="082"
@@ -1120,30 +1158,49 @@ export function TicketTypeManager({
                                         </div>
                                     </div>
 
-                                    <ServilexServiceCombobox
-                                        value={formData.servilexServiceId || null}
-                                        onChange={(service) => {
-                                            if (service) {
-                                                setFormData({
-                                                    ...formData,
-                                                    servilexServiceId: service.id,
-                                                    servilexIndicator: service.indicador,
-                                                    servilexServiceCode: service.codigo,
-                                                })
-                                            } else {
-                                                setFormData({
-                                                    ...formData,
-                                                    servilexServiceId: null,
-                                                })
-                                            }
-                                        }}
-                                        legacyIndicator={formData.servilexIndicator}
-                                        legacyServiceCode={formData.servilexServiceCode}
+                                    <AbioBindingSelector
+                                        key={catalogRefreshKey}
+                                        indicator={currentServilexIndicator}
+                                        sucursalCode={formData.servilexSucursalCode || ""}
+                                        serviceCode={formData.servilexServiceCode || ""}
+                                        disciplineCode={formData.servilexDisciplineCode || ""}
+                                        scheduleCode={formData.servilexScheduleCode || ""}
+                                        poolCode={formData.servilexPoolCode || ""}
+                                        bindingId={formData.servilexBindingId || null}
+                                        onPatch={applyServilexPatch}
                                     />
-                                    <div className="rounded-md border border-dashed bg-gray-50 p-3 text-xs text-gray-600">
-                                        Puedes vincular un servicio del catalogo para autocompletar codigo e indicador,
-                                        o escribirlos manualmente para OS, PN y PA.
-                                    </div>
+
+                                    <details className="rounded-md border border-dashed bg-gray-50 p-3 text-xs text-gray-600">
+                                        <summary className="cursor-pointer font-medium text-gray-700">
+                                            Fallback legado: catálogo local/manual
+                                        </summary>
+                                        <div className="mt-3 space-y-3">
+                                            <ServilexServiceCombobox
+                                                value={formData.servilexServiceId || null}
+                                                onChange={(service) => {
+                                                    if (service) {
+                                                        setFormData({
+                                                            ...formData,
+                                                            servilexServiceId: service.id,
+                                                            servilexIndicator: service.indicador,
+                                                            servilexServiceCode: service.codigo,
+                                                            servilexBindingId: null,
+                                                        })
+                                                    } else {
+                                                        setFormData({
+                                                            ...formData,
+                                                            servilexServiceId: null,
+                                                        })
+                                                    }
+                                                }}
+                                                legacyIndicator={formData.servilexIndicator}
+                                                legacyServiceCode={formData.servilexServiceCode}
+                                            />
+                                            <p>
+                                                Usa este bloque solo si todavía no sincronizaste catálogo ABIO o necesitas rescatar una entrada antigua.
+                                            </p>
+                                        </div>
+                                    </details>
 
                                     {currentServilexIndicator === "AC" && (
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1151,7 +1208,13 @@ export function TicketTypeManager({
                                                 <label className="text-xs font-medium">Codigo disciplina</label>
                                                 <Input
                                                     value={formData.servilexDisciplineCode || ""}
-                                                    onChange={(e) => setFormData({ ...formData, servilexDisciplineCode: e.target.value })}
+                                                    onChange={(e) =>
+                                                        setFormData({
+                                                            ...formData,
+                                                            servilexDisciplineCode: e.target.value,
+                                                            servilexBindingId: null,
+                                                        })
+                                                    }
                                                     placeholder="00"
                                                 />
                                             </div>
@@ -1159,7 +1222,13 @@ export function TicketTypeManager({
                                                 <label className="text-xs font-medium">Codigo horario</label>
                                                 <Input
                                                     value={formData.servilexScheduleCode || ""}
-                                                    onChange={(e) => setFormData({ ...formData, servilexScheduleCode: e.target.value })}
+                                                    onChange={(e) =>
+                                                        setFormData({
+                                                            ...formData,
+                                                            servilexScheduleCode: e.target.value,
+                                                            servilexBindingId: null,
+                                                        })
+                                                    }
                                                     placeholder="000001"
                                                 />
                                             </div>
@@ -1167,7 +1236,13 @@ export function TicketTypeManager({
                                                 <label className="text-xs font-medium">Codigo piscina</label>
                                                 <Input
                                                     value={formData.servilexPoolCode || ""}
-                                                    onChange={(e) => setFormData({ ...formData, servilexPoolCode: e.target.value })}
+                                                    onChange={(e) =>
+                                                        setFormData({
+                                                            ...formData,
+                                                            servilexPoolCode: e.target.value,
+                                                            servilexBindingId: null,
+                                                        })
+                                                    }
                                                     placeholder="01"
                                                 />
                                             </div>
@@ -1206,7 +1281,13 @@ export function TicketTypeManager({
                                                 <label className="text-xs font-medium">Codigo piscina</label>
                                                 <Input
                                                     value={formData.servilexPoolCode || ""}
-                                                    onChange={(e) => setFormData({ ...formData, servilexPoolCode: e.target.value })}
+                                                    onChange={(e) =>
+                                                        setFormData({
+                                                            ...formData,
+                                                            servilexPoolCode: e.target.value,
+                                                            servilexBindingId: null,
+                                                        })
+                                                    }
                                                     placeholder="01"
                                                 />
                                             </div>
