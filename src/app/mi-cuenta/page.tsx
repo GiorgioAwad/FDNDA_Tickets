@@ -25,18 +25,18 @@ export default async function MyAccountPage() {
     })
 
     return (
-        <div className="container mx-auto px-4 py-12">
-            <h1 className="text-3xl font-bold mb-8">Mi Cuenta</h1>
+        <div className="container mx-auto px-4 py-8 sm:py-12">
+            <h1 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8">Mi Cuenta</h1>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-3 md:gap-8">
                 {/* Sidebar */}
                 <div className="space-y-4">
                     <Card>
-                        <CardContent className="p-6 text-center">
-                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-blue-100 text-blue-600 mb-4">
-                                <User className="h-10 w-10" />
+                        <CardContent className="p-4 sm:p-6 text-center">
+                            <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-blue-100 text-blue-600 mb-4">
+                                <User className="h-8 w-8 sm:h-10 sm:w-10" />
                             </div>
-                            <h2 className="font-bold text-xl">{user.name}</h2>
+                            <h2 className="font-bold text-lg sm:text-xl">{user.name}</h2>
                             <p className="text-gray-500 text-sm">{user.email}</p>
 
                             <div className="mt-4 pt-4 border-t flex items-center justify-center gap-2 text-sm text-gray-600">
@@ -67,12 +67,12 @@ export default async function MyAccountPage() {
                 </div>
 
                 {/* Main Content */}
-                <div className="md:col-span-2 space-y-6">
+                <div className="md:col-span-2 space-y-5 sm:space-y-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <Card>
-                            <CardContent className="p-6 flex items-center gap-4">
+                            <CardContent className="p-4 sm:p-6 flex items-center gap-4">
                                 <div className="p-3 rounded-lg bg-blue-50 text-blue-600">
-                                    <Ticket className="h-8 w-8" />
+                                    <Ticket className="h-7 w-7 sm:h-8 sm:w-8" />
                                 </div>
                                 <div>
                                     <div className="text-2xl font-bold">{ticketCount}</div>
@@ -82,9 +82,9 @@ export default async function MyAccountPage() {
                         </Card>
 
                         <Card>
-                            <CardContent className="p-6 flex items-center gap-4">
+                            <CardContent className="p-4 sm:p-6 flex items-center gap-4">
                                 <div className="p-3 rounded-lg bg-green-50 text-green-600">
-                                    <Ticket className="h-8 w-8" />
+                                    <Ticket className="h-7 w-7 sm:h-8 sm:w-8" />
                                 </div>
                                 <div>
                                     <div className="text-2xl font-bold">{orderCount}</div>

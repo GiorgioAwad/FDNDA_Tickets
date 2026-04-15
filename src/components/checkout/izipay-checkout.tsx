@@ -96,7 +96,12 @@ export default function IzipayCheckout({
     const mountedRef = useRef(true)
     const startedRef = useRef(false)
     const handledRef = useRef(false)
-    const mode = config.render?.typeForm === "embedded" ? "embedded" : "redirect"
+    const mode =
+        config.render?.typeForm === "embedded"
+            ? "embedded"
+            : config.render?.typeForm === "redirect"
+                ? "redirect"
+                : "popup"
 
     useEffect(() => {
         mountedRef.current = true
@@ -196,11 +201,18 @@ export default function IzipayCheckout({
                 }
 
                 const checkout = new window.Izipay({ config })
-                checkout.LoadForm({
-                    authorization,
-                    keyRSA,
-                    callbackResponse: async (paymentResult) => validatePayment(paymentResult),
-                })
+                if (mode === "redirect") {
+                    checkout.LoadForm({
+                        authorization,
+                        keyRSA,
+                    })
+                } else {
+                    checkout.LoadForm({
+                        authorization,
+                        keyRSA,
+                        callbackResponse: async (paymentResult) => validatePayment(paymentResult),
+                    })
+                }
 
                 if (mountedRef.current) {
                     setLoading(false)
@@ -228,7 +240,9 @@ export default function IzipayCheckout({
                     <span className="text-sm">
                         {mode === "embedded"
                             ? "Cargando formulario seguro de Izipay..."
-                            : "Redirigiendo al checkout seguro de Izipay..."}
+                            : mode === "redirect"
+                                ? "Redirigiendo al checkout seguro de Izipay..."
+                                : "Abriendo checkout seguro de Izipay..."}
                     </span>
                 </div>
             )}

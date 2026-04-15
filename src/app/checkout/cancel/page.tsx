@@ -5,13 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 export default function CheckoutCancelPage() {
     return (
-        <div className="min-h-[80vh] flex items-center justify-center bg-gradient-to-b from-gray-50 to-white px-4 py-12">
+        <div className="min-h-[80vh] flex items-center justify-center bg-gradient-to-b from-gray-50 to-white px-4 py-8 sm:py-12">
             <Card className="w-full max-w-2xl shadow-xl border-0">
                 <CardHeader className="text-center space-y-3">
-                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-600">
-                        <CreditCard className="h-7 w-7" />
+                    <div className="mx-auto flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                        <CreditCard className="h-6 w-6 sm:h-7 sm:w-7" />
                     </div>
-                    <CardTitle className="text-3xl">Pago cancelado</CardTitle>
+                    <CardTitle className="text-2xl sm:text-3xl">Pago cancelado</CardTitle>
                     <CardDescription className="text-base">
                         Tu proceso de pago fue interrumpido. Si tu carrito sigue guardado, puedes retomarlo sin volver a seleccionar tus entradas.
                     </CardDescription>

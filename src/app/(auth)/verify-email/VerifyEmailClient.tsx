@@ -48,13 +48,13 @@ export default function VerifyEmailClient() {
     }, [router, token])
 
     return (
-        <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 bg-gradient-to-b from-gray-50 to-white">
+        <div className="min-h-[80vh] flex items-center justify-center py-8 sm:py-12 px-4 bg-gradient-to-b from-gray-50 to-white">
             <Card className="w-full max-w-md shadow-xl border-0">
-                <CardContent className="pt-10 pb-8 text-center">
+                <CardContent className="pt-8 pb-8 text-center sm:pt-10">
                     {status === "loading" && (
                         <>
-                            <Loader2 className="h-16 w-16 mx-auto text-[hsl(210,100%,40%)] animate-spin mb-4" />
-                            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                            <Loader2 className="h-14 w-14 sm:h-16 sm:w-16 mx-auto text-[hsl(210,100%,40%)] animate-spin mb-4" />
+                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
                                 Verificando tu email...
                             </h2>
                             <p className="text-gray-600">
@@ -65,10 +65,10 @@ export default function VerifyEmailClient() {
 
                     {status === "success" && (
                         <>
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-600 mb-4">
-                                <CheckCircle className="h-8 w-8" />
+                            <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-green-100 text-green-600 mb-4">
+                                <CheckCircle className="h-7 w-7 sm:h-8 sm:w-8" />
                             </div>
-                            <h2 className="text-2xl font-bold text-gray-900 mb-2">{"\u00a1Email Verificado!"}</h2>
+                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">{"\u00a1Email Verificado!"}</h2>
                             <p className="text-gray-600 mb-6">{message}</p>
                             <Link href="/login">
                                 <Button className="w-full">{"Iniciar Sesi\u00f3n"}</Button>
@@ -78,10 +78,10 @@ export default function VerifyEmailClient() {
 
                     {status === "error" && (
                         <>
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 text-red-600 mb-4">
-                                <XCircle className="h-8 w-8" />
+                            <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-100 text-red-600 mb-4">
+                                <XCircle className="h-7 w-7 sm:h-8 sm:w-8" />
                             </div>
-                            <h2 className="text-2xl font-bold text-gray-900 mb-2">{"Error de Verificaci\u00f3n"}</h2>
+                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">{"Error de Verificaci\u00f3n"}</h2>
                             <p className="text-gray-600 mb-6">{message}</p>
                             <div className="space-y-3">
                                 <Link href="/register">

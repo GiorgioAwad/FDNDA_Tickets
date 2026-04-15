@@ -67,21 +67,21 @@ export default function ScannerEventList({ events }: ScannerEventListProps) {
     const hasActiveFilters = searchTerm !== "" || selectedDiscipline !== null
 
     return (
-        <div className="min-h-screen bg-gray-50 py-8 px-4">
+        <div className="min-h-screen bg-gray-50 py-6 sm:py-8 px-4">
             <div className="max-w-4xl mx-auto">
                 {/* Header */}
                 <div className="flex items-center gap-3 mb-6">
-                    <div className="p-3 rounded-xl bg-blue-600 text-white">
-                        <ScanLine className="h-8 w-8" />
+                    <div className="p-2.5 sm:p-3 rounded-xl bg-blue-600 text-white">
+                        <ScanLine className="h-6 w-6 sm:h-8 sm:w-8" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Scanner FDNDA</h1>
+                        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Scanner FDNDA</h1>
                         <p className="text-gray-500">Selecciona un evento para escanear</p>
                     </div>
                 </div>
 
                 {/* Filters */}
-                <div className="bg-white rounded-xl shadow-sm p-4 mb-6 space-y-4">
+                <div className="bg-white rounded-xl shadow-sm p-3 sm:p-4 mb-6 space-y-4">
                     {/* Search */}
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -90,7 +90,7 @@ export default function ScannerEventList({ events }: ScannerEventListProps) {
                             placeholder="Buscar por nombre o lugar..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10 h-12"
+                            className="pl-10 h-11 sm:h-12"
                         />
                         {searchTerm && (
                             <button
@@ -159,7 +159,7 @@ export default function ScannerEventList({ events }: ScannerEventListProps) {
                         {filteredEvents.map((event) => (
                             <Link key={event.id} href={`/scanner/evento/${event.id}`}>
                                 <Card className="hover:shadow-lg transition-all hover:scale-[1.02] cursor-pointer h-full border-2 border-transparent hover:border-blue-200">
-                                    <CardContent className="p-5">
+                                    <CardContent className="p-4 sm:p-5">
                                         <div className="flex justify-between items-start mb-3">
                                             <Badge variant={event.isPublished ? "default" : "secondary"}>
                                                 {event.isPublished ? "Activo" : "Borrador"}
@@ -195,11 +195,11 @@ export default function ScannerEventList({ events }: ScannerEventListProps) {
                         ))}
                     </div>
                 ) : (
-                    <div className="text-center py-16 bg-white rounded-xl shadow-sm">
+                    <div className="text-center py-12 sm:py-16 bg-white rounded-xl shadow-sm">
                         {hasActiveFilters ? (
                             <>
-                                <Search className="h-16 w-16 mx-auto text-gray-300 mb-4" />
-                                <h3 className="text-xl font-semibold text-gray-600 mb-2">
+                                <Search className="h-14 w-14 sm:h-16 sm:w-16 mx-auto text-gray-300 mb-4" />
+                                <h3 className="text-lg sm:text-xl font-semibold text-gray-600 mb-2">
                                     Sin resultados
                                 </h3>
                                 <p className="text-gray-500 mb-4">
@@ -211,8 +211,8 @@ export default function ScannerEventList({ events }: ScannerEventListProps) {
                             </>
                         ) : (
                             <>
-                                <Calendar className="h-16 w-16 mx-auto text-gray-300 mb-4" />
-                                <h3 className="text-xl font-semibold text-gray-600 mb-2">
+                                <Calendar className="h-14 w-14 sm:h-16 sm:w-16 mx-auto text-gray-300 mb-4" />
+                                <h3 className="text-lg sm:text-xl font-semibold text-gray-600 mb-2">
                                     No hay eventos activos
                                 </h3>
                                 <p className="text-gray-500">

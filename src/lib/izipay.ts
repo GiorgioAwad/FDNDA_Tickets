@@ -25,11 +25,21 @@ const IZIPAY_EMBEDDED_ENDPOINT =
 
 export const IZIPAY_EMBEDDED_CONTAINER_ID = "izipay-sdk-container"
 
-export type IzipayMode = "redirect" | "embedded"
+export type IzipayMode = "popup" | "redirect" | "embedded" | "auto"
 
 export function getIzipayMode(): IzipayMode {
-    const mode = process.env.IZIPAY_MODE || process.env.NEXT_PUBLIC_IZIPAY_MODE || "redirect"
-    return mode === "embedded" ? "embedded" : "redirect"
+    const mode = (
+        process.env.IZIPAY_MODE ||
+        process.env.NEXT_PUBLIC_IZIPAY_MODE ||
+        "auto"
+    )
+        .trim()
+        .toLowerCase()
+
+    if (mode === "embedded") return "embedded"
+    if (mode === "popup" || mode === "pop-up") return "popup"
+    if (mode === "auto") return "auto"
+    return "redirect"
 }
 
 export interface IzipayOrderData {

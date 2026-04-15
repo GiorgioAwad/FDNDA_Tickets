@@ -11,16 +11,16 @@ const CONTACT_INFO = {
 
 export default function ContactoPage() {
     return (
-        <div className="min-h-[80vh] bg-gradient-to-b from-gray-50 to-white px-4 py-12">
+        <div className="min-h-[80vh] bg-gradient-to-b from-gray-50 to-white px-4 py-8 sm:py-12">
             <div className="container mx-auto max-w-4xl">
-                <div className="mb-10 text-center">
-                    <h1 className="text-4xl font-bold text-gray-900">Contacto</h1>
+                <div className="mb-8 text-center sm:mb-10">
+                    <h1 className="text-3xl font-bold text-gray-900 sm:text-4xl">Contacto</h1>
                     <p className="mt-3 text-gray-600">
                         Si necesitas ayuda con tu cuenta, compras o accesos, contactanos por cualquiera de estos canales.
                     </p>
                 </div>
 
-                <div className="grid gap-6 md:grid-cols-3">
+                <div className="grid gap-4 sm:gap-6 md:grid-cols-3">
                     <Card className="border-0 shadow-lg">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-lg">
@@ -64,7 +64,7 @@ export default function ContactoPage() {
                     </Card>
                 </div>
 
-                <div className="mt-8 rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm">
+                <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-4 text-center shadow-sm sm:mt-8 sm:p-6">
                     <p className="text-sm text-gray-600">
                         Tambien puedes registrar un{" "}
                         <Link href="/libro-de-reclamaciones" className="text-[hsl(210,100%,40%)] hover:underline">

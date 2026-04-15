@@ -43,20 +43,20 @@ export default function ForgotPasswordPage() {
     }
 
     return (
-        <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 bg-gradient-to-b from-gray-50 to-white">
+        <div className="min-h-[80vh] flex items-center justify-center py-8 sm:py-12 px-4 bg-gradient-to-b from-gray-50 to-white">
             <div className="w-full max-w-md">
-                <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 mb-4">
+                <div className="text-center mb-6 sm:mb-8">
+                    <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 mb-3 sm:mb-4">
                         <Image
                             src="/logo.png"
                             alt="FDNDA"
                             width={48}
                             height={48}
-                            className="h-12 w-12 object-contain"
+                            className="h-10 w-10 sm:h-12 sm:w-12 object-contain"
                             priority
                         />
                     </div>
-                    <h1 className="text-2xl font-bold text-gray-900">Ticketing FDNDA</h1>
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Ticketing FDNDA</h1>
                 </div>
 
                 <Card className="shadow-xl border-0">

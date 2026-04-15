@@ -106,13 +106,13 @@ export default function CheckoutSuccessClient() {
     const isProcessing = status === null || (status === "PENDING" && !reviewRequired)
 
     return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4">
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center py-8 sm:py-12 px-4">
             <Card className="w-full max-w-md shadow-xl border-0">
-                <CardContent className="pt-10 pb-8 text-center">
+                <CardContent className="pt-8 pb-8 text-center sm:pt-10">
                     {isProcessing ? (
                         <>
-                            <Loader2 className="h-16 w-16 mx-auto text-[hsl(210,100%,40%)] animate-spin mb-4" />
-                            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                            <Loader2 className="h-14 w-14 sm:h-16 sm:w-16 mx-auto text-[hsl(210,100%,40%)] animate-spin mb-4" />
+                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
                                 Procesando tu pago...
                             </h2>
                             <p className="text-gray-600">
@@ -124,11 +124,11 @@ export default function CheckoutSuccessClient() {
                         </>
                     ) : isPaid ? (
                         <>
-                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-100 text-green-600 mb-6">
-                                <CheckCircle className="h-10 w-10" />
+                            <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-green-100 text-green-600 mb-5 sm:mb-6">
+                                <CheckCircle className="h-8 w-8 sm:h-10 sm:w-10" />
                             </div>
 
-                            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
                                 Pago exitoso
                             </h1>
 
@@ -155,10 +155,10 @@ export default function CheckoutSuccessClient() {
                         </>
                     ) : isManualReview ? (
                         <>
-                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-amber-100 text-amber-600 mb-6">
-                                <AlertCircle className="h-10 w-10" />
+                            <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-amber-100 text-amber-600 mb-5 sm:mb-6">
+                                <AlertCircle className="h-8 w-8 sm:h-10 sm:w-10" />
                             </div>
-                            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
                                 Pago en validacion
                             </h1>
                             <p className="text-gray-600 mb-8">
@@ -180,10 +180,10 @@ export default function CheckoutSuccessClient() {
                         </>
                     ) : (
                         <>
-                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-red-100 text-red-600 mb-6">
-                                <XCircle className="h-10 w-10" />
+                            <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-100 text-red-600 mb-5 sm:mb-6">
+                                <XCircle className="h-8 w-8 sm:h-10 sm:w-10" />
                             </div>
-                            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
                                 Pago no completado
                             </h1>
                             <p className="text-gray-600 mb-8">

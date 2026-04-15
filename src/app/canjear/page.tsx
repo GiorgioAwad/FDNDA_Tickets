@@ -25,7 +25,7 @@ type CodeData = {
 }
 
 export default function CanjearPage() {
-    const { data: session, status } = useSession()
+    const { status } = useSession()
     const router = useRouter()
     
     const [code, setCode] = useState("")
@@ -105,11 +105,11 @@ export default function CanjearPage() {
         return (
             <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center p-4">
                 <Card className="max-w-md w-full text-center">
-                    <CardContent className="pt-8 pb-6">
-                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <CheckCircle className="h-8 w-8 text-green-600" />
+                    <CardContent className="pt-6 pb-6 sm:pt-8">
+                        <div className="w-14 h-14 sm:w-16 sm:h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <CheckCircle className="h-7 w-7 sm:h-8 sm:w-8 text-green-600" />
                         </div>
-                        <h2 className="text-2xl font-bold text-gray-900 mb-2">¡Entrada Canjeada!</h2>
+                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">¡Entrada Canjeada!</h2>
                         <p className="text-gray-600 mb-6">
                             Tu entrada ha sido agregada a tu cuenta. Revisa tu email para ver el código QR.
                         </p>
@@ -133,14 +133,14 @@ export default function CanjearPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 py-12 px-4">
+        <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 py-8 sm:py-12 px-4">
             <div className="max-w-lg mx-auto">
                 {/* Header */}
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Gift className="h-8 w-8 text-purple-600" />
+                <div className="text-center mb-6 sm:mb-8">
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Gift className="h-7 w-7 sm:h-8 sm:w-8 text-purple-600" />
                     </div>
-                    <h1 className="text-3xl font-bold text-gray-900">Canjear Cortesía</h1>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Canjear Cortesía</h1>
                     <p className="text-gray-600 mt-2">
                         Ingresa el código que recibiste para obtener tu entrada
                     </p>
@@ -148,21 +148,22 @@ export default function CanjearPage() {
 
                 {/* Code Input Card */}
                 <Card className="mb-6">
-                    <CardContent className="pt-6">
+                    <CardContent className="pt-5 sm:pt-6">
                         <div className="space-y-4">
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Código de Cortesía</label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-col gap-2 sm:flex-row">
                                     <Input
                                         value={code}
                                         onChange={(e) => setCode(e.target.value.toUpperCase())}
                                         placeholder="Ej: A1B2C3D4"
-                                        className="uppercase font-mono text-lg tracking-wider"
+                                        className="uppercase font-mono text-base sm:text-lg tracking-wider"
                                         onKeyDown={(e) => e.key === "Enter" && handleVerifyCode()}
                                     />
                                     <Button 
                                         onClick={handleVerifyCode} 
                                         disabled={loading || !code.trim()}
+                                        className="w-full sm:w-auto"
                                     >
                                         {loading ? "..." : "Verificar"}
                                     </Button>
@@ -186,7 +187,7 @@ export default function CanjearPage() {
                             <CardTitle className="text-lg">Detalles de tu Cortesía</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                            <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-3">
                                 <h3 className="font-bold text-lg">{codeData.event.title}</h3>
                                 <div className="flex items-center gap-2 text-sm text-gray-600">
                                     <Calendar className="h-4 w-4" />

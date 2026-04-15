@@ -15,6 +15,8 @@ import { storeIzipayOrderCorrelation } from "@/lib/izipay-payment"
 import { fulfillPaidOrder } from "@/lib/order-fulfillment"
 
 export const runtime = "nodejs"
+const MOBILE_CHECKOUT_REGEX =
+    /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet|kindle|silk/i
 
 function normalizeIzipayText(value: string, maxLength: number) {
     const normalized = value
@@ -104,7 +106,7 @@ function buildCheckoutConfig(input: {
     merchantCode: string
     transactionId: string
     appUrl: string
-    mode: "redirect" | "embedded"
+    mode: "popup" | "redirect" | "embedded"
 }): IzipayWebCoreCheckoutConfig {
     const fullName = buildBuyerName(input.order)
     const { firstName, lastName } = splitName(fullName)
@@ -132,6 +134,7 @@ function buildCheckoutConfig(input: {
         documentType,
         document,
     }
+    const redirectResultUrl = `${input.appUrl}/api/payments/izipay/redirect-result`
 
     return {
         action: "pay",
@@ -148,13 +151,46 @@ function buildCheckoutConfig(input: {
         billing,
         shipping: billing,
         render: {
-            typeForm: input.mode === "embedded" ? "embedded" : "pop-up",
+            typeForm:
+                input.mode === "embedded"
+                    ? "embedded"
+                    : input.mode === "redirect"
+                        ? "redirect"
+                        : "pop-up",
             container:
                 input.mode === "embedded" ? `#${IZIPAY_EMBEDDED_CONTAINER_ID}` : undefined,
             showButtonProcessForm: input.mode === "embedded" ? true : undefined,
+            redirectUrls:
+                input.mode === "redirect"
+                    ? {
+                        onSuccess: redirectResultUrl,
+                        onError: redirectResultUrl,
+                        onCancel: redirectResultUrl,
+                    }
+                    : undefined,
         },
         urlIPN: `${input.appUrl}/api/payments/izipay/webhook`,
     }
+}
+
+function isMobileCheckoutRequest(request: NextRequest): boolean {
+    const mobileHint = request.headers.get("sec-ch-ua-mobile")
+    if (mobileHint === "?1") {
+        return true
+    }
+
+    const userAgent = request.headers.get("user-agent") || ""
+    return MOBILE_CHECKOUT_REGEX.test(userAgent)
+}
+
+function resolveCheckoutMode(
+    request: NextRequest,
+    configuredMode: ReturnType<typeof getIzipayMode>
+): "popup" | "redirect" | "embedded" {
+    if (configuredMode === "embedded") return "embedded"
+    if (configuredMode === "popup") return "popup"
+    if (configuredMode === "redirect") return "redirect"
+    return isMobileCheckoutRequest(request) ? "redirect" : "popup"
 }
 
 export async function POST(request: NextRequest) {
@@ -173,7 +209,7 @@ export async function POST(request: NextRequest) {
         const hashKey = process.env.IZIPAY_HASH_KEY || ""
         const appUrl =
             (process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin).replace(/\/$/, "")
-        const mode = getIzipayMode()
+        const mode = resolveCheckoutMode(request, getIzipayMode())
 
         if (!merchantCode || !apiKey || !hashKey || !publicKey || !appUrl) {
             return NextResponse.json(

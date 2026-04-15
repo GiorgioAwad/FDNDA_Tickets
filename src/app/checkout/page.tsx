@@ -338,8 +338,8 @@ export default function CheckoutPage() {
 
     if (items.length === 0) {
         return (
-            <div className="container mx-auto px-4 py-16 text-center">
-                <h1 className="text-2xl font-bold mb-4">Tu carrito esta vacio</h1>
+            <div className="container mx-auto px-4 py-12 sm:py-16 text-center">
+                <h1 className="text-xl sm:text-2xl font-bold mb-4">Tu carrito esta vacio</h1>
                 <p className="text-gray-600 mb-8">No has seleccionado ninguna entrada.</p>
                 <Button onClick={() => router.push("/eventos")}>
                     Ver eventos
@@ -349,9 +349,9 @@ export default function CheckoutPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 py-12">
+        <div className="min-h-screen bg-gray-50 py-6 sm:py-12">
             <div className="container mx-auto px-4">
-                <div className="flex flex-col gap-3 mb-8">
+                <div className="flex flex-col gap-3 mb-6 sm:mb-8">
                     <Button
                         variant="ghost"
                         size="sm"
@@ -361,10 +361,10 @@ export default function CheckoutPage() {
                         <ArrowLeft className="h-4 w-4" />
                         Volver
                     </Button>
-                    <h1 className="text-3xl font-bold">Finalizar compra</h1>
+                    <h1 className="text-2xl sm:text-3xl font-bold">Finalizar compra</h1>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8">
                     <div className="lg:col-span-2 space-y-6">
                         <Card>
                             <CardHeader>
@@ -374,7 +374,7 @@ export default function CheckoutPage() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-4">
-                                <div className="flex gap-4">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
                                             type="radio"
@@ -559,7 +559,7 @@ export default function CheckoutPage() {
                             <CardContent className="space-y-6">
                                 {items.map((item) => (
                                     <div key={getCartLineKey(item)} className="border-b last:border-0 pb-6 last:pb-0">
-                                        <div className="flex justify-between items-start mb-4">
+                                        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                             <div>
                                                 <h3 className="font-bold text-lg">{item.eventTitle}</h3>
                                                 <p className="text-gray-600">{item.ticketTypeName}</p>
@@ -572,7 +572,7 @@ export default function CheckoutPage() {
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center gap-4 mb-4">
+                                        <div className="mb-4 flex flex-wrap items-center gap-3 sm:gap-4">
                                             <div className="flex items-center border rounded-md">
                                                 <button
                                                     className="px-3 py-1 hover:bg-gray-100"
@@ -599,7 +599,7 @@ export default function CheckoutPage() {
                                             </Button>
                                         </div>
 
-                                        <div className="bg-gray-50 p-4 rounded-lg space-y-4">
+                                        <div className="bg-gray-50 p-3 sm:p-4 rounded-lg space-y-4">
                                             <h4 className="text-sm font-semibold flex items-center gap-2">
                                                 <User className="h-4 w-4" />
                                                 Datos de los asistentes
@@ -828,7 +828,7 @@ export default function CheckoutPage() {
                     </div>
 
                     <div className="space-y-6">
-                        <Card className="sticky top-24">
+                        <Card className="lg:sticky lg:top-24">
                             <CardHeader>
                                 <CardTitle>Resumen de pago</CardTitle>
                             </CardHeader>
@@ -839,7 +839,7 @@ export default function CheckoutPage() {
                                             <Tag className="h-4 w-4 text-gray-500" />
                                             Codigo de descuento
                                         </label>
-                                        <div className="flex gap-2">
+                                        <div className="flex flex-col gap-2 sm:flex-row">
                                             <Input
                                                 value={discountCode}
                                                 onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
@@ -899,7 +899,7 @@ export default function CheckoutPage() {
                                         <span>{formatPrice(0)}</span>
                                     </div>
                                 </div>
-                                <div className="border-t pt-4 flex justify-between font-bold text-lg">
+                                <div className="border-t pt-4 flex justify-between font-bold text-base sm:text-lg">
                                     <span>Total</span>
                                     <span>{formatPrice(finalTotal)}</span>
                                 </div>

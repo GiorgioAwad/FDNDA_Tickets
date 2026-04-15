@@ -96,18 +96,18 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <div className="bg-gradient-fdnda py-12">
+            <div className="bg-gradient-fdnda py-8 sm:py-12">
                 <div className="container mx-auto px-4 text-center text-white">
-                    <h1 className="text-3xl md:text-4xl font-bold mb-4">Proximos Eventos</h1>
-                    <p className="text-white/80 max-w-2xl mx-auto">
+                    <h1 className="mb-3 text-2xl font-bold sm:text-3xl md:text-4xl">Proximos Eventos</h1>
+                    <p className="mx-auto max-w-2xl text-sm text-white/80 sm:text-base">
                         Descubre los mejores eventos de deportes acuaticos y asegura tu entrada.
                     </p>
                 </div>
             </div>
 
-            <div className="container mx-auto px-4 py-8">
-                <div className="bg-white rounded-xl shadow-sm p-4 mb-8">
-                    <form className="flex flex-col md:flex-row gap-4">
+            <div className="container mx-auto px-4 py-6 sm:py-8">
+                <div className="bg-white rounded-xl shadow-sm p-3 sm:p-4 mb-6 sm:mb-8">
+                    <form className="flex flex-col gap-3 md:flex-row md:gap-4">
                         <div className="flex-1 relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                             <Input
@@ -121,7 +121,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                         <select
                             name="discipline"
                             defaultValue={discipline}
-                            className="h-11 px-3 rounded-lg border border-input bg-background text-sm"
+                            className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm md:w-auto"
                         >
                             <option value="">Todas las disciplinas</option>
                             {disciplines.map((item) => (
@@ -132,7 +132,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                         <select
                             name="venue"
                             defaultValue={venue}
-                            className="h-11 px-3 rounded-lg border border-input bg-background text-sm md:w-64"
+                            className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm md:w-64"
                         >
                             <option value="">Todas las sedes</option>
                             {venues.map((item) => (
@@ -140,7 +140,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                             ))}
                         </select>
 
-                        <Button type="submit" variant="outline" className="gap-2">
+                        <Button type="submit" variant="outline" className="w-full gap-2 md:w-auto">
                             <Filter className="h-4 w-4" />
                             Filtrar
                         </Button>
@@ -149,7 +149,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
 
                 {events.length > 0 ? (
                     <>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
                             {events.map((event: CachedEvent) => (
                                 <Link key={event.id} href={`/eventos/${event.slug}`}>
                                     <Card hover className="h-full overflow-hidden group">
@@ -173,7 +173,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                                             )}
                                         </div>
 
-                                        <CardContent className="p-5">
+                                        <CardContent className="p-4 sm:p-5">
                                             <h3 className="font-bold text-lg mb-2 line-clamp-2 group-hover:text-[hsl(210,100%,40%)] transition-colors">
                                                 {event.title}
                                             </h3>
@@ -218,7 +218,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                         </div>
 
                         {totalPages > 1 && (
-                            <div className="mt-8 flex items-center justify-center gap-2">
+                            <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
                                 <Button variant="outline" size="sm" asChild disabled={safePage <= 1}>
                                     <Link
                                         href={buildQuery({
@@ -254,8 +254,8 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                         )}
                     </>
                 ) : (
-                    <div className="text-center py-16">
-                        <Waves className="h-20 w-20 mx-auto text-gray-300 mb-4" />
+                    <div className="text-center py-12 sm:py-16">
+                        <Waves className="h-16 w-16 sm:h-20 sm:w-20 mx-auto text-gray-300 mb-4" />
                         <h3 className="text-xl font-semibold text-gray-600 mb-2">
                             No se encontraron eventos
                         </h3>

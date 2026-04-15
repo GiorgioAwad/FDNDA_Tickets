@@ -7,21 +7,21 @@ import { Facebook, Instagram, Mail, MapPin, Phone } from "lucide-react"
 export function Footer() {
     return (
         <footer className="bg-gradient-to-br from-[hsl(210,100%,15%)] to-[hsl(210,100%,25%)] text-white">
-            <div className="container mx-auto px-4 py-12">
-                <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
+            <div className="container mx-auto px-4 py-10 sm:py-12">
+                <div className="grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-2 lg:grid-cols-4">
                     <div className="space-y-4">
                         <div className="flex items-center gap-2">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 sm:h-12 sm:w-12">
                                 <Image
                                     src="/logo.png"
                                     alt="FDNDA"
                                     width={40}
                                     height={40}
-                                    className="h-10 w-10 object-contain"
+                                    className="h-8 w-8 object-contain sm:h-10 sm:w-10"
                                 />
                             </div>
                             <div>
-                                <h3 className="text-xl font-bold">Ticketing FDNDA</h3>
+                                <h3 className="text-lg font-bold sm:text-xl">Ticketing FDNDA</h3>
                             </div>
                         </div>
                         <p className="text-sm leading-relaxed text-white/70">
@@ -120,9 +120,9 @@ export function Footer() {
                     </div>
                 </div>
 
-                <div className="mt-8 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-8 text-sm text-white/50 md:flex-row">
+                <div className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-6 text-center text-sm text-white/50 md:flex-row md:text-left">
                     <p>&copy; {new Date().getFullYear()} Ticketing FDNDA. Todos los derechos reservados.</p>
-                    <div className="flex gap-4">
+                    <div className="flex flex-wrap justify-center gap-3 md:justify-end md:gap-4">
                         <Link href="/libro-de-reclamaciones" className="transition-colors hover:text-white">
                             Libro de Reclamaciones
                         </Link>

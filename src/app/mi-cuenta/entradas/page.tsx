@@ -43,19 +43,19 @@ export default async function MyTicketsPage() {
     }) as UserTicket[]
 
     return (
-        <div className="container mx-auto px-4 py-12">
-            <div className="flex items-center justify-between mb-8">
-                <h1 className="text-3xl font-bold">Mis Entradas</h1>
+        <div className="container mx-auto px-4 py-8 sm:py-12">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8">
+                <h1 className="text-2xl sm:text-3xl font-bold">Mis Entradas</h1>
                 <Link href="/eventos">
-                    <Button variant="outline">Comprar más</Button>
+                    <Button variant="outline" className="w-full sm:w-auto">Comprar más</Button>
                 </Link>
             </div>
 
             {tickets.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
                     {tickets.map((ticket: UserTicket) => (
                         <Card key={ticket.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                            <div className="relative h-32 bg-gradient-fdnda p-4 flex flex-col justify-between text-white">
+                            <div className="relative h-28 sm:h-32 bg-gradient-fdnda p-4 flex flex-col justify-between text-white">
                                 <div className="flex justify-between items-start">
                                     <Badge className="bg-white/20 hover:bg-white/30 text-white border-0">
                                         {ticket.ticketType.name}
@@ -64,10 +64,10 @@ export default async function MyTicketsPage() {
                                         {ticket.status === "ACTIVE" ? "Activo" : "Inactivo"}
                                     </Badge>
                                 </div>
-                                <h3 className="font-bold text-lg line-clamp-1">{ticket.event.title}</h3>
+                                <h3 className="font-bold text-base sm:text-lg line-clamp-1">{ticket.event.title}</h3>
                             </div>
 
-                            <CardContent className="p-5 space-y-4">
+                            <CardContent className="p-4 sm:p-5 space-y-4">
                                 <div className="space-y-2 text-sm text-gray-600">
                                     <div className="flex items-center gap-2">
                                         <Calendar className="h-4 w-4 text-gray-400" />
@@ -94,8 +94,8 @@ export default async function MyTicketsPage() {
                     ))}
                 </div>
             ) : (
-                <div className="text-center py-16 bg-gray-50 rounded-xl">
-                    <Ticket className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+                <div className="text-center py-12 sm:py-16 bg-gray-50 rounded-xl">
+                    <Ticket className="h-14 w-14 sm:h-16 sm:w-16 mx-auto text-gray-300 mb-4" />
                     <h3 className="text-xl font-semibold text-gray-600 mb-2">
                         No tienes entradas
                     </h3>

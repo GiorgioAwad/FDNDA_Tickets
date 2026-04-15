@@ -98,13 +98,13 @@ export default function RegisterPage() {
 
     if (success) {
         return (
-            <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 bg-gradient-to-b from-gray-50 to-white">
+            <div className="min-h-[80vh] flex items-center justify-center py-8 sm:py-12 px-4 bg-gradient-to-b from-gray-50 to-white">
                 <Card className="w-full max-w-md shadow-xl border-0">
-                    <CardContent className="pt-10 pb-8 text-center">
-                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-600 mb-4">
-                            <CheckCircle className="h-8 w-8" />
+                    <CardContent className="pt-8 pb-8 text-center sm:pt-10">
+                        <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-green-100 text-green-600 mb-4">
+                            <CheckCircle className="h-7 w-7 sm:h-8 sm:w-8" />
                         </div>
-                        <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
                             ¡Registro Exitoso!
                         </h2>
                         <p className="text-gray-600 mb-6">
@@ -129,18 +129,18 @@ export default function RegisterPage() {
         <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 bg-gradient-to-b from-gray-50 to-white">
             <div className="w-full max-w-md">
                 {/* Logo */}
-                <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 mb-4">
+                <div className="text-center mb-6 sm:mb-8">
+                    <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 mb-3 sm:mb-4">
                     <Image
                         src="/logo.png"
                         alt="FDNDA"
                         width={48}
                         height={48}
-                        className="h-12 w-12 object-contain"
+                        className="h-10 w-10 sm:h-12 sm:w-12 object-contain"
                         priority
                     />
                 </div>
-                    <h1 className="text-2xl font-bold text-gray-900">Ticketing FDNDA</h1>
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Ticketing FDNDA</h1>
                 </div>
 
                 <Card className="shadow-xl border-0">

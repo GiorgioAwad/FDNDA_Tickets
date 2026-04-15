@@ -35,13 +35,13 @@ function Section({
 export default function PrivacidadPage() {
     return (
         <div className="min-h-screen bg-gray-50">
-            <div className="container mx-auto max-w-4xl px-4 py-12">
-                <h1 className="text-3xl font-bold text-gray-900">Politica de Privacidad</h1>
+            <div className="container mx-auto max-w-4xl px-4 py-8 sm:py-12">
+                <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Politica de Privacidad</h1>
                 <p className="mt-2 text-sm text-gray-500">
                     Ultima actualizacion: {formatPublishedDate(LAST_UPDATED)}
                 </p>
 
-                <div className="mt-8 rounded-xl border bg-white p-8 shadow-sm">
+                <div className="mt-6 rounded-xl border bg-white p-4 shadow-sm sm:mt-8 sm:p-8">
                     <Section title="1. Responsable del tratamiento">
                         <p>
                             {LEGAL_ENTITY_NAME}, a traves de {LEGAL_COMMERCIAL_NAME}, es responsable del tratamiento de los datos personales que se recopilan mediante este sitio web, formularios, procesos de registro, compra de entradas, atencion al usuario y Libro de Reclamaciones.

@@ -37,13 +37,13 @@ function Section({
 export default function TerminosPage() {
     return (
         <div className="min-h-screen bg-gray-50">
-            <div className="container mx-auto max-w-4xl px-4 py-12">
-                <h1 className="text-3xl font-bold text-gray-900">Terminos y Condiciones</h1>
+            <div className="container mx-auto max-w-4xl px-4 py-8 sm:py-12">
+                <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Terminos y Condiciones</h1>
                 <p className="mt-2 text-sm text-gray-500">
                     Ultima actualizacion: {formatPublishedDate(LAST_UPDATED)}
                 </p>
 
-                <div className="mt-8 rounded-xl border bg-white p-8 shadow-sm">
+                <div className="mt-6 rounded-xl border bg-white p-4 shadow-sm sm:mt-8 sm:p-8">
                     <Section title="1. Identificacion del proveedor">
                         <p>
                             Estos Terminos y Condiciones regulan el acceso y uso del sitio web y la plataforma de ticketing de {LEGAL_ENTITY_NAME}, identificada comercialmente como {LEGAL_COMMERCIAL_NAME}, con domicilio en {LEGAL_ADDRESS}.

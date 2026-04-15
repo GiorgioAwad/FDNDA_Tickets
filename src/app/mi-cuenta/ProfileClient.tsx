@@ -115,7 +115,7 @@ export default function ProfileClient({ user }: ProfileClientProps) {
                         </div>
                     </div>
                     <div>
-                        <Button onClick={handleProfileSave} loading={profileLoading}>
+                        <Button onClick={handleProfileSave} loading={profileLoading} className="w-full sm:w-auto">
                             Guardar cambios
                         </Button>
                     </div>
@@ -166,7 +166,7 @@ export default function ProfileClient({ user }: ProfileClientProps) {
                         </div>
                     </div>
                     <div>
-                        <Button onClick={handlePasswordSave} loading={passwordLoading}>
+                        <Button onClick={handlePasswordSave} loading={passwordLoading} className="w-full sm:w-auto">
                             Actualizar contraseña
                         </Button>
                     </div>

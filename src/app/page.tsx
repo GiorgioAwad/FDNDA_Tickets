@@ -94,7 +94,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     <div className="flex flex-col">
       <HomeVerificationPopup open={showVerificationPopup} />
       {/* Hero Section */}
-      <section className="relative min-h-[85vh] flex items-center justify-center overflow-hidden">
+      <section className="relative flex min-h-[72vh] items-center justify-center overflow-hidden sm:min-h-[80vh] lg:min-h-[85vh]">
         {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-[hsl(210,100%,20%)] via-[hsl(210,100%,30%)] to-[hsl(200,100%,40%)]" />
 
@@ -113,36 +113,36 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
 
         {/* Content */}
-        <div className="container mx-auto px-4 relative z-10 text-center text-white">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm mb-6">
+        <div className="container mx-auto px-4 py-16 relative z-10 text-center text-white sm:py-20">
+          <div className="inline-flex max-w-full items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm mb-5 sm:mb-6 sm:gap-2 sm:px-4 sm:py-2">
             <Image
               src="/logo.png"
               alt="FDNDA"
               width={20}
               height={20}
-              className="h-5 w-5 object-contain"
+              className="h-4 w-4 object-contain sm:h-5 sm:w-5"
               priority
             />
-            <Waves className="h-5 w-5" />
-            <span className="text-[13px] font-semibold tracking-wide">
+            <Waves className="h-4 w-4 sm:h-5 sm:w-5" />
+            <span className="text-[11px] font-semibold tracking-wide sm:text-[13px]">
               {"Federaci\u00f3n Deportiva Nacional de Deportes Acu\u00e1ticos"}
             </span>
           </div>
 
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold mb-4 sm:mb-6 leading-tight">
             Vive la Emoción del
             <br />
             <span className="text-[hsl(var(--fdnda-accent))]">Deporte Acuático</span>
           </h1>
 
-          <p className="text-lg md:text-xl text-white/80 max-w-2xl mx-auto mb-8">
+          <p className="text-base sm:text-lg md:text-xl text-white/80 max-w-2xl mx-auto mb-6 sm:mb-8 px-2 sm:px-0">
             Compra tus entradas para los mejores eventos de natación, waterpolo,
             clavados y más. Experiencias únicas que no puedes perderte.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/eventos">
-              <Button size="xl" className="bg-white text-[hsl(210,100%,25%)] hover:bg-white/90 gap-2">
+              <Button size="xl" className="w-full sm:w-auto bg-white text-[hsl(210,100%,25%)] hover:bg-white/90 gap-2">
                 Ver Eventos
                 <ArrowRight className="h-5 w-5" />
               </Button>
@@ -152,7 +152,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 <Button
                   size="xl"
                   variant="outline"
-                  className="border-white text-white bg-transparent hover:bg-white/10 hover:text-white"
+                  className="w-full sm:w-auto border-white text-white bg-transparent hover:bg-white/10 hover:text-white"
                 >
                   Crear Cuenta Gratis
                 </Button>
@@ -161,17 +161,17 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-16 max-w-3xl mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-10 sm:mt-16 max-w-3xl mx-auto">
             {[
               { label: "Años de Historia", value: "100", icon: Timer },
               { label: "Disciplinas", value: "6", icon: Trophy },
               { label: "Año de Fundación", value: "1926", icon: Calendar },
               { label: "Plataforma Oficial", value: "1", icon: Shield },
             ].map((stat) => (
-              <div key={stat.label} className="p-4 rounded-xl bg-white/10 backdrop-blur-sm">
-                <stat.icon className="h-6 w-6 mb-2 mx-auto text-[hsl(var(--fdnda-accent))]" />
-                <div className="text-2xl md:text-3xl font-bold">{stat.value}</div>
-                <div className="text-sm text-white/70">{stat.label}</div>
+              <div key={stat.label} className="p-3 sm:p-4 rounded-xl bg-white/10 backdrop-blur-sm">
+                <stat.icon className="h-5 w-5 sm:h-6 sm:w-6 mb-2 mx-auto text-[hsl(var(--fdnda-accent))]" />
+                <div className="text-xl sm:text-2xl md:text-3xl font-bold">{stat.value}</div>
+                <div className="text-xs sm:text-sm text-white/70">{stat.label}</div>
               </div>
             ))}
           </div>
@@ -179,11 +179,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       </section>
 
       {/* Upcoming Events Section */}
-      <section className="py-20 bg-gradient-to-b from-white to-gray-50">
+      <section className="py-14 sm:py-20 bg-gradient-to-b from-white to-gray-50">
         <div className="container mx-auto px-4">
-          <div className="text-center mb-12">
+          <div className="text-center mb-8 sm:mb-12">
             <Badge variant="info" className="mb-4">Próximamente</Badge>
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-4">
               Próximos Eventos
             </h2>
             <p className="text-gray-600 max-w-2xl mx-auto">
@@ -218,7 +218,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                       )}
                     </div>
 
-                    <CardContent className="p-5">
+                    <CardContent className="p-4 sm:p-5">
                       <h3 className="font-bold text-lg mb-2 line-clamp-2 group-hover:text-[hsl(210,100%,40%)] transition-colors">
                         {event.title}
                       </h3>
@@ -265,7 +265,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           )}
 
           {events.length > 0 && (
-            <div className="text-center mt-10">
+            <div className="text-center mt-8 sm:mt-10">
               <Link href="/eventos">
                 <Button size="lg" variant="outline" className="gap-2">
                   Ver todos los eventos
@@ -279,16 +279,16 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
             {/* CTA Section */}
       {showRegister && (
-        <section className="py-16 bg-gradient-fdnda">
+        <section className="py-12 sm:py-16 bg-gradient-fdnda">
           <div className="container mx-auto px-4 text-center text-white">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4">
               {"\u00bfListo para vivir la experiencia?"}
             </h2>
-            <p className="text-white/80 mb-8 max-w-xl mx-auto">
+            <p className="text-sm sm:text-base text-white/80 mb-8 max-w-xl mx-auto">
               Crea tu cuenta gratis y accede a todos los eventos de la FDNDA.
             </p>
             <Link href="/register">
-              <Button size="xl" className="bg-white text-[hsl(210,100%,25%)] hover:bg-white/90">
+              <Button size="xl" className="w-full sm:w-auto bg-white text-[hsl(210,100%,25%)] hover:bg-white/90">
                 Crear Cuenta Gratis
               </Button>
             </Link>

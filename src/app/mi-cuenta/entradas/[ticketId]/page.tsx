@@ -318,7 +318,7 @@ export default function TicketDetailPage() {
     const remainingCount = Math.max(totalCount - usedDisplayCount, 0)
 
     return (
-        <div className="min-h-screen bg-gray-50 py-8 px-4 print-page">
+        <div className="min-h-screen bg-gray-50 py-6 sm:py-8 px-4 print-page">
             <div className="max-w-md mx-auto print-container">
                 <Link
                     href="/mi-cuenta/entradas"
@@ -330,10 +330,10 @@ export default function TicketDetailPage() {
 
                 <div className="ticket-container bg-white shadow-2xl rounded-2xl overflow-hidden">
                     {/* Ticket Header */}
-                    <div className="bg-gradient-fdnda p-6 text-white relative overflow-hidden">
+                    <div className="bg-gradient-fdnda p-4 sm:p-6 text-white relative overflow-hidden">
                         <div className="ticket-pattern absolute inset-0 opacity-10" />
                         <div className="relative z-10 text-center">
-                            <h2 className="font-bold text-xl mb-2">{ticket.event.title}</h2>
+                            <h2 className="font-bold text-lg sm:text-xl mb-2">{ticket.event.title}</h2>
                             <Badge className="bg-white/20 text-white border-0">
                                 {ticket.ticketType.name}
                             </Badge>
@@ -341,7 +341,7 @@ export default function TicketDetailPage() {
                     </div>
 
                     {/* QR Section */}
-                    <div className="bg-white p-8 flex flex-col items-center justify-center border-b border-dashed border-gray-300 relative print-qr-section">
+                    <div className="bg-white p-5 sm:p-8 flex flex-col items-center justify-center border-b border-dashed border-gray-300 relative print-qr-section">
                         {/* Cutout circles */}
                         <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-gray-50 rounded-full" />
                         <div className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-gray-50 rounded-full" />
@@ -356,10 +356,10 @@ export default function TicketDetailPage() {
                                         width={256}
                                         height={256}
                                         unoptimized
-                                        className="w-56 h-56 object-contain print-qr"
+                                        className="w-44 h-44 sm:w-56 sm:h-56 object-contain print-qr"
                                     />
                                     ) : (
-                                        <div className="w-64 h-64 flex items-center justify-center bg-gray-100 rounded-xl">
+                                        <div className="w-44 h-44 sm:w-64 sm:h-64 flex items-center justify-center bg-gray-100 rounded-xl">
                                             <span className="text-gray-400 font-medium">QR no disponible</span>
                                         </div>
                                     )}
@@ -373,14 +373,14 @@ export default function TicketDetailPage() {
                                 </div>
                             </>
                         ) : (
-                            <div className="w-64 h-64 flex items-center justify-center bg-gray-100 rounded-xl mb-4">
+                            <div className="w-44 h-44 sm:w-64 sm:h-64 flex items-center justify-center bg-gray-100 rounded-xl mb-4">
                                 <span className="text-gray-400 font-medium">Ticket Inactivo</span>
                             </div>
                         )}
                     </div>
 
                     {/* Details Section */}
-                    <div className="bg-white p-6 space-y-4">
+                    <div className="bg-white p-4 sm:p-6 space-y-4">
                         <div className="flex items-start gap-3">
                             <User className="h-5 w-5 text-gray-400 mt-0.5" />
                             <div>
@@ -425,10 +425,10 @@ export default function TicketDetailPage() {
                     </div>
 
                     {/* Carnet Section */}
-                    <div className="bg-white p-6 border-t carnet-section print-carnet-section">
+                    <div className="bg-white p-4 sm:p-6 border-t carnet-section print-carnet-section">
                         <div className="flex items-center justify-between mb-4">
                             <div>
-                                <h3 className="text-lg font-semibold">Carnet de asistencia</h3>
+                                <h3 className="text-base sm:text-lg font-semibold">Carnet de asistencia</h3>
                                 <p className="text-sm text-gray-500">
                                     {usedDisplayCount}/{totalCount} clases usadas - {remainingCount} restantes
                                 </p>
@@ -473,7 +473,7 @@ export default function TicketDetailPage() {
                 </div>
 
                 <div className="mt-6 text-center print-hidden">
-                    <Button variant="outline" className="gap-2" onClick={() => window.print()}>
+                    <Button variant="outline" className="w-full sm:w-auto gap-2" onClick={() => window.print()}>
                         <Download className="h-4 w-4" />
                         Descargar carnet
                     </Button>

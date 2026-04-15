@@ -102,11 +102,11 @@ export default function ComplaintBookForm() {
 
     if (ticketNumber) {
         return (
-            <div className="rounded-2xl border border-green-200 bg-green-50 p-6">
+            <div className="rounded-2xl border border-green-200 bg-green-50 p-4 sm:p-6">
                 <div className="flex items-start gap-3">
                     <CheckCircle2 className="mt-1 h-6 w-6 text-green-600" />
                     <div>
-                        <h3 className="text-xl font-semibold text-green-900">
+                        <h3 className="text-lg font-semibold text-green-900 sm:text-xl">
                             Solicitud registrada
                         </h3>
                         <p className="mt-2 text-sm text-green-800">
@@ -119,7 +119,7 @@ export default function ComplaintBookForm() {
                             Hemos enviado un acuse al correo consignado. Conserva esta constancia.
                         </p>
                         <Button
-                            className="mt-4"
+                            className="mt-4 w-full sm:w-auto"
                             onClick={() => {
                                 setTicketNumber("")
                                 setError("")
@@ -134,7 +134,7 @@ export default function ComplaintBookForm() {
     }
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-8">
+        <form onSubmit={handleSubmit} className="space-y-6 sm:space-y-8">
             {error && (
                 <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                     <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
@@ -171,7 +171,7 @@ export default function ComplaintBookForm() {
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+            <section className="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-5">
                 <h3 className="text-lg font-semibold text-gray-900">Datos del consumidor</h3>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <label className="flex items-center gap-2 text-sm text-gray-700 md:col-span-2">
@@ -246,7 +246,7 @@ export default function ComplaintBookForm() {
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-white p-5">
+            <section className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
                 <h3 className="text-lg font-semibold text-gray-900">Detalle de la solicitud</h3>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">

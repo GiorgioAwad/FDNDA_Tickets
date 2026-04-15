@@ -32,13 +32,13 @@ export default function HomeVerificationPopup({ open }: HomeVerificationPopupPro
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
-            <div className="relative z-10 w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
-                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600">
-                    <CheckCircle2 className="h-9 w-9" />
+            <div className="relative z-10 w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl sm:p-8">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-green-600 sm:mb-5 sm:h-16 sm:w-16">
+                    <CheckCircle2 className="h-8 w-8 sm:h-9 sm:w-9" />
                 </div>
 
                 <div className="text-center">
-                    <h2 className="text-2xl font-bold text-gray-900">Cuenta verificada</h2>
+                    <h2 className="text-xl font-bold text-gray-900 sm:text-2xl">Cuenta verificada</h2>
                     <p className="mt-3 text-sm text-gray-600">
                         Tu cuenta fue verificada correctamente. Ya puedes iniciar sesi&oacute;n y comprar tus entradas.
                     </p>
