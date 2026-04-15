@@ -6,7 +6,7 @@ import {
     verifyIzipaySdkSignature,
 } from "@/lib/izipay"
 import { acquireLock, releaseLock } from "@/lib/cache"
-import { cancelIzipayOrder, fulfillIzipayOrder } from "@/lib/izipay-payment"
+import { cancelIzipayOrder, fulfillIzipayOrder, resolveIzipayOrderId } from "@/lib/izipay-payment"
 import { getPublicAppUrl } from "@/lib/public-url"
 
 export const runtime = "nodejs"
@@ -76,7 +76,21 @@ export async function POST(request: NextRequest) {
         }
     }
 
-    const lockKey = `redirect:order:${parsed.orderId}`
+    // Resolve Izipay's merchant order number to our internal order ID
+    const resolvedOrderId = await resolveIzipayOrderId(parsed.orderId)
+    if (!resolvedOrderId) {
+        return NextResponse.redirect(
+            buildRedirectUrl(
+                request,
+                "/checkout/cancel",
+                parsed.orderId,
+                "No se pudo resolver la orden"
+            ),
+            { status: 303 }
+        )
+    }
+
+    const lockKey = `redirect:order:${resolvedOrderId}`
     let lockAcquired = false
 
     try {
@@ -87,7 +101,7 @@ export async function POST(request: NextRequest) {
 
             if (isIzipayPaymentApproved(parsed)) {
                 const result = await fulfillIzipayOrder({
-                    orderId: parsed.orderId,
+                    orderId: resolvedOrderId,
                     providerRef: parsed.transactionId,
                     providerResponse,
                 })
@@ -97,7 +111,7 @@ export async function POST(request: NextRequest) {
                         buildRedirectUrl(
                             request,
                             "/checkout/cancel",
-                            parsed.orderId,
+                            resolvedOrderId,
                             result.error || "No se pudo confirmar la orden"
                         ),
                         { status: 303 }
@@ -105,13 +119,13 @@ export async function POST(request: NextRequest) {
                 }
 
                 return NextResponse.redirect(
-                    buildRedirectUrl(request, "/checkout/success", parsed.orderId),
+                    buildRedirectUrl(request, "/checkout/success", resolvedOrderId),
                     { status: 303 }
                 )
             }
 
             await cancelIzipayOrder({
-                orderId: parsed.orderId,
+                orderId: resolvedOrderId,
                 providerResponse,
             })
         }
@@ -120,7 +134,7 @@ export async function POST(request: NextRequest) {
             buildRedirectUrl(
                 request,
                 "/checkout/cancel",
-                parsed.orderId,
+                resolvedOrderId,
                 parsed.messageUser || parsed.message
             ),
             { status: 303 }
