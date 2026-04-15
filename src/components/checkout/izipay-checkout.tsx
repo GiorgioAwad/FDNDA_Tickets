@@ -172,6 +172,12 @@ export default function IzipayCheckout({
                     return
                 }
 
+                if (data.data?.status === "PENDING") {
+                    onSuccess?.()
+                    router.push(`/checkout/success?orderId=${data.data.orderId || orderId}`)
+                    return
+                }
+
                 const message = data.data?.message || sdkMessage
 
                 setError(message)
@@ -184,6 +190,8 @@ export default function IzipayCheckout({
                     "Error validando el pago con Izipay"
                 setError(message)
                 onError?.(message)
+                // Redirect to success so reconciliation polling can resolve the payment
+                router.push(`/checkout/success?orderId=${orderId}`)
             } finally {
                 if (mountedRef.current) {
                     setLoading(false)
