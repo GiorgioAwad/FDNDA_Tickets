@@ -78,7 +78,7 @@ export default function CartFloatingButton() {
             }`}
         >
             <div
-                className={`absolute bottom-full right-0 mb-3 w-80 origin-bottom-right transition-all duration-200 ${
+                className={`absolute bottom-full right-0 mb-3 w-[calc(100vw-3rem)] sm:w-80 origin-bottom-right transition-all duration-200 ${
                     isPanelOpen
                         ? "opacity-100 translate-y-0 pointer-events-auto"
                         : "opacity-0 translate-y-2 pointer-events-none"

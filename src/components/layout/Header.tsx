@@ -140,7 +140,7 @@ export function Header() {
 
             {/* Mobile Sidebar */}
             <aside 
-                className={`fixed top-0 left-0 h-full w-[300px] bg-white z-[9999] md:hidden transform transition-transform duration-300 ease-out shadow-2xl ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
+                className={`fixed top-0 left-0 h-full w-[min(300px,85vw)] bg-white z-[9999] md:hidden transform transition-transform duration-300 ease-out shadow-2xl ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
             >
                 <div className="flex flex-col h-full">
                     <div className="flex items-center justify-between p-4 border-b">

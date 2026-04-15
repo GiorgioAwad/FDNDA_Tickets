@@ -52,6 +52,7 @@ type PoolSlotOption = {
     ticketId: string
     date: string
     label: string
+    startMinutes: number | null
     price: number
     selectable: boolean
     ticketName: string
@@ -393,13 +394,14 @@ export default function TicketPurchaseCard({
                     ticketId: entry.ticket.id,
                     date: dateState.date,
                     label: getPoolSlotLabel(entry.ticket),
+                    startMinutes: getPoolSlotStartMinutes(entry.ticket),
                     price: entry.ticket.price,
                     selectable: !dateState.soldOut,
                     ticketName: entry.ticket.name,
                 }))
         ).sort((a, b) => {
             if (a.date !== b.date) return a.date.localeCompare(b.date)
-            return a.label.localeCompare(b.label)
+            return (a.startMinutes ?? Infinity) - (b.startMinutes ?? Infinity)
         })
     }, [eventCategory, limaClock, ticketMeta])
 
@@ -773,7 +775,7 @@ export default function TicketPurchaseCard({
                                                             <button
                                                                 key={option.date}
                                                                 type="button"
-                                                                className={`min-w-[13rem] shrink-0 rounded-xl border p-3 text-left transition sm:min-w-0 sm:rounded-2xl sm:p-4 ${
+                                                                className={`min-w-[10.5rem] shrink-0 rounded-xl border p-3 text-left transition sm:min-w-0 sm:rounded-2xl sm:p-4 ${
                                                                     isSelected
                                                                         ? "border-emerald-500 bg-emerald-50 shadow-sm"
                                                                         : option.hasSelectableSlots
@@ -813,7 +815,7 @@ export default function TicketPurchaseCard({
                                                 </div>
                                                 {visiblePoolSlots.length > 0 ? (
                                                     <div className="max-h-[20rem] overflow-y-auto pr-1 sm:max-h-none sm:overflow-visible sm:pr-0">
-                                                        <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                                                        <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-2 2xl:grid-cols-3">
                                                         {visiblePoolSlots.map((slot) => {
                                                             const isSelected = slot.key === selectedPoolSlotKey
                                                             return (
@@ -836,7 +838,7 @@ export default function TicketPurchaseCard({
                                                                                 <Clock className="h-3.5 w-3.5 text-slate-500 sm:h-4 sm:w-4" />
                                                                                 Horario
                                                                             </div>
-                                                                            <div className="text-lg font-bold leading-tight text-slate-900 sm:text-2xl">
+                                                                            <div className="text-base font-bold leading-tight text-slate-900 sm:text-2xl">
                                                                                 {slot.label}
                                                                             </div>
                                                                         </div>
