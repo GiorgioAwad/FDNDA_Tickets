@@ -22,7 +22,7 @@ export type ScanTicket = {
     attendeeDni: string | null
     status: "ACTIVE" | "CANCELLED" | "EXPIRED"
     eventId: string
-    event: { title: string; startDate: Date; endDate: Date }
+    event: { title: string; startDate: Date; endDate: Date; category?: string }
     ticketType: { 
         name: string
         isPackage: boolean
