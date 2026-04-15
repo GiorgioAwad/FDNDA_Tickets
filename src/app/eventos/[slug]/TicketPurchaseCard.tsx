@@ -731,19 +731,19 @@ export default function TicketPurchaseCard({
     )
 
     return (
-        <Card className={isPoolFreeView ? "" : "sticky top-24"}>
+        <Card className={isPoolFreeView ? "overflow-hidden" : "sticky top-24"}>
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <ShoppingCart className="h-5 w-5" />
                     Entradas
                 </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 overflow-hidden">
                 {ticketTypes.length > 0 ? (
                     <>
                         {isPoolFreeView ? (
                             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,380px)] xl:items-start xl:gap-6">
-                                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5 sm:space-y-3 sm:rounded-2xl sm:p-5">
+                                <div className="min-w-0 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5 sm:space-y-3 sm:rounded-2xl sm:p-5">
                                     <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                                         <div>
                                             <h4 className="text-base font-bold text-slate-900 sm:text-2xl">Fecha y Hora</h4>
@@ -768,14 +768,15 @@ export default function TicketPurchaseCard({
                                                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700 sm:text-sm sm:normal-case sm:tracking-normal">
                                                     Fecha
                                                 </div>
-                                                <div className="flex flex-wrap gap-1.5 sm:grid sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
+                                                <div className="-mx-2.5 overflow-x-auto px-2.5 pb-1 sm:mx-0 sm:overflow-visible sm:px-0 sm:pb-0">
+                                                    <div className="inline-flex gap-1.5 sm:grid sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
                                                     {(showAllPoolSlots ? poolDateOptions : poolDateOptions.slice(0, 7)).map((option) => {
                                                         const isSelected = option.date === selectedPoolDate
                                                         return (
                                                             <button
                                                                 key={option.date}
                                                                 type="button"
-                                                                className={`rounded-md border px-2 py-1 text-left text-[11px] font-medium transition sm:rounded-2xl sm:p-4 sm:text-sm ${
+                                                                className={`whitespace-nowrap rounded-md border px-2 py-1.5 text-left text-[11px] font-medium transition sm:whitespace-normal sm:rounded-2xl sm:p-4 sm:text-sm ${
                                                                     isSelected
                                                                         ? "border-emerald-500 bg-emerald-50"
                                                                         : option.hasSelectableSlots
@@ -786,9 +787,9 @@ export default function TicketPurchaseCard({
                                                                 disabled={!option.hasSelectableSlots}
                                                             >
                                                                 <span className="flex items-center gap-1 sm:hidden">
-                                                                    <Calendar className="h-2.5 w-2.5 text-slate-400" />
+                                                                    <Calendar className="h-2.5 w-2.5 flex-shrink-0 text-slate-400" />
                                                                     <span>{option.label}</span>
-                                                                    {isSelected && <CheckCircle className="ml-0.5 h-3 w-3 text-emerald-600" />}
+                                                                    {isSelected && <CheckCircle className="ml-0.5 h-3 w-3 flex-shrink-0 text-emerald-600" />}
                                                                 </span>
                                                                 <div className="hidden sm:flex sm:items-start sm:justify-between sm:gap-3">
                                                                     <div className="space-y-1">
@@ -811,6 +812,7 @@ export default function TicketPurchaseCard({
                                                             </button>
                                                         )
                                                     })}
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -819,7 +821,7 @@ export default function TicketPurchaseCard({
                                                     Horarios
                                                 </div>
                                                 {visiblePoolSlots.length > 0 ? (
-                                                    <div className="max-h-[12rem] overflow-y-auto sm:max-h-none sm:overflow-visible">
+                                                    <div className="max-h-[12rem] overflow-y-auto overflow-x-hidden sm:max-h-none sm:overflow-visible">
                                                         <div className="flex flex-col gap-1 sm:grid sm:grid-cols-2 sm:gap-4 md:grid-cols-3">
                                                         {visiblePoolSlots.map((slot) => {
                                                             const isSelected = slot.key === selectedPoolSlotKey
@@ -827,7 +829,7 @@ export default function TicketPurchaseCard({
                                                                 <button
                                                                     key={slot.key}
                                                                     type="button"
-                                                                    className={`flex items-center justify-between rounded-md border px-2.5 py-1.5 text-left transition sm:flex-col sm:items-start sm:gap-2 sm:rounded-2xl sm:p-5 ${
+                                                                    className={`flex min-w-0 items-center justify-between gap-1 rounded-md border px-2 py-1.5 text-left transition sm:flex-col sm:items-start sm:gap-2 sm:rounded-2xl sm:p-5 ${
                                                                         isSelected
                                                                             ? "border-emerald-500 bg-emerald-50"
                                                                             : slot.selectable
@@ -837,18 +839,18 @@ export default function TicketPurchaseCard({
                                                                     onClick={() => slot.selectable && setSelectedPoolSlotKey(slot.key)}
                                                                     disabled={!slot.selectable}
                                                                 >
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <Clock className="h-3 w-3 text-slate-400 sm:h-4 sm:w-4" />
-                                                                        <span className="text-xs font-bold text-slate-900 sm:text-2xl">
+                                                                    <div className="flex min-w-0 items-center gap-1.5">
+                                                                        <Clock className="h-3 w-3 flex-shrink-0 text-slate-400 sm:h-4 sm:w-4" />
+                                                                        <span className="truncate text-xs font-bold text-slate-900 sm:text-2xl sm:whitespace-normal">
                                                                             {slot.label}
                                                                         </span>
                                                                     </div>
                                                                     {isSelected ? (
-                                                                        <CheckCircle className="h-3.5 w-3.5 text-emerald-600 sm:h-5 sm:w-5" />
+                                                                        <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-emerald-600 sm:h-5 sm:w-5" />
                                                                     ) : slot.selectable ? (
-                                                                        <ChevronRight className="h-3.5 w-3.5 text-slate-400 sm:hidden" />
+                                                                        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-slate-400 sm:hidden" />
                                                                     ) : (
-                                                                        <span className="text-[10px] font-semibold uppercase text-slate-500 sm:text-xs">Agotado</span>
+                                                                        <span className="flex-shrink-0 text-[10px] font-semibold uppercase text-slate-500 sm:text-xs">Agotado</span>
                                                                     )}
                                                                 </button>
                                                             )
@@ -869,7 +871,7 @@ export default function TicketPurchaseCard({
                                     )}
                                 </div>
 
-                                <div className="space-y-4 xl:sticky xl:top-24">
+                                <div className="min-w-0 space-y-4 overflow-hidden xl:sticky xl:top-24">
                                     {purchasePanel}
                                 </div>
                             </div>
