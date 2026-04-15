@@ -13,6 +13,7 @@ import {
 } from "@/lib/izipay"
 import { storeIzipayOrderCorrelation } from "@/lib/izipay-payment"
 import { fulfillPaidOrder } from "@/lib/order-fulfillment"
+import { getPublicAppUrl } from "@/lib/public-url"
 
 export const runtime = "nodejs"
 const MOBILE_CHECKOUT_REGEX =
@@ -207,8 +208,7 @@ export async function POST(request: NextRequest) {
         const publicKey = resolveIzipayPublicKey()
         const apiKey = process.env.IZIPAY_API_KEY || ""
         const hashKey = process.env.IZIPAY_HASH_KEY || ""
-        const appUrl =
-            (process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin).replace(/\/$/, "")
+        const appUrl = getPublicAppUrl(request)
         const mode = resolveCheckoutMode(request, getIzipayMode())
 
         if (!merchantCode || !apiKey || !hashKey || !publicKey || !appUrl) {

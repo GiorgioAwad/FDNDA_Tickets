@@ -7,13 +7,14 @@ import {
 } from "@/lib/izipay"
 import { acquireLock, releaseLock } from "@/lib/cache"
 import { cancelIzipayOrder, fulfillIzipayOrder } from "@/lib/izipay-payment"
+import { getPublicAppUrl } from "@/lib/public-url"
 
 export const runtime = "nodejs"
 
 const LOCK_TTL_SECONDS = 30
 
 function buildRedirectUrl(request: NextRequest, pathname: string, orderId?: string, message?: string) {
-    const url = new URL(pathname, request.url)
+    const url = new URL(pathname, getPublicAppUrl(request))
     if (orderId) {
         url.searchParams.set("orderId", orderId)
     }
