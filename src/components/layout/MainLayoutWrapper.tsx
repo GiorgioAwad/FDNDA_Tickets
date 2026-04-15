@@ -16,9 +16,9 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
 
     // Para el resto del sitio, renderizamos el layout completo
     return (
-        <div className="flex min-h-screen flex-col">
+        <div className="flex min-h-screen flex-col overflow-x-hidden">
             <Header />
-            <main className="flex-1">{children}</main>
+            <main className="flex-1 overflow-x-hidden">{children}</main>
             <CartFloatingButton />
             <Footer />
         </div>

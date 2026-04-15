@@ -768,7 +768,7 @@ export default function TicketPurchaseCard({
                                                 <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 sm:text-sm sm:normal-case sm:tracking-normal">
                                                     Fecha
                                                 </div>
-                                                <div className="flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible xl:grid-cols-3">
+                                                <div className="flex gap-2 overflow-x-auto overscroll-x-contain pb-1 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible xl:grid-cols-3">
                                                     {(showAllPoolSlots ? poolDateOptions : poolDateOptions.slice(0, 7)).map((option) => {
                                                         const isSelected = option.date === selectedPoolDate
                                                         return (
