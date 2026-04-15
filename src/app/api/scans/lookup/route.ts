@@ -232,6 +232,9 @@ export async function POST(request: NextRequest) {
             })
         }
 
+        const isPiscina = ticket.event?.category === "PISCINA_LIBRE"
+        const clasesLabel = isPiscina ? "asistencias" : "clases"
+
         const validDays = generateEntitlements(ticket)
         if (validDays.length > 0) {
             await prisma.ticketDayEntitlement.createMany({
@@ -401,12 +404,12 @@ export async function POST(request: NextRequest) {
         if (!entitlement && isPackageLike && !strictDateSchedule) {
             const attendance = computeAttendance()
             if (packageLimit && attendance.remaining <= 0) {
-                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Sin ${clasesLabel} disponibles`)
                 return NextResponse.json({
                     success: false,
                     valid: false,
                     reason: "NO_CLASSES",
-                    message: "No tiene clases disponibles",
+                    message: `No tiene ${clasesLabel} disponibles`,
                     scannedAt: new Date().toISOString(),
                     attendance,
                 })
@@ -425,12 +428,12 @@ export async function POST(request: NextRequest) {
         if (!entitlement) {
             const attendance = computeAttendance()
             if (packageLimit && attendance.remaining <= 0) {
-                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Sin clases disponibles")
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Sin ${clasesLabel} disponibles`)
                 return NextResponse.json({
                     success: false,
                     valid: false,
                     reason: "NO_CLASSES",
-                    message: "No tiene clases disponibles",
+                    message: `No tiene ${clasesLabel} disponibles`,
                     scannedAt: new Date().toISOString(),
                     attendance,
                 })
@@ -443,7 +446,7 @@ export async function POST(request: NextRequest) {
                 reason: strictDateSchedule ? "WRONG_DAY" : "NO_CLASSES",
                 message: strictDateSchedule
                     ? "Este ticket no es valido para hoy"
-                    : "No tiene clases disponibles",
+                    : `No tiene ${clasesLabel} disponibles`,
                 scannedAt: new Date().toISOString(),
                 attendance,
             })

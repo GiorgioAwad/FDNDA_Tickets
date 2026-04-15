@@ -4,6 +4,7 @@ import { getCurrentUser, hasRole } from "@/lib/auth"
 import { invalidateTicketTypeCache } from "@/lib/cache"
 import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { isPoolFreeEventCategory } from "@/lib/pool-free"
+import { getAbioCatalogConfig } from "@/lib/abio-catalog"
 import { Prisma } from "@prisma/client"
 import { parseDateOnly } from "@/lib/utils"
 
@@ -183,6 +184,33 @@ export async function POST(request: NextRequest) {
                 }
             } else {
                 resolvedBindingId = null
+            }
+        }
+
+        // Auto-resolve binding for pool ticket types when individual codes are present
+        if (
+            !resolvedBindingId &&
+            resolvedSucursalCode &&
+            resolvedServiceCode &&
+            resolvedDisciplineCode &&
+            resolvedPoolCode &&
+            resolvedScheduleCode &&
+            (resolvedIndicator === "PN" || resolvedIndicator === "PA")
+        ) {
+            const config = getAbioCatalogConfig()
+            const autoBinding = await prisma.abioCatalogBinding.findFirst({
+                where: {
+                    codigoEmp: config.codigoEmp,
+                    sucursalCodigo: resolvedSucursalCode,
+                    servicioCodigo: resolvedServiceCode,
+                    disciplinaCodigo: resolvedDisciplineCode,
+                    piscinaCodigo: resolvedPoolCode,
+                    horarioCodigo: resolvedScheduleCode,
+                    isActive: true,
+                },
+            })
+            if (autoBinding) {
+                resolvedBindingId = autoBinding.id
             }
         }
 
@@ -532,7 +560,11 @@ export async function DELETE(request: NextRequest) {
             where: { ticketTypeId: id },
         })
 
-        if (sold > 0) {
+        const orderItemCount = await prisma.orderItem.count({
+            where: { ticketTypeId: id },
+        })
+
+        if (sold > 0 || orderItemCount > 0) {
             await prisma.ticketType.update({
                 where: { id },
                 data: { isActive: false },
@@ -542,7 +574,7 @@ export async function DELETE(request: NextRequest) {
 
             return NextResponse.json({
                 success: true,
-                message: "Tipo de entrada desactivado (tiene ventas)",
+                message: `Tipo de entrada desactivado (tiene ${sold > 0 ? "ventas" : "ordenes asociadas"})`,
             })
         }
 

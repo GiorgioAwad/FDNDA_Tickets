@@ -342,7 +342,7 @@ model OrderItem {
 
   // Relations
   order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
 
   @@map("order_items")
 }

@@ -21,6 +21,7 @@ interface TicketDetail {
         endDate: string
         venue: string
         location: string
+        category?: string
     }
     ticketType: {
         name: string
@@ -162,6 +163,10 @@ export default function TicketDetailPage() {
             </div>
         )
     }
+
+    const isPiscina = ticket.event?.category === "PISCINA_LIBRE"
+    const clasesLabel = isPiscina ? "asistencias" : "clases"
+    const claseLabel = isPiscina ? "Asistencia" : "Clase"
 
     const entitlements = ticket.entitlements || []
     const classCount = extractClassCount(ticket.ticketType.name)
@@ -430,7 +435,7 @@ export default function TicketDetailPage() {
                             <div>
                                 <h3 className="text-base sm:text-lg font-semibold">Carnet de asistencia</h3>
                                 <p className="text-sm text-gray-500">
-                                    {usedDisplayCount}/{totalCount} clases usadas - {remainingCount} restantes
+                                    {usedDisplayCount}/{totalCount} {clasesLabel} usadas - {remainingCount} restantes
                                 </p>
                             </div>
                             <Badge variant="secondary" className="text-xs">
@@ -457,7 +462,7 @@ export default function TicketDetailPage() {
                                             </>
                                         ) : (
                                             <>
-                                                <div className="text-[10px] uppercase text-gray-400">Clase</div>
+                                                <div className="text-[10px] uppercase text-gray-400">{claseLabel}</div>
                                                 <div className="text-sm">{index + 1}</div>
                                             </>
                                         )}
@@ -466,7 +471,7 @@ export default function TicketDetailPage() {
                             </div>
                         ) : (
                             <div className="text-sm text-gray-500">
-                                Este ticket no tiene clases registradas.
+                                Este ticket no tiene {clasesLabel} registradas.
                             </div>
                         )}
                     </div>

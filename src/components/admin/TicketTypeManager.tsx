@@ -607,7 +607,7 @@ export function TicketTypeManager({
             if (!response.ok) throw new Error("Error al eliminar")
 
             const data = await response.json()
-            if (data.message.includes("desactivado")) {
+            if (data.message?.includes("desactivado")) {
                 setTicketTypes(ticketTypes.map(t => t.id === id ? { ...t, isActive: false } : t))
             } else {
                 setTicketTypes(ticketTypes.filter(t => t.id !== id))
