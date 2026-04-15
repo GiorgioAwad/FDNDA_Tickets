@@ -300,27 +300,34 @@ export function TicketTypeManager({
                     throw new Error(payload.error || "No se pudieron cargar los horarios ABIO")
                 }
                 if (ignore) return
-                setPoolCatalogSchedules(
-                    Array.isArray(payload.data)
-                        ? payload.data.map((schedule: Record<string, unknown>) => ({
-                              id: String(schedule.id || schedule.horarioCodigo || ""),
-                              horarioCodigo: String(schedule.horarioCodigo || ""),
-                              scheduleDescription:
-                                  typeof schedule.diaDescripcion === "string"
-                                      ? schedule.diaDescripcion
-                                      : null,
-                              horaInicio:
-                                  typeof schedule.horaInicio === "string" ? schedule.horaInicio : null,
-                              horaFin: typeof schedule.horaFin === "string" ? schedule.horaFin : null,
-                              duracionHoras:
-                                  schedule.duracionHoras !== null &&
-                                  schedule.duracionHoras !== undefined &&
-                                  Number.isFinite(Number(schedule.duracionHoras))
-                                      ? Number(schedule.duracionHoras)
-                                      : null,
-                          }))
-                        : []
-                )
+                const allSchedules: PoolCatalogSchedule[] = Array.isArray(payload.data)
+                    ? payload.data.map((schedule: Record<string, unknown>) => ({
+                          id: String(schedule.id || schedule.horarioCodigo || ""),
+                          horarioCodigo: String(schedule.horarioCodigo || ""),
+                          scheduleDescription:
+                              typeof schedule.diaDescripcion === "string"
+                                  ? schedule.diaDescripcion
+                                  : null,
+                          horaInicio:
+                              typeof schedule.horaInicio === "string" ? schedule.horaInicio : null,
+                          horaFin: typeof schedule.horaFin === "string" ? schedule.horaFin : null,
+                          duracionHoras:
+                              schedule.duracionHoras !== null &&
+                              schedule.duracionHoras !== undefined &&
+                              Number.isFinite(Number(schedule.duracionHoras))
+                                  ? Number(schedule.duracionHoras)
+                                  : null,
+                      }))
+                    : []
+                // Deduplicate by time slot for piscina libre (keep first code per time window)
+                const seen = new Set<string>()
+                const deduped = allSchedules.filter((s) => {
+                    const key = `${s.horaInicio || ""}-${s.horaFin || ""}`
+                    if (!key || key === "-" || seen.has(key)) return false
+                    seen.add(key)
+                    return true
+                })
+                setPoolCatalogSchedules(deduped)
             })
             .catch((error) => {
                 console.error("Error loading pool ABIO schedules", error)
@@ -343,6 +350,7 @@ export function TicketTypeManager({
         formData.servilexEnabled,
         formData.servilexIndicator,
         formData.servilexDisciplineCode,
+        catalogRefreshKey,
     ])
 
     const currentPoolIndicatorForGenerator = (formData.servilexIndicator || "PN").toUpperCase()
@@ -988,6 +996,11 @@ export function TicketTypeManager({
                                 ? "Genera un horario por cada horario ABIO sincronizado de la disciplina elegida. La capacidad sigue siendo local; aqui defines el precio y la capacidad comercial."
                                 : "Define el rango de horas y se creara una entrada por cada hora. Luego puedes ajustar la capacidad de cada horario individualmente."}
                         </p>
+                        {poolCatalogMode && (
+                            <AbioCatalogControls
+                                onCatalogChanged={() => setCatalogRefreshKey((prev) => prev + 1)}
+                            />
+                        )}
                         {poolCatalogMode ? (
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <div>
@@ -1160,6 +1173,20 @@ export function TicketTypeManager({
                                     </div>
 
                                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">Codigo disciplina ABIO</label>
+                                            <Input
+                                                value={formData.servilexDisciplineCode || ""}
+                                                onChange={(e) =>
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        servilexDisciplineCode: e.target.value,
+                                                    }))
+                                                }
+                                                placeholder="00"
+                                                disabled={poolGenerating}
+                                            />
+                                        </div>
                                         <div className="space-y-2">
                                             <label className="text-xs font-medium">Cantidad</label>
                                             <Input
