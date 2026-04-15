@@ -765,19 +765,19 @@ export default function TicketPurchaseCard({
                                     {poolDateOptions.length > 0 ? (
                                         <div className="space-y-3 sm:space-y-5">
                                             <div className="space-y-1.5 sm:space-y-2">
-                                                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 sm:text-sm sm:normal-case sm:tracking-normal">
+                                                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700 sm:text-sm sm:normal-case sm:tracking-normal">
                                                     Fecha
                                                 </div>
-                                                <div className="flex gap-1.5 overflow-x-auto overscroll-x-contain pb-1 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible xl:grid-cols-3">
+                                                <div className="flex flex-wrap gap-1.5 sm:grid sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
                                                     {(showAllPoolSlots ? poolDateOptions : poolDateOptions.slice(0, 7)).map((option) => {
                                                         const isSelected = option.date === selectedPoolDate
                                                         return (
                                                             <button
                                                                 key={option.date}
                                                                 type="button"
-                                                                className={`min-w-[8.5rem] shrink-0 rounded-lg border px-2.5 py-2 text-left transition sm:min-w-0 sm:rounded-2xl sm:p-4 ${
+                                                                className={`rounded-md border px-2 py-1 text-left text-[11px] font-medium transition sm:rounded-2xl sm:p-4 sm:text-sm ${
                                                                     isSelected
-                                                                        ? "border-emerald-500 bg-emerald-50 shadow-sm"
+                                                                        ? "border-emerald-500 bg-emerald-50"
                                                                         : option.hasSelectableSlots
                                                                           ? "border-slate-200 bg-white hover:border-emerald-300"
                                                                           : "border-slate-200 bg-slate-100 opacity-60"
@@ -785,22 +785,27 @@ export default function TicketPurchaseCard({
                                                                 onClick={() => option.hasSelectableSlots && setSelectedPoolDate(option.date)}
                                                                 disabled={!option.hasSelectableSlots}
                                                             >
-                                                                <div className="flex items-center justify-between gap-2 sm:items-start sm:gap-3">
-                                                                    <div className="space-y-0.5 sm:space-y-1">
-                                                                        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 sm:gap-2 sm:text-sm">
-                                                                            <Calendar className="h-3 w-3 text-slate-500 sm:h-4 sm:w-4" />
+                                                                <span className="flex items-center gap-1 sm:hidden">
+                                                                    <Calendar className="h-2.5 w-2.5 text-slate-400" />
+                                                                    <span>{option.label}</span>
+                                                                    {isSelected && <CheckCircle className="ml-0.5 h-3 w-3 text-emerald-600" />}
+                                                                </span>
+                                                                <div className="hidden sm:flex sm:items-start sm:justify-between sm:gap-3">
+                                                                    <div className="space-y-1">
+                                                                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                                                            <Calendar className="h-4 w-4 text-slate-500" />
                                                                             {option.label}
                                                                         </div>
-                                                                        <div className="text-[10px] text-slate-500 sm:text-sm">
+                                                                        <div className="text-sm text-slate-500">
                                                                             {option.totalSlots} horario{option.totalSlots === 1 ? "" : "s"} disponible{option.totalSlots === 1 ? "" : "s"}
                                                                         </div>
                                                                     </div>
                                                                     {isSelected ? (
-                                                                        <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-emerald-600 sm:h-5 sm:w-5" />
+                                                                        <CheckCircle className="h-5 w-5 text-emerald-600" />
                                                                     ) : option.hasSelectableSlots ? (
-                                                                        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-slate-400 sm:h-5 sm:w-5" />
+                                                                        <ChevronRight className="h-5 w-5 text-slate-400" />
                                                                     ) : (
-                                                                        <span className="hidden text-xs font-semibold uppercase text-slate-500 sm:inline">No disponible</span>
+                                                                        <span className="text-xs font-semibold uppercase text-slate-500">No disponible</span>
                                                                     )}
                                                                 </div>
                                                             </button>
@@ -809,22 +814,22 @@ export default function TicketPurchaseCard({
                                                 </div>
                                             </div>
 
-                                            <div className="space-y-2">
-                                                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 sm:text-sm sm:normal-case sm:tracking-normal">
+                                            <div className="space-y-1.5 sm:space-y-2">
+                                                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700 sm:text-sm sm:normal-case sm:tracking-normal">
                                                     Horarios
                                                 </div>
                                                 {visiblePoolSlots.length > 0 ? (
-                                                    <div className="max-h-[14rem] overflow-y-auto pr-1 sm:max-h-none sm:overflow-visible sm:pr-0">
-                                                        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 2xl:grid-cols-3">
+                                                    <div className="max-h-[12rem] overflow-y-auto sm:max-h-none sm:overflow-visible">
+                                                        <div className="flex flex-col gap-1 sm:grid sm:grid-cols-2 sm:gap-4 md:grid-cols-3">
                                                         {visiblePoolSlots.map((slot) => {
                                                             const isSelected = slot.key === selectedPoolSlotKey
                                                             return (
                                                                 <button
                                                                     key={slot.key}
                                                                     type="button"
-                                                                    className={`rounded-lg border px-2 py-2 text-left transition sm:rounded-2xl sm:p-5 ${
+                                                                    className={`flex items-center justify-between rounded-md border px-2.5 py-1.5 text-left transition sm:flex-col sm:items-start sm:gap-2 sm:rounded-2xl sm:p-5 ${
                                                                         isSelected
-                                                                            ? "border-emerald-500 bg-emerald-50 shadow-sm"
+                                                                            ? "border-emerald-500 bg-emerald-50"
                                                                             : slot.selectable
                                                                               ? "border-slate-200 bg-white hover:border-emerald-300"
                                                                               : "border-slate-200 bg-slate-100 opacity-60"
@@ -832,35 +837,19 @@ export default function TicketPurchaseCard({
                                                                     onClick={() => slot.selectable && setSelectedPoolSlotKey(slot.key)}
                                                                     disabled={!slot.selectable}
                                                                 >
-                                                                    {/* Compact mobile layout */}
-                                                                    <div className="flex items-center justify-between gap-1 sm:hidden">
-                                                                        <div className="flex items-center gap-1">
-                                                                            <Clock className="h-3 w-3 flex-shrink-0 text-slate-400" />
-                                                                            <span className="text-xs font-bold leading-tight text-slate-900">
-                                                                                {slot.label}
-                                                                            </span>
-                                                                        </div>
-                                                                        {isSelected && <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-emerald-600" />}
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <Clock className="h-3 w-3 text-slate-400 sm:h-4 sm:w-4" />
+                                                                        <span className="text-xs font-bold text-slate-900 sm:text-2xl">
+                                                                            {slot.label}
+                                                                        </span>
                                                                     </div>
-                                                                    {/* Desktop layout */}
-                                                                    <div className="hidden sm:flex sm:items-start sm:justify-between sm:gap-3">
-                                                                        <div className="space-y-2">
-                                                                            <div className="flex items-center gap-2 text-sm">
-                                                                                <Clock className="h-4 w-4 text-slate-500" />
-                                                                                Horario
-                                                                            </div>
-                                                                            <div className="text-2xl font-bold leading-tight text-slate-900">
-                                                                                {slot.label}
-                                                                            </div>
-                                                                        </div>
-                                                                        {isSelected ? (
-                                                                            <CheckCircle className="h-5 w-5 text-emerald-600" />
-                                                                        ) : slot.selectable ? (
-                                                                            <ChevronRight className="h-5 w-5 text-slate-400" />
-                                                                        ) : (
-                                                                            <span className="text-xs font-semibold uppercase text-slate-500">No disponible</span>
-                                                                        )}
-                                                                    </div>
+                                                                    {isSelected ? (
+                                                                        <CheckCircle className="h-3.5 w-3.5 text-emerald-600 sm:h-5 sm:w-5" />
+                                                                    ) : slot.selectable ? (
+                                                                        <ChevronRight className="h-3.5 w-3.5 text-slate-400 sm:hidden" />
+                                                                    ) : (
+                                                                        <span className="text-[10px] font-semibold uppercase text-slate-500 sm:text-xs">Agotado</span>
+                                                                    )}
                                                                 </button>
                                                             )
                                                         })}
