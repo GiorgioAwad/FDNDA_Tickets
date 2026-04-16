@@ -68,10 +68,6 @@ export async function sendVerificationEmail(
                           Verificar mi cuenta
                         </a>
                       </div>
-                      <p style="margin:0 0 8px; font-size:13px; color:#6b7280;">Si el bot&oacute;n no funciona, copia y pega este enlace en tu navegador:</p>
-                      <p style="margin:0; font-size:12px;">
-                        <a href="${verifyUrl}" style="color:#0b5fff; word-break:break-all;">${verifyUrl}</a>
-                      </p>
                       <div style="margin-top:24px; padding:12px 14px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px; font-size:12px; color:#6b7280;">
                         Este enlace expira en 24 horas. Si no solicitaste esta verificaci&oacute;n, puedes ignorar este correo.
                       </div>
