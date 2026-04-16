@@ -12,13 +12,19 @@ export async function GET() {
             return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 })
         }
 
-        const discountCodes = await prisma.discountCode.findMany({
+        const raw = await prisma.discountCode.findMany({
             orderBy: { createdAt: "desc" },
             include: {
                 event: { select: { id: true, title: true } },
                 _count: { select: { usages: true } },
             },
         })
+
+        const discountCodes = raw.map((d) => ({
+            ...d,
+            value: Number(d.value),
+            minPurchase: d.minPurchase ? Number(d.minPurchase) : null,
+        }))
 
         return NextResponse.json({ success: true, data: discountCodes })
     } catch (error) {

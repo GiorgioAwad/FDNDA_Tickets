@@ -129,12 +129,15 @@ export default function CourtesyPage() {
         fetch("/api/events?admin=true")
             .then(res => res.json() as Promise<{ data?: EventWithTicketTypes[] }>)
             .then(d => setEvents(d.data || []))
+            .catch(() => {})
         fetch("/api/admin/courtesy")
             .then(res => res.json() as Promise<{ data?: CourtesyBatchListItem[] }>)
             .then(d => setBatches(d.data || []))
+            .catch(() => {})
         fetch("/api/admin/discounts")
             .then(res => res.json() as Promise<{ data?: DiscountCode[] }>)
             .then(d => setDiscountCodes(d.data || []))
+            .catch(() => {})
     }, [])
 
     const selectedEvent = events.find(e => e.id === formData.eventId)
@@ -245,11 +248,11 @@ export default function CourtesyPage() {
             code: discount.code,
             description: discount.description || "",
             type: discount.type,
-            value: discount.value,
+            value: Number(discount.value),
             eventId: discount.eventId || "",
             minPurchase: discount.minPurchase?.toString() || "",
             maxUses: discount.maxUses?.toString() || "",
-            maxUsesPerUser: discount.maxUsesPerUser,
+            maxUsesPerUser: discount.maxUsesPerUser ?? 1,
             validFrom: discount.validFrom ? discount.validFrom.split("T")[0] : "",
             validUntil: discount.validUntil ? discount.validUntil.split("T")[0] : "",
         })
@@ -932,9 +935,9 @@ export default function CourtesyPage() {
                                             </div>
                                             <div className="flex flex-wrap items-center gap-2 text-sm">
                                                 <Badge className={discount.type === "PERCENTAGE" ? "bg-blue-100 text-blue-700 hover:bg-blue-100" : "bg-green-100 text-green-700 hover:bg-green-100"}>
-                                                    {discount.type === "PERCENTAGE" 
-                                                        ? `${discount.value}% OFF` 
-                                                        : `S/ ${discount.value.toFixed(2)} OFF`}
+                                                    {discount.type === "PERCENTAGE"
+                                                        ? `${Number(discount.value)}% OFF`
+                                                        : `S/ ${Number(discount.value).toFixed(2)} OFF`}
                                                 </Badge>
                                                 {discount.event && (
                                                     <Badge variant="outline">
@@ -943,7 +946,7 @@ export default function CourtesyPage() {
                                                 )}
                                                 {discount.minPurchase && (
                                                     <span className="text-gray-500">
-                                                        Min: S/ {discount.minPurchase.toFixed(2)}
+                                                        Min: S/ {Number(discount.minPurchase).toFixed(2)}
                                                     </span>
                                                 )}
                                                 <span className="text-gray-500">
