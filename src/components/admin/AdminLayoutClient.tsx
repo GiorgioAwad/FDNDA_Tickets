@@ -23,6 +23,7 @@ import {
     ScanLine,
     DollarSign,
     BarChart3,
+    UserCheck,
 } from "lucide-react"
 
 // ==================== TYPES ====================
@@ -47,6 +48,7 @@ const adminNavigation: NavGroup[] = [
         items: [
             { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
             { label: "Eventos", href: "/admin/eventos", icon: Calendar },
+            { label: "Asistencia Manual", href: "/admin/asistencia", icon: UserCheck },
         ],
     },
     {
