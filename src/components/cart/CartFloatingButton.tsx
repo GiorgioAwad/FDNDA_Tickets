@@ -17,6 +17,7 @@ export default function CartFloatingButton() {
     const wrapperRef = useRef<HTMLDivElement | null>(null)
     const closeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
     const hoverRef = useRef(false)
+    const clickedRef = useRef(false)
 
     const clearClose = () => {
         if (closeTimeout.current) {
@@ -35,6 +36,7 @@ export default function CartFloatingButton() {
     }
 
     const handleHoverChange = (isHovering: boolean) => {
+        if (clickedRef.current) return
         hoverRef.current = isHovering
         if (isHovering) {
             clearClose()
@@ -138,7 +140,10 @@ export default function CartFloatingButton() {
                 aria-expanded={isPanelOpen}
                 onClick={() => {
                     if (!isActive) return
+                    clickedRef.current = true
+                    clearClose()
                     setOpen((prev) => !prev)
+                    setTimeout(() => { clickedRef.current = false }, 300)
                 }}
                 onPointerEnter={() => handleHoverChange(true)}
                 onPointerLeave={() => handleHoverChange(false)}
