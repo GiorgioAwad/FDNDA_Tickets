@@ -587,25 +587,24 @@ export default function EventScannerPage() {
                 }
             }
             
-            scannerRef.current = new Html5Qrcode(scannerId, { 
+            scannerRef.current = new Html5Qrcode(scannerId, {
                 verbose: false,
                 formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
                 experimentalFeatures: {
-                    useBarCodeDetectorIfSupported: false,
+                    useBarCodeDetectorIfSupported: true,
                 }
             })
 
             // Ultra-optimized config for INSTANT scanning
             const config: Html5QrcodeCameraScanConfig = {
-                fps: 30, // Balanced FPS - too high can cause lag
+                fps: 30,
                 qrbox: (viewfinderWidth, viewfinderHeight) => {
-                    // Large scan area - 85% for good detection
-                    const minEdge = Math.min(viewfinderWidth, viewfinderHeight)
-                    const size = Math.floor(minEdge * 0.85)
-                    return { width: size, height: size }
+                    // Scan area covers nearly the full frame for easy detection
+                    const w = Math.floor(viewfinderWidth * 0.95)
+                    const h = Math.floor(viewfinderHeight * 0.95)
+                    return { width: w, height: h }
                 },
-                aspectRatio: 1.0,
-                disableFlip: true, // Disable flip for faster processing
+                disableFlip: true,
             }
 
             setCameraActive(true)
@@ -682,10 +681,10 @@ export default function EventScannerPage() {
         const config: Html5QrcodeCameraScanConfig = {
             fps: 30,
             qrbox: (viewfinderWidth, viewfinderHeight) => {
-                const minEdge = Math.min(viewfinderWidth, viewfinderHeight)
-                return { width: Math.floor(minEdge * 0.85), height: Math.floor(minEdge * 0.85) }
+                const w = Math.floor(viewfinderWidth * 0.95)
+                const h = Math.floor(viewfinderHeight * 0.95)
+                return { width: w, height: h }
             },
-            aspectRatio: 1.0,
             disableFlip: true,
         }
         
@@ -1020,16 +1019,20 @@ export default function EventScannerPage() {
                 {cameraActive && !scanResult && (
                     <>
                         {/* Scan frame overlay - fixed position */}
-                        <div 
+                        <div
                             className="absolute inset-0 pointer-events-none"
                             style={{ zIndex: 10 }}
                         >
-                            <div 
-                                className="absolute w-64 h-64"
+                            <div
+                                className="absolute"
                                 style={{
                                     top: '50%',
                                     left: '50%',
-                                    transform: 'translate(-50%, -50%)'
+                                    transform: 'translate(-50%, -50%)',
+                                    width: '80%',
+                                    height: '50%',
+                                    maxWidth: '360px',
+                                    maxHeight: '360px',
                                 }}
                             >
                                 {/* Corner decorations */}
@@ -1061,7 +1064,7 @@ export default function EventScannerPage() {
                             style={{ bottom: '80px', zIndex: 10 }}
                         >
                             <p className="text-white text-sm font-medium bg-black/70 px-4 py-2 rounded-full">
-                                Centra el QR en el recuadro
+                                Apunta al QR
                             </p>
                         </div>
 
