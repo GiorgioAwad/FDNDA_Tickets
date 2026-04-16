@@ -322,6 +322,7 @@ const buildEntitlementDates = (input: {
         endDate: Date
     }
     attendee: StoredAttendeeData | null
+    eventCategory?: string
 }): Date[] => {
     const configuredDates = extractTicketValidDates(input.ticketType.validDays)
     const allEventDates = getDaysBetween(input.event.startDate, input.event.endDate)
@@ -329,6 +330,14 @@ const buildEntitlementDates = (input: {
     const selectedDates = normalizeScheduleSelections(input.attendee?.scheduleSelections).map(
         (selection) => selection.date
     )
+
+    // Piscina libre: solo 1 entitlement (el dia seleccionado)
+    if (input.eventCategory === "PISCINA_LIBRE") {
+        if (selectedDates.length > 0) {
+            return toDateObjectsFromDateStrings([selectedDates[0]])
+        }
+        return [input.event.startDate]
+    }
 
     if (input.ticketType.isPackage && input.ticketType.packageDaysCount) {
         const requiredDays = input.ticketType.packageDaysCount
@@ -511,6 +520,7 @@ export async function fulfillPaidOrder({
                         endDate: event.endDate,
                     },
                     attendee,
+                    eventCategory: event.category,
                 })
                 const ticketCode = generateTicketCode()
 

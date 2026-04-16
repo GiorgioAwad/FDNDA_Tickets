@@ -104,10 +104,17 @@ export async function GET(
 
         let entitlements = ticket.entitlements
         const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
-        const isPackageLike = Boolean(
+        const isPiscina = ticket.event?.category === "PISCINA_LIBRE"
+        let isPackageLike = Boolean(
             ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || nameMatch
         )
-        const packageDaysCount = ticket.ticketType.packageDaysCount ?? (nameMatch ? Number(nameMatch[1]) : null)
+        let packageDaysCount = ticket.ticketType.packageDaysCount ?? (nameMatch ? Number(nameMatch[1]) : null)
+
+        // Piscina libre: tratar como paquete de 1 asistencia
+        if (isPiscina) {
+            isPackageLike = true
+            packageDaysCount = 1
+        }
 
         if (!isPackageLike && entitlements.length === 0 && ticket.event?.startDate && ticket.event?.endDate) {
             let validDays: Date[] = []

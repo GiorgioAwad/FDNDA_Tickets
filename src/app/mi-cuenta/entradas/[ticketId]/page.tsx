@@ -170,9 +170,14 @@ export default function TicketDetailPage() {
 
     const entitlements = ticket.entitlements || []
     const classCount = extractClassCount(ticket.ticketType.name)
-    const isPackageLike = Boolean(
+    let isPackageLike = Boolean(
         ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || classCount
     )
+
+    // Piscina libre: tratar como paquete de 1 asistencia
+    if (isPiscina) {
+        isPackageLike = true
+    }
     const label = extractDaysLabel(ticket.ticketType.name)
     const scheduleDays = !isPackageLike && ticket.event?.startDate && ticket.event?.endDate
         ? (label
@@ -216,7 +221,7 @@ export default function TicketDetailPage() {
 
     if (hasMultipleShifts && isPackageLike) {
         // Multi-shift package (e.g., "Full day - 4 días" with Mañana/Tarde)
-        const dayCount = ticket.ticketType.packageDaysCount ?? classCount ?? 0
+        const dayCount = ticket.ticketType.packageDaysCount ?? classCount ?? (isPiscina ? 1 : 0)
         totalCount = dayCount * shifts.length
 
         // Keep day numbering aligned with configured entitlement dates when available.
@@ -296,7 +301,7 @@ export default function TicketDetailPage() {
         usedDisplayCount = displayEntitlements.filter((item) => item.status === "USED").length
     } else if (isPackageLike) {
         // Single-shift or no-shift package (original behavior)
-        totalCount = ticket.ticketType.packageDaysCount ?? classCount ?? 0
+        totalCount = ticket.ticketType.packageDaysCount ?? classCount ?? (isPiscina ? 1 : 0)
         displayEntitlements = Array.from({ length: totalCount }, (_, index) => ({
             date: `slot-${index + 1}`,
             status: index < effectiveUsedCount ? ("USED" as const) : ("AVAILABLE" as const),

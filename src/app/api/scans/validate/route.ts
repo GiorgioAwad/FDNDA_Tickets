@@ -224,12 +224,18 @@ export async function POST(request: NextRequest) {
         }
 
         const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
-        const isPackageLike = Boolean(
+        let isPackageLike = Boolean(
             ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || nameMatch
         )
-        const packageLimit = isPackageLike
+        let packageLimit = isPackageLike
             ? (ticket.ticketType.packageDaysCount ?? (nameMatch ? Number(nameMatch[1]) : null))
             : null
+
+        // Piscina libre: tratar como paquete de 1 asistencia
+        if (isPiscina) {
+            isPackageLike = true
+            packageLimit = 1
+        }
 
         let scanCount = 0
         if (isPackageLike) {
