@@ -22,6 +22,8 @@ export interface CachedEvent {
     endDate: string
     mode: string
     isPublished: boolean
+    visibility: "PUBLIC" | "PRIVATE"
+    accessToken: string | null
     discipline: string | null
     minTicketPrice?: number | null
 }
@@ -75,6 +77,8 @@ export async function getCachedEvent(eventId: string): Promise<CachedEvent | nul
                 endDate: event.endDate.toISOString(),
                 mode: event.mode,
                 isPublished: event.isPublished,
+                visibility: event.visibility,
+                accessToken: event.accessToken,
                 discipline: event.discipline,
                 minTicketPrice: null,
             }
@@ -93,9 +97,9 @@ export async function getCachedEventBySlug(slug: string): Promise<CachedEvent | 
             const event = await prisma.event.findUnique({
                 where: { slug },
             })
-            
+
             if (!event) return null
-            
+
             return {
                 id: event.id,
                 slug: event.slug,
@@ -108,6 +112,8 @@ export async function getCachedEventBySlug(slug: string): Promise<CachedEvent | 
                 endDate: event.endDate.toISOString(),
                 mode: event.mode,
                 isPublished: event.isPublished,
+                visibility: event.visibility,
+                accessToken: event.accessToken,
                 discipline: event.discipline,
                 minTicketPrice: null,
             }
@@ -163,6 +169,7 @@ export async function getCachedPublishedEvents(): Promise<CachedEvent[]> {
             const events = await prisma.event.findMany({
                 where: {
                     isPublished: true,
+                    visibility: "PUBLIC",
                     endDate: { gte: new Date() },
                 },
                 include: {
@@ -175,7 +182,7 @@ export async function getCachedPublishedEvents(): Promise<CachedEvent[]> {
                 },
                 orderBy: { startDate: "asc" },
             })
-            
+
             return events.map(event => ({
                 id: event.id,
                 slug: event.slug,
@@ -188,6 +195,8 @@ export async function getCachedPublishedEvents(): Promise<CachedEvent[]> {
                 endDate: event.endDate.toISOString(),
                 mode: event.mode,
                 isPublished: event.isPublished,
+                visibility: event.visibility,
+                accessToken: null,
                 discipline: event.discipline,
                 minTicketPrice: event.ticketTypes[0] ? Number(event.ticketTypes[0].price) : null,
             }))

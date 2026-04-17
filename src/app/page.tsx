@@ -44,6 +44,7 @@ async function getUpcomingEvents(): Promise<HomeEvent[]> {
     const events = await prisma.event.findMany({
       where: {
         isPublished: true,
+        visibility: "PUBLIC",
         endDate: { gte: new Date() },
       },
       include: {

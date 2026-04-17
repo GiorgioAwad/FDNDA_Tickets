@@ -29,6 +29,11 @@ enum EventCategory {
   ACADEMIA
 }
 
+enum EventVisibility {
+  PUBLIC
+  PRIVATE
+}
+
 enum OrderStatus {
   PENDING
   PAID
@@ -193,6 +198,8 @@ model Event {
   category    EventCategory @default(EVENTO)
   advanceAmount Decimal @default(0) @db.Decimal(10, 2)
   isPublished Boolean   @default(false)
+  visibility  EventVisibility @default(PUBLIC)
+  accessToken String?   @unique
   discipline  String?   // e.g., "Natación", "Waterpolo", etc.
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -208,6 +215,7 @@ model Event {
   discountCodes   DiscountCode[]
 
   @@index([isPublished, endDate])
+  @@index([visibility, isPublished, endDate])
   @@map("events")
 }
 

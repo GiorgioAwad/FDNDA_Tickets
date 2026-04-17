@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
+import { randomBytes } from "crypto"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { getCachedPublishedEvents } from "@/lib/cached-queries"
 import slugify from "slugify"
-import { EventCategory, Prisma } from "@prisma/client"
+import { EventCategory, EventVisibility, Prisma } from "@prisma/client"
+
+function generateAccessToken(): string {
+    return randomBytes(24).toString("base64url")
+}
 export const runtime = "nodejs"
 
 const PUBLIC_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=300"
@@ -44,6 +49,7 @@ type EventPayload = {
     category?: EventCategory
     advanceAmount?: number | string
     isPublished?: boolean
+    visibility?: EventVisibility
     bannerUrl?: string
     discipline?: string
     ticketTypes?: TicketTypePayload[]
@@ -127,12 +133,15 @@ export async function POST(request: NextRequest) {
             category,
             advanceAmount,
             isPublished,
+            visibility,
             bannerUrl,
             discipline,
             ticketTypes, // Optional array of ticket types to create
             eventDays,   // Optional array of days to create
         } = body
         const parsedAdvanceAmount = Number(advanceAmount || 0)
+        const resolvedVisibility: EventVisibility = visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC"
+        const accessToken = resolvedVisibility === "PRIVATE" ? generateAccessToken() : null
 
         if (!Number.isFinite(parsedAdvanceAmount) || parsedAdvanceAmount < 0) {
             return NextResponse.json(
@@ -165,6 +174,8 @@ export async function POST(request: NextRequest) {
                 category: category || "EVENTO",
                 advanceAmount: parsedAdvanceAmount,
                 isPublished,
+                visibility: resolvedVisibility,
+                accessToken,
                 bannerUrl,
                 discipline,
                 createdBy: user.id,

@@ -1,5 +1,7 @@
 ﻿import { notFound } from "next/navigation"
 import Link from "next/link"
+import { timingSafeEqual } from "crypto"
+import type { Metadata } from "next"
 import { prisma } from "@/lib/prisma"
 import { cn, formatDate } from "@/lib/utils"
 import { EventBannerMedia } from "@/components/events/EventBannerMedia"
@@ -19,6 +21,30 @@ export const dynamic = "force-dynamic"
 
 interface EventPageProps {
     params: Promise<{ slug: string }>
+    searchParams: Promise<{ t?: string | string[] }>
+}
+
+function tokensMatch(provided: string | undefined, expected: string | null): boolean {
+    if (!expected || !provided) return false
+    const a = Buffer.from(provided)
+    const b = Buffer.from(expected)
+    if (a.length !== b.length) return false
+    return timingSafeEqual(a, b)
+}
+
+export async function generateMetadata({ params }: EventPageProps): Promise<Metadata> {
+    const { slug } = await params
+    const event = await prisma.event.findUnique({
+        where: { slug },
+        select: { visibility: true, title: true },
+    })
+    if (event?.visibility === "PRIVATE") {
+        return {
+            title: event.title,
+            robots: { index: false, follow: false },
+        }
+    }
+    return {}
 }
 
 type EventDayItem = {
@@ -55,12 +81,20 @@ async function getEvent(slug: string) {
     }
 }
 
-export default async function EventDetailPage({ params }: EventPageProps) {
+export default async function EventDetailPage({ params, searchParams }: EventPageProps) {
     const { slug } = await params
+    const { t } = await searchParams
     const event = await getEvent(slug)
 
     if (!event || !event.isPublished) {
         notFound()
+    }
+
+    if (event.visibility === "PRIVATE") {
+        const provided = Array.isArray(t) ? t[0] : t
+        if (!tokensMatch(provided, event.accessToken)) {
+            notFound()
+        }
     }
 
     const isPoolFreeEvent = event.category === "PISCINA_LIBRE"

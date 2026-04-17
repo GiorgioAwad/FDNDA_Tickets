@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
+import { randomBytes } from "crypto"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { getCachedEventWithTicketTypes, onEventUpdated } from "@/lib/cached-queries"
-import { EventCategory } from "@prisma/client"
+import { EventCategory, EventVisibility } from "@prisma/client"
 export const runtime = "nodejs"
 
 const PUBLIC_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=300"
@@ -101,9 +102,24 @@ export async function PUT(
             category,
             advanceAmount,
             isPublished,
+            visibility,
             bannerUrl,
             discipline,
-        } = body
+        } = body as {
+            title?: string
+            description?: string
+            location?: string
+            venue?: string
+            startDate?: string | Date
+            endDate?: string | Date
+            mode?: string
+            category?: EventCategory
+            advanceAmount?: number | string
+            isPublished?: boolean
+            visibility?: EventVisibility
+            bannerUrl?: string
+            discipline?: string
+        }
 
         const parsedStartDate = startDate ? parseDateOnly(startDate) : undefined
         const parsedEndDate = endDate ? parseDateOnly(endDate) : undefined
@@ -144,6 +160,17 @@ export async function PUT(
             )
         }
 
+        let tokenPatch: { accessToken?: string } = {}
+        if (visibility === "PRIVATE") {
+            const existing = await prisma.event.findUnique({
+                where: { id },
+                select: { accessToken: true },
+            })
+            if (!existing?.accessToken) {
+                tokenPatch = { accessToken: randomBytes(24).toString("base64url") }
+            }
+        }
+
         const event = await prisma.event.update({
             where: { id },
             data: {
@@ -153,12 +180,14 @@ export async function PUT(
                 venue,
                 startDate: parsedStartDate,
                 endDate: parsedEndDate,
-                mode,
-                category: (category as EventCategory | undefined) || undefined,
+                mode: mode as "RANGE" | "DAYS" | undefined,
+                category: category || undefined,
                 advanceAmount: parsedAdvanceAmount,
                 isPublished,
+                visibility,
                 bannerUrl,
                 discipline,
+                ...tokenPatch,
             },
         })
 

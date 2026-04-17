@@ -55,6 +55,7 @@ export const eventSchema = z.object({
     endDate: z.string().or(z.date()),
     mode: z.enum(["RANGE", "DAYS"]),
     isPublished: z.boolean().default(false),
+    visibility: z.enum(["PUBLIC", "PRIVATE"]).default("PUBLIC"),
     bannerUrl: z.string().url().optional().or(z.literal("")),
 })
 

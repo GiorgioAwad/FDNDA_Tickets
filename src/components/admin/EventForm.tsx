@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ImageUploader } from "@/components/ui/image-uploader"
-import { Save, ArrowLeft } from "lucide-react"
+import { Save, ArrowLeft, Copy, RefreshCw, Link as LinkIcon } from "lucide-react"
 import { TicketTypeManager } from "@/components/admin/TicketTypeManager"
 import { EventDaysManager } from "@/components/admin/EventDaysManager"
 import type { EventWithDetails, EventWithDetailsSerialized } from "@/types"
@@ -30,6 +30,7 @@ interface EventFormData {
     endDate: string
     mode: "RANGE" | "DAYS"
     isPublished: boolean
+    visibility: "PUBLIC" | "PRIVATE"
     bannerUrl: string
 }
 
@@ -50,8 +51,49 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
         endDate: initialData?.endDate ? formatDateInput(initialData.endDate) : "",
         mode: initialData?.mode || "RANGE",
         isPublished: initialData?.isPublished || false,
+        visibility: initialData?.visibility || "PUBLIC",
         bannerUrl: initialData?.bannerUrl || "",
     })
+    const [accessToken, setAccessToken] = useState<string | null>(initialData?.accessToken ?? null)
+    const [regenerating, setRegenerating] = useState(false)
+    const [copyStatus, setCopyStatus] = useState<"idle" | "copied">("idle")
+
+    const shareUrl =
+        typeof window !== "undefined" && initialData?.slug && accessToken
+            ? `${window.location.origin}/eventos/${initialData.slug}?t=${accessToken}`
+            : ""
+
+    const handleCopyLink = async () => {
+        if (!shareUrl) return
+        try {
+            await navigator.clipboard.writeText(shareUrl)
+            setCopyStatus("copied")
+            setTimeout(() => setCopyStatus("idle"), 2000)
+        } catch {
+            // ignore
+        }
+    }
+
+    const handleRegenerateToken = async () => {
+        if (!initialData?.id) return
+        if (!window.confirm("¿Regenerar el enlace? El enlace actual dejará de funcionar de inmediato.")) {
+            return
+        }
+        setRegenerating(true)
+        try {
+            const res = await fetch(`/api/events/${initialData.id}/access-token`, { method: "POST" })
+            const json = await res.json()
+            if (!res.ok || !json?.data?.accessToken) {
+                throw new Error(json?.error || "No se pudo regenerar el enlace")
+            }
+            setAccessToken(json.data.accessToken)
+            router.refresh()
+        } catch (err) {
+            setError((err as Error).message)
+        } finally {
+            setRegenerating(false)
+        }
+    }
 
     const ticketTypes = initialData?.ticketTypes.map((ticket) => ({
         ...ticket,
@@ -287,8 +329,78 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                                     />
                                 </div>
                             </div>
+
+                            <div className="space-y-3 pt-2">
+                                <label className="text-sm font-medium">Visibilidad del evento</label>
+                                <div className="space-y-2">
+                                    <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-gray-50">
+                                        <input
+                                            type="radio"
+                                            name="visibility"
+                                            value="PUBLIC"
+                                            checked={formData.visibility === "PUBLIC"}
+                                            onChange={() => setFormData({ ...formData, visibility: "PUBLIC" })}
+                                            className="mt-1"
+                                        />
+                                        <div>
+                                            <div className="text-sm font-medium">Público</div>
+                                            <div className="text-xs text-gray-500">
+                                                Aparece en la lista pública de eventos y puede ser indexado por buscadores.
+                                            </div>
+                                        </div>
+                                    </label>
+                                    <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-gray-50">
+                                        <input
+                                            type="radio"
+                                            name="visibility"
+                                            value="PRIVATE"
+                                            checked={formData.visibility === "PRIVATE"}
+                                            onChange={() => setFormData({ ...formData, visibility: "PRIVATE" })}
+                                            className="mt-1"
+                                        />
+                                        <div>
+                                            <div className="text-sm font-medium">Privado (solo con enlace)</div>
+                                            <div className="text-xs text-gray-500">
+                                                No aparece en la lista pública. Solo podrán acceder las personas que tengan el enlace exclusivo.
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
                         </CardContent>
                     </Card>
+
+                    {isEditing && formData.visibility === "PRIVATE" && accessToken && initialData?.slug && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2 text-base">
+                                    <LinkIcon className="h-4 w-4" />
+                                    Enlace exclusivo
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                <p className="text-sm text-gray-600">
+                                    Comparte este enlace únicamente con las personas autorizadas. Cualquiera que lo tenga podrá ver el evento y comprar tickets.
+                                </p>
+                                <Input readOnly value={shareUrl} onFocus={(e) => e.currentTarget.select()} />
+                                <div className="flex flex-wrap gap-2">
+                                    <Button type="button" variant="outline" onClick={handleCopyLink}>
+                                        <Copy className="h-4 w-4 mr-2" />
+                                        {copyStatus === "copied" ? "¡Copiado!" : "Copiar enlace"}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={handleRegenerateToken}
+                                        loading={regenerating}
+                                    >
+                                        <RefreshCw className="h-4 w-4 mr-2" />
+                                        Regenerar enlace
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
                 </div>
 
                 <div>
