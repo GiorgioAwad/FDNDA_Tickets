@@ -32,19 +32,64 @@ function tokensMatch(provided: string | undefined, expected: string | null): boo
     return timingSafeEqual(a, b)
 }
 
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://ticketingfdnda.pe"
+
+function buildMetaDescription(text: string, max = 160): string {
+    const clean = text.replace(/\s+/g, " ").trim()
+    if (clean.length <= max) return clean
+    return `${clean.slice(0, max - 1).trimEnd()}…`
+}
+
 export async function generateMetadata({ params }: EventPageProps): Promise<Metadata> {
     const { slug } = await params
     const event = await prisma.event.findUnique({
         where: { slug },
-        select: { visibility: true, title: true },
+        select: {
+            visibility: true,
+            title: true,
+            description: true,
+            bannerUrl: true,
+            venue: true,
+            location: true,
+            startDate: true,
+            isPublished: true,
+        },
     })
-    if (event?.visibility === "PRIVATE") {
+    if (!event) return {}
+
+    if (event.visibility === "PRIVATE" || !event.isPublished) {
         return {
             title: event.title,
             robots: { index: false, follow: false },
         }
     }
-    return {}
+
+    const description = buildMetaDescription(
+        `${event.description} | ${event.venue}, ${event.location}.`
+    )
+    const canonical = `/eventos/${slug}`
+    const images = event.bannerUrl ? [{ url: event.bannerUrl, alt: event.title }] : undefined
+
+    return {
+        title: event.title,
+        description,
+        alternates: { canonical },
+        openGraph: {
+            title: event.title,
+            description,
+            url: `${SITE_URL}${canonical}`,
+            type: "website",
+            locale: "es_PE",
+            siteName: "Ticketing FDNDA",
+            images,
+        },
+        twitter: {
+            card: "summary_large_image",
+            title: event.title,
+            description,
+            images: event.bannerUrl ? [event.bannerUrl] : undefined,
+        },
+    }
 }
 
 type EventDayItem = {
@@ -99,6 +144,46 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
 
     const isPoolFreeEvent = event.category === "PISCINA_LIBRE"
 
+    const ticketPrices = event.ticketTypes
+        .map((tt) => Number(tt.price))
+        .filter((p) => Number.isFinite(p) && p >= 0)
+    const lowestPrice = ticketPrices.length ? Math.min(...ticketPrices) : null
+    const eventUrl = `${SITE_URL}/eventos/${event.slug}`
+    const eventJsonLd = {
+        "@context": "https://schema.org",
+        "@type": "SportsEvent",
+        name: event.title,
+        description: event.description,
+        startDate: event.startDate.toISOString(),
+        endDate: event.endDate.toISOString(),
+        eventStatus: "https://schema.org/EventScheduled",
+        eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
+        url: eventUrl,
+        image: event.bannerUrl ? [event.bannerUrl] : undefined,
+        location: {
+            "@type": "Place",
+            name: event.venue,
+            address: {
+                "@type": "PostalAddress",
+                addressLocality: event.location,
+                addressCountry: "PE",
+            },
+        },
+        organizer: {
+            "@type": "SportsOrganization",
+            name: "Federación Deportiva Nacional de Deportes Acuáticos",
+            url: SITE_URL,
+        },
+        offers: lowestPrice !== null ? {
+            "@type": "Offer",
+            url: eventUrl,
+            price: lowestPrice.toFixed(2),
+            priceCurrency: "PEN",
+            availability: "https://schema.org/InStock",
+            validFrom: new Date().toISOString(),
+        } : undefined,
+    }
+
     const ticketTypes: TicketTypeClient[] = event.ticketTypes.map((ticket) => ({
         id: ticket.id,
         name: ticket.name,
@@ -123,6 +208,10 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
 
     return (
         <div className="min-h-screen bg-gray-50">
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{ __html: JSON.stringify(eventJsonLd) }}
+            />
             {/* Hero */}
             <div className="relative h-56 sm:h-64 md:h-96 bg-gradient-fdnda overflow-hidden">
                 <div className="absolute top-4 left-0 right-0 z-10">
