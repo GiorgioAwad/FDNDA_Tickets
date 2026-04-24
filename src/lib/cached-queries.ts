@@ -17,6 +17,7 @@ export interface CachedEvent {
     description: string
     location: string
     venue: string
+    servilexSucursalCode: string
     bannerUrl: string | null
     startDate: string
     endDate: string
@@ -72,6 +73,7 @@ export async function getCachedEvent(eventId: string): Promise<CachedEvent | nul
                 description: event.description,
                 location: event.location,
                 venue: event.venue,
+                servilexSucursalCode: event.servilexSucursalCode,
                 bannerUrl: event.bannerUrl,
                 startDate: event.startDate.toISOString(),
                 endDate: event.endDate.toISOString(),
@@ -107,6 +109,7 @@ export async function getCachedEventBySlug(slug: string): Promise<CachedEvent | 
                 description: event.description,
                 location: event.location,
                 venue: event.venue,
+                servilexSucursalCode: event.servilexSucursalCode,
                 bannerUrl: event.bannerUrl,
                 startDate: event.startDate.toISOString(),
                 endDate: event.endDate.toISOString(),
@@ -190,6 +193,7 @@ export async function getCachedPublishedEvents(): Promise<CachedEvent[]> {
                 description: event.description,
                 location: event.location,
                 venue: event.venue,
+                servilexSucursalCode: event.servilexSucursalCode,
                 bannerUrl: event.bannerUrl,
                 startDate: event.startDate.toISOString(),
                 endDate: event.endDate.toISOString(),

@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
                     category: true,
                     startDate: true,
                     endDate: true,
+                    servilexSucursalCode: true,
                 },
             })
 
@@ -316,7 +317,7 @@ export async function POST(request: NextRequest) {
                     )
                     const commonRequiredCodes = [
                         reservedTicketType.servilexIndicator,
-                        reservedTicketType.servilexSucursalCode,
+                        eventConfig.servilexSucursalCode,
                         reservedTicketType.servilexServiceCode,
                     ]
 

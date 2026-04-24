@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { getCachedPublishedEvents } from "@/lib/cached-queries"
+import { getAbioEventSucursalByCode, getDefaultAbioEventSucursal } from "@/lib/abio-sucursales"
 import slugify from "slugify"
 import { EventCategory, EventVisibility, Prisma } from "@prisma/client"
 
@@ -43,6 +44,7 @@ type EventPayload = {
     description: string
     location: string
     venue: string
+    servilexSucursalCode?: string | null
     startDate: string | Date
     endDate: string | Date
     mode: "RANGE" | "DAYS"
@@ -126,7 +128,7 @@ export async function POST(request: NextRequest) {
             title,
             description,
             location,
-            venue,
+            servilexSucursalCode,
             startDate,
             endDate,
             mode,
@@ -142,6 +144,14 @@ export async function POST(request: NextRequest) {
         const parsedAdvanceAmount = Number(advanceAmount || 0)
         const resolvedVisibility: EventVisibility = visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC"
         const accessToken = resolvedVisibility === "PRIVATE" ? generateAccessToken() : null
+        const selectedSucursal = getAbioEventSucursalByCode(servilexSucursalCode)
+        if (servilexSucursalCode !== undefined && !selectedSucursal) {
+            return NextResponse.json(
+                { success: false, error: "Sede ABIO invalida" },
+                { status: 400 }
+            )
+        }
+        const resolvedSucursal = selectedSucursal || getDefaultAbioEventSucursal()
 
         if (!Number.isFinite(parsedAdvanceAmount) || parsedAdvanceAmount < 0) {
             return NextResponse.json(
@@ -167,7 +177,8 @@ export async function POST(request: NextRequest) {
                 slug,
                 description,
                 location,
-                venue,
+                venue: resolvedSucursal.name,
+                servilexSucursalCode: resolvedSucursal.code,
                 startDate: parseDateOnly(startDate),
                 endDate: parseDateOnly(endDate),
                 mode,
@@ -201,7 +212,7 @@ export async function POST(request: NextRequest) {
                                 validDays: ticketType.validDays || [],
                                 servilexEnabled: Boolean(ticketType.servilexEnabled),
                                 servilexIndicator: ticketType.servilexIndicator || "AC",
-                                servilexSucursalCode: ticketType.servilexSucursalCode || null,
+                                servilexSucursalCode: resolvedSucursal.code,
                                 servilexServiceCode: ticketType.servilexServiceCode || null,
                                 servilexDisciplineCode: ticketType.servilexDisciplineCode || null,
                                 servilexScheduleCode: ticketType.servilexScheduleCode || null,

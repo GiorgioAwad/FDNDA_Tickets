@@ -144,7 +144,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/eventos">
               <Button size="xl" className="w-full sm:w-auto bg-white text-[hsl(210,100%,25%)] hover:bg-white/90 gap-2">
-                Ver Eventos
+                Compra ahora
                 <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
@@ -299,4 +299,3 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     </div>
   )
 }
-

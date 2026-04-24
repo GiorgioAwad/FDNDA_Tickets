@@ -79,7 +79,6 @@ export async function POST(request: NextRequest) {
             isActive,
             servilexEnabled,
             servilexIndicator,
-            servilexSucursalCode,
             servilexServiceCode,
             servilexDisciplineCode,
             servilexScheduleCode,
@@ -101,6 +100,7 @@ export async function POST(request: NextRequest) {
             select: {
                 id: true,
                 category: true,
+                servilexSucursalCode: true,
             },
         })
 
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
         let resolvedServiceCode = normalizeOptionalCode(servilexServiceCode)
         let resolvedServiceId: string | null = normalizeOptionalCode(servilexServiceId)
         let resolvedBindingId: string | null = normalizeOptionalCode(servilexBindingId)
-        let resolvedSucursalCode = normalizeOptionalCode(servilexSucursalCode)
+        const resolvedSucursalCode = normalizeOptionalCode(event.servilexSucursalCode, "01")
         let resolvedDisciplineCode = normalizeOptionalCode(servilexDisciplineCode)
         let resolvedScheduleCode = normalizeOptionalCode(servilexScheduleCode)
         let resolvedPoolCode = normalizeOptionalCode(servilexPoolCode)
@@ -139,7 +139,12 @@ export async function POST(request: NextRequest) {
                 where: { id: resolvedBindingId },
             })
             if (bindingEntry) {
-                resolvedSucursalCode = bindingEntry.sucursalCodigo
+                if (bindingEntry.sucursalCodigo !== resolvedSucursalCode) {
+                    return NextResponse.json(
+                        { success: false, error: "La configuracion ABIO no corresponde a la sede del evento" },
+                        { status: 400 }
+                    )
+                }
                 resolvedServiceCode = bindingEntry.servicioCodigo
                 resolvedDisciplineCode = bindingEntry.disciplinaCodigo
                 resolvedScheduleCode = bindingEntry.horarioCodigo
@@ -355,6 +360,31 @@ export async function PUT(request: NextRequest) {
             })
         }
 
+        const currentTicketType = await prisma.ticketType.findUnique({
+            where: { id },
+            select: {
+                eventId: true,
+                event: {
+                    select: {
+                        category: true,
+                        servilexSucursalCode: true,
+                    },
+                },
+            },
+        })
+
+        if (!currentTicketType) {
+            return NextResponse.json(
+                { success: false, error: "Tipo de entrada no encontrado" },
+                { status: 404 }
+            )
+        }
+
+        const eventSucursalCode = normalizeOptionalCode(
+            currentTicketType.event.servilexSucursalCode,
+            "01"
+        ) || "01"
+
         const data: {
             name?: string
             description?: string | null
@@ -388,7 +418,7 @@ export async function PUT(request: NextRequest) {
         if (isActive !== undefined) data.isActive = Boolean(isActive)
         if (validDays !== undefined) data.validDays = normalizeValidDays(validDays)
         if (servilexEnabled !== undefined) data.servilexEnabled = Boolean(servilexEnabled)
-        if (servilexSucursalCode !== undefined) data.servilexSucursalCode = normalizeOptionalCode(servilexSucursalCode)
+        if (servilexSucursalCode !== undefined) data.servilexSucursalCode = eventSucursalCode
         if (servilexDisciplineCode !== undefined) data.servilexDisciplineCode = normalizeOptionalCode(servilexDisciplineCode)
         if (servilexScheduleCode !== undefined) data.servilexScheduleCode = normalizeOptionalCode(servilexScheduleCode)
         if (servilexPoolCode !== undefined) data.servilexPoolCode = normalizeOptionalCode(servilexPoolCode)
@@ -425,8 +455,14 @@ export async function PUT(request: NextRequest) {
                     where: { id: resolvedBindingId },
                 })
                 if (bindingEntry) {
+                    if (bindingEntry.sucursalCodigo !== eventSucursalCode) {
+                        return NextResponse.json(
+                            { success: false, error: "La configuracion ABIO no corresponde a la sede del evento" },
+                            { status: 400 }
+                        )
+                    }
                     data.servilexBindingId = resolvedBindingId
-                    data.servilexSucursalCode = bindingEntry.sucursalCodigo
+                    data.servilexSucursalCode = eventSucursalCode
                     data.servilexServiceCode = bindingEntry.servicioCodigo
                     data.servilexDisciplineCode = bindingEntry.disciplinaCodigo
                     data.servilexScheduleCode = bindingEntry.horarioCodigo
@@ -492,14 +528,7 @@ export async function PUT(request: NextRequest) {
             data,
         })
 
-        const event = await prisma.event.findUnique({
-            where: { id: ticketType.eventId },
-            select: {
-                category: true,
-            },
-        })
-
-        if (capacity !== undefined && isPoolFreeEventCategory(event?.category)) {
+        if (capacity !== undefined && isPoolFreeEventCategory(currentTicketType.event.category)) {
             await prisma.$executeRaw(Prisma.sql`
                 UPDATE "ticket_type_date_inventories"
                 SET "capacity" = ${Number(capacity)},

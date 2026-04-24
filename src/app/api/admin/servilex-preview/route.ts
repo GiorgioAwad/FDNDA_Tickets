@@ -117,6 +117,7 @@ function mapOrderToPreviewSource(order: {
             event: {
                 id: string
                 startDate: Date
+                servilexSucursalCode: string
             }
         }
     }>
@@ -160,6 +161,7 @@ function mapOrderToPreviewSource(order: {
                 event: {
                     id: item.ticketType.event.id,
                     startDate: item.ticketType.event.startDate,
+                    servilexSucursalCode: item.ticketType.event.servilexSucursalCode,
                 },
             },
         })),
@@ -187,7 +189,7 @@ export async function GET(request: NextRequest) {
                         include: {
                             ticketType: {
                                 include: {
-                                    event: { select: { id: true, startDate: true } },
+                                    event: { select: { id: true, startDate: true, servilexSucursalCode: true } },
                                 },
                             },
                         },
@@ -211,7 +213,7 @@ export async function GET(request: NextRequest) {
             const ticketType = await prisma.ticketType.findUnique({
                 where: { id: ticketTypeId },
                 include: {
-                    event: { select: { id: true, startDate: true } },
+                    event: { select: { id: true, startDate: true, servilexSucursalCode: true } },
                 },
             })
 
@@ -280,6 +282,7 @@ export async function GET(request: NextRequest) {
                         event: {
                             id: ticketType.event.id,
                             startDate: ticketType.event.startDate,
+                            servilexSucursalCode: ticketType.event.servilexSucursalCode,
                         },
                     },
                 }],

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { getCachedEventWithTicketTypes, onEventUpdated } from "@/lib/cached-queries"
+import { getAbioEventSucursalByCode } from "@/lib/abio-sucursales"
 import { EventCategory, EventVisibility } from "@prisma/client"
 export const runtime = "nodejs"
 
@@ -96,6 +97,7 @@ export async function PUT(
             description,
             location,
             venue,
+            servilexSucursalCode,
             startDate,
             endDate,
             mode,
@@ -110,6 +112,7 @@ export async function PUT(
             description?: string
             location?: string
             venue?: string
+            servilexSucursalCode?: string | null
             startDate?: string | Date
             endDate?: string | Date
             mode?: string
@@ -171,13 +174,26 @@ export async function PUT(
             }
         }
 
+        const selectedSucursal =
+            servilexSucursalCode !== undefined
+                ? getAbioEventSucursalByCode(servilexSucursalCode)
+                : null
+
+        if (servilexSucursalCode !== undefined && !selectedSucursal) {
+            return NextResponse.json(
+                { success: false, error: "Sede ABIO invalida" },
+                { status: 400 }
+            )
+        }
+
         const event = await prisma.event.update({
             where: { id },
             data: {
                 title,
                 description,
                 location,
-                venue,
+                venue: selectedSucursal ? selectedSucursal.name : venue,
+                servilexSucursalCode: selectedSucursal ? selectedSucursal.code : undefined,
                 startDate: parsedStartDate,
                 endDate: parsedEndDate,
                 mode: mode as "RANGE" | "DAYS" | undefined,

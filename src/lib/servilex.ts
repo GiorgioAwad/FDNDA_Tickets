@@ -210,6 +210,7 @@ export interface ServilexSourceUser {
 export interface ServilexSourceEvent {
     id: string
     startDate: Date
+    servilexSucursalCode?: string | null
 }
 
 export interface ServilexSourceTicketType {
@@ -752,6 +753,14 @@ function buildAttendeeAlumnoSnapshot(
     }
 }
 
+function getServilexItemSucursal(item: ServilexSourceOrderItem): string {
+    return (
+        asString(item.ticketType.event.servilexSucursalCode) ||
+        asString(item.ticketType.servilexSucursalCode) ||
+        getServilexConfig().sucursal
+    )
+}
+
 function buildAcademiaUnit(
     item: ServilexSourceOrderItem,
     attendee: ServilexAttendeeRecord,
@@ -762,8 +771,7 @@ function buildAcademiaUnit(
     const disciplina = normalizeCode(item.ticketType.servilexDisciplineCode, "disciplina")
     const horario = normalizeCode(item.ticketType.servilexScheduleCode, "horario")
     const piscina = normalizeCode(item.ticketType.servilexPoolCode, "piscina")
-    const sucursal =
-        asString(item.ticketType.servilexSucursalCode) || getServilexConfig().sucursal
+    const sucursal = getServilexItemSucursal(item)
     const selectedDate = attendee.scheduleSelections[0]?.date
     const serviceDate = selectedDate
         ? new Date(`${selectedDate}T12:00:00Z`)
@@ -795,8 +803,7 @@ function buildOtrosServiciosUnit(
 
     return {
         indicator: "OS",
-        sucursal:
-            asString(item.ticketType.servilexSucursalCode) || getServilexConfig().sucursal,
+        sucursal: getServilexItemSucursal(item),
         baseAmount: unitPrice,
         detalle: {
             servicio: normalizeCode(item.ticketType.servilexServiceCode, "servicio"),
@@ -815,8 +822,7 @@ function buildPiscinaLibreUnit(
 
     return {
         indicator,
-        sucursal:
-            asString(item.ticketType.servilexSucursalCode) || getServilexConfig().sucursal,
+        sucursal: getServilexItemSucursal(item),
         baseAmount: unitPrice,
         detalle: {
             servicio: normalizeCode(item.ticketType.servilexServiceCode, "servicio"),

@@ -11,6 +11,12 @@ import { TicketTypeManager } from "@/components/admin/TicketTypeManager"
 import { EventDaysManager } from "@/components/admin/EventDaysManager"
 import type { EventWithDetails, EventWithDetailsSerialized } from "@/types"
 import { formatDateInput } from "@/lib/utils"
+import {
+    ABIO_EVENT_SUCURSALES,
+    DEFAULT_ABIO_EVENT_SUCURSAL_CODE,
+    getAbioEventSucursalByCode,
+    getDefaultAbioEventSucursal,
+} from "@/lib/abio-sucursales"
 
 interface EventFormProps {
     initialData?: EventWithDetails | EventWithDetailsSerialized
@@ -23,6 +29,7 @@ interface EventFormData {
     description: string
     location: string
     venue: string
+    servilexSucursalCode: string
     discipline: string
     category: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA"
     advanceAmount: string
@@ -38,12 +45,16 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
     const router = useRouter()
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState("")
+    const initialSucursal =
+        getAbioEventSucursalByCode(initialData?.servilexSucursalCode) ||
+        getDefaultAbioEventSucursal()
 
     const [formData, setFormData] = useState<EventFormData>({
         title: initialData?.title || "",
         description: initialData?.description || "",
         location: initialData?.location || "",
-        venue: initialData?.venue || "",
+        venue: initialData?.venue || initialSucursal.name,
+        servilexSucursalCode: initialSucursal.code || DEFAULT_ABIO_EVENT_SUCURSAL_CODE,
         discipline: initialData?.discipline || "",
         category: initialData?.category || "EVENTO",
         advanceAmount: initialData?.advanceAmount ? String(initialData.advanceAmount) : "0",
@@ -62,6 +73,7 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
         typeof window !== "undefined" && initialData?.slug && accessToken
             ? `${window.location.origin}/eventos/${initialData.slug}?t=${accessToken}`
             : ""
+    const savedEventSucursalCode = initialData?.servilexSucursalCode || formData.servilexSucursalCode
 
     const handleCopyLink = async () => {
         if (!shareUrl) return
@@ -104,6 +116,15 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const value = e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value
         setFormData({ ...formData, [e.target.name]: value })
+    }
+
+    const handleSucursalChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const sucursal = getAbioEventSucursalByCode(e.target.value) || getDefaultAbioEventSucursal()
+        setFormData({
+            ...formData,
+            servilexSucursalCode: sucursal.code,
+            venue: sucursal.name,
+        })
     }
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -286,14 +307,20 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium">Sede (Venue)</label>
-                                    <Input
-                                        name="venue"
-                                        placeholder="Ej: Campo de Marte"
-                                        value={formData.venue}
-                                        onChange={handleChange}
+                                    <label className="text-sm font-medium">Sede</label>
+                                    <select
+                                        name="servilexSucursalCode"
+                                        value={formData.servilexSucursalCode}
+                                        onChange={handleSucursalChange}
+                                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
                                         required
-                                    />
+                                    >
+                                        {ABIO_EVENT_SUCURSALES.map((sucursal) => (
+                                            <option key={sucursal.code} value={sucursal.code}>
+                                                {sucursal.code} - {sucursal.name}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium">Ciudad/Ubicación</label>
@@ -430,6 +457,7 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                         eventCategory={formData.category}
                         eventStartDate={formData.startDate || initialData.startDate}
                         eventEndDate={formData.endDate || initialData.endDate}
+                        eventSucursalCode={savedEventSucursalCode}
                     />
 
                     <EventDaysManager

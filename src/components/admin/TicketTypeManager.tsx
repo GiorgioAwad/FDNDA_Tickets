@@ -11,6 +11,10 @@ import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ti
 import ServilexServiceCombobox from "@/components/admin/ServilexServiceCombobox"
 import { AbioCatalogControls } from "@/components/admin/AbioCatalogControls"
 import { AbioBindingSelector } from "@/components/admin/AbioBindingSelector"
+import {
+    DEFAULT_ABIO_EVENT_SUCURSAL_CODE,
+    getAbioEventSucursalByCode,
+} from "@/lib/abio-sucursales"
 
 interface TicketType {
     id?: string
@@ -49,6 +53,7 @@ interface TicketTypeManagerProps {
     eventCategory?: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA"
     eventStartDate?: string | Date
     eventEndDate?: string | Date
+    eventSucursalCode?: string | null
 }
 
 interface ShiftEntry {
@@ -65,7 +70,7 @@ type ServilexExtraConfig = {
     duracion?: number | string
 }
 
-const buildEmptyFormData = (): Partial<TicketType> => ({
+const buildEmptyFormData = (sucursalCode = DEFAULT_ABIO_EVENT_SUCURSAL_CODE): Partial<TicketType> => ({
     name: "",
     description: "",
     price: 0,
@@ -75,7 +80,7 @@ const buildEmptyFormData = (): Partial<TicketType> => ({
     sortOrder: 0,
     servilexEnabled: false,
     servilexIndicator: "AC",
-    servilexSucursalCode: "01",
+    servilexSucursalCode: sucursalCode,
     servilexServiceCode: "",
     servilexDisciplineCode: "",
     servilexScheduleCode: "",
@@ -189,7 +194,12 @@ export function TicketTypeManager({
     eventCategory,
     eventStartDate,
     eventEndDate,
+    eventSucursalCode,
 }: TicketTypeManagerProps) {
+    const eventSucursal =
+        getAbioEventSucursalByCode(eventSucursalCode) ||
+        getAbioEventSucursalByCode(DEFAULT_ABIO_EVENT_SUCURSAL_CODE)!
+    const eventSucursalLabel = `${eventSucursal.code} - ${eventSucursal.name}`
     const [ticketTypes, setTicketTypes] = useState<TicketType[]>(initialTicketTypes)
     const [isAdding, setIsAdding] = useState(false)
     const [editingId, setEditingId] = useState<string | null>(null)
@@ -201,7 +211,9 @@ export function TicketTypeManager({
     const [requireShiftSelection, setRequireShiftSelection] = useState(true)
     const [fullDayPackageDays, setFullDayPackageDays] = useState(4)
 
-    const [formData, setFormData] = useState<Partial<TicketType>>(buildEmptyFormData)
+    const [formData, setFormData] = useState<Partial<TicketType>>(() =>
+        buildEmptyFormData(eventSucursal.code)
+    )
     const [capacityInput, setCapacityInput] = useState("100")
     const usesDailyCapacity = eventCategory === "PISCINA_LIBRE"
 
@@ -221,6 +233,17 @@ export function TicketTypeManager({
     const inactiveCount = ticketTypes.filter((t) => t.isActive === false).length
     const configuredShiftCount = shiftEntries.filter((entry) => entry.name.trim()).length
     const scheduleMode = requireShiftSelection ? "per_shift" : "full_day"
+
+    useEffect(() => {
+        setFormData((prev) => {
+            if (prev.servilexSucursalCode === eventSucursal.code) return prev
+            return {
+                ...prev,
+                servilexSucursalCode: eventSucursal.code,
+                servilexBindingId: null,
+            }
+        })
+    }, [eventSucursal.code])
 
     const isShiftTicketType = (ticket: TicketType) => {
         const schedule = parseTicketScheduleConfig(ticket.validDays)
@@ -423,7 +446,7 @@ export function TicketTypeManager({
     }
 
     const resetForm = () => {
-        setFormData(buildEmptyFormData())
+        setFormData(buildEmptyFormData(eventSucursal.code))
         setCapacityInput("100")
         setSelectedValidDays([])
         setShiftEntries([])
@@ -436,7 +459,7 @@ export function TicketTypeManager({
 
     const startStandardTicket = () => {
         setEntryMode("standard")
-        setFormData(buildEmptyFormData())
+        setFormData(buildEmptyFormData(eventSucursal.code))
         setCapacityInput("100")
         setSelectedValidDays([])
         setShiftEntries([])
@@ -448,7 +471,7 @@ export function TicketTypeManager({
     const startPerShiftTicket = () => {
         setEntryMode("shift")
         setFormData({
-            ...buildEmptyFormData(),
+            ...buildEmptyFormData(eventSucursal.code),
             isPackage: false,
             packageDaysCount: 0,
         })
@@ -463,7 +486,7 @@ export function TicketTypeManager({
     const startFullDayTicket = () => {
         setEntryMode("shift")
         setFormData({
-            ...buildEmptyFormData(),
+            ...buildEmptyFormData(eventSucursal.code),
             isPackage: false,
             packageDaysCount: 1,
         })
@@ -509,8 +532,8 @@ export function TicketTypeManager({
         const extraConfig = getServilexExtraConfig(formData.servilexExtraConfig)
 
         if (formData.servilexEnabled) {
-            if (!formData.servilexSucursalCode || !String(formData.servilexSucursalCode).trim()) {
-                alert("Completa el codigo de sucursal ABIO")
+            if (!eventSucursal.code) {
+                alert("Completa la sede del evento")
                 return
             }
             if (!formData.servilexServiceId && !formData.servilexServiceCode) {
@@ -570,9 +593,13 @@ export function TicketTypeManager({
         try {
             const url = "/api/ticket-types"
             const method = editingId ? "PUT" : "POST"
+            const servilexFormData = {
+                ...formData,
+                servilexSucursalCode: eventSucursal.code,
+            }
             const body = editingId
-                ? { ...formData, id: editingId, capacity: capacityNumber, validDays: validDaysPayload }
-                : { ...formData, eventId, capacity: capacityNumber, validDays: validDaysPayload }
+                ? { ...servilexFormData, id: editingId, capacity: capacityNumber, validDays: validDaysPayload }
+                : { ...servilexFormData, eventId, capacity: capacityNumber, validDays: validDaysPayload }
 
             const response = await fetch(url, {
                 method,
@@ -732,8 +759,8 @@ export function TicketTypeManager({
                 alert("Para el generador de piscina libre, el indicador ABIO debe ser PN o PA")
                 return
             }
-            if (!formData.servilexSucursalCode || !String(formData.servilexSucursalCode).trim()) {
-                alert("Completa la sucursal ABIO para generar horarios integrados")
+            if (!eventSucursal.code) {
+                alert("Completa la sede del evento para generar horarios integrados")
                 return
             }
             if (!formData.servilexServiceCode || !String(formData.servilexServiceCode).trim()) {
@@ -828,7 +855,7 @@ export function TicketTypeManager({
                         servilexEnabled: Boolean(formData.servilexEnabled),
                         servilexIndicator: currentPoolIndicator,
                         servilexBindingId: null,
-                        servilexSucursalCode: formData.servilexSucursalCode,
+                        servilexSucursalCode: eventSucursal.code,
                         servilexServiceCode: formData.servilexServiceCode,
                         servilexDisciplineCode: formData.servilexDisciplineCode,
                         servilexScheduleCode: catalogSchedule?.horarioCodigo || formData.servilexScheduleCode,
@@ -903,6 +930,7 @@ export function TicketTypeManager({
         setFormData((prev) => ({
             ...prev,
             ...patch,
+            servilexSucursalCode: eventSucursal.code,
             servilexServiceId: null,
         }))
         if (patch.capacity !== undefined) {
@@ -964,13 +992,13 @@ export function TicketTypeManager({
                             variant="outline"
                             onClick={() => {
                                 setFormData((prev) => ({
-                                    ...buildEmptyFormData(),
+                                    ...buildEmptyFormData(eventSucursal.code),
                                     servilexEnabled: true,
                                     servilexIndicator:
                                         prev.servilexIndicator === "PA" || prev.servilexIndicator === "PN"
                                             ? prev.servilexIndicator
                                             : "PN",
-                                    servilexSucursalCode: prev.servilexSucursalCode || "01",
+                                    servilexSucursalCode: eventSucursal.code,
                                     servilexServiceCode: prev.servilexServiceCode || "",
                                     servilexPoolCode: prev.servilexPoolCode || "",
                                     servilexExtraConfig: {
@@ -1129,18 +1157,10 @@ export function TicketTypeManager({
                                             </select>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-xs font-medium">Sucursal ABIO</label>
-                                            <Input
-                                                value={formData.servilexSucursalCode || ""}
-                                                onChange={(e) =>
-                                                    setFormData((prev) => ({
-                                                        ...prev,
-                                                        servilexSucursalCode: e.target.value,
-                                                    }))
-                                                }
-                                                placeholder="01"
-                                                disabled={poolGenerating}
-                                            />
+                                            <label className="text-xs font-medium">Sucursal ABIO (del evento)</label>
+                                            <div className="flex h-10 items-center rounded-md border border-input bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                                                {eventSucursalLabel}
+                                            </div>
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-xs font-medium">Codigo servicio ABIO</label>
@@ -1422,18 +1442,10 @@ export function TicketTypeManager({
                                             </select>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-xs font-medium">Sucursal ABIO</label>
-                                            <Input
-                                                value={formData.servilexSucursalCode || ""}
-                                                onChange={(e) =>
-                                                    setFormData({
-                                                        ...formData,
-                                                        servilexSucursalCode: e.target.value,
-                                                        servilexBindingId: null,
-                                                    })
-                                                }
-                                                placeholder="01"
-                                            />
+                                            <label className="text-xs font-medium">Sucursal ABIO (del evento)</label>
+                                            <div className="flex h-10 items-center rounded-md border border-input bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                                                {eventSucursalLabel}
+                                            </div>
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-xs font-medium">Codigo servicio ABIO</label>
@@ -1455,7 +1467,7 @@ export function TicketTypeManager({
                                     <AbioBindingSelector
                                         key={catalogRefreshKey}
                                         indicator={currentServilexIndicator}
-                                        sucursalCode={formData.servilexSucursalCode || ""}
+                                        sucursalCode={eventSucursal.code}
                                         serviceCode={formData.servilexServiceCode || ""}
                                         disciplineCode={formData.servilexDisciplineCode || ""}
                                         scheduleCode={formData.servilexScheduleCode || ""}
@@ -1920,7 +1932,7 @@ export function TicketTypeManager({
                                                 {ticket.servilexEnabled && (
                                                     <Badge variant="secondary" className="text-xs">
                                                         ABIO {(ticket.servilexIndicator || "AC").toUpperCase()}
-                                                        {ticket.servilexSucursalCode ? ` · ${ticket.servilexSucursalCode}` : ""}
+                                                        {` · ${eventSucursal.code}`}
                                                     </Badge>
                                                 )}
                                                 {ticket.isActive === false && (
@@ -1973,7 +1985,14 @@ export function TicketTypeManager({
                                                     const mode = isShiftTicketType(ticket) ? "shift" : "standard"
                                                     setEntryMode(mode)
                                                     setEditingId(ticket.id!)
-                                                    setFormData(normalizeTicketTypeForForm(ticket))
+                                                    setFormData({
+                                                        ...normalizeTicketTypeForForm(ticket),
+                                                        servilexSucursalCode: eventSucursal.code,
+                                                        servilexBindingId:
+                                                            ticket.servilexSucursalCode === eventSucursal.code
+                                                                ? ticket.servilexBindingId || null
+                                                                : null,
+                                                    })
                                                     setIsAdding(false)
                                                     setCapacityInput(String(ticket.capacity ?? 0))
                                                     setSelectedValidDays(schedule.dates)

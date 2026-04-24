@@ -138,6 +138,7 @@ async function syncServilexInvoices(
                 event: {
                     id: string
                     startDate: Date
+                    servilexSucursalCode: string
                 }
             }
         }>
@@ -207,6 +208,7 @@ async function syncServilexInvoices(
                 event: {
                     id: item.ticketType.event.id,
                     startDate: item.ticketType.event.startDate,
+                    servilexSucursalCode: item.ticketType.event.servilexSucursalCode,
                 },
             },
         })),

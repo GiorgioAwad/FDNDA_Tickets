@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
                                     select: {
                                         id: true,
                                         startDate: true,
+                                        servilexSucursalCode: true,
                                     },
                                 },
                             },
@@ -137,6 +138,7 @@ export async function GET(request: NextRequest) {
                                     event: {
                                         id: item.ticketType.event.id,
                                         startDate: item.ticketType.event.startDate,
+                                        servilexSucursalCode: item.ticketType.event.servilexSucursalCode,
                                     },
                                 },
                             })),

@@ -53,6 +53,7 @@ function buildTicketType(
         event: {
             id: "event-1",
             startDate: new Date("2026-04-01T12:00:00Z"),
+            servilexSucursalCode: "01",
         },
         ...overrides,
     }
@@ -392,6 +393,35 @@ test("AC usa nombres estructurados y codigoReferencia maximo de 6 caracteres", (
     assert.equal(payload.cabecera.alumno?.segundoNombre, "Andres")
     assert.equal(payload.cabecera.alumno?.apellidoPaterno, "Muñoz")
     assert.equal(payload.cabecera.alumno?.apellidoMaterno, "Ramirez")
+})
+
+test("usa la sucursal ABIO del evento antes que la del tipo de entrada", () => {
+    const order = buildOrder({
+        totalAmount: 25,
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 25,
+                attendeeData: [],
+                ticketType: buildTicketType("OS", {
+                    servilexSucursalCode: "01",
+                    event: {
+                        id: "event-trujillo",
+                        startDate: new Date("2026-04-01T12:00:00Z"),
+                        servilexSucursalCode: "02",
+                    },
+                }),
+            },
+        ],
+    })
+
+    const [snapshot] = buildServilexInvoiceSnapshots(order)
+    const [source] = buildServilexPreviewSources(order, "event-sucursal-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(snapshot.sucursal, "02")
+    assert.equal(snapshot.groupKey, "OS:02")
+    assert.equal(payload.cabecera.sucursal, "02")
 })
 
 test("getServilexConfig usa ejecutivo 0020 por defecto", () => {
