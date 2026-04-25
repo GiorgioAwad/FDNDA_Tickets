@@ -222,7 +222,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
                 dangerouslySetInnerHTML={{ __html: JSON.stringify(eventJsonLd) }}
             />
             {/* Hero */}
-            <div className="relative h-56 sm:h-64 md:h-96 bg-gradient-fdnda overflow-hidden">
+            <div className="relative w-full aspect-[1200/630] min-h-[14rem] max-h-[34rem] bg-gradient-fdnda overflow-hidden">
                 <div className="absolute top-4 left-0 right-0 z-10">
                     <div className="container mx-auto px-4">
                         <Link
