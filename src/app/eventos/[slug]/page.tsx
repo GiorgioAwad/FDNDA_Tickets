@@ -240,7 +240,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
                         alt={event.title}
                         priority
                         sizes="100vw"
-                        className="object-cover object-top opacity-80"
+                        className="object-cover object-top"
                     />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center">
