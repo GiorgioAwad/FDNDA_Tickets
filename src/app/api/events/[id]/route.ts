@@ -5,6 +5,7 @@ import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { getCachedEventWithTicketTypes, onEventUpdated } from "@/lib/cached-queries"
 import { getAbioEventSucursalByCode } from "@/lib/abio-sucursales"
+import { normalizeRichTextForDb } from "@/lib/sanitize-rich-text"
 import { EventCategory, EventVisibility } from "@prisma/client"
 export const runtime = "nodejs"
 
@@ -190,7 +191,7 @@ export async function PUT(
             where: { id },
             data: {
                 title,
-                description,
+                description: description !== undefined ? normalizeRichTextForDb(description) : undefined,
                 location,
                 venue: selectedSucursal ? selectedSucursal.name : venue,
                 servilexSucursalCode: selectedSucursal ? selectedSucursal.code : undefined,

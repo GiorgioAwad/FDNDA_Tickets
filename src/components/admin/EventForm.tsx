@@ -9,6 +9,7 @@ import { ImageUploader } from "@/components/ui/image-uploader"
 import { Save, ArrowLeft, Copy, RefreshCw, Link as LinkIcon } from "lucide-react"
 import { TicketTypeManager } from "@/components/admin/TicketTypeManager"
 import { EventDaysManager } from "@/components/admin/EventDaysManager"
+import { RichTextEditor } from "@/components/admin/RichTextEditor"
 import type { EventWithDetails, EventWithDetailsSerialized } from "@/types"
 import { formatDateInput } from "@/lib/utils"
 import {
@@ -233,13 +234,16 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
 
                             <div className="space-y-2">
                                 <label className="text-sm font-medium">Descripción</label>
-                                <textarea
-                                    name="description"
+                                <RichTextEditor
                                     value={formData.description}
-                                    onChange={handleChange}
-                                    className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                                    required
+                                    onChange={(html) =>
+                                        setFormData((prev) => ({ ...prev, description: html }))
+                                    }
+                                    placeholder="Describe el evento. Puedes usar negritas, listas, enlaces..."
                                 />
+                                <p className="text-xs text-gray-500">
+                                    Tip: usa la barra superior para formato (negritas, listas, enlaces, etc.)
+                                </p>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -5,6 +5,7 @@ import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { getCachedPublishedEvents } from "@/lib/cached-queries"
 import { getAbioEventSucursalByCode, getDefaultAbioEventSucursal } from "@/lib/abio-sucursales"
+import { normalizeRichTextForDb } from "@/lib/sanitize-rich-text"
 import slugify from "slugify"
 import { EventCategory, EventVisibility, Prisma } from "@prisma/client"
 
@@ -175,7 +176,7 @@ export async function POST(request: NextRequest) {
             data: {
                 title,
                 slug,
-                description,
+                description: normalizeRichTextForDb(description),
                 location,
                 venue: resolvedSucursal.name,
                 servilexSucursalCode: resolvedSucursal.code,

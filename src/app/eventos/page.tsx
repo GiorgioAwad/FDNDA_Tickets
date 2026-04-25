@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { getCachedPublishedEvents, type CachedEvent } from "@/lib/cached-queries"
 import { formatDate, formatPrice } from "@/lib/utils"
+import { richTextToPlainText } from "@/lib/sanitize-rich-text"
 import { EventBannerMedia } from "@/components/events/EventBannerMedia"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -79,7 +80,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
         }
 
         if (search) {
-            const haystack = `${event.title} ${event.description} ${event.venue}`.toLowerCase()
+            const haystack = `${event.title} ${richTextToPlainText(event.description)} ${event.venue}`.toLowerCase()
             if (!haystack.includes(search)) return false
         }
 
@@ -195,7 +196,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                                             </div>
 
                                             <p className="text-sm text-gray-500 line-clamp-2 mb-4">
-                                                {event.description}
+                                                {richTextToPlainText(event.description)}
                                             </p>
 
                                             <div className="flex items-center justify-between pt-4 border-t">

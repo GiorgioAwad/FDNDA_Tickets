@@ -4,6 +4,7 @@ import { timingSafeEqual } from "crypto"
 import type { Metadata } from "next"
 import { prisma } from "@/lib/prisma"
 import { cn, formatDate } from "@/lib/utils"
+import { normalizeRichTextForDisplay } from "@/lib/sanitize-rich-text"
 import { EventBannerMedia } from "@/components/events/EventBannerMedia"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -35,7 +36,15 @@ function tokensMatch(provided: string | undefined, expected: string | null): boo
 const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://ticketingfdnda.pe"
 
 function buildMetaDescription(text: string, max = 160): string {
-    const clean = text.replace(/\s+/g, " ").trim()
+    const stripped = text
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+    const clean = stripped.replace(/\s+/g, " ").trim()
     if (clean.length <= max) return clean
     return `${clean.slice(0, max - 1).trimEnd()}…`
 }
@@ -153,7 +162,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
         "@context": "https://schema.org",
         "@type": "SportsEvent",
         name: event.title,
-        description: event.description,
+        description: buildMetaDescription(event.description, 5000),
         startDate: event.startDate.toISOString(),
         endDate: event.endDate.toISOString(),
         eventStatus: "https://schema.org/EventScheduled",
@@ -291,9 +300,12 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
                                 </div>
 
                                 <h2 className="mb-3 text-base font-semibold sm:text-lg">Descripción</h2>
-                                <div className="prose prose-gray max-w-none">
-                                    <p className="whitespace-pre-wrap">{event.description}</p>
-                                </div>
+                                <div
+                                    className="prose prose-sm sm:prose-base prose-gray max-w-none prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline"
+                                    dangerouslySetInnerHTML={{
+                                        __html: normalizeRichTextForDisplay(event.description),
+                                    }}
+                                />
                             </CardContent>
                         </Card>
 
