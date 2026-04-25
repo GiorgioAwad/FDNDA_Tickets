@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { EventForm } from "@/components/admin/EventForm"
 import { EventDashboard } from "@/components/admin/EventDashboard"
+import { DuplicateEventButton } from "@/components/admin/DuplicateEventButton"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
@@ -77,13 +78,20 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
 
     return (
         <div className="container mx-auto px-4 py-8">
-            <div className="mb-6">
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
                 <Button variant="ghost" asChild>
                     <Link href="/admin/eventos" className="inline-flex items-center">
                         <ArrowLeft className="h-4 w-4 mr-2" />
                         Volver
                     </Link>
                 </Button>
+                <DuplicateEventButton
+                    eventId={event.id}
+                    eventTitle={event.title}
+                    eventStartDate={event.startDate.toISOString()}
+                    eventEndDate={event.endDate.toISOString()}
+                    eventCategory={event.category}
+                />
             </div>
             <EventDashboard eventId={event.id} ticketTypes={ticketTypeOptions} />
             <EventForm initialData={serializedEvent} isEditing showBack={false} />
