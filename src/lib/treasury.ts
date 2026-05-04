@@ -1,10 +1,13 @@
 import "server-only"
 
 import { prisma } from "@/lib/prisma"
+import {
+    IZIPAY_COMMISSION_RATE,
+    IGV_RATE,
+    TOTAL_COMMISSION_RATE,
+} from "@/lib/commission-rates"
 
-export const IZIPAY_COMMISSION_RATE = 0.0399
-export const IGV_RATE = 0.18
-export const TOTAL_COMMISSION_RATE = IZIPAY_COMMISSION_RATE * (1 + IGV_RATE)
+export { IZIPAY_COMMISSION_RATE, IGV_RATE, TOTAL_COMMISSION_RATE }
 
 export interface TreasuryEventSummary {
     id: string

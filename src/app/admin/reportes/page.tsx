@@ -19,10 +19,12 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-// Comisión de Izipay (3.99% + IGV)
-const IZIPAY_COMMISSION_RATE = 0.0399
-const IGV_RATE = 0.18
-const TOTAL_COMMISSION_RATE = IZIPAY_COMMISSION_RATE * (1 + IGV_RATE) // ~4.71%
+import {
+    IZIPAY_COMMISSION_RATE,
+    TOTAL_COMMISSION_RATE,
+    IZIPAY_FIXED_FEE_PER_TX_PEN,
+    calculateIzipayCommission,
+} from "@/lib/commission-rates"
 
 interface ReportsData {
     totalRevenue: number
@@ -68,9 +70,13 @@ export default function ReportsPage() {
     if (!data) return <div>Error al cargar reportes</div>
 
     // Calculate net revenue (after Izipay commission)
-    const netRevenue = data.totalRevenue * (1 - TOTAL_COMMISSION_RATE)
-    const commissionAmount = data.totalRevenue * TOTAL_COMMISSION_RATE
+    const commissionBreakdown = calculateIzipayCommission(data.totalRevenue, data.totalOrders)
+    const commissionAmount = commissionBreakdown.total
+    const netRevenue = data.totalRevenue - commissionAmount
     const avgOrderValue = data.totalOrders > 0 ? data.totalRevenue / data.totalOrders : 0
+    const effectiveCommissionRate = data.totalRevenue > 0
+        ? (commissionAmount / data.totalRevenue) * 100
+        : TOTAL_COMMISSION_RATE * 100
 
     const exportToExcel = () => {
         const wb = XLSX.utils.book_new()
@@ -78,7 +84,7 @@ export default function ReportsPage() {
         // Sheet 1: Summary
         const summaryData = [
             { "Métrica": "Ingresos Brutos", "Valor": data.totalRevenue },
-            { "Métrica": "Comisión Izipay (4.71%)", "Valor": commissionAmount },
+            { "Métrica": `Comisión Izipay (${effectiveCommissionRate.toFixed(2)}% efectiva)`, "Valor": commissionAmount },
             { "Métrica": "Ingresos Netos", "Valor": netRevenue },
             { "Métrica": "Total Órdenes", "Valor": data.totalOrders },
             { "Métrica": "Entradas Vendidas", "Valor": data.ticketsSold },
@@ -208,7 +214,7 @@ export default function ReportsPage() {
                             </div>
                             <div>
                                 <p className="text-sm font-medium text-amber-900">Comisión Izipay</p>
-                                <p className="text-xs text-amber-700">3.99% + IGV = {(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%</p>
+                                <p className="text-xs text-amber-700">{(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV ({(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%) + S/ {IZIPAY_FIXED_FEE_PER_TX_PEN.toFixed(2)}/tx → {effectiveCommissionRate.toFixed(2)}% efectiva</p>
                             </div>
                         </div>
                         <div className="text-right">

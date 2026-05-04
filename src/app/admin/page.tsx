@@ -44,12 +44,12 @@ type ActiveEvent = {
     }
 }
 
-// ==================== CONSTANTS ====================
-
-// Comisión de Izipay (3.99% + IGV)
-const IZIPAY_COMMISSION_RATE = 0.0399
-const IGV_RATE = 0.18
-const TOTAL_COMMISSION_RATE = IZIPAY_COMMISSION_RATE * (1 + IGV_RATE) // ~4.71%
+import {
+    IZIPAY_COMMISSION_RATE,
+    TOTAL_COMMISSION_RATE,
+    IZIPAY_FIXED_FEE_PER_TX_PEN,
+    calculateIzipayCommission,
+} from "@/lib/commission-rates"
 
 // ==================== PAGE ====================
 
@@ -196,12 +196,13 @@ export default async function AdminDashboardPage() {
 
     // Calculate revenue metrics
     const grossRevenue = Number(paidSummary._sum.totalAmount ?? 0)
-    const izipayCommission = grossRevenue * TOTAL_COMMISSION_RATE
+    const completedOrdersCount = paidSummary._count._all
+    const commissionBreakdown = calculateIzipayCommission(grossRevenue, completedOrdersCount)
+    const izipayCommission = commissionBreakdown.total
     const netRevenue = grossRevenue - izipayCommission
 
     const thisMonthRevenue = Number(thisMonthSummary._sum.totalAmount ?? 0)
     const lastMonthRevenue = Number(lastMonthSummary._sum.totalAmount ?? 0)
-    const completedOrdersCount = paidSummary._count._all
 
     const revenueChange = lastMonthRevenue > 0
         ? ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
@@ -261,7 +262,7 @@ export default async function AdminDashboardPage() {
                             </div>
                             <Badge variant="outline" className="text-xs">
                                 <Percent className="h-3 w-3 mr-1" />
-                                -{(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%
+                                -{grossRevenue > 0 ? ((izipayCommission / grossRevenue) * 100).toFixed(2) : (TOTAL_COMMISSION_RATE * 100).toFixed(2)}%
                             </Badge>
                         </div>
                         <div className="mt-3">
@@ -444,8 +445,9 @@ export default async function AdminDashboardPage() {
                         <div>
                             <h4 className="font-medium text-yellow-800">Información de Comisiones</h4>
                             <p className="text-sm text-yellow-700 mt-1">
-                                La comisión de Izipay es de <strong>{(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV</strong> ({(TOTAL_COMMISSION_RATE * 100).toFixed(2)}% total) 
-                                por cada transacción. Los ingresos netos ya descuentan esta comisión.
+                                La comisión de Izipay es de <strong>{(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV</strong> ({(TOTAL_COMMISSION_RATE * 100).toFixed(2)}% total)
+                                + <strong>S/ {IZIPAY_FIXED_FEE_PER_TX_PEN.toFixed(2)} fijo</strong> por transacción (Punto Web 2.0 + Cybersource).
+                                Los ingresos netos ya descuentan esta comisión.
                             </p>
                         </div>
                     </div>

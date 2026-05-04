@@ -17,10 +17,15 @@ import {
     Info,
 } from "lucide-react"
 
-// Comisión de Izipay (3.99% + IGV)
-const IZIPAY_COMMISSION_RATE = 0.0399
-const IGV_RATE = 0.18
-const TOTAL_COMMISSION_RATE = IZIPAY_COMMISSION_RATE * (1 + IGV_RATE)
+import {
+    IZIPAY_COMMISSION_RATE,
+    IGV_RATE,
+    TOTAL_COMMISSION_RATE,
+    IZIPAY_FIXED_FEE_PER_TX_PEN,
+    IZIPAY_PUNTO_WEB_FEE_PEN,
+    IZIPAY_CYBERSOURCE_FEE_USD,
+    USD_TO_PEN_FOR_FEES,
+} from "@/lib/commission-rates"
 
 export default function ConfiguracionPage() {
     const [saved, setSaved] = useState(false)
@@ -84,10 +89,12 @@ export default function ConfiguracionPage() {
                             <div>
                                 <p className="font-medium text-amber-900">Comisiones</p>
                                 <ul className="text-sm text-amber-700 mt-1 space-y-1">
-                                    <li>• Tasa base: <strong>3.99%</strong> por transacción</li>
-                                    <li>• IGV sobre comisión: <strong>18%</strong></li>
-                                    <li>• Comisión total efectiva: <strong>{(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%</strong></li>
-                                    <li>• Tu margen neto: <strong>{((1 - TOTAL_COMMISSION_RATE) * 100).toFixed(2)}%</strong></li>
+                                    <li>• Tasa base: <strong>{(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}%</strong> por transacción</li>
+                                    <li>• IGV sobre comisión: <strong>{(IGV_RATE * 100).toFixed(0)}%</strong></li>
+                                    <li>• Total porcentual: <strong>{(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%</strong></li>
+                                    <li>• Fee fijo Punto Web 2.0: <strong>S/ {IZIPAY_PUNTO_WEB_FEE_PEN.toFixed(2)}</strong> por transacción</li>
+                                    <li>• Fee fijo Cybersource: <strong>USD {IZIPAY_CYBERSOURCE_FEE_USD.toFixed(2)}</strong> ≈ S/ {(IZIPAY_CYBERSOURCE_FEE_USD * USD_TO_PEN_FOR_FEES).toFixed(2)} (TC S/ {USD_TO_PEN_FOR_FEES.toFixed(2)})</li>
+                                    <li>• <strong>Total fee fijo: S/ {IZIPAY_FIXED_FEE_PER_TX_PEN.toFixed(2)}</strong> por transacción</li>
                                 </ul>
                             </div>
                         </div>

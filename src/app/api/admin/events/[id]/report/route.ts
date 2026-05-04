@@ -3,6 +3,11 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 import { formatDateTimeForExport } from "@/lib/utils"
 import { extractOrderPaymentDetails } from "@/lib/payment-details"
+import {
+    TOTAL_COMMISSION_RATE,
+    IZIPAY_FIXED_FEE_PER_TX_PEN,
+    calculateIzipayCommission,
+} from "@/lib/commission-rates"
 export const runtime = "nodejs"
 
 type TicketTypeSummary = {
@@ -186,23 +191,25 @@ export async function GET(
             }
         })
 
-        const commissionPercentRaw =
-            process.env.IZIPAY_FEE_PERCENT ||
-            process.env.NEXT_PUBLIC_IZIPAY_FEE_PERCENT ||
-            "0"
-        const commissionPercent = Number(commissionPercentRaw)
-        const commissionRate = Number.isFinite(commissionPercent) ? commissionPercent : 0
-        const commissionAmount = (totals.totalRevenue * commissionRate) / 100
+        const orderCount = totals.orderIds.size
+        const commissionBreakdown = calculateIzipayCommission(totals.totalRevenue, orderCount)
+        const commissionAmount = commissionBreakdown.total
         const netRevenue = totals.totalRevenue - commissionAmount
+        const effectiveCommissionPercent = totals.totalRevenue > 0
+            ? (commissionAmount / totals.totalRevenue) * 100
+            : TOTAL_COMMISSION_RATE * 100
 
         return NextResponse.json({
             success: true,
             data: {
                 totalRevenue: totals.totalRevenue,
-                totalOrders: totals.orderIds.size,
+                totalOrders: orderCount,
                 ticketsSold: totals.ticketsSold,
-                commissionPercent: commissionRate,
+                commissionPercent: effectiveCommissionPercent,
                 commissionAmount,
+                commissionPercentageAmount: commissionBreakdown.percentageAmount,
+                commissionFixedAmount: commissionBreakdown.fixedAmount,
+                commissionFixedFeePerTx: IZIPAY_FIXED_FEE_PER_TX_PEN,
                 netRevenue,
                 byTicketType,
                 attendees,

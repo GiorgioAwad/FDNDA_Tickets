@@ -25,10 +25,13 @@ import {
     QrCode,
 } from "lucide-react"
 
-// Comisión de Izipay (3.99% + IGV)
-const IZIPAY_COMMISSION_RATE = 0.0399
-const IGV_RATE = 0.18
-const TOTAL_COMMISSION_RATE = IZIPAY_COMMISSION_RATE * (1 + IGV_RATE) // ~4.71%
+import {
+    IZIPAY_COMMISSION_RATE,
+    IGV_RATE,
+    TOTAL_COMMISSION_RATE,
+    IZIPAY_FIXED_FEE_PER_TX_PEN,
+    calculateIzipayCommission,
+} from "@/lib/commission-rates"
 
 interface OrderTicket {
     id: string
@@ -128,8 +131,13 @@ export default function IncomePage() {
 
     const incomeData = data || mockData
 
-    const netIncome = incomeData.totalPaid * (1 - TOTAL_COMMISSION_RATE)
-    const commissionAmount = incomeData.totalPaid * TOTAL_COMMISSION_RATE
+    const paidOrdersCount = incomeData.orders.filter((order) => order.status === "PAID").length
+    const commissionBreakdown = calculateIzipayCommission(incomeData.totalPaid, paidOrdersCount)
+    const commissionAmount = commissionBreakdown.total
+    const netIncome = incomeData.totalPaid - commissionAmount
+    const effectiveRate = incomeData.totalPaid > 0
+        ? (commissionAmount / incomeData.totalPaid) * 100
+        : TOTAL_COMMISSION_RATE * 100
 
     const filteredOrders = incomeData.orders.filter(order => 
         filter === "all" || order.status === filter
@@ -304,13 +312,13 @@ export default function IncomePage() {
                             <div>
                                 <p className="font-medium text-amber-900">Procesador de Pagos: Izipay</p>
                                 <p className="text-sm text-amber-700">
-                                    Comisión: 3.99% + IGV (18%) = <strong>{(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%</strong> por transacción
+                                    Comisión: {(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV ({(IGV_RATE * 100).toFixed(0)}%) = <strong>{(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%</strong> + <strong>S/ {IZIPAY_FIXED_FEE_PER_TX_PEN.toFixed(2)} fijo</strong> por transacción
                                 </p>
                             </div>
                         </div>
                         <div className="text-right">
-                            <p className="text-sm text-amber-700">Tu margen neto</p>
-                            <p className="text-2xl font-bold text-amber-900">{((1 - TOTAL_COMMISSION_RATE) * 100).toFixed(2)}%</p>
+                            <p className="text-sm text-amber-700">Comisión efectiva</p>
+                            <p className="text-2xl font-bold text-amber-900">{effectiveRate.toFixed(2)}%</p>
                         </div>
                     </div>
                 </CardContent>
