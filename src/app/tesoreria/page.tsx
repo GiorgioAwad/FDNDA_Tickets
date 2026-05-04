@@ -77,6 +77,7 @@ export default async function TreasuryDashboardPage() {
                 currency: true,
                 provider: true,
                 providerRef: true,
+                providerTransactionId: true,
                 providerResponse: true,
                 paidAt: true,
                 createdAt: true,
@@ -369,7 +370,7 @@ export default async function TreasuryDashboardPage() {
                                                             #{order.id.slice(-8).toUpperCase()}
                                                         </p>
                                                         <p className="text-xs text-gray-500">
-                                                            {order.providerRef || "Sin referencia"}
+                                                            {payment.operationNumber || "Sin numero de operacion"}
                                                         </p>
                                                     </div>
                                                 </td>

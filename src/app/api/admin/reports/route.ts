@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
+import { extractOrderPaymentDetails } from "@/lib/payment-details"
 import type { Prisma } from "@prisma/client"
 export const runtime = "nodejs"
 
@@ -95,7 +96,10 @@ export async function GET(request: NextRequest) {
                 totalOrders,
                 ticketsSold,
                 chartData,
-                recentOrders: filteredOrders.slice(0, 10),
+                recentOrders: filteredOrders.slice(0, 10).map((order) => ({
+                    ...order,
+                    paymentOperationNumber: extractOrderPaymentDetails(order).operationNumber,
+                })),
             },
         })
     } catch (error) {

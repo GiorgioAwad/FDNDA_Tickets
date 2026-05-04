@@ -46,6 +46,7 @@ interface Order {
     providerRef: string | null
     providerOrderNumber: string | null
     providerTransactionId: string | null
+    paymentOperationNumber: string | null
     paymentSyncAttempts: number
     paymentLastSyncAt: string | null
     paymentNeedsReview: boolean
@@ -190,6 +191,7 @@ export default function IncomePage() {
                     "Revision Manual": idx === 0 ? (order.paymentNeedsReview ? "Si" : "No") : "",
                     "Método Pago": idx === 0 ? (order.provider || "-") : "",
                     "Referencia": idx === 0 ? (order.providerRef || "-") : "",
+                    "Numero Operacion Izipay": idx === 0 ? (order.paymentOperationNumber || "-") : "",
                     "Orden Izipay": idx === 0 ? (order.providerOrderNumber || "-") : "",
                     "Transaccion Izipay": idx === 0 ? (order.providerTransactionId || "-") : ""
                 })
@@ -216,6 +218,7 @@ export default function IncomePage() {
             { wch: 14 },  // Revision Manual
             { wch: 12 },  // Método Pago
             { wch: 20 },  // Referencia
+            { wch: 22 },  // Numero Operacion Izipay
             { wch: 18 },  // Orden Izipay
             { wch: 20 },  // Transaccion Izipay
         ]
@@ -368,6 +371,7 @@ export default function IncomePage() {
                                 <thead>
                                     <tr className="border-b text-left text-sm text-gray-500">
                                         <th className="pb-3 font-medium">Orden</th>
+                                        <th className="pb-3 font-medium">Operacion Pago</th>
                                         <th className="pb-3 font-medium">Cliente</th>
                                         <th className="pb-3 font-medium">Evento</th>
                                         <th className="pb-3 font-medium">Monto</th>
@@ -382,6 +386,11 @@ export default function IncomePage() {
                                             <td className="py-3">
                                                 <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
                                                     #{order.id.slice(-8).toUpperCase()}
+                                                </span>
+                                            </td>
+                                            <td className="py-3">
+                                                <span className="font-mono text-xs text-gray-700">
+                                                    {order.paymentOperationNumber || "-"}
                                                 </span>
                                             </td>
                                             <td className="py-3">
@@ -578,6 +587,11 @@ export default function IncomePage() {
                                         {selectedOrder.providerRef && (
                                             <p className="text-xs text-gray-400 mt-1">
                                                 Ref: {selectedOrder.providerRef}
+                                            </p>
+                                        )}
+                                        {selectedOrder.paymentOperationNumber && (
+                                            <p className="text-xs text-gray-400 mt-1">
+                                                Nro operacion Izipay: {selectedOrder.paymentOperationNumber}
                                             </p>
                                         )}
                                         {selectedOrder.providerOrderNumber && (

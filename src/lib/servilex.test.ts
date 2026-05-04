@@ -186,6 +186,7 @@ test("serializa montos Servilex con dos decimales en el JSON final", () => {
     const payload = buildServilexPayload(source, TEST_CONFIG)
     const rawPayload = stringifyServilexJson(payload)
 
+    assert.match(rawPayload, /"nroOperacion":"pay-123"/)
     assert.match(rawPayload, /"total":1\.00/)
     assert.match(rawPayload, /"precio":1\.00/)
     assert.match(rawPayload, /"totalPago":1\.00/)
@@ -252,6 +253,83 @@ test("lee la marca real de tarjeta desde providerResponse envuelto de Izipay", (
 
     assert.equal(payload.cobranza.tarjetaTipo, "MASTERCARD")
     assert.equal(payload.cobranza.formaPago, "006")
+})
+
+test("incluye nroOperacion desde transactions[0].uuid de Izipay", () => {
+    const order = buildOrder({
+        totalAmount: 15,
+        providerRef: "PAY-REF-LARGO-1234567890",
+        providerTransactionId: "1773947481718mmxuizeq0004e0si1ld4oq8j",
+        providerResponse: {
+            source: "query",
+            receivedAt: "2026-04-28T20:00:00Z",
+            data: {
+                transactions: [
+                    {
+                        uuid: "hmAIEZr49o",
+                        paymentMethodType: "CARD",
+                        brand: "VISA",
+                    },
+                ],
+            },
+        },
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 15,
+                attendeeData: [],
+                ticketType: buildTicketType("OS"),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "operation-uuid-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.cobranza.nroOperacion, "hmAIEZr49o")
+})
+
+test("prefiere referenceNumber real sobre providerTransactionId largo", () => {
+    const longTransactionId = "1773947481718mmxuizeq0004e0si1ld4oq8j"
+    const payloadHttp = {
+        response: {
+            payMethod: "CARD",
+            order: [
+                {
+                    referenceNumber: "hmAIEZr49o",
+                },
+            ],
+            card: {
+                brand: "VISA",
+            },
+        },
+    }
+
+    const order = buildOrder({
+        totalAmount: 15,
+        providerRef: longTransactionId,
+        providerTransactionId: longTransactionId,
+        providerResponse: {
+            source: "validate",
+            receivedAt: "2026-04-28T20:00:00Z",
+            data: {
+                payloadHttp: JSON.stringify(payloadHttp),
+            },
+        },
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 15,
+                attendeeData: [],
+                ticketType: buildTicketType("OS"),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "operation-reference-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.cobranza.nroOperacion, "hmAIEZr49o")
 })
 
 test("normaliza AE de Izipay a AMEX para ABIO", () => {

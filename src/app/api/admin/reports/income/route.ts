@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
+import { extractOrderPaymentDetails } from "@/lib/payment-details"
 
 export const dynamic = "force-dynamic"
 
@@ -14,6 +15,7 @@ interface OrderWithRelations {
     providerRef: string | null
     providerOrderNumber: string | null
     providerTransactionId: string | null
+    providerResponse: unknown
     paymentSyncAttempts: number
     paymentLastSyncAt: Date | null
     paymentNeedsReview: boolean
@@ -106,34 +108,39 @@ export async function GET() {
         return NextResponse.json({
             success: true,
             data: {
-                orders: orders.map((order) => ({
-                    id: order.id,
-                    totalAmount: order.totalAmount.toNumber(),
-                    status: order.status,
-                    provider: order.provider,
-                    providerRef: order.providerRef,
-                    providerOrderNumber: order.providerOrderNumber,
-                    providerTransactionId: order.providerTransactionId,
-                    paymentSyncAttempts: order.paymentSyncAttempts,
-                    paymentLastSyncAt: order.paymentLastSyncAt,
-                    paymentNeedsReview: order.paymentNeedsReview,
-                    createdAt: order.createdAt,
-                    paidAt: order.paidAt,
-                    user: order.user,
-                    items: order.orderItems.map((item) => ({
-                        id: item.id,
-                        quantity: item.quantity,
-                        subtotal: item.subtotal.toNumber(),
-                        ticketType: {
-                            name: item.ticketType.name,
-                            price: item.unitPrice.toNumber(),
-                            event: item.ticketType.event,
-                        },
-                        tickets: order.tickets.filter(
-                            (ticket) => ticket.ticketTypeId === item.ticketTypeId
-                        ),
-                    })),
-                })),
+                orders: orders.map((order) => {
+                    const paymentDetails = extractOrderPaymentDetails(order)
+
+                    return {
+                        id: order.id,
+                        totalAmount: order.totalAmount.toNumber(),
+                        status: order.status,
+                        provider: order.provider,
+                        providerRef: order.providerRef,
+                        providerOrderNumber: order.providerOrderNumber,
+                        providerTransactionId: order.providerTransactionId,
+                        paymentOperationNumber: paymentDetails.operationNumber,
+                        paymentSyncAttempts: order.paymentSyncAttempts,
+                        paymentLastSyncAt: order.paymentLastSyncAt,
+                        paymentNeedsReview: order.paymentNeedsReview,
+                        createdAt: order.createdAt,
+                        paidAt: order.paidAt,
+                        user: order.user,
+                        items: order.orderItems.map((item) => ({
+                            id: item.id,
+                            quantity: item.quantity,
+                            subtotal: item.subtotal.toNumber(),
+                            ticketType: {
+                                name: item.ticketType.name,
+                                price: item.unitPrice.toNumber(),
+                                event: item.ticketType.event,
+                            },
+                            tickets: order.tickets.filter(
+                                (ticket) => ticket.ticketTypeId === item.ticketTypeId
+                            ),
+                        })),
+                    }
+                }),
                 totalPaid,
                 totalPending,
                 totalCancelled,

@@ -1,5 +1,9 @@
 import crypto from "crypto"
 import { buildNaturalPersonFullName, splitNaturalPersonName } from "@/lib/billing"
+import {
+    extractIzipayOperationNumber,
+    IZIPAY_OPERATION_NUMBER_MAX_LENGTH,
+} from "@/lib/payment-details"
 import { normalizeScheduleSelections } from "@/lib/ticket-schedule"
 
 export type ServilexIndicator = "AC" | "OS" | "PN" | "PA"
@@ -156,6 +160,7 @@ export type ServilexDetalleItem =
     | ServilexDetallePiscinaItem
 
 export interface ServilexCobranza {
+    nroOperacion: string
     formaPago: string
     tarjetaTipo: string
     tarjetaProcedencia: string
@@ -237,6 +242,8 @@ export interface ServilexSourceOrder {
     id?: string
     provider?: string | null
     providerRef?: string | null
+    providerOrderNumber?: string | null
+    providerTransactionId?: string | null
     providerResponse?: unknown
     documentType: string | null
     buyerDocType: string | null
@@ -721,7 +728,16 @@ function getPaymentMetadata(order: ServilexSourceOrder, config: ServilexConfig) 
             config.tarjetaProcedencia)
             .toUpperCase()
 
+    const nroOperacion = extractIzipayOperationNumber(order)
+
+    if (!nroOperacion) {
+        throw new Error(
+            `Falta nroOperacion ABIO valido para cobranza (maximo ${IZIPAY_OPERATION_NUMBER_MAX_LENGTH} caracteres)`
+        )
+    }
+
     return {
+        nroOperacion,
         formaPago: normalizeFormaPago(rawMethod) || config.formaPago,
         tarjetaTipo: cardBrand,
         tarjetaProcedencia: tarjetaProcedencia === "I" ? "I" : "N",
@@ -1253,6 +1269,7 @@ export function buildServilexPayload(
         cabecera,
         detalle: snapshot.detalle,
         cobranza: {
+            nroOperacion: payment.nroOperacion,
             formaPago: payment.formaPago,
             tarjetaTipo: payment.tarjetaTipo,
             tarjetaProcedencia: payment.tarjetaProcedencia,

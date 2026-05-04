@@ -82,6 +82,8 @@ function mapOrderToPreviewSource(order: {
     id: string
     provider: string
     providerRef: string | null
+    providerOrderNumber: string | null
+    providerTransactionId: string | null
     providerResponse: unknown
     documentType: string | null
     buyerDocType: string | null
@@ -126,6 +128,8 @@ function mapOrderToPreviewSource(order: {
         id: order.id,
         provider: order.provider,
         providerRef: order.providerRef,
+        providerOrderNumber: order.providerOrderNumber,
+        providerTransactionId: order.providerTransactionId,
         providerResponse: order.providerResponse,
         documentType: order.documentType,
         buyerDocType: order.buyerDocType,
@@ -232,6 +236,8 @@ export async function GET(request: NextRequest) {
                 id: `preview-${ticketType.id}`,
                 provider: "IZIPAY",
                 providerRef: "PREVIEW-TX-001",
+                providerOrderNumber: "PREVIEW-ORDER-001",
+                providerTransactionId: "PREVIEW-TX-001",
                 providerResponse: {
                     transactionDetails: {
                         authorizationCode: "PREVIEW-AUTH-001",

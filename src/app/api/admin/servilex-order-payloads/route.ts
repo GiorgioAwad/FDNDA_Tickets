@@ -101,6 +101,8 @@ export async function GET(request: NextRequest) {
                             id: order.id,
                             provider: order.provider,
                             providerRef: order.providerRef,
+                            providerOrderNumber: order.providerOrderNumber,
+                            providerTransactionId: order.providerTransactionId,
                             providerResponse: order.providerResponse,
                             documentType: order.documentType,
                             buyerDocType: order.buyerDocType,

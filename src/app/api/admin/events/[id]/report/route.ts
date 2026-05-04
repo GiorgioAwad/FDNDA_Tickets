@@ -31,6 +31,7 @@ type AttendeeRow = {
     paymentMethod: string | null
     paymentMethodRaw: string | null
     paymentBrand: string | null
+    paymentOperationNumber: string | null
 }
 
 export async function GET(
@@ -151,6 +152,8 @@ export async function GET(
                     select: {
                         id: true,
                         provider: true,
+                        providerRef: true,
+                        providerTransactionId: true,
                         providerResponse: true,
                         paidAt: true,
                         user: { select: { name: true, email: true } },
@@ -179,6 +182,7 @@ export async function GET(
                 paymentMethod: paymentDetails.methodLabel,
                 paymentMethodRaw: paymentDetails.methodCode,
                 paymentBrand: paymentDetails.brand,
+                paymentOperationNumber: paymentDetails.operationNumber,
             }
         })
 

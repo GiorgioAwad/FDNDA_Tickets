@@ -1,10 +1,28 @@
 type JsonRecord = Record<string, unknown>
 
+export const IZIPAY_OPERATION_NUMBER_MAX_LENGTH = 20
+
 export interface OrderPaymentDetails {
     provider: string | null
     methodCode: string | null
     methodLabel: string | null
     brand: string | null
+    operationNumber: string | null
+}
+
+type PaymentSourceOrder = {
+    providerRef?: string | null
+    providerTransactionId?: string | null
+    providerResponse?: unknown
+}
+
+type PaymentPayloadParts = {
+    providerResponse: JsonRecord | null
+    payloadHttp: JsonRecord | null
+    response: JsonRecord | null
+    transactionDetails: JsonRecord | null
+    firstTransaction: JsonRecord | null
+    firstResponseOrder: JsonRecord | null
 }
 
 function asRecord(value: unknown): JsonRecord | null {
@@ -31,6 +49,51 @@ function asString(value: unknown): string | null {
     if (typeof value !== "string") return null
     const normalized = value.trim()
     return normalized ? normalized : null
+}
+
+function normalizeOperationNumber(raw: unknown): string | null {
+    const value = asString(raw)
+    if (!value || value.length > IZIPAY_OPERATION_NUMBER_MAX_LENGTH) return null
+    return value
+}
+
+function getPaymentPayloadParts(order: PaymentSourceOrder): PaymentPayloadParts {
+    const providerEnvelope = asRecord(order.providerResponse)
+    const providerResponse = asRecord(providerEnvelope?.data) || providerEnvelope
+    const payloadHttp = parseJsonRecord(providerResponse?.payloadHttp)
+    const response = asRecord(providerResponse?.response) || asRecord(payloadHttp?.response)
+    const transactionDetails =
+        asRecord(providerResponse?.transactionDetails) || asRecord(payloadHttp?.transactionDetails)
+    const transactions = Array.isArray(providerResponse?.transactions)
+        ? (providerResponse?.transactions as unknown[])
+        : Array.isArray(payloadHttp?.transactions)
+            ? (payloadHttp?.transactions as unknown[])
+            : []
+    const responseOrders = Array.isArray(response?.order)
+        ? (response?.order as unknown[])
+        : []
+
+    return {
+        providerResponse,
+        payloadHttp,
+        response,
+        transactionDetails,
+        firstTransaction: asRecord(transactions[0]),
+        firstResponseOrder: asRecord(responseOrders[0]),
+    }
+}
+
+function resolveOperationNumber(
+    order: PaymentSourceOrder,
+    parts: PaymentPayloadParts
+): string | null {
+    return (
+        normalizeOperationNumber(parts.firstTransaction?.uuid) ||
+        normalizeOperationNumber(parts.firstResponseOrder?.referenceNumber) ||
+        normalizeOperationNumber(parts.transactionDetails?.transactionId) ||
+        normalizeOperationNumber(order.providerRef) ||
+        normalizeOperationNumber(order.providerTransactionId)
+    )
 }
 
 function prettifyPaymentMethod(method: string): string {
@@ -102,33 +165,26 @@ function resolvePaymentMethodLabel(methodCode: string | null, brand: string | nu
 
 export function extractOrderPaymentDetails(order: {
     provider?: string | null
+    providerRef?: string | null
+    providerTransactionId?: string | null
     providerResponse?: unknown
 }): OrderPaymentDetails {
-    const providerEnvelope = asRecord(order.providerResponse)
-    const providerResponse = asRecord(providerEnvelope?.data) || providerEnvelope
-    const payloadHttp = parseJsonRecord(providerResponse?.payloadHttp)
-    const response = asRecord(providerResponse?.response) || asRecord(payloadHttp?.response)
-    const transactionDetails =
-        asRecord(providerResponse?.transactionDetails) || asRecord(payloadHttp?.transactionDetails)
-    const transactions = Array.isArray(providerResponse?.transactions)
-        ? (providerResponse?.transactions as unknown[])
-        : Array.isArray(payloadHttp?.transactions)
-            ? (payloadHttp?.transactions as unknown[])
-        : []
-    const firstTransaction = asRecord(transactions[0])
+    const parts = getPaymentPayloadParts(order)
+    const firstTransaction = parts.firstTransaction
+    const transactionDetails = parts.transactionDetails
     const transactionPaymentDetails = asRecord(firstTransaction?.paymentMethodDetails)
     const transactionPaymentCard = asRecord(transactionPaymentDetails?.card)
-    const responseCard = asRecord(response?.card)
+    const responseCard = asRecord(parts.response?.card)
 
     const rawMethod =
         asString(firstTransaction?.paymentMethodType) ||
         asString(firstTransaction?.paymentMethod) ||
         asString(transactionDetails?.paymentMethod) ||
-        asString(response?.payMethod) ||
+        asString(parts.response?.payMethod) ||
         asString(transactionPaymentDetails?.paymentMethodType) ||
         asString(transactionPaymentDetails?.paymentMethod) ||
-        asString(providerResponse?.payMethod) ||
-        asString(providerResponse?.paymentMethod)
+        asString(parts.providerResponse?.payMethod) ||
+        asString(parts.providerResponse?.paymentMethod)
 
     const rawBrand =
         asString(firstTransaction?.brand) ||
@@ -136,8 +192,8 @@ export function extractOrderPaymentDetails(order: {
         asString(responseCard?.brand) ||
         asString(transactionPaymentDetails?.brand) ||
         asString(transactionPaymentCard?.brand) ||
-        asString(providerResponse?.cardBrand) ||
-        asString(providerResponse?.brand)
+        asString(parts.providerResponse?.cardBrand) ||
+        asString(parts.providerResponse?.brand)
 
     const brand = normalizeBrand(rawBrand)
 
@@ -146,5 +202,10 @@ export function extractOrderPaymentDetails(order: {
         methodCode: rawMethod,
         methodLabel: resolvePaymentMethodLabel(rawMethod, brand),
         brand,
+        operationNumber: resolveOperationNumber(order, parts),
     }
+}
+
+export function extractIzipayOperationNumber(order: PaymentSourceOrder): string | null {
+    return resolveOperationNumber(order, getPaymentPayloadParts(order))
 }
