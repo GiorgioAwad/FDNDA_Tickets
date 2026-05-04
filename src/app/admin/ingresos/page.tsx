@@ -95,7 +95,7 @@ export default function IncomePage() {
     const [filter, setFilter] = useState<"all" | "PAID" | "PENDING" | "CANCELLED">("all")
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
     const [usdRate, setUsdRate] = useState<number>(USD_TO_PEN_FALLBACK)
-    const [usdRateSource, setUsdRateSource] = useState<"live" | "fallback">("fallback")
+    const [usdRateSource, setUsdRateSource] = useState<"BCRP" | "SUNAT" | "fallback">("fallback")
 
     useEffect(() => {
         const fetchIncome = async () => {
@@ -326,7 +326,7 @@ export default function IncomePage() {
                                 <p className="font-medium text-amber-900">Procesador de Pagos: Izipay</p>
                                 <p className="text-sm text-amber-700">
                                     Comisión: {(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV ({(IGV_RATE * 100).toFixed(0)}%) = <strong>{(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%</strong> + <strong>S/ {fixedFeePerTx.toFixed(2)} fijo</strong> por transacción
-                                    <span className="text-xs ml-1">(TC S/ {usdRate.toFixed(2)} {usdRateSource === "live" ? "SUNAT" : "fallback"})</span>
+                                    <span className="text-xs ml-1">(TC S/ {usdRate.toFixed(4)} {usdRateSource})</span>
                                 </p>
                             </div>
                         </div>

@@ -30,7 +30,7 @@ import {
 export default function ConfiguracionPage() {
     const [saved, setSaved] = useState(false)
     const [usdRate, setUsdRate] = useState<number>(USD_TO_PEN_FALLBACK)
-    const [usdRateSource, setUsdRateSource] = useState<"live" | "fallback">("fallback")
+    const [usdRateSource, setUsdRateSource] = useState<"BCRP" | "SUNAT" | "fallback">("fallback")
     const [usdRateFetchedAt, setUsdRateFetchedAt] = useState<string | null>(null)
 
     useEffect(() => {
@@ -119,7 +119,7 @@ export default function ConfiguracionPage() {
                                     <li>
                                         • Fee fijo Cybersource: <strong>USD {IZIPAY_CYBERSOURCE_FEE_USD.toFixed(2)}</strong> ≈ S/ {(IZIPAY_CYBERSOURCE_FEE_USD * usdRate).toFixed(2)}
                                         <span className="text-xs ml-1">
-                                            (TC S/ {usdRate.toFixed(4)} · {usdRateSource === "live" ? "SUNAT en vivo" : "fallback local"}
+                                            (TC S/ {usdRate.toFixed(4)} · {usdRateSource === "fallback" ? "fallback local" : `${usdRateSource} en vivo`}
                                             {usdRateFetchedAt && ` · actualizado ${new Date(usdRateFetchedAt).toLocaleString("es-PE")}`})
                                         </span>
                                     </li>

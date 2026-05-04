@@ -448,7 +448,7 @@ export default async function AdminDashboardPage() {
                             <h4 className="font-medium text-yellow-800">Información de Comisiones</h4>
                             <p className="text-sm text-yellow-700 mt-1">
                                 La comisión de Izipay es de <strong>{(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV</strong> ({(TOTAL_COMMISSION_RATE * 100).toFixed(2)}% total)
-                                + <strong>S/ {fixedFeePerTx.toFixed(2)} fijo</strong> por transacción (Punto Web 2.0 + Cybersource @ TC S/ {exchangeRate.rate.toFixed(2)} {exchangeRate.source === "live" ? "SUNAT" : "fallback"}).
+                                + <strong>S/ {fixedFeePerTx.toFixed(2)} fijo</strong> por transacción (Punto Web 2.0 + Cybersource @ TC S/ {exchangeRate.rate.toFixed(4)} {exchangeRate.source === "fallback" ? "fallback" : exchangeRate.source}).
                                 Los ingresos netos ya descuentan esta comisión.
                             </p>
                         </div>

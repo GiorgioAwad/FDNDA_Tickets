@@ -41,7 +41,7 @@ export default function ReportsPage() {
     const [loading, setLoading] = useState(true)
     const [period, setPeriod] = useState<"7d" | "30d" | "all">("30d")
     const [usdRate, setUsdRate] = useState<number>(USD_TO_PEN_FALLBACK)
-    const [usdRateSource, setUsdRateSource] = useState<"live" | "fallback">("fallback")
+    const [usdRateSource, setUsdRateSource] = useState<"BCRP" | "SUNAT" | "fallback">("fallback")
 
     useEffect(() => {
         const fetchReports = async () => {
@@ -228,7 +228,7 @@ export default function ReportsPage() {
                             <div>
                                 <p className="text-sm font-medium text-amber-900">Comisión Izipay</p>
                                 <p className="text-xs text-amber-700">{(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV ({(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%) + S/ {fixedFeePerTx.toFixed(2)}/tx → {effectiveCommissionRate.toFixed(2)}% efectiva</p>
-                                <p className="text-xs text-amber-600 mt-0.5">TC USD: S/ {usdRate.toFixed(2)} {usdRateSource === "live" ? "(SUNAT)" : "(fallback)"}</p>
+                                <p className="text-xs text-amber-600 mt-0.5">TC USD: S/ {usdRate.toFixed(4)} ({usdRateSource})</p>
                             </div>
                         </div>
                         <div className="text-right">
