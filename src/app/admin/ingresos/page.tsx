@@ -29,7 +29,7 @@ import {
     IZIPAY_COMMISSION_RATE,
     IGV_RATE,
     TOTAL_COMMISSION_RATE,
-    IZIPAY_FIXED_FEE_PER_TX_PEN,
+    USD_TO_PEN_FALLBACK,
     calculateIzipayCommission,
 } from "@/lib/commission-rates"
 
@@ -94,14 +94,26 @@ export default function IncomePage() {
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState<"all" | "PAID" | "PENDING" | "CANCELLED">("all")
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+    const [usdRate, setUsdRate] = useState<number>(USD_TO_PEN_FALLBACK)
+    const [usdRateSource, setUsdRateSource] = useState<"live" | "fallback">("fallback")
 
     useEffect(() => {
         const fetchIncome = async () => {
             try {
-                const response = await fetch("/api/admin/reports/income")
-                const result = await response.json()
-                if (result.success) {
-                    setData(result.data)
+                const [incomeRes, rateRes] = await Promise.all([
+                    fetch("/api/admin/reports/income"),
+                    fetch("/api/exchange-rate"),
+                ])
+                const incomeResult = await incomeRes.json()
+                if (incomeResult.success) {
+                    setData(incomeResult.data)
+                }
+                if (rateRes.ok) {
+                    const rateResult = await rateRes.json()
+                    if (rateResult.success && Number.isFinite(rateResult.data.rate)) {
+                        setUsdRate(rateResult.data.rate)
+                        setUsdRateSource(rateResult.data.source)
+                    }
                 }
             } catch (error) {
                 console.error("Error loading income:", error)
@@ -132,8 +144,9 @@ export default function IncomePage() {
     const incomeData = data || mockData
 
     const paidOrdersCount = incomeData.orders.filter((order) => order.status === "PAID").length
-    const commissionBreakdown = calculateIzipayCommission(incomeData.totalPaid, paidOrdersCount)
+    const commissionBreakdown = calculateIzipayCommission(incomeData.totalPaid, paidOrdersCount, usdRate)
     const commissionAmount = commissionBreakdown.total
+    const fixedFeePerTx = commissionBreakdown.fixedFeePerTx
     const netIncome = incomeData.totalPaid - commissionAmount
     const effectiveRate = incomeData.totalPaid > 0
         ? (commissionAmount / incomeData.totalPaid) * 100
@@ -312,7 +325,8 @@ export default function IncomePage() {
                             <div>
                                 <p className="font-medium text-amber-900">Procesador de Pagos: Izipay</p>
                                 <p className="text-sm text-amber-700">
-                                    Comisión: {(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV ({(IGV_RATE * 100).toFixed(0)}%) = <strong>{(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%</strong> + <strong>S/ {IZIPAY_FIXED_FEE_PER_TX_PEN.toFixed(2)} fijo</strong> por transacción
+                                    Comisión: {(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV ({(IGV_RATE * 100).toFixed(0)}%) = <strong>{(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%</strong> + <strong>S/ {fixedFeePerTx.toFixed(2)} fijo</strong> por transacción
+                                    <span className="text-xs ml-1">(TC S/ {usdRate.toFixed(2)} {usdRateSource === "live" ? "SUNAT" : "fallback"})</span>
                                 </p>
                             </div>
                         </div>

@@ -5,9 +5,9 @@ import { formatDateTimeForExport } from "@/lib/utils"
 import { extractOrderPaymentDetails } from "@/lib/payment-details"
 import {
     TOTAL_COMMISSION_RATE,
-    IZIPAY_FIXED_FEE_PER_TX_PEN,
     calculateIzipayCommission,
 } from "@/lib/commission-rates"
+import { getUsdToPenRate } from "@/lib/exchange-rate"
 export const runtime = "nodejs"
 
 type TicketTypeSummary = {
@@ -192,7 +192,12 @@ export async function GET(
         })
 
         const orderCount = totals.orderIds.size
-        const commissionBreakdown = calculateIzipayCommission(totals.totalRevenue, orderCount)
+        const exchangeRate = await getUsdToPenRate()
+        const commissionBreakdown = calculateIzipayCommission(
+            totals.totalRevenue,
+            orderCount,
+            exchangeRate.rate
+        )
         const commissionAmount = commissionBreakdown.total
         const netRevenue = totals.totalRevenue - commissionAmount
         const effectiveCommissionPercent = totals.totalRevenue > 0
@@ -209,7 +214,12 @@ export async function GET(
                 commissionAmount,
                 commissionPercentageAmount: commissionBreakdown.percentageAmount,
                 commissionFixedAmount: commissionBreakdown.fixedAmount,
-                commissionFixedFeePerTx: IZIPAY_FIXED_FEE_PER_TX_PEN,
+                commissionFixedFeePerTx: commissionBreakdown.fixedFeePerTx,
+                exchangeRate: {
+                    rate: exchangeRate.rate,
+                    source: exchangeRate.source,
+                    fetchedAt: new Date(exchangeRate.fetchedAt).toISOString(),
+                },
                 netRevenue,
                 byTicketType,
                 attendees,

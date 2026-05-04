@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,14 +21,37 @@ import {
     IZIPAY_COMMISSION_RATE,
     IGV_RATE,
     TOTAL_COMMISSION_RATE,
-    IZIPAY_FIXED_FEE_PER_TX_PEN,
     IZIPAY_PUNTO_WEB_FEE_PEN,
     IZIPAY_CYBERSOURCE_FEE_USD,
-    USD_TO_PEN_FOR_FEES,
+    USD_TO_PEN_FALLBACK,
+    getFixedFeePerTxPen,
 } from "@/lib/commission-rates"
 
 export default function ConfiguracionPage() {
     const [saved, setSaved] = useState(false)
+    const [usdRate, setUsdRate] = useState<number>(USD_TO_PEN_FALLBACK)
+    const [usdRateSource, setUsdRateSource] = useState<"live" | "fallback">("fallback")
+    const [usdRateFetchedAt, setUsdRateFetchedAt] = useState<string | null>(null)
+
+    useEffect(() => {
+        let cancelled = false
+        fetch("/api/exchange-rate")
+            .then((res) => (res.ok ? res.json() : null))
+            .then((result) => {
+                if (cancelled || !result?.success) return
+                if (Number.isFinite(result.data.rate)) {
+                    setUsdRate(result.data.rate)
+                    setUsdRateSource(result.data.source)
+                    setUsdRateFetchedAt(result.data.fetchedAt)
+                }
+            })
+            .catch(() => {})
+        return () => {
+            cancelled = true
+        }
+    }, [])
+
+    const fixedFeePerTx = getFixedFeePerTxPen(usdRate)
 
     const handleSave = () => {
         setSaved(true)
@@ -93,8 +116,14 @@ export default function ConfiguracionPage() {
                                     <li>• IGV sobre comisión: <strong>{(IGV_RATE * 100).toFixed(0)}%</strong></li>
                                     <li>• Total porcentual: <strong>{(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%</strong></li>
                                     <li>• Fee fijo Punto Web 2.0: <strong>S/ {IZIPAY_PUNTO_WEB_FEE_PEN.toFixed(2)}</strong> por transacción</li>
-                                    <li>• Fee fijo Cybersource: <strong>USD {IZIPAY_CYBERSOURCE_FEE_USD.toFixed(2)}</strong> ≈ S/ {(IZIPAY_CYBERSOURCE_FEE_USD * USD_TO_PEN_FOR_FEES).toFixed(2)} (TC S/ {USD_TO_PEN_FOR_FEES.toFixed(2)})</li>
-                                    <li>• <strong>Total fee fijo: S/ {IZIPAY_FIXED_FEE_PER_TX_PEN.toFixed(2)}</strong> por transacción</li>
+                                    <li>
+                                        • Fee fijo Cybersource: <strong>USD {IZIPAY_CYBERSOURCE_FEE_USD.toFixed(2)}</strong> ≈ S/ {(IZIPAY_CYBERSOURCE_FEE_USD * usdRate).toFixed(2)}
+                                        <span className="text-xs ml-1">
+                                            (TC S/ {usdRate.toFixed(4)} · {usdRateSource === "live" ? "SUNAT en vivo" : "fallback local"}
+                                            {usdRateFetchedAt && ` · actualizado ${new Date(usdRateFetchedAt).toLocaleString("es-PE")}`})
+                                        </span>
+                                    </li>
+                                    <li>• <strong>Total fee fijo: S/ {fixedFeePerTx.toFixed(2)}</strong> por transacción</li>
                                 </ul>
                             </div>
                         </div>

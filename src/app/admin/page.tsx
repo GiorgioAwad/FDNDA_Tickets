@@ -47,9 +47,9 @@ type ActiveEvent = {
 import {
     IZIPAY_COMMISSION_RATE,
     TOTAL_COMMISSION_RATE,
-    IZIPAY_FIXED_FEE_PER_TX_PEN,
     calculateIzipayCommission,
 } from "@/lib/commission-rates"
+import { getUsdToPenRate } from "@/lib/exchange-rate"
 
 // ==================== PAGE ====================
 
@@ -197,8 +197,10 @@ export default async function AdminDashboardPage() {
     // Calculate revenue metrics
     const grossRevenue = Number(paidSummary._sum.totalAmount ?? 0)
     const completedOrdersCount = paidSummary._count._all
-    const commissionBreakdown = calculateIzipayCommission(grossRevenue, completedOrdersCount)
+    const exchangeRate = await getUsdToPenRate()
+    const commissionBreakdown = calculateIzipayCommission(grossRevenue, completedOrdersCount, exchangeRate.rate)
     const izipayCommission = commissionBreakdown.total
+    const fixedFeePerTx = commissionBreakdown.fixedFeePerTx
     const netRevenue = grossRevenue - izipayCommission
 
     const thisMonthRevenue = Number(thisMonthSummary._sum.totalAmount ?? 0)
@@ -446,7 +448,7 @@ export default async function AdminDashboardPage() {
                             <h4 className="font-medium text-yellow-800">Información de Comisiones</h4>
                             <p className="text-sm text-yellow-700 mt-1">
                                 La comisión de Izipay es de <strong>{(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV</strong> ({(TOTAL_COMMISSION_RATE * 100).toFixed(2)}% total)
-                                + <strong>S/ {IZIPAY_FIXED_FEE_PER_TX_PEN.toFixed(2)} fijo</strong> por transacción (Punto Web 2.0 + Cybersource).
+                                + <strong>S/ {fixedFeePerTx.toFixed(2)} fijo</strong> por transacción (Punto Web 2.0 + Cybersource @ TC S/ {exchangeRate.rate.toFixed(2)} {exchangeRate.source === "live" ? "SUNAT" : "fallback"}).
                                 Los ingresos netos ya descuentan esta comisión.
                             </p>
                         </div>

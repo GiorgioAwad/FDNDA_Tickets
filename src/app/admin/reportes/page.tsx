@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button"
 import {
     IZIPAY_COMMISSION_RATE,
     TOTAL_COMMISSION_RATE,
-    IZIPAY_FIXED_FEE_PER_TX_PEN,
+    USD_TO_PEN_FALLBACK,
     calculateIzipayCommission,
 } from "@/lib/commission-rates"
 
@@ -40,14 +40,26 @@ export default function ReportsPage() {
     const [data, setData] = useState<ReportsData | null>(null)
     const [loading, setLoading] = useState(true)
     const [period, setPeriod] = useState<"7d" | "30d" | "all">("30d")
+    const [usdRate, setUsdRate] = useState<number>(USD_TO_PEN_FALLBACK)
+    const [usdRateSource, setUsdRateSource] = useState<"live" | "fallback">("fallback")
 
     useEffect(() => {
         const fetchReports = async () => {
             try {
-                const response = await fetch("/api/admin/reports")
-                const result = await response.json()
+                const [reportsRes, rateRes] = await Promise.all([
+                    fetch("/api/admin/reports"),
+                    fetch("/api/exchange-rate"),
+                ])
+                const result = await reportsRes.json()
                 if (result.success) {
                     setData(result.data)
+                }
+                if (rateRes.ok) {
+                    const rateResult = await rateRes.json()
+                    if (rateResult.success && Number.isFinite(rateResult.data.rate)) {
+                        setUsdRate(rateResult.data.rate)
+                        setUsdRateSource(rateResult.data.source)
+                    }
                 }
             } catch (error) {
                 console.error("Error loading reports:", error)
@@ -70,8 +82,9 @@ export default function ReportsPage() {
     if (!data) return <div>Error al cargar reportes</div>
 
     // Calculate net revenue (after Izipay commission)
-    const commissionBreakdown = calculateIzipayCommission(data.totalRevenue, data.totalOrders)
+    const commissionBreakdown = calculateIzipayCommission(data.totalRevenue, data.totalOrders, usdRate)
     const commissionAmount = commissionBreakdown.total
+    const fixedFeePerTx = commissionBreakdown.fixedFeePerTx
     const netRevenue = data.totalRevenue - commissionAmount
     const avgOrderValue = data.totalOrders > 0 ? data.totalRevenue / data.totalOrders : 0
     const effectiveCommissionRate = data.totalRevenue > 0
@@ -214,7 +227,8 @@ export default function ReportsPage() {
                             </div>
                             <div>
                                 <p className="text-sm font-medium text-amber-900">Comisión Izipay</p>
-                                <p className="text-xs text-amber-700">{(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV ({(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%) + S/ {IZIPAY_FIXED_FEE_PER_TX_PEN.toFixed(2)}/tx → {effectiveCommissionRate.toFixed(2)}% efectiva</p>
+                                <p className="text-xs text-amber-700">{(IZIPAY_COMMISSION_RATE * 100).toFixed(2)}% + IGV ({(TOTAL_COMMISSION_RATE * 100).toFixed(2)}%) + S/ {fixedFeePerTx.toFixed(2)}/tx → {effectiveCommissionRate.toFixed(2)}% efectiva</p>
+                                <p className="text-xs text-amber-600 mt-0.5">TC USD: S/ {usdRate.toFixed(2)} {usdRateSource === "live" ? "(SUNAT)" : "(fallback)"}</p>
                             </div>
                         </div>
                         <div className="text-right">
