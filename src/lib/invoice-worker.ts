@@ -66,6 +66,8 @@ async function loadInvoices(maxJobs: number) {
                                         select: {
                                             id: true,
                                             startDate: true,
+                                            category: true,
+                                            servilexSucursalCode: true,
                                         },
                                     },
                                 },

@@ -53,6 +53,11 @@ function buildTicketType(
         event: {
             id: "event-1",
             startDate: new Date("2026-04-01T12:00:00Z"),
+            category: indicator === "AC"
+                ? "ACADEMIA"
+                : indicator === "PN" || indicator === "PA"
+                  ? "PISCINA_LIBRE"
+                  : "EVENTO",
             servilexSucursalCode: "01",
         },
         ...overrides,
@@ -500,6 +505,143 @@ test("usa la sucursal ABIO del evento antes que la del tipo de entrada", () => {
     assert.equal(snapshot.sucursal, "02")
     assert.equal(snapshot.groupKey, "OS:02")
     assert.equal(payload.cabecera.sucursal, "02")
+})
+
+test("usa serie BW para boletas de academia con la sucursal", () => {
+    const order = buildOrder({
+        totalAmount: 25,
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 25,
+                attendeeData: [
+                    { name: "Alumno BW", dni: "12345678", matricula: "MAT-BW" },
+                ],
+                ticketType: buildTicketType("AC", {
+                    event: {
+                        id: "academia-sucursal-2",
+                        startDate: new Date("2026-04-01T12:00:00Z"),
+                        category: "ACADEMIA",
+                        servilexSucursalCode: "02",
+                    },
+                }),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "academia-bw-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.cabecera.comprobante.serie, "BW02")
+})
+
+test("usa serie FW para facturas de academia con la sucursal", () => {
+    const order = buildOrder({
+        documentType: "FACTURA",
+        buyerDocType: "6",
+        buyerDocNumber: "20123456789",
+        totalAmount: 25,
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 25,
+                attendeeData: [
+                    { name: "Alumno FW", dni: "12345678", matricula: "MAT-FW" },
+                ],
+                ticketType: buildTicketType("AC", {
+                    event: {
+                        id: "academia-sucursal-3",
+                        startDate: new Date("2026-04-01T12:00:00Z"),
+                        category: "ACADEMIA",
+                        servilexSucursalCode: "03",
+                    },
+                }),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "academia-fw-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.cabecera.comprobante.serie, "FW03")
+})
+
+test("usa series BW y FW para piscina libre con la sucursal", () => {
+    const ticketType = buildTicketType("PN", {
+        event: {
+            id: "piscina-sucursal-4",
+            startDate: new Date("2026-04-01T12:00:00Z"),
+            category: "PISCINA_LIBRE",
+            servilexSucursalCode: "04",
+        },
+        servilexExtraConfig: {
+            cantidad: 1,
+            horaInicio: "08:00",
+            horaFin: "09:00",
+            duracion: 1,
+        },
+    })
+    const baseOrder = {
+        totalAmount: 30,
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 30,
+                attendeeData: [],
+                ticketType,
+            },
+        ],
+    }
+
+    const [boletaSource] = buildServilexPreviewSources(buildOrder(baseOrder), "piscina-bw-preview")
+    const [facturaSource] = buildServilexPreviewSources(
+        buildOrder({
+            ...baseOrder,
+            documentType: "FACTURA",
+            buyerDocType: "6",
+            buyerDocNumber: "20123456789",
+        }),
+        "piscina-fw-preview"
+    )
+
+    assert.equal(buildServilexPayload(boletaSource, TEST_CONFIG).cabecera.comprobante.serie, "BW04")
+    assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "FW04")
+})
+
+test("usa serie BA para boletas de eventos y mantiene factura configurada", () => {
+    const ticketType = buildTicketType("OS", {
+        event: {
+            id: "evento-sucursal-5",
+            startDate: new Date("2026-04-01T12:00:00Z"),
+            category: "EVENTO",
+            servilexSucursalCode: "05",
+        },
+    })
+    const baseOrder = {
+        totalAmount: 40,
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 40,
+                attendeeData: [],
+                ticketType,
+            },
+        ],
+    }
+
+    const [boletaSource] = buildServilexPreviewSources(buildOrder(baseOrder), "evento-ba-preview")
+    const [facturaSource] = buildServilexPreviewSources(
+        buildOrder({
+            ...baseOrder,
+            documentType: "FACTURA",
+            buyerDocType: "6",
+            buyerDocNumber: "20123456789",
+        }),
+        "evento-factura-preview"
+    )
+
+    assert.equal(buildServilexPayload(boletaSource, TEST_CONFIG).cabecera.comprobante.serie, "BA05")
+    assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "F001")
 })
 
 test("getServilexConfig usa ejecutivo 0020 por defecto", () => {

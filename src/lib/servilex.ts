@@ -8,8 +8,14 @@ import { normalizeScheduleSelections } from "@/lib/ticket-schedule"
 
 export type ServilexIndicator = "AC" | "OS" | "PN" | "PA"
 export type ServilexInvoiceGroupType = "ALUMNO" | "INDICATOR"
+export type ServilexEventCategory = "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA"
 
 const SUPPORTED_INDICATORS = new Set<ServilexIndicator>(["AC", "OS", "PN", "PA"])
+const SUPPORTED_EVENT_CATEGORIES = new Set<ServilexEventCategory>([
+    "EVENTO",
+    "PISCINA_LIBRE",
+    "ACADEMIA",
+])
 const DEFAULT_ENDPOINT = "https://abio-pse.ue.r.appspot.com/fpdn/invoice"
 const DEFAULT_ABIO_VERSION = "1.2"
 const SERVILEX_REFERENCE_MAX_LENGTH = 6
@@ -215,6 +221,7 @@ export interface ServilexSourceUser {
 export interface ServilexSourceEvent {
     id: string
     startDate: Date
+    category?: string | null
     servilexSucursalCode?: string | null
 }
 
@@ -282,6 +289,7 @@ export interface ServilexSnapshotAlumno {
 export interface ServilexInvoiceSnapshot {
     indicator: ServilexIndicator
     sucursal: string
+    eventCategory: ServilexEventCategory | null
     groupType: ServilexInvoiceGroupType
     groupKey: string
     groupLabel: string
@@ -322,6 +330,7 @@ type ServilexAttendeeRecord = {
 type ServilexUnitBase = {
     indicator: ServilexIndicator
     sucursal: string
+    eventCategory: ServilexEventCategory | null
     baseAmount: number
 }
 
@@ -553,6 +562,14 @@ function normalizeIndicator(raw: unknown, fallback: ServilexIndicator = "AC"): S
     return fallback
 }
 
+function normalizeEventCategory(raw: unknown): ServilexEventCategory | null {
+    const value = asString(raw)?.toUpperCase()
+    if (value && SUPPORTED_EVENT_CATEGORIES.has(value as ServilexEventCategory)) {
+        return value as ServilexEventCategory
+    }
+    return null
+}
+
 function normalizeCode(raw: unknown, fieldName: string): string {
     const value = asString(raw)
     if (!value) {
@@ -777,6 +794,61 @@ function getServilexItemSucursal(item: ServilexSourceOrderItem): string {
     )
 }
 
+function getServilexItemEventCategory(item: ServilexSourceOrderItem): ServilexEventCategory | null {
+    return normalizeEventCategory(item.ticketType.event.category)
+}
+
+function normalizeSerieSucursal(sucursal: string, fallback: string): string {
+    const digits = extractDigits(asString(sucursal) || asString(fallback) || "01")
+    if (!digits) return "01"
+    return digits.slice(-2).padStart(2, "0")
+}
+
+function buildSucursalSerie(prefix: "BA" | "BW" | "FW", sucursal: string, config: ServilexConfig): string {
+    return `${prefix}${normalizeSerieSucursal(sucursal, config.sucursal)}`
+}
+
+function inferSnapshotEventCategory(
+    snapshot: ServilexInvoiceSnapshot,
+    order: ServilexSourceOrder
+): ServilexEventCategory | null {
+    if (snapshot.eventCategory) return snapshot.eventCategory
+
+    const matchingItem = order.orderItems.find((item) => {
+        if (!item.ticketType.servilexEnabled) return false
+        if (normalizeIndicator(item.ticketType.servilexIndicator) !== snapshot.indicator) return false
+        return getServilexItemSucursal(item) === snapshot.sucursal
+    })
+
+    return matchingItem ? getServilexItemEventCategory(matchingItem) : null
+}
+
+function resolveServilexSerie(input: {
+    buyerIsFactura: boolean
+    snapshot: ServilexInvoiceSnapshot
+    order: ServilexSourceOrder
+    config: ServilexConfig
+}): string {
+    const { buyerIsFactura, snapshot, order, config } = input
+    const eventCategory = inferSnapshotEventCategory(snapshot, order)
+
+    if (
+        snapshot.indicator === "AC" ||
+        snapshot.indicator === "PN" ||
+        snapshot.indicator === "PA" ||
+        eventCategory === "ACADEMIA" ||
+        eventCategory === "PISCINA_LIBRE"
+    ) {
+        return buildSucursalSerie(buyerIsFactura ? "FW" : "BW", snapshot.sucursal, config)
+    }
+
+    if (!buyerIsFactura && eventCategory === "EVENTO") {
+        return buildSucursalSerie("BA", snapshot.sucursal, config)
+    }
+
+    return buyerIsFactura ? config.serieFactura : config.serieBoleta
+}
+
 function buildAcademiaUnit(
     item: ServilexSourceOrderItem,
     attendee: ServilexAttendeeRecord,
@@ -796,6 +868,7 @@ function buildAcademiaUnit(
     return {
         indicator: "AC",
         sucursal,
+        eventCategory: getServilexItemEventCategory(item),
         baseAmount: unitPrice,
         attendee,
         alumno: buildAttendeeAlumnoSnapshot(attendee, order),
@@ -820,6 +893,7 @@ function buildOtrosServiciosUnit(
     return {
         indicator: "OS",
         sucursal: getServilexItemSucursal(item),
+        eventCategory: getServilexItemEventCategory(item),
         baseAmount: unitPrice,
         detalle: {
             servicio: normalizeCode(item.ticketType.servilexServiceCode, "servicio"),
@@ -839,6 +913,7 @@ function buildPiscinaLibreUnit(
     return {
         indicator,
         sucursal: getServilexItemSucursal(item),
+        eventCategory: getServilexItemEventCategory(item),
         baseAmount: unitPrice,
         detalle: {
             servicio: normalizeCode(item.ticketType.servilexServiceCode, "servicio"),
@@ -909,6 +984,7 @@ export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): Servi
     const groups = new Map<string, {
         indicator: ServilexIndicator
         sucursal: string
+        eventCategory: ServilexEventCategory | null
         groupType: ServilexInvoiceGroupType
         groupLabel: string
         alumno: ServilexSnapshotAlumno | null
@@ -925,6 +1001,7 @@ export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): Servi
             groups.set(groupKey, {
                 indicator: unit.indicator,
                 sucursal: unit.sucursal,
+                eventCategory: unit.eventCategory,
                 groupType: unit.indicator === "AC" ? "ALUMNO" : "INDICATOR",
                 groupLabel:
                     unit.indicator === "AC"
@@ -935,7 +1012,11 @@ export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): Servi
             })
         }
 
-        groups.get(groupKey)?.units.push(unit)
+        const group = groups.get(groupKey)
+        if (group && !group.eventCategory && unit.eventCategory) {
+            group.eventCategory = unit.eventCategory
+        }
+        group?.units.push(unit)
     }
 
     const orderedGroups = Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b))
@@ -964,6 +1045,7 @@ export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): Servi
             return {
                 indicator: group.indicator,
                 sucursal: group.sucursal,
+                eventCategory: group.eventCategory,
                 groupType: group.groupType,
                 groupKey,
                 groupLabel: group.groupLabel,
@@ -985,6 +1067,7 @@ export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): Servi
             return {
                 indicator: group.indicator,
                 sucursal: group.sucursal,
+                eventCategory: group.eventCategory,
                 groupType: group.groupType,
                 groupKey,
                 groupLabel: group.groupLabel,
@@ -1005,6 +1088,7 @@ export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): Servi
         return {
             indicator: group.indicator,
             sucursal: group.sucursal,
+            eventCategory: group.eventCategory,
             groupType: group.groupType,
             groupKey,
             groupLabel: group.groupLabel,
@@ -1134,6 +1218,7 @@ function parseInvoiceSnapshot(
                 asString(snapshotRecord.sucursal) ||
                 asString(source.servilexSucursalCode) ||
                 getServilexConfig().sucursal,
+            eventCategory: normalizeEventCategory(snapshotRecord.eventCategory),
             groupType:
                 asString(snapshotRecord.groupType) === "ALUMNO" ? "ALUMNO" : "INDICATOR",
             groupKey: asString(snapshotRecord.groupKey) || source.servilexGroupKey,
@@ -1152,6 +1237,7 @@ function parseInvoiceSnapshot(
     return {
         indicator: normalizeIndicator(source.servilexIndicator),
         sucursal: asString(source.servilexSucursalCode) || getServilexConfig().sucursal,
+        eventCategory: null,
         groupType: "INDICATOR",
         groupKey: source.servilexGroupKey,
         groupLabel: asString(source.servilexGroupLabel) || source.servilexGroupKey,
@@ -1228,7 +1314,7 @@ export function buildServilexPayload(
         indicador: snapshot.indicator,
         comprobante: {
             tipo: buyerIsFactura ? "FAC" : "BOL",
-            serie: buyerIsFactura ? config.serieFactura : config.serieBoleta,
+            serie: resolveServilexSerie({ buyerIsFactura, snapshot, order, config }),
         },
         entidad: {
             tipoDocumento: order.buyerDocType || (buyerIsFactura ? "6" : "1"),
