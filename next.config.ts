@@ -77,6 +77,11 @@ function buildContentSecurityPolicy() {
 const nextConfig: NextConfig = {
   // Turbopack standalone copy fails on Windows for traced node:* chunks.
   ...(process.platform !== "win32" ? { output: "standalone" as const } : {}),
+  eslint: {
+    // ESLint corre en pipeline separado (npm run lint). Evita que errores
+    // preexistentes en archivos no relacionados tiren el build de Docker.
+    ignoreDuringBuilds: true,
+  },
   allowedDevOrigins: [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
