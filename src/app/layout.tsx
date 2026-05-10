@@ -1,11 +1,24 @@
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import { Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google"
+import { Toaster } from "sonner"
 import "./globals.css"
 import { Providers } from "@/components/providers"
 import { CartProvider } from "@/hooks/cart-context"
 import { MainLayoutWrapper } from "@/components/layout/MainLayoutWrapper"
 
-const inter = Inter({ subsets: ["latin"] })
+const sans = Plus_Jakarta_Sans({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-sans",
+  display: "swap",
+  weight: ["400", "500", "600", "700", "800"],
+})
+
+const display = Space_Grotesk({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-display",
+  display: "swap",
+  weight: ["500", "600", "700"],
+})
 
 const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ticketingfdnda.pe"
 
@@ -58,11 +71,10 @@ export const metadata: Metadata = {
     description: "Entradas oficiales para eventos de deportes acuáticos en Perú.",
     images: ["/logo.png"],
   },
-  icons: {
-    icon: "/icon.png",
-    shortcut: "/icon.png",
-    apple: "/icon.png",
-  },
+  // icons: omitido a propósito.
+  // Next.js descubre automáticamente `src/app/icon.svg`, `icon.png` y `apple-icon.png`
+  // y genera las <link> tags con hash de versionado para invalidar el caché del navegador
+  // cada vez que cambias los archivos.
   formatDetection: {
     telephone: false,
   },
@@ -98,8 +110,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es">
-      <body className={`${inter.className} antialiased`}>
+    <html lang="es" className={`${sans.variable} ${display.variable}`}>
+      <body className="font-sans antialiased">
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
@@ -115,6 +127,16 @@ export default function RootLayout({
             </MainLayoutWrapper>
           </CartProvider>
         </Providers>
+        <Toaster
+          richColors
+          position="top-right"
+          closeButton
+          toastOptions={{
+            classNames: {
+              toast: "font-sans",
+            },
+          }}
+        />
       </body>
     </html>
   )

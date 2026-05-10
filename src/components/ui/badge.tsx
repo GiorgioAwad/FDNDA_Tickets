@@ -33,6 +33,14 @@ const badgeVariants = cva(
                     "border-transparent bg-amber-500 text-white",
                 paid:
                     "border-transparent bg-green-600 text-white",
+                coral:
+                    "border-transparent bg-coral text-white",
+                "coral-soft":
+                    "border-transparent bg-coral-soft text-coral-strong",
+                live:
+                    "border-transparent bg-coral text-white shadow-glow-coral animate-pulse",
+                urgent:
+                    "border-transparent bg-amber-100 text-amber-900 ring-1 ring-amber-200",
             },
         },
         defaultVariants: {

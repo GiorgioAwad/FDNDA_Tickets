@@ -101,6 +101,10 @@ const nextConfig: NextConfig = {
         hostname: "ticketingfdnda.pe",
       },
       {
+        protocol: "https",
+        hostname: "assets.ticketingfdnda.pe",
+      },
+      {
         protocol: "http",
         hostname: "localhost",
       },

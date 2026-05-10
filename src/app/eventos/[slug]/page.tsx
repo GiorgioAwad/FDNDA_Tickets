@@ -1,20 +1,19 @@
-﻿import { notFound } from "next/navigation"
-import Link from "next/link"
+import { notFound } from "next/navigation"
 import { timingSafeEqual } from "crypto"
 import type { Metadata } from "next"
 import { prisma } from "@/lib/prisma"
 import { cn, formatDate } from "@/lib/utils"
 import { normalizeRichTextForDisplay } from "@/lib/sanitize-rich-text"
-import { EventBannerMedia } from "@/components/events/EventBannerMedia"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { EventHero } from "@/components/events/EventHero"
+import { EventShareBar } from "@/components/events/EventShareBar"
+import { EventCountdownStrip } from "@/components/events/EventCountdownStrip"
 import TicketPurchaseCard, { type TicketTypeClient } from "./TicketPurchaseCard"
 import {
     Calendar,
     MapPin,
     Clock,
-    Waves,
-    ArrowLeft,
+    FileText,
 } from "lucide-react"
 
 export const revalidate = 30
@@ -157,6 +156,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
         .map((tt) => Number(tt.price))
         .filter((p) => Number.isFinite(p) && p >= 0)
     const lowestPrice = ticketPrices.length ? Math.min(...ticketPrices) : null
+    const totalCapacity = event.ticketTypes.reduce((sum, tt) => sum + (tt.capacity ?? 0), 0)
     const eventUrl = `${SITE_URL}/eventos/${event.slug}`
     const eventJsonLd = {
         "@context": "https://schema.org",
@@ -216,92 +216,42 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
     }))
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gradient-to-b from-fdnda-light/30 via-white to-white">
             <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{ __html: JSON.stringify(eventJsonLd) }}
             />
-            {/* Hero */}
-            <div className="relative w-full aspect-[1200/630] min-h-[14rem] max-h-[34rem] bg-gradient-fdnda overflow-hidden">
-                <div className="absolute top-4 left-0 right-0 z-10">
-                    <div className="container mx-auto px-4">
-                        <Link
-                            href="/eventos"
-                            className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm text-white/90 hover:text-white transition-colors"
-                        >
-                            <ArrowLeft className="h-4 w-4" />
-                            Volver a eventos
-                        </Link>
-                    </div>
-                </div>
-                {event.bannerUrl ? (
-                    <EventBannerMedia
-                        src={event.bannerUrl}
-                        alt={event.title}
-                        priority
-                        sizes="100vw"
-                        className="object-cover object-top"
-                    />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                        <Waves className="h-32 w-32 text-white/20" />
-                    </div>
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
 
-                <div className="absolute bottom-0 left-0 right-0 p-4 text-white sm:p-6">
-                    <div className="container mx-auto">
-                        <div className="flex flex-wrap gap-2 mb-3">
-                            {event.discipline && (
-                                <Badge className="bg-white/20 text-white border-0">
-                                    {event.discipline}
-                                </Badge>
-                            )}
-                        </div>
+            <EventHero
+                title={event.title}
+                bannerUrl={event.bannerUrl}
+                discipline={event.discipline}
+                venue={event.venue}
+                location={event.location}
+            />
 
-                        <h1 className="text-2xl font-bold sm:text-3xl md:text-4xl">{event.title}</h1>
-                    </div>
-                </div>
-            </div>
-
-            <div className="container mx-auto px-4 py-5 sm:py-8">
+            <div className="container mx-auto px-4 py-6 sm:py-10">
                 <div className={cn("grid grid-cols-1 gap-6 sm:gap-8", isPoolFreeEvent ? "" : "lg:grid-cols-3")}>
                     {/* Main Content */}
                     <div className={cn("space-y-6", isPoolFreeEvent ? "" : "lg:col-span-2")}>
-                        {/* Event Info */}
-                        <Card>
-                            <CardContent className="p-4 sm:p-6">
-                                <div className="mb-5 grid grid-cols-1 gap-4 sm:mb-6 sm:grid-cols-2">
-                                    <div className="flex items-start gap-3">
-                                        <div className="p-2 rounded-lg bg-blue-50">
-                                            <Calendar className="h-5 w-5 text-blue-600" />
-                                        </div>
-                                        <div>
-                                            <div className="text-sm text-gray-500">Fecha</div>
-                                            <div className="font-medium">
-                                                {formatDate(event.startDate)}
-                                                {event.startDate.toDateString() !== event.endDate.toDateString() && (
-                                                    <> - {formatDate(event.endDate)}</>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
+                        {/* Pills */}
+                        <div className="flex flex-wrap gap-2">
+                            <InfoPill icon={Calendar} label={formatDate(event.startDate, { dateStyle: "long" })} />
+                            <InfoPill icon={MapPin} label={`${event.venue} · ${event.location}`} />
+                        </div>
 
-                                    <div className="flex items-start gap-3">
-                                        <div className="p-2 rounded-lg bg-green-50">
-                                            <MapPin className="h-5 w-5 text-green-600" />
-                                        </div>
-                                        <div>
-                                            <div className="text-sm text-gray-500">Ubicación</div>
-                                            <div className="font-medium">{event.venue}</div>
-                                            <div className="text-sm text-gray-500">{event.location}</div>
-                                        </div>
-                                    </div>
+                        {/* Countdown */}
+                        <EventCountdownStrip startDate={event.startDate} />
+
+                        {/* Description */}
+                        <Card className="overflow-hidden">
+                            <CardContent className="p-5 sm:p-7">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <FileText className="h-5 w-5 text-fdnda-secondary" />
+                                    <h2 className="font-display text-xl sm:text-2xl font-bold">Descripción</h2>
                                 </div>
-
-                                <h2 className="mb-3 text-base font-semibold sm:text-lg">Descripción</h2>
                                 <div
-                                    className="prose prose-sm sm:prose-base prose-gray max-w-none prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline"
+                                    className="prose prose-sm sm:prose-base prose-gray max-w-none prose-headings:font-display prose-headings:text-foreground prose-a:text-fdnda-secondary prose-a:no-underline hover:prose-a:underline"
                                     dangerouslySetInnerHTML={{
                                         __html: normalizeRichTextForDisplay(event.description),
                                     }}
@@ -311,26 +261,35 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
 
                         {/* Event Days */}
                         {event.eventDays.length > 0 && (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-                                        <Clock className="h-5 w-5" />
-                                        Días del Evento
+                            <Card className="overflow-hidden">
+                                <CardHeader className="bg-gradient-to-r from-fdnda-light/40 to-transparent border-b border-border">
+                                    <CardTitle className="flex items-center gap-2 font-display text-xl">
+                                        <Clock className="h-5 w-5 text-fdnda-secondary" />
+                                        Días del evento
                                     </CardTitle>
                                 </CardHeader>
-                                <CardContent>
-                                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
+                                <CardContent className="p-5 sm:p-6">
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                         {event.eventDays.map((day: EventDayItem) => (
                                             <div
                                                 key={day.id}
-                                                className="flex items-center justify-between rounded-lg bg-gray-50 p-2.5 sm:p-3"
+                                                className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-fdnda-secondary/40 hover:bg-fdnda-light/20"
                                             >
-                                                <div>
-                                                    <div className="font-medium">
+                                                <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl bg-gradient-to-br from-fdnda-primary to-fdnda-secondary text-white shadow-md">
+                                                    <span className="font-display text-base font-bold leading-none">
+                                                        {day.date.toLocaleDateString("es-PE", { day: "2-digit" })}
+                                                    </span>
+                                                    <span className="text-[9px] uppercase tracking-wider opacity-90 mt-0.5">
+                                                        {day.date.toLocaleDateString("es-PE", { month: "short" })}
+                                                    </span>
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="font-semibold text-sm truncate">
                                                         {formatDate(day.date, { dateStyle: "full" })}
                                                     </div>
-                                                    <div className="text-sm text-gray-500">
-                                                        {day.openTime} - {day.closeTime}
+                                                    <div className="text-xs text-muted-foreground inline-flex items-center gap-1 mt-0.5">
+                                                        <Clock className="h-3 w-3" />
+                                                        {day.openTime} – {day.closeTime}
                                                     </div>
                                                 </div>
                                             </div>
@@ -339,6 +298,13 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
                                 </CardContent>
                             </Card>
                         )}
+
+                        {/* Share */}
+                        <Card>
+                            <CardContent className="p-5">
+                                <EventShareBar title={event.title} url={`/eventos/${event.slug}`} />
+                            </CardContent>
+                        </Card>
 
                         {isPoolFreeEvent && (
                             <TicketPurchaseCard
@@ -354,7 +320,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
 
                     {/* Sidebar - Tickets */}
                     {!isPoolFreeEvent && (
-                        <div className="space-y-6">
+                        <div className="lg:sticky lg:top-20 self-start space-y-6">
                             <TicketPurchaseCard
                                 eventId={event.id}
                                 eventTitle={event.title}
@@ -371,4 +337,11 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
     )
 }
 
-
+function InfoPill({ icon: Icon, label }: { icon: React.ComponentType<{ className?: string }>; label: string }) {
+    return (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1.5 text-xs sm:text-sm font-medium text-foreground/80 shadow-sm">
+            <Icon className="h-3.5 w-3.5 text-fdnda-secondary" />
+            {label}
+        </span>
+    )
+}

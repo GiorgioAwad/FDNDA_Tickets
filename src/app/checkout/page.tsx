@@ -338,30 +338,47 @@ export default function CheckoutPage() {
 
     if (items.length === 0) {
         return (
-            <div className="container mx-auto px-4 py-12 sm:py-16 text-center">
-                <h1 className="text-xl sm:text-2xl font-bold mb-4">Tu carrito esta vacio</h1>
-                <p className="text-gray-600 mb-8">No has seleccionado ninguna entrada.</p>
-                <Button onClick={() => router.push("/eventos")}>
-                    Ver eventos
-                </Button>
+            <div className="min-h-screen bg-gradient-to-b from-fdnda-light/30 via-white to-white">
+                <div className="container mx-auto px-4 py-16 sm:py-24">
+                    <div className="max-w-md mx-auto text-center">
+                        <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-fdnda-light to-fdnda-accent/20">
+                            <CreditCard className="h-10 w-10 text-fdnda-secondary" />
+                        </div>
+                        <h1 className="font-display text-2xl sm:text-3xl font-bold mb-2">Tu carrito está vacío</h1>
+                        <p className="text-muted-foreground mb-8">
+                            Aún no has seleccionado ninguna entrada. Explora los próximos eventos y elige el tuyo.
+                        </p>
+                        <Button variant="coral" size="lg" onClick={() => router.push("/eventos")} className="rounded-full px-8">
+                            Ver eventos disponibles
+                        </Button>
+                    </div>
+                </div>
             </div>
         )
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 py-6 sm:py-12">
+        <div className="min-h-screen bg-gradient-to-b from-fdnda-light/30 via-white to-white py-6 sm:py-10">
             <div className="container mx-auto px-4">
                 <div className="flex flex-col gap-3 mb-6 sm:mb-8">
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="gap-2 w-fit text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                        className="gap-2 w-fit text-muted-foreground hover:text-foreground"
                         onClick={() => router.back()}
                     >
                         <ArrowLeft className="h-4 w-4" />
                         Volver
                     </Button>
-                    <h1 className="text-2xl sm:text-3xl font-bold">Finalizar compra</h1>
+                    <div>
+                        <p className="text-xs font-bold uppercase tracking-widest text-coral mb-1">Paso final</p>
+                        <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">
+                            Finaliza tu <span className="text-gradient-coral">compra</span>
+                        </h1>
+                        <p className="text-muted-foreground mt-1.5 text-sm sm:text-base">
+                            Completa tus datos y asistentes para emitir tus entradas oficiales.
+                        </p>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8">

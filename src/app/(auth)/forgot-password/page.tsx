@@ -2,10 +2,10 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { AuthShell } from "@/components/auth/AuthShell"
 import { AlertCircle, CheckCircle, Mail } from "lucide-react"
 
 export default function ForgotPasswordPage() {
@@ -31,92 +31,68 @@ export default function ForgotPasswordPage() {
 
             if (!response.ok) {
                 setError(data.error || "No se pudo procesar la solicitud")
+                toast.error(data.error || "No se pudo procesar la solicitud")
                 return
             }
 
             setSuccess(data.message)
+            toast.success("Revisa tu correo")
         } catch {
             setError("Error de conexión")
+            toast.error("Sin conexión. Intenta nuevamente.")
         } finally {
             setLoading(false)
         }
     }
 
     return (
-        <div className="min-h-[80vh] flex items-center justify-center py-8 sm:py-12 px-4 bg-gradient-to-b from-gray-50 to-white">
-            <div className="w-full max-w-md">
-                <div className="text-center mb-6 sm:mb-8">
-                    <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 mb-3 sm:mb-4">
-                        <Image
-                            src="/logo.png"
-                            alt="FDNDA"
-                            width={48}
-                            height={48}
-                            className="h-10 w-10 sm:h-12 sm:w-12 object-contain"
-                            priority
+        <AuthShell
+            title="¿Olvidaste tu contraseña?"
+            subtitle="Te enviaremos un enlace para restablecerla"
+            footer={
+                <Link href="/login" className="font-semibold text-fdnda-secondary hover:text-coral transition-colors">
+                    ← Volver a iniciar sesión
+                </Link>
+            }
+        >
+            <form onSubmit={handleSubmit} className="space-y-5">
+                {error && (
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-coral-soft text-coral-strong text-sm border border-coral/20">
+                        <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                        {error}
+                    </div>
+                )}
+
+                {success && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-success/10 text-success text-sm border border-success/20">
+                        <CheckCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                        {success}
+                    </div>
+                )}
+
+                <div className="space-y-1.5">
+                    <label htmlFor="email" className="text-sm font-semibold text-foreground">
+                        Email
+                    </label>
+                    <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            id="email"
+                            type="email"
+                            placeholder="tu@email.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="pl-10 h-11"
+                            required
+                            autoComplete="email"
                         />
                     </div>
-                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Ticketing FDNDA</h1>
                 </div>
 
-                <Card className="shadow-xl border-0">
-                    <CardHeader className="text-center pb-0">
-                        <CardTitle className="text-2xl">Recuperar contraseña</CardTitle>
-                        <CardDescription>
-                            Ingresa tu email y te enviaremos un enlace para restablecerla.
-                        </CardDescription>
-                    </CardHeader>
-
-                    <CardContent className="pt-6">
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            {error && (
-                                <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 text-red-600 text-sm">
-                                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                                    {error}
-                                </div>
-                            )}
-
-                            {success && (
-                                <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 text-green-700 text-sm">
-                                    <CheckCircle className="h-4 w-4 flex-shrink-0" />
-                                    {success}
-                                </div>
-                            )}
-
-                            <div className="space-y-2">
-                                <label htmlFor="email" className="text-sm font-medium text-gray-700">
-                                    Email
-                                </label>
-                                <div className="relative">
-                                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                    <Input
-                                        id="email"
-                                        type="email"
-                                        placeholder="tu@email.com"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        className="pl-10"
-                                        required
-                                    />
-                                </div>
-                            </div>
-
-                            <Button type="submit" className="w-full" size="lg" loading={loading}>
-                                Enviar instrucciones
-                            </Button>
-                        </form>
-
-                        <div className="mt-6 text-center text-sm text-gray-600">
-                            <Link
-                                href="/login"
-                                className="font-semibold text-[hsl(210,100%,40%)] hover:underline"
-                            >
-                                Volver a iniciar sesión
-                            </Link>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-        </div>
+                <Button type="submit" variant="coral" className="w-full rounded-xl h-12" loading={loading}>
+                    Enviar instrucciones
+                </Button>
+            </form>
+        </AuthShell>
     )
 }

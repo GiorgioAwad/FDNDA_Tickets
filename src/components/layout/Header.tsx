@@ -1,13 +1,15 @@
-﻿"use client"
+"use client"
 
 import Link from "next/link"
 import Image from "next/image"
 import { useSession, signOut } from "next-auth/react"
 import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
+import { motion, AnimatePresence, useScroll, useSpring } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useCart } from "@/hooks/cart-context"
+import { cn } from "@/lib/utils"
 import {
     Menu,
     X,
@@ -20,7 +22,9 @@ import {
     Calendar,
     Home,
     ChevronRight,
+    ChevronDown,
     DollarSign,
+    LifeBuoy,
 } from "lucide-react"
 
 export function Header() {
@@ -29,9 +33,14 @@ export function Header() {
     const [searchTerm, setSearchTerm] = useState("")
     const [isVisible, setIsVisible] = useState(true)
     const [lastScrollY, setLastScrollY] = useState(0)
+    const [searchFocused, setSearchFocused] = useState(false)
+    const [openSection, setOpenSection] = useState<string | null>("account")
     const { clearCart } = useCart()
     const router = useRouter()
     const pathname = usePathname()
+
+    const { scrollYProgress } = useScroll()
+    const scaleX = useSpring(scrollYProgress, { stiffness: 120, damping: 30, mass: 0.2 })
 
     const isAdmin = session?.user?.role === "ADMIN"
     const isTreasury = session?.user?.role === "TREASURY" || isAdmin
@@ -56,11 +65,11 @@ export function Header() {
 
     useEffect(() => {
         if (mobileMenuOpen) {
-            document.body.style.overflow = 'hidden'
+            document.body.style.overflow = "hidden"
         } else {
-            document.body.style.overflow = ''
+            document.body.style.overflow = ""
         }
-        return () => { document.body.style.overflow = '' }
+        return () => { document.body.style.overflow = "" }
     }, [mobileMenuOpen])
 
     const handleSearch = (e: React.FormEvent) => {
@@ -68,239 +77,466 @@ export function Header() {
         if (searchTerm.trim()) {
             router.push("/eventos?search=" + encodeURIComponent(searchTerm.trim()))
             setSearchTerm("")
+            setSearchFocused(false)
             setMobileMenuOpen(false)
         }
     }
 
     const isActive = (path: string) => pathname === path
+    const startsWith = (path: string) => pathname.startsWith(path)
+
+    const drawerVariants = {
+        hidden: { x: "-100%" },
+        visible: { x: 0, transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] as const } },
+        exit: { x: "-100%", transition: { duration: 0.25, ease: [0.4, 0, 1, 1] as const } },
+    }
+
+    const drawerListVariants = {
+        hidden: {},
+        visible: { transition: { staggerChildren: 0.04, delayChildren: 0.1 } },
+    }
+
+    const drawerItemVariants = {
+        hidden: { opacity: 0, x: -12 },
+        visible: { opacity: 1, x: 0, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] as const } },
+    }
 
     return (
         <>
-            <header className={"sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 transition-transform duration-300 " + (isVisible ? "translate-y-0" : "-translate-y-full")}>
+            <header
+                className={cn(
+                    "sticky top-0 z-50 w-full border-b border-border/60 bg-white/80 backdrop-blur-xl supports-[backdrop-filter]:bg-white/70 transition-transform duration-300",
+                    isVisible ? "translate-y-0" : "-translate-y-full"
+                )}
+            >
                 <div className="container mx-auto px-4">
-                    <div className="flex h-16 items-center justify-between gap-4">
-                        <button className="md:hidden p-2 -ml-2 hover:bg-gray-100 rounded-lg" onClick={() => setMobileMenuOpen(true)}>
+                    <div className="flex h-16 items-center justify-between gap-3">
+                        <button
+                            className="md:hidden p-2 -ml-2 rounded-lg hover:bg-muted transition-colors"
+                            onClick={() => setMobileMenuOpen(true)}
+                            aria-label="Abrir menú"
+                        >
                             <Menu className="h-6 w-6" />
                         </button>
 
-                        <Link href="/" className="flex items-center gap-2 shrink-0">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/5">
+                        <Link href="/" className="flex items-center gap-2 shrink-0 group">
+                            <motion.div
+                                whileHover={{ rotate: -8, scale: 1.06 }}
+                                transition={{ type: "spring", stiffness: 400, damping: 12 }}
+                                className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/5"
+                            >
                                 <Image src="/logo.png" alt="FDNDA" width={32} height={32} className="h-8 w-8 object-contain" priority />
-                            </div>
-                            <div className="hidden sm:block">
-                                <span className="font-bold text-lg text-[hsl(210,100%,25%)]">Ticketing</span>
-                                <span className="ml-2 text-sm text-gray-500">FDNDA</span>
+                            </motion.div>
+                            <div className="hidden sm:block leading-tight">
+                                <span className="font-display font-bold text-lg text-fdnda-primary">Ticketing</span>
+                                <span className="ml-1.5 text-sm text-muted-foreground font-medium">FDNDA</span>
                             </div>
                         </Link>
 
-                        <div className="hidden md:flex flex-1 justify-center max-w-2xl mx-4">
+                        <div className="hidden md:flex flex-1 justify-center max-w-xl mx-4">
                             <form onSubmit={handleSearch} className="relative w-full">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <Input type="text" placeholder="Buscar eventos..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-11 pr-4 w-full h-10 text-sm rounded-full border-gray-200" />
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                                <Input
+                                    type="text"
+                                    placeholder="¿Qué evento buscas?"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onFocus={() => setSearchFocused(true)}
+                                    onBlur={() => setSearchFocused(false)}
+                                    className={cn(
+                                        "pl-11 pr-14 w-full h-10 text-sm rounded-full border-border bg-muted/40 transition-all duration-300",
+                                        searchFocused && "bg-white ring-2 ring-fdnda-primary/30 shadow-md"
+                                    )}
+                                />
+                                <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden lg:inline-flex h-6 items-center rounded border border-border bg-white px-1.5 text-[10px] font-mono text-muted-foreground">
+                                    /
+                                </kbd>
                             </form>
                         </div>
 
-                        <nav className="hidden md:flex items-center gap-3 shrink-0">
-                            <Link href="/eventos" className="text-sm font-medium text-gray-700 hover:text-[hsl(210,100%,25%)]">Eventos</Link>
+                        <nav className="hidden md:flex items-center gap-2 shrink-0">
+                            <Link
+                                href="/eventos"
+                                className={cn(
+                                    "text-sm font-medium px-3 py-2 rounded-lg transition-colors",
+                                    startsWith("/eventos") ? "text-fdnda-primary bg-fdnda-primary/5" : "text-foreground/80 hover:text-fdnda-primary hover:bg-muted"
+                                )}
+                            >
+                                Eventos
+                            </Link>
                             {status === "authenticated" ? (
                                 <>
-                                    <Link href="/mi-cuenta/entradas" className="text-sm font-medium text-gray-700 hover:text-[hsl(210,100%,25%)] flex items-center gap-1">
+                                    <Link
+                                        href="/mi-cuenta/entradas"
+                                        className={cn(
+                                            "text-sm font-medium px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5",
+                                            startsWith("/mi-cuenta/entradas") ? "text-fdnda-primary bg-fdnda-primary/5" : "text-foreground/80 hover:text-fdnda-primary hover:bg-muted"
+                                        )}
+                                    >
                                         <Ticket className="h-4 w-4" />Mis Entradas
                                     </Link>
-                                    {isStaff && <Link href="/scanner" className="text-sm font-medium text-gray-700 hover:text-[hsl(210,100%,25%)] flex items-center gap-1"><ScanLine className="h-4 w-4" />Escaner</Link>}
-                                    {isTreasury && <Link href="/tesoreria" className="text-sm font-medium text-gray-700 hover:text-[hsl(210,100%,25%)] flex items-center gap-1"><DollarSign className="h-4 w-4" />Tesoreria</Link>}
-                                    {isAdmin && <Link href="/admin" className="text-sm font-medium text-gray-700 hover:text-[hsl(210,100%,25%)] flex items-center gap-1"><LayoutDashboard className="h-4 w-4" />Admin</Link>}
-                                    <div className="flex items-center gap-2">
-                                        <Link href="/mi-cuenta"><Button variant="ghost" size="sm" className="gap-2"><User className="h-4 w-4" />{session.user?.name?.split(" ")[0]}</Button></Link>
-                                        <Button variant="ghost" size="icon" onClick={() => { clearCart(); signOut({ callbackUrl: "/" }) }} title="Cerrar sesion"><LogOut className="h-4 w-4" /></Button>
+                                    {isStaff && (
+                                        <Link
+                                            href="/scanner"
+                                            className={cn(
+                                                "text-sm font-medium px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5",
+                                                startsWith("/scanner") ? "text-fdnda-primary bg-fdnda-primary/5" : "text-foreground/80 hover:text-fdnda-primary hover:bg-muted"
+                                            )}
+                                        >
+                                            <ScanLine className="h-4 w-4" />Escáner
+                                        </Link>
+                                    )}
+                                    {isTreasury && (
+                                        <Link
+                                            href="/tesoreria"
+                                            className={cn(
+                                                "text-sm font-medium px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5",
+                                                startsWith("/tesoreria") ? "text-fdnda-primary bg-fdnda-primary/5" : "text-foreground/80 hover:text-fdnda-primary hover:bg-muted"
+                                            )}
+                                        >
+                                            <DollarSign className="h-4 w-4" />Tesorería
+                                        </Link>
+                                    )}
+                                    {isAdmin && (
+                                        <Link
+                                            href="/admin"
+                                            className={cn(
+                                                "text-sm font-medium px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5",
+                                                startsWith("/admin") ? "text-fdnda-primary bg-fdnda-primary/5" : "text-foreground/80 hover:text-fdnda-primary hover:bg-muted"
+                                            )}
+                                        >
+                                            <LayoutDashboard className="h-4 w-4" />Admin
+                                        </Link>
+                                    )}
+                                    <div className="ml-2 flex items-center gap-1.5 pl-2 border-l border-border">
+                                        <Link href="/mi-cuenta">
+                                            <Button variant="ghost" size="sm" className="gap-2">
+                                                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-fdnda-primary to-fdnda-secondary text-white text-xs font-bold">
+                                                    {(session.user?.name?.charAt(0) ?? "U").toUpperCase()}
+                                                </span>
+                                                <span className="max-w-[100px] truncate">{session.user?.name?.split(" ")[0]}</span>
+                                            </Button>
+                                        </Link>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => { clearCart(); signOut({ callbackUrl: "/" }) }}
+                                            title="Cerrar sesión"
+                                            aria-label="Cerrar sesión"
+                                        >
+                                            <LogOut className="h-4 w-4" />
+                                        </Button>
                                     </div>
                                 </>
                             ) : (
-                                <div className="flex items-center gap-2">
-                                    <Link href="/login"><Button variant="ghost" size="sm">Iniciar Sesion</Button></Link>
-                                    <Link href="/register"><Button size="sm">Registrarse</Button></Link>
+                                <div className="flex items-center gap-2 ml-1">
+                                    <Link href="/login"><Button variant="ghost" size="sm">Iniciar sesión</Button></Link>
+                                    <Link href="/register"><Button variant="coral" size="sm" className="rounded-full px-4">Registrarse</Button></Link>
                                 </div>
                             )}
                         </nav>
 
-                        <button className="md:hidden p-2 -mr-2 hover:bg-gray-100 rounded-lg" onClick={() => setMobileMenuOpen(true)}>
-                            <Search className="h-5 w-5 text-gray-600" />
+                        <button
+                            className="md:hidden p-2 -mr-2 rounded-lg hover:bg-muted transition-colors"
+                            onClick={() => setMobileMenuOpen(true)}
+                            aria-label="Buscar"
+                        >
+                            <Search className="h-5 w-5 text-muted-foreground" />
                         </button>
                     </div>
                 </div>
+
+                {/* Scroll progress bar */}
+                <motion.div
+                    className="absolute bottom-0 left-0 right-0 h-0.5 origin-left bg-gradient-to-r from-fdnda-primary via-fdnda-accent to-coral"
+                    style={{ scaleX }}
+                />
             </header>
 
-            {/* Mobile Menu Overlay - covers everything */}
-            {mobileMenuOpen && (
-                <div 
-                    className="fixed inset-0 bg-black/60 z-[9998] md:hidden"
-                    onClick={() => setMobileMenuOpen(false)} 
-                />
-            )}
-
-            {/* Mobile Sidebar */}
-            <aside 
-                className={`fixed top-0 left-0 h-full w-[min(300px,85vw)] bg-white z-[9999] md:hidden transform transition-transform duration-300 ease-out shadow-2xl ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}
-            >
-                <div className="flex flex-col h-full">
-                    <div className="flex items-center justify-between p-4 border-b">
-                        <Link href="/" className="flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/5">
-                                <Image src="/logo.png" alt="FDNDA" width={32} height={32} className="h-8 w-8 object-contain" />
-                            </div>
-                            <div>
-                                <span className="font-bold text-lg text-[hsl(210,100%,25%)]">FDNDA</span>
-                                <span className="text-sm text-gray-500 ml-1">Tickets</span>
-                            </div>
-                        </Link>
-                        <button className="p-2 hover:bg-gray-100 rounded-lg" onClick={() => setMobileMenuOpen(false)}><X className="h-5 w-5" /></button>
-                    </div>
-
-                    <div className="p-4 border-b">
-                        <form onSubmit={handleSearch}>
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <Input type="text" placeholder="Buscar eventos..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 w-full rounded-lg" />
-                            </div>
-                        </form>
-                    </div>
-
-                    {status === "authenticated" && session.user && (
-                        <div className="p-4 border-b bg-gray-50">
-                            <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-full bg-[hsl(210,100%,25%)] flex items-center justify-center text-white font-semibold">
-                                    {session.user.name?.charAt(0).toUpperCase() || "U"}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-medium text-gray-900 truncate">{session.user.name}</p>
-                                    <p className="text-sm text-gray-500 truncate">{session.user.email}</p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <nav className="flex-1 overflow-y-auto py-4">
-                        <div className="space-y-1 px-3">
-                            <Link 
-                                href="/" 
-                                className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors ${isActive("/") ? "bg-blue-600 text-white" : "text-gray-800 hover:bg-gray-100"}`} 
-                                onClick={() => setMobileMenuOpen(false)}
-                            >
-                                <Home className="h-5 w-5 flex-shrink-0" />
-                                <span className="font-medium">Inicio</span>
-                            </Link>
-                            <Link 
-                                href="/eventos" 
-                                className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors ${isActive("/eventos") ? "bg-blue-600 text-white" : "text-gray-800 hover:bg-gray-100"}`} 
-                                onClick={() => setMobileMenuOpen(false)}
-                            >
-                                <Calendar className="h-5 w-5 flex-shrink-0" />
-                                <span className="font-medium">Eventos</span>
-                            </Link>
-
-                            {status === "authenticated" && (
-                                <>
-                                    <div className="pt-4 pb-2 px-3">
-                                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Mi Cuenta</p>
+            {/* Mobile menu */}
+            <AnimatePresence>
+                {mobileMenuOpen && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998] md:hidden"
+                            onClick={() => setMobileMenuOpen(false)}
+                        />
+                        <motion.aside
+                            variants={drawerVariants}
+                            initial="hidden"
+                            animate="visible"
+                            exit="exit"
+                            className="fixed top-0 left-0 h-full w-[min(320px,88vw)] bg-white z-[9999] md:hidden shadow-2xl flex flex-col"
+                        >
+                            <div className="flex items-center justify-between p-4 border-b border-border bg-gradient-to-br from-fdnda-primary to-fdnda-secondary text-white">
+                                <Link href="/" className="flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm">
+                                        <Image src="/logo.png" alt="FDNDA" width={32} height={32} className="h-8 w-8 object-contain" />
                                     </div>
-                                    <Link 
-                                        href="/mi-cuenta" 
-                                        className={`flex items-center justify-between px-3 py-3 rounded-lg transition-colors ${isActive("/mi-cuenta") ? "bg-blue-600 text-white" : "text-gray-800 hover:bg-gray-100"}`} 
-                                        onClick={() => setMobileMenuOpen(false)}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <User className="h-5 w-5 flex-shrink-0" />
-                                            <span className="font-medium">Mi Perfil</span>
-                                        </div>
-                                        <ChevronRight className="h-4 w-4 opacity-50" />
-                                    </Link>
-                                    <Link 
-                                        href="/mi-cuenta/entradas" 
-                                        className={`flex items-center justify-between px-3 py-3 rounded-lg transition-colors ${isActive("/mi-cuenta/entradas") ? "bg-blue-600 text-white" : "text-gray-800 hover:bg-gray-100"}`} 
-                                        onClick={() => setMobileMenuOpen(false)}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <Ticket className="h-5 w-5 flex-shrink-0" />
-                                            <span className="font-medium">Mis Entradas</span>
-                                        </div>
-                                        <ChevronRight className="h-4 w-4 opacity-50" />
-                                    </Link>
-
-                                    {isStaff && (
-                                        <>
-                                            <div className="pt-4 pb-2 px-3">
-                                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Staff</p>
-                                            </div>
-                                            <Link 
-                                                href="/scanner" 
-                                                className={`flex items-center justify-between px-3 py-3 rounded-lg transition-colors ${pathname.startsWith("/scanner") ? "bg-blue-600 text-white" : "text-gray-800 hover:bg-gray-100"}`} 
-                                                onClick={() => setMobileMenuOpen(false)}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <ScanLine className="h-5 w-5 flex-shrink-0" />
-                                                    <span className="font-medium">Escaner QR</span>
-                                                </div>
-                                                <ChevronRight className="h-4 w-4 opacity-50" />
-                                            </Link>
-                                        </>
-                                    )}
-
-                                    {isAdmin && (
-                                        <>
-                                            <div className="pt-4 pb-2 px-3">
-                                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Administracion</p>
-                                            </div>
-                                            <Link 
-                                                href="/admin" 
-                                                className={`flex items-center justify-between px-3 py-3 rounded-lg transition-colors ${pathname.startsWith("/admin") ? "bg-blue-600 text-white" : "text-gray-800 hover:bg-gray-100"}`} 
-                                                onClick={() => setMobileMenuOpen(false)}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <LayoutDashboard className="h-5 w-5 flex-shrink-0" />
-                                                    <span className="font-medium">Panel Admin</span>
-                                                </div>
-                                                <ChevronRight className="h-4 w-4 opacity-50" />
-                                            </Link>
-                                        </>
-                                    )}
-
-                                    {isTreasury && (
-                                        <>
-                                            <div className="pt-4 pb-2 px-3">
-                                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Tesoreria</p>
-                                            </div>
-                                            <Link 
-                                                href="/tesoreria" 
-                                                className={`flex items-center justify-between px-3 py-3 rounded-lg transition-colors ${pathname.startsWith("/tesoreria") ? "bg-blue-600 text-white" : "text-gray-800 hover:bg-gray-100"}`} 
-                                                onClick={() => setMobileMenuOpen(false)}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <DollarSign className="h-5 w-5 flex-shrink-0" />
-                                                    <span className="font-medium">Panel Tesoreria</span>
-                                                </div>
-                                                <ChevronRight className="h-4 w-4 opacity-50" />
-                                            </Link>
-                                        </>
-                                    )}
-                                </>
-                            )}
-                        </div>
-                    </nav>
-
-                    <div className="border-t p-4">
-                        {status === "authenticated" ? (
-                            <button className="flex items-center gap-3 w-full px-3 py-2.5 text-red-600 hover:bg-red-50 rounded-lg" onClick={() => { setMobileMenuOpen(false); clearCart(); signOut({ callbackUrl: "/" }) }}>
-                                <LogOut className="h-5 w-5" /><span className="font-medium">Cerrar Sesion</span>
-                            </button>
-                        ) : (
-                            <div className="space-y-2">
-                                <Link href="/login" className="block w-full" onClick={() => setMobileMenuOpen(false)}><Button variant="outline" className="w-full">Iniciar Sesion</Button></Link>
-                                <Link href="/register" className="block w-full" onClick={() => setMobileMenuOpen(false)}><Button className="w-full bg-[hsl(210,100%,25%)] hover:bg-[hsl(210,100%,20%)]">Registrarse</Button></Link>
+                                    <div className="leading-tight">
+                                        <span className="font-display font-bold text-lg block">FDNDA</span>
+                                        <span className="text-xs text-white/80">Ticketing oficial</span>
+                                    </div>
+                                </Link>
+                                <button
+                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                                    onClick={() => setMobileMenuOpen(false)}
+                                    aria-label="Cerrar menú"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
                             </div>
-                        )}
-                    </div>
-                </div>
-            </aside>
+
+                            <div className="p-4 border-b border-border">
+                                <form onSubmit={handleSearch}>
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                            type="text"
+                                            placeholder="Buscar eventos..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="pl-9 w-full rounded-lg"
+                                            autoFocus
+                                        />
+                                    </div>
+                                </form>
+                            </div>
+
+                            {status === "authenticated" && session.user && (
+                                <div className="p-4 border-b border-border bg-muted/30">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-11 w-11 rounded-full bg-gradient-to-br from-fdnda-primary to-fdnda-secondary flex items-center justify-center text-white font-bold">
+                                            {session.user.name?.charAt(0).toUpperCase() || "U"}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold text-foreground truncate">{session.user.name}</p>
+                                            <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <motion.nav
+                                variants={drawerListVariants}
+                                initial="hidden"
+                                animate="visible"
+                                className="flex-1 overflow-y-auto py-3"
+                            >
+                                <div className="space-y-1 px-3">
+                                    <motion.div variants={drawerItemVariants}>
+                                        <DrawerLink
+                                            href="/"
+                                            label="Inicio"
+                                            icon={Home}
+                                            active={isActive("/")}
+                                            onClick={() => setMobileMenuOpen(false)}
+                                        />
+                                    </motion.div>
+                                    <motion.div variants={drawerItemVariants}>
+                                        <DrawerLink
+                                            href="/eventos"
+                                            label="Eventos"
+                                            icon={Calendar}
+                                            active={startsWith("/eventos")}
+                                            onClick={() => setMobileMenuOpen(false)}
+                                        />
+                                    </motion.div>
+
+                                    {status === "authenticated" && (
+                                        <>
+                                            <DrawerSection
+                                                id="account"
+                                                label="Mi cuenta"
+                                                openId={openSection}
+                                                onToggle={setOpenSection}
+                                            >
+                                                <DrawerLink
+                                                    href="/mi-cuenta"
+                                                    label="Mi perfil"
+                                                    icon={User}
+                                                    active={isActive("/mi-cuenta")}
+                                                    onClick={() => setMobileMenuOpen(false)}
+                                                    chevron
+                                                />
+                                                <DrawerLink
+                                                    href="/mi-cuenta/entradas"
+                                                    label="Mis entradas"
+                                                    icon={Ticket}
+                                                    active={startsWith("/mi-cuenta/entradas")}
+                                                    onClick={() => setMobileMenuOpen(false)}
+                                                    chevron
+                                                />
+                                            </DrawerSection>
+
+                                            {isStaff && (
+                                                <DrawerSection
+                                                    id="staff"
+                                                    label="Staff"
+                                                    openId={openSection}
+                                                    onToggle={setOpenSection}
+                                                >
+                                                    <DrawerLink
+                                                        href="/scanner"
+                                                        label="Escáner QR"
+                                                        icon={ScanLine}
+                                                        active={startsWith("/scanner")}
+                                                        onClick={() => setMobileMenuOpen(false)}
+                                                        chevron
+                                                    />
+                                                </DrawerSection>
+                                            )}
+
+                                            {isAdmin && (
+                                                <DrawerSection
+                                                    id="admin"
+                                                    label="Administración"
+                                                    openId={openSection}
+                                                    onToggle={setOpenSection}
+                                                >
+                                                    <DrawerLink
+                                                        href="/admin"
+                                                        label="Panel admin"
+                                                        icon={LayoutDashboard}
+                                                        active={startsWith("/admin")}
+                                                        onClick={() => setMobileMenuOpen(false)}
+                                                        chevron
+                                                    />
+                                                </DrawerSection>
+                                            )}
+
+                                            {isTreasury && (
+                                                <DrawerSection
+                                                    id="treasury"
+                                                    label="Tesorería"
+                                                    openId={openSection}
+                                                    onToggle={setOpenSection}
+                                                >
+                                                    <DrawerLink
+                                                        href="/tesoreria"
+                                                        label="Panel tesorería"
+                                                        icon={DollarSign}
+                                                        active={startsWith("/tesoreria")}
+                                                        onClick={() => setMobileMenuOpen(false)}
+                                                        chevron
+                                                    />
+                                                </DrawerSection>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </motion.nav>
+
+                            <div className="border-t border-border p-4 space-y-2">
+                                {status === "authenticated" ? (
+                                    <button
+                                        className="flex items-center gap-3 w-full px-3 py-2.5 text-coral hover:bg-coral-soft rounded-lg transition-colors"
+                                        onClick={() => { setMobileMenuOpen(false); clearCart(); signOut({ callbackUrl: "/" }) }}
+                                    >
+                                        <LogOut className="h-5 w-5" /><span className="font-medium">Cerrar sesión</span>
+                                    </button>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <Link href="/login" className="block w-full" onClick={() => setMobileMenuOpen(false)}>
+                                            <Button variant="outline" className="w-full">Iniciar sesión</Button>
+                                        </Link>
+                                        <Link href="/register" className="block w-full" onClick={() => setMobileMenuOpen(false)}>
+                                            <Button variant="coral" className="w-full">Registrarse gratis</Button>
+                                        </Link>
+                                    </div>
+                                )}
+                                <a
+                                    href="https://wa.me/51941632535"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-fdnda-primary transition-colors"
+                                >
+                                    <LifeBuoy className="h-4 w-4" />Soporte WhatsApp
+                                </a>
+                            </div>
+                        </motion.aside>
+                    </>
+                )}
+            </AnimatePresence>
         </>
+    )
+}
+
+function DrawerLink({
+    href,
+    label,
+    icon: Icon,
+    active,
+    onClick,
+    chevron = false,
+}: {
+    href: string
+    label: string
+    icon: React.ComponentType<{ className?: string }>
+    active?: boolean
+    onClick?: () => void
+    chevron?: boolean
+}) {
+    return (
+        <Link
+            href={href}
+            className={cn(
+                "flex items-center justify-between px-3 py-2.5 rounded-lg transition-colors",
+                active ? "bg-fdnda-primary text-white shadow-md" : "text-foreground/85 hover:bg-muted"
+            )}
+            onClick={onClick}
+        >
+            <div className="flex items-center gap-3">
+                <Icon className={cn("h-5 w-5 flex-shrink-0", active ? "text-white" : "text-muted-foreground")} />
+                <span className="font-medium text-sm">{label}</span>
+            </div>
+            {chevron && <ChevronRight className={cn("h-4 w-4", active ? "text-white/80" : "text-muted-foreground/60")} />}
+        </Link>
+    )
+}
+
+function DrawerSection({
+    id,
+    label,
+    children,
+    openId,
+    onToggle,
+}: {
+    id: string
+    label: string
+    children: React.ReactNode
+    openId: string | null
+    onToggle: (id: string | null) => void
+}) {
+    const isOpen = openId === id
+    return (
+        <div className="pt-3">
+            <button
+                type="button"
+                onClick={() => onToggle(isOpen ? null : id)}
+                className="flex items-center justify-between w-full px-3 py-1.5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
+            >
+                <span>{label}</span>
+                <ChevronDown
+                    className={cn("h-3.5 w-3.5 transition-transform duration-300", isOpen ? "rotate-0" : "-rotate-90")}
+                />
+            </button>
+            <AnimatePresence initial={false}>
+                {isOpen && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] as const }}
+                        className="overflow-hidden"
+                    >
+                        <div className="space-y-1 pt-1">{children}</div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
     )
 }

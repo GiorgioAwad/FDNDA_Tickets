@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
+import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useCart } from "@/hooks/cart-context"
-import { AlertCircle, CheckCircle, Loader2, Ticket, XCircle } from "lucide-react"
+import { Confetti } from "@/components/checkout/Confetti"
+import { AlertCircle, CheckCircle, Loader2, Ticket, XCircle, ArrowRight, Calendar } from "lucide-react"
 
 type OrderStatus = "PENDING" | "PAID" | "CANCELLED" | "REFUNDED"
 
@@ -87,16 +89,34 @@ export default function CheckoutSuccessClient() {
 
     if (!orderId) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <p>Orden no encontrada</p>
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-fdnda-light/30 via-white to-white">
+                <Card className="w-full max-w-md mx-4">
+                    <CardContent className="text-center py-12">
+                        <AlertCircle className="h-12 w-12 mx-auto text-coral mb-4" />
+                        <h2 className="font-display text-xl font-bold mb-2">Orden no encontrada</h2>
+                        <p className="text-muted-foreground mb-6">No pudimos identificar tu orden de compra.</p>
+                        <Link href="/eventos">
+                            <Button>Ver eventos</Button>
+                        </Link>
+                    </CardContent>
+                </Card>
             </div>
         )
     }
 
     if (error) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <p>{error}</p>
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-fdnda-light/30 via-white to-white">
+                <Card className="w-full max-w-md mx-4">
+                    <CardContent className="text-center py-12">
+                        <AlertCircle className="h-12 w-12 mx-auto text-coral mb-4" />
+                        <h2 className="font-display text-xl font-bold mb-2">Algo salió mal</h2>
+                        <p className="text-muted-foreground mb-6">{error}</p>
+                        <Link href="/mi-cuenta/entradas">
+                            <Button>Ver mis entradas</Button>
+                        </Link>
+                    </CardContent>
+                </Card>
             </div>
         )
     }
@@ -106,101 +126,146 @@ export default function CheckoutSuccessClient() {
     const isProcessing = status === null || (status === "PENDING" && !reviewRequired)
 
     return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center py-8 sm:py-12 px-4">
-            <Card className="w-full max-w-md shadow-xl border-0">
-                <CardContent className="pt-8 pb-8 text-center sm:pt-10">
-                    {isProcessing ? (
-                        <>
-                            <Loader2 className="h-14 w-14 sm:h-16 sm:w-16 mx-auto text-[hsl(210,100%,40%)] animate-spin mb-4" />
-                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-                                Procesando tu pago...
-                            </h2>
-                            <p className="text-gray-600">
-                                Estamos confirmando tu transaccion
-                            </p>
-                            {statusMessage ? (
-                                <p className="text-sm text-gray-500 mt-3">{statusMessage}</p>
-                            ) : null}
-                        </>
-                    ) : isPaid ? (
-                        <>
-                            <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-green-100 text-green-600 mb-5 sm:mb-6">
-                                <CheckCircle className="h-8 w-8 sm:h-10 sm:w-10" />
-                            </div>
+        <div className="relative min-h-screen flex items-center justify-center py-10 sm:py-16 px-4 overflow-hidden bg-gradient-to-br from-fdnda-light/40 via-white to-fdnda-light/20">
+            <div className="pointer-events-none absolute -top-20 -left-20 h-80 w-80 rounded-full bg-fdnda-accent/15 blur-3xl" aria-hidden="true" />
+            <div className="pointer-events-none absolute -bottom-20 -right-20 h-80 w-80 rounded-full bg-coral/15 blur-3xl" aria-hidden="true" />
 
-                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-                                Pago exitoso
-                            </h1>
+            {isPaid && <Confetti />}
 
-                            <p className="text-gray-600 mb-8">
-                                Tu orden <strong>#{orderId.slice(-8).toUpperCase()}</strong> ha sido confirmada.
-                                {eventTitle ? ` Evento: ${eventTitle}.` : ""}
-                                {" "}Hemos enviado los tickets a tu correo electronico.
-                            </p>
+            <motion.div
+                initial={{ opacity: 0, y: 24, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] as const }}
+                className="relative w-full max-w-lg"
+            >
+                <Card className="border-0 shadow-elevated overflow-hidden">
+                    <div className="h-1.5 bg-gradient-to-r from-fdnda-primary via-fdnda-accent to-coral" />
+                    <CardContent className="pt-10 pb-10 text-center px-6 sm:px-8">
+                        {isProcessing ? (
+                            <>
+                                <div className="relative inline-flex items-center justify-center mb-6">
+                                    <div className="absolute inset-0 rounded-full bg-fdnda-secondary/20 blur-xl animate-pulse" />
+                                    <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-fdnda-primary to-fdnda-secondary text-white shadow-glow-primary">
+                                        <Loader2 className="h-10 w-10 animate-spin" />
+                                    </div>
+                                </div>
+                                <h2 className="font-display text-2xl sm:text-3xl font-bold mb-2">
+                                    Procesando tu pago…
+                                </h2>
+                                <p className="text-muted-foreground">
+                                    Estamos confirmando tu transacción. Esto solo tomará unos segundos.
+                                </p>
+                                {statusMessage && (
+                                    <p className="text-sm text-muted-foreground mt-4 italic">{statusMessage}</p>
+                                )}
+                            </>
+                        ) : isPaid ? (
+                            <>
+                                <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.1 }}
+                                    className="relative inline-flex items-center justify-center mb-6"
+                                >
+                                    <div className="absolute inset-0 rounded-full bg-success/20 blur-2xl" />
+                                    <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-success to-green-600 text-white shadow-2xl">
+                                        <CheckCircle className="h-12 w-12" />
+                                    </div>
+                                </motion.div>
 
-                            <div className="space-y-5">
-                                <Link href="/mi-cuenta/entradas">
-                                    <Button className="w-full" size="lg">
-                                        <Ticket className="h-4 w-4 mr-2" />
-                                        Ver mis entradas
-                                    </Button>
-                                </Link>
+                                <p className="text-xs font-bold uppercase tracking-widest text-success mb-2">
+                                    ¡Pago confirmado!
+                                </p>
+                                <h1 className="font-display text-3xl sm:text-4xl font-bold mb-3">
+                                    ¡Listo, nos vemos allá! 🎉
+                                </h1>
 
+                                <p className="text-muted-foreground mb-2">
+                                    Orden <span className="font-mono font-semibold text-foreground">#{orderId.slice(-8).toUpperCase()}</span> confirmada.
+                                </p>
+                                {eventTitle && (
+                                    <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-fdnda-primary bg-fdnda-light/50 rounded-full px-3 py-1 mb-6">
+                                        <Calendar className="h-3.5 w-3.5" />
+                                        {eventTitle}
+                                    </p>
+                                )}
+                                <p className="text-sm text-muted-foreground mb-8">
+                                    Hemos enviado tus tickets a tu correo electrónico. También están disponibles en tu cuenta.
+                                </p>
+
+                                <div className="space-y-3">
+                                    <Link href="/mi-cuenta/entradas">
+                                        <Button variant="coral" className="w-full rounded-full" size="lg">
+                                            <Ticket className="h-4 w-4" />
+                                            Ver mis entradas
+                                            <ArrowRight className="h-4 w-4" />
+                                        </Button>
+                                    </Link>
+                                    <Link href="/eventos">
+                                        <Button variant="outline" className="w-full rounded-full">
+                                            Explorar más eventos
+                                        </Button>
+                                    </Link>
+                                </div>
+                            </>
+                        ) : isManualReview ? (
+                            <>
+                                <div className="relative inline-flex items-center justify-center mb-6">
+                                    <div className="absolute inset-0 rounded-full bg-warning/20 blur-xl" />
+                                    <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-warning text-white shadow-lg">
+                                        <AlertCircle className="h-10 w-10" />
+                                    </div>
+                                </div>
+                                <h1 className="font-display text-2xl sm:text-3xl font-bold mb-3">
+                                    Pago en validación
+                                </h1>
+                                <p className="text-muted-foreground mb-2">
+                                    Orden <span className="font-mono font-semibold text-foreground">#{orderId.slice(-8).toUpperCase()}</span>.
+                                </p>
+                                {eventTitle && <p className="text-sm font-semibold mb-4">{eventTitle}</p>}
+                                <p className="text-sm text-muted-foreground mb-6">
+                                    Tu pago está en revisión manual. <strong>No vuelvas a pagar</strong>: te confirmaremos por correo en breve.
+                                </p>
+                                {statusMessage && (
+                                    <p className="text-xs text-muted-foreground italic mb-6">{statusMessage}</p>
+                                )}
                                 <Link href="/eventos">
-                                    <Button variant="outline" className="w-full">
+                                    <Button variant="outline" className="w-full rounded-full">
                                         Volver a eventos
                                     </Button>
                                 </Link>
-                            </div>
-                        </>
-                    ) : isManualReview ? (
-                        <>
-                            <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-amber-100 text-amber-600 mb-5 sm:mb-6">
-                                <AlertCircle className="h-8 w-8 sm:h-10 sm:w-10" />
-                            </div>
-                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-                                Pago en validacion
-                            </h1>
-                            <p className="text-gray-600 mb-8">
-                                La orden <strong>#{orderId.slice(-8).toUpperCase()}</strong> sigue
-                                en revision manual.
-                                {eventTitle ? ` Evento: ${eventTitle}.` : ""}
-                                {" "}No vuelvas a pagar por ahora.
-                            </p>
-                            {statusMessage ? (
-                                <p className="text-sm text-gray-500 mb-6">{statusMessage}</p>
-                            ) : null}
-                            <div className="space-y-3">
-                                <Link href="/eventos">
-                                    <Button variant="outline" className="w-full">
-                                        Volver a eventos
-                                    </Button>
-                                </Link>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-100 text-red-600 mb-5 sm:mb-6">
-                                <XCircle className="h-8 w-8 sm:h-10 sm:w-10" />
-                            </div>
-                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-                                Pago no completado
-                            </h1>
-                            <p className="text-gray-600 mb-8">
-                                La orden <strong>#{orderId.slice(-8).toUpperCase()}</strong> no pudo confirmarse.
-                                Intenta nuevamente o contacta soporte.
-                            </p>
-                            <div className="space-y-3">
-                                <Link href="/eventos">
-                                    <Button className="w-full" size="lg">
-                                        Volver a eventos
-                                    </Button>
-                                </Link>
-                            </div>
-                        </>
-                    )}
-                </CardContent>
-            </Card>
+                            </>
+                        ) : (
+                            <>
+                                <div className="relative inline-flex items-center justify-center mb-6">
+                                    <div className="absolute inset-0 rounded-full bg-coral/20 blur-xl" />
+                                    <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-coral to-coral-strong text-white shadow-glow-coral">
+                                        <XCircle className="h-10 w-10" />
+                                    </div>
+                                </div>
+                                <h1 className="font-display text-2xl sm:text-3xl font-bold mb-3">
+                                    Pago no completado
+                                </h1>
+                                <p className="text-muted-foreground mb-6">
+                                    La orden <span className="font-mono font-semibold text-foreground">#{orderId.slice(-8).toUpperCase()}</span> no pudo confirmarse. Intenta nuevamente o contacta soporte.
+                                </p>
+                                <div className="space-y-3">
+                                    <Link href="/eventos">
+                                        <Button variant="coral" className="w-full rounded-full" size="lg">
+                                            Intentar nuevamente
+                                        </Button>
+                                    </Link>
+                                    <a href="https://wa.me/51941632535" target="_blank" rel="noopener noreferrer">
+                                        <Button variant="ghost" className="w-full">
+                                            Contactar soporte
+                                        </Button>
+                                    </a>
+                                </div>
+                            </>
+                        )}
+                    </CardContent>
+                </Card>
+            </motion.div>
         </div>
     )
 }

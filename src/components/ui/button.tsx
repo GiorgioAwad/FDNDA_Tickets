@@ -16,6 +16,9 @@ const buttonVariants = cva(
                 link: "text-primary underline-offset-4 hover:underline",
                 success: "bg-green-600 text-white hover:bg-green-700",
                 warning: "bg-amber-500 text-white hover:bg-amber-600",
+                coral: "bg-gradient-to-br from-coral to-coral-strong text-white shadow-glow-coral hover:scale-[1.03] hover:shadow-glow-coral",
+                "coral-soft": "bg-coral-soft text-coral-strong hover:bg-coral hover:text-white",
+                glass: "bg-white/15 text-white border border-white/30 backdrop-blur-md hover:bg-white/25",
             },
             size: {
                 default: "h-10 px-4 py-2",

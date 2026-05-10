@@ -1,13 +1,12 @@
 import Link from "next/link"
-import { getCachedPublishedEvents, type CachedEvent } from "@/lib/cached-queries"
-import { formatDate, formatPrice } from "@/lib/utils"
+import { getCachedPublishedEvents } from "@/lib/cached-queries"
 import { richTextToPlainText } from "@/lib/sanitize-rich-text"
-import { EventBannerMedia } from "@/components/events/EventBannerMedia"
-import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Calendar, MapPin, Waves, Search, Filter, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react"
+import { EmptyState } from "@/components/ui/empty-state"
+import { EventCard, type EventCardEvent } from "@/components/home/EventCard"
+import { Search, Filter, ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react"
 
 export const revalidate = 60
 export const dynamic = "force-dynamic"
@@ -94,133 +93,123 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
 
     const start = (safePage - 1) * PAGE_SIZE
     const events = filteredEvents.slice(start, start + PAGE_SIZE)
+    const hasFilters = Boolean(params.search || params.discipline || params.location || params.venue)
+
+    const cardEvents: EventCardEvent[] = events.map((event) => ({
+        id: event.id,
+        slug: event.slug,
+        title: event.title,
+        bannerUrl: event.bannerUrl,
+        discipline: event.discipline,
+        startDate: new Date(event.startDate),
+        venue: event.venue,
+        location: event.location,
+        minPrice: typeof event.minTicketPrice === "number" ? event.minTicketPrice : undefined,
+    }))
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            <div className="bg-gradient-fdnda py-8 sm:py-12">
-                <div className="container mx-auto px-4 text-center text-white">
-                    <h1 className="mb-3 text-2xl font-bold sm:text-3xl md:text-4xl">Proximos Eventos</h1>
-                    <p className="mx-auto max-w-2xl text-sm text-white/80 sm:text-base">
-                        Descubre los mejores eventos de deportes acuaticos y asegura tu entrada.
-                    </p>
-                </div>
-            </div>
-
-            <div className="container mx-auto px-4 py-6 sm:py-8">
-                <div className="bg-white rounded-xl shadow-sm p-3 sm:p-4 mb-6 sm:mb-8">
-                    <form className="flex flex-col gap-3 md:flex-row md:gap-4">
-                        <div className="flex-1 relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                            <Input
-                                name="search"
-                                placeholder="Buscar eventos..."
-                                defaultValue={params.search}
-                                className="pl-10"
-                            />
+        <div className="min-h-screen bg-gradient-to-b from-fdnda-light/40 via-white to-white">
+            {/* Compact hero */}
+            <section className="relative overflow-hidden bg-gradient-to-br from-fdnda-primary via-fdnda-secondary to-fdnda-primary text-white">
+                <div className="absolute -top-32 right-1/4 h-72 w-72 rounded-full bg-fdnda-accent/30 blur-3xl" aria-hidden="true" />
+                <div className="absolute -bottom-32 left-1/4 h-72 w-72 rounded-full bg-coral/20 blur-3xl" aria-hidden="true" />
+                <div className="relative container mx-auto px-4 py-12 sm:py-16">
+                    <div className="max-w-3xl mx-auto text-center">
+                        <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-md ring-1 ring-white/25 px-3 py-1 text-xs font-semibold mb-4">
+                            <Sparkles className="h-3 w-3 text-fdnda-accent" />
+                            {filteredEvents.length} {filteredEvents.length === 1 ? "evento disponible" : "eventos disponibles"}
                         </div>
+                        <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-bold mb-4 tracking-tight leading-[1.05]">
+                            Encuentra tu próxima{" "}
+                            <span className="text-gradient-coral">experiencia acuática</span>
+                        </h1>
+                        <p className="text-white/85 text-base sm:text-lg max-w-2xl mx-auto">
+                            Explora los eventos oficiales de la FDNDA y asegura tu lugar.
+                        </p>
+                    </div>
+                </div>
+            </section>
 
-                        <select
-                            name="discipline"
-                            defaultValue={discipline}
-                            className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm md:w-auto"
-                        >
-                            <option value="">Todas las disciplinas</option>
-                            {disciplines.map((item) => (
-                                <option key={item} value={item}>{item}</option>
-                            ))}
-                        </select>
+            <div className="container mx-auto px-4 py-8 sm:py-10">
+                {/* Sticky filter bar */}
+                <div className="sticky top-16 z-30 -mx-4 sm:mx-0 mb-6 sm:mb-8">
+                    <div className="bg-white/95 backdrop-blur-xl border border-border rounded-none sm:rounded-2xl shadow-card px-4 py-3 sm:px-5 sm:py-4">
+                        <form className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-3">
+                            <div className="flex-1 relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    name="search"
+                                    placeholder="Buscar por nombre, sede o disciplina..."
+                                    defaultValue={params.search}
+                                    className="pl-9 h-11 rounded-xl bg-muted/40"
+                                />
+                            </div>
 
-                        <select
-                            name="venue"
-                            defaultValue={venue}
-                            className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm md:w-64"
-                        >
-                            <option value="">Todas las sedes</option>
-                            {venues.map((item) => (
-                                <option key={item} value={item}>{item}</option>
-                            ))}
-                        </select>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                <select
+                                    name="discipline"
+                                    defaultValue={discipline}
+                                    className="h-11 w-full rounded-xl border border-input bg-white px-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-fdnda-primary/30 sm:w-48"
+                                >
+                                    <option value="">Todas las disciplinas</option>
+                                    {disciplines.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
+                                </select>
 
-                        <Button type="submit" variant="outline" className="w-full gap-2 md:w-auto">
-                            <Filter className="h-4 w-4" />
-                            Filtrar
-                        </Button>
-                    </form>
+                                <select
+                                    name="venue"
+                                    defaultValue={venue}
+                                    className="h-11 w-full rounded-xl border border-input bg-white px-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-fdnda-primary/30 sm:w-56"
+                                >
+                                    <option value="">Todas las sedes</option>
+                                    {venues.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="flex gap-2">
+                                <Button type="submit" className="flex-1 lg:flex-none gap-2 rounded-xl">
+                                    <Filter className="h-4 w-4" />
+                                    Filtrar
+                                </Button>
+                                {hasFilters && (
+                                    <Link href="/eventos">
+                                        <Button type="button" variant="ghost" size="icon" aria-label="Limpiar filtros" className="rounded-xl">
+                                            <X className="h-4 w-4" />
+                                        </Button>
+                                    </Link>
+                                )}
+                            </div>
+                        </form>
+
+                        {hasFilters && (
+                            <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-border">
+                                <span className="text-xs text-muted-foreground">Filtros activos:</span>
+                                {params.search && (
+                                    <Badge variant="info" className="gap-1 font-normal">
+                                        “{params.search}”
+                                    </Badge>
+                                )}
+                                {discipline && <Badge variant="coral-soft" className="font-normal">{discipline}</Badge>}
+                                {venue && <Badge variant="info" className="font-normal">{venue}</Badge>}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {events.length > 0 ? (
                     <>
-                        <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
-                            {events.map((event: CachedEvent) => (
-                                <Link key={event.id} href={`/eventos/${event.slug}`}>
-                                    <Card hover className="h-full overflow-hidden group">
-                                        <div className="relative h-48 bg-gradient-fdnda overflow-hidden">
-                                            {event.bannerUrl ? (
-                                                <EventBannerMedia
-                                                    src={event.bannerUrl}
-                                                    alt={event.title}
-                                                    sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                                                    className="object-cover group-hover:scale-105 transition-transform duration-500"
-                                                />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center">
-                                                    <Waves className="h-16 w-16 text-white/30" />
-                                                </div>
-                                            )}
-                                            {event.discipline && (
-                                                <Badge className="absolute top-3 left-3 bg-white/90 text-gray-800">
-                                                    {event.discipline}
-                                                </Badge>
-                                            )}
-                                        </div>
-
-                                        <CardContent className="p-4 sm:p-5">
-                                            <h3 className="font-bold text-lg mb-2 line-clamp-2 group-hover:text-[hsl(210,100%,40%)] transition-colors">
-                                                {event.title}
-                                            </h3>
-
-                                            <div className="space-y-2 text-sm text-gray-600 mb-4">
-                                                <div className="flex items-center gap-2">
-                                                    <Calendar className="h-4 w-4 text-gray-400" />
-                                                    <span>
-                                                        {formatDate(new Date(event.startDate))}
-                                                        {new Date(event.startDate).toDateString() !== new Date(event.endDate).toDateString() && (
-                                                            <> - {formatDate(new Date(event.endDate))}</>
-                                                        )}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <MapPin className="h-4 w-4 text-gray-400" />
-                                                    <span className="line-clamp-1">{event.venue}, {event.location}</span>
-                                                </div>
-                                            </div>
-
-                                            <p className="text-sm text-gray-500 line-clamp-2 mb-4">
-                                                {richTextToPlainText(event.description)}
-                                            </p>
-
-                                            <div className="flex items-center justify-between pt-4 border-t">
-                                                <div>
-                                                    {typeof event.minTicketPrice === "number" && (
-                                                        <div className="text-[hsl(210,100%,40%)] font-bold">
-                                                            Desde {formatPrice(event.minTicketPrice)}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <Button size="sm" variant="outline" className="gap-1">
-                                                    Ver mas
-                                                    <ArrowRight className="h-3 w-3" />
-                                                </Button>
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-                                </Link>
+                        <div className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
+                            {cardEvents.map((event) => (
+                                <EventCard key={event.id} event={event} />
                             ))}
                         </div>
 
                         {totalPages > 1 && (
-                            <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-                                <Button variant="outline" size="sm" asChild disabled={safePage <= 1}>
+                            <div className="mt-10 flex flex-wrap items-center justify-center gap-2">
+                                <Button variant="outline" size="sm" asChild disabled={safePage <= 1} className="rounded-full">
                                     <Link
                                         href={buildQuery({
                                             search: params.search,
@@ -234,10 +223,10 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                                         Anterior
                                     </Link>
                                 </Button>
-                                <span className="text-sm text-gray-600 px-3">
-                                    Pagina {safePage} de {totalPages}
+                                <span className="text-sm text-muted-foreground px-3 font-medium">
+                                    Página {safePage} de {totalPages}
                                 </span>
-                                <Button variant="outline" size="sm" asChild disabled={safePage >= totalPages}>
+                                <Button variant="outline" size="sm" asChild disabled={safePage >= totalPages} className="rounded-full">
                                     <Link
                                         href={buildQuery({
                                             search: params.search,
@@ -255,22 +244,20 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                         )}
                     </>
                 ) : (
-                    <div className="text-center py-12 sm:py-16">
-                        <Waves className="h-16 w-16 sm:h-20 sm:w-20 mx-auto text-gray-300 mb-4" />
-                        <h3 className="text-xl font-semibold text-gray-600 mb-2">
-                            No se encontraron eventos
-                        </h3>
-                        <p className="text-gray-500 mb-6">
-                            {params.search || params.discipline || params.location || params.venue
-                                ? "Intenta con otros filtros de busqueda"
-                                : "Pronto anunciaremos nuevos eventos. Mantente atento."}
-                        </p>
-                        {(params.search || params.discipline || params.location || params.venue) && (
-                            <Link href="/eventos">
-                                <Button variant="outline">Limpiar filtros</Button>
-                            </Link>
-                        )}
-                    </div>
+                    <EmptyState
+                        variant={hasFilters ? "no-results" : "no-events"}
+                        title={hasFilters ? "Sin resultados con esos filtros" : "Pronto, nuevos eventos"}
+                        description={
+                            hasFilters
+                                ? "Intenta con otros filtros o limpia la búsqueda para ver todos los eventos disponibles."
+                                : "Estamos preparando experiencias únicas. Vuelve pronto para descubrirlas."
+                        }
+                        action={
+                            hasFilters
+                                ? { label: "Limpiar filtros", href: "/eventos", variant: "default" }
+                                : { label: "Volver al inicio", href: "/", variant: "default" }
+                        }
+                    />
                 )}
             </div>
         </div>

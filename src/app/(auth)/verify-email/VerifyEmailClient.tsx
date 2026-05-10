@@ -1,9 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
+import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { CheckCircle, XCircle, Loader2 } from "lucide-react"
@@ -17,7 +17,7 @@ export default function VerifyEmailClient() {
         () => (token ? "loading" : "error")
     )
     const [message, setMessage] = useState(() =>
-        token ? "" : "Token de verificaci\u00f3n no proporcionado"
+        token ? "" : "Token de verificación no proporcionado"
     )
 
     useEffect(() => {
@@ -40,7 +40,7 @@ export default function VerifyEmailClient() {
                 }
             } catch {
                 setStatus("error")
-                setMessage("Error de conexi\u00f3n")
+                setMessage("Error de conexión")
             }
         }
 
@@ -48,55 +48,88 @@ export default function VerifyEmailClient() {
     }, [router, token])
 
     return (
-        <div className="min-h-[80vh] flex items-center justify-center py-8 sm:py-12 px-4 bg-gradient-to-b from-gray-50 to-white">
-            <Card className="w-full max-w-md shadow-xl border-0">
-                <CardContent className="pt-8 pb-8 text-center sm:pt-10">
-                    {status === "loading" && (
-                        <>
-                            <Loader2 className="h-14 w-14 sm:h-16 sm:w-16 mx-auto text-[hsl(210,100%,40%)] animate-spin mb-4" />
-                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-                                Verificando tu email...
-                            </h2>
-                            <p className="text-gray-600">
-                                Por favor espera un momento
-                            </p>
-                        </>
-                    )}
+        <div className="relative min-h-screen flex items-center justify-center py-10 sm:py-14 px-4 overflow-hidden bg-gradient-to-br from-fdnda-light/40 via-white to-fdnda-light/20">
+            <div className="pointer-events-none absolute -top-20 -left-20 h-80 w-80 rounded-full bg-fdnda-accent/15 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-20 -right-20 h-80 w-80 rounded-full bg-coral/15 blur-3xl" />
 
-                    {status === "success" && (
-                        <>
-                            <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-green-100 text-green-600 mb-4">
-                                <CheckCircle className="h-7 w-7 sm:h-8 sm:w-8" />
-                            </div>
-                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">{"\u00a1Email Verificado!"}</h2>
-                            <p className="text-gray-600 mb-6">{message}</p>
-                            <Link href="/login">
-                                <Button className="w-full">{"Iniciar Sesi\u00f3n"}</Button>
-                            </Link>
-                        </>
-                    )}
+            <motion.div
+                initial={{ opacity: 0, y: 24, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] as const }}
+                className="relative w-full max-w-md"
+            >
+                <Card className="border-0 shadow-elevated overflow-hidden">
+                    <div className="h-1.5 bg-gradient-to-r from-fdnda-primary via-fdnda-accent to-coral" />
+                    <CardContent className="pt-10 pb-10 text-center px-6 sm:px-8">
+                        {status === "loading" && (
+                            <>
+                                <div className="relative inline-flex items-center justify-center mb-6">
+                                    <div className="absolute inset-0 rounded-full bg-fdnda-secondary/20 blur-xl animate-pulse" />
+                                    <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-fdnda-primary to-fdnda-secondary text-white shadow-glow-primary">
+                                        <Loader2 className="h-10 w-10 animate-spin" />
+                                    </div>
+                                </div>
+                                <h2 className="font-display text-2xl sm:text-3xl font-bold mb-2">
+                                    Verificando tu email…
+                                </h2>
+                                <p className="text-muted-foreground">Por favor espera un momento.</p>
+                            </>
+                        )}
 
-                    {status === "error" && (
-                        <>
-                            <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-100 text-red-600 mb-4">
-                                <XCircle className="h-7 w-7 sm:h-8 sm:w-8" />
-                            </div>
-                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">{"Error de Verificaci\u00f3n"}</h2>
-                            <p className="text-gray-600 mb-6">{message}</p>
-                            <div className="space-y-3">
-                                <Link href="/register">
-                                    <Button variant="outline" className="w-full">
-                                        Registrarse de nuevo
+                        {status === "success" && (
+                            <>
+                                <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                                    className="relative inline-flex items-center justify-center mb-6"
+                                >
+                                    <div className="absolute inset-0 rounded-full bg-success/20 blur-2xl" />
+                                    <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-success to-green-600 text-white shadow-2xl">
+                                        <CheckCircle className="h-12 w-12" />
+                                    </div>
+                                </motion.div>
+                                <h1 className="font-display text-2xl sm:text-3xl font-bold mb-2">
+                                    ¡Email verificado!
+                                </h1>
+                                <p className="text-muted-foreground mb-6">{message}</p>
+                                <Link href="/login">
+                                    <Button variant="coral" className="w-full rounded-full" size="lg">
+                                        Iniciar sesión
                                     </Button>
                                 </Link>
-                                <Link href="/login">
-                                    <Button variant="ghost" className="w-full">{"Ir a Iniciar Sesi\u00f3n"}</Button>
-                                </Link>
-                            </div>
-                        </>
-                    )}
-                </CardContent>
-            </Card>
+                            </>
+                        )}
+
+                        {status === "error" && (
+                            <>
+                                <div className="relative inline-flex items-center justify-center mb-6">
+                                    <div className="absolute inset-0 rounded-full bg-coral/20 blur-xl" />
+                                    <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-coral to-coral-strong text-white shadow-glow-coral">
+                                        <XCircle className="h-10 w-10" />
+                                    </div>
+                                </div>
+                                <h2 className="font-display text-2xl sm:text-3xl font-bold mb-2">
+                                    Error de verificación
+                                </h2>
+                                <p className="text-muted-foreground mb-6">{message}</p>
+                                <div className="space-y-3">
+                                    <Link href="/register">
+                                        <Button variant="coral" className="w-full rounded-full" size="lg">
+                                            Registrarse de nuevo
+                                        </Button>
+                                    </Link>
+                                    <Link href="/login">
+                                        <Button variant="ghost" className="w-full">
+                                            Ir a iniciar sesión
+                                        </Button>
+                                    </Link>
+                                </div>
+                            </>
+                        )}
+                    </CardContent>
+                </Card>
+            </motion.div>
         </div>
     )
 }

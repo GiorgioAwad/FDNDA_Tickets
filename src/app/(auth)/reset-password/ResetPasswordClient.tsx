@@ -2,11 +2,11 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import { useSearchParams } from "next/navigation"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { AuthShell } from "@/components/auth/AuthShell"
 import { AlertCircle, CheckCircle, Lock } from "lucide-react"
 
 export default function ResetPasswordClient() {
@@ -35,140 +35,111 @@ export default function ResetPasswordClient() {
             const response = await fetch("/api/auth/reset-password", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    token,
-                    password,
-                    confirmPassword,
-                }),
+                body: JSON.stringify({ token, password, confirmPassword }),
             })
 
             const data = await response.json()
 
             if (!response.ok) {
                 setError(data.error || "No se pudo actualizar la contraseña")
+                toast.error(data.error || "No se pudo actualizar")
                 return
             }
 
             setSuccess(data.message)
             setPassword("")
             setConfirmPassword("")
+            toast.success("Contraseña actualizada")
         } catch {
             setError("Error de conexión")
+            toast.error("Sin conexión")
         } finally {
             setLoading(false)
         }
     }
 
     return (
-        <div className="min-h-[80vh] flex items-center justify-center py-8 sm:py-12 px-4 bg-gradient-to-b from-gray-50 to-white">
-            <div className="w-full max-w-md">
-                <div className="text-center mb-6 sm:mb-8">
-                    <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white shadow-sm ring-1 ring-black/5 mb-3 sm:mb-4">
-                        <Image
-                            src="/logo.png"
-                            alt="FDNDA"
-                            width={48}
-                            height={48}
-                            className="h-10 w-10 sm:h-12 sm:w-12 object-contain"
-                            priority
-                        />
+        <AuthShell
+            title="Nueva contraseña"
+            subtitle="Crea una nueva clave para acceder a tu cuenta"
+            footer={
+                success ? (
+                    <Link href="/login" className="font-semibold text-fdnda-secondary hover:text-coral transition-colors">
+                        Ir a iniciar sesión →
+                    </Link>
+                ) : null
+            }
+        >
+            {!token ? (
+                <div className="space-y-4">
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-coral-soft text-coral-strong text-sm border border-coral/20">
+                        <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                        El enlace no es válido o ya expiró.
                     </div>
-                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Ticketing FDNDA</h1>
+                    <Link href="/forgot-password">
+                        <Button variant="coral" className="w-full rounded-xl">Solicitar otro enlace</Button>
+                    </Link>
                 </div>
+            ) : (
+                <form onSubmit={handleSubmit} className="space-y-5">
+                    {error && (
+                        <div className="flex items-center gap-2 p-3 rounded-lg bg-coral-soft text-coral-strong text-sm border border-coral/20">
+                            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                            {error}
+                        </div>
+                    )}
 
-                <Card className="shadow-xl border-0">
-                    <CardHeader className="text-center pb-0">
-                        <CardTitle className="text-2xl">Nueva contraseña</CardTitle>
-                        <CardDescription>
-                            Crea una nueva contraseña para volver a ingresar a tu cuenta.
-                        </CardDescription>
-                    </CardHeader>
+                    {success && (
+                        <div className="flex items-center gap-2 p-3 rounded-lg bg-success/10 text-success text-sm border border-success/20">
+                            <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                            {success}
+                        </div>
+                    )}
 
-                    <CardContent className="pt-6">
-                        {!token ? (
-                            <div className="space-y-4">
-                                <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 text-red-600 text-sm">
-                                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                                    El enlace no es válido o ya expiró.
-                                </div>
-                                <Link href="/forgot-password">
-                                    <Button className="w-full">Solicitar otro enlace</Button>
-                                </Link>
-                            </div>
-                        ) : (
-                            <>
-                                <form onSubmit={handleSubmit} className="space-y-4">
-                                    {error && (
-                                        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 text-red-600 text-sm">
-                                            <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                                            {error}
-                                        </div>
-                                    )}
+                    <div className="space-y-1.5">
+                        <label htmlFor="password" className="text-sm font-semibold text-foreground">
+                            Contraseña nueva
+                        </label>
+                        <div className="relative">
+                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                id="password"
+                                type="password"
+                                placeholder="Mínimo 8 caracteres"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="pl-10 h-11"
+                                minLength={8}
+                                required
+                                autoComplete="new-password"
+                            />
+                        </div>
+                    </div>
 
-                                    {success && (
-                                        <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 text-green-700 text-sm">
-                                            <CheckCircle className="h-4 w-4 flex-shrink-0" />
-                                            {success}
-                                        </div>
-                                    )}
+                    <div className="space-y-1.5">
+                        <label htmlFor="confirmPassword" className="text-sm font-semibold text-foreground">
+                            Confirmar contraseña
+                        </label>
+                        <div className="relative">
+                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                id="confirmPassword"
+                                type="password"
+                                placeholder="Repite tu contraseña"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                className="pl-10 h-11"
+                                required
+                                autoComplete="new-password"
+                            />
+                        </div>
+                    </div>
 
-                                    <div className="space-y-2">
-                                        <label htmlFor="password" className="text-sm font-medium text-gray-700">
-                                            Contraseña nueva
-                                        </label>
-                                        <div className="relative">
-                                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                            <Input
-                                                id="password"
-                                                type="password"
-                                                placeholder="Mínimo 8 caracteres"
-                                                value={password}
-                                                onChange={(e) => setPassword(e.target.value)}
-                                                className="pl-10"
-                                                minLength={8}
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label htmlFor="confirmPassword" className="text-sm font-medium text-gray-700">
-                                            Confirmar contraseña
-                                        </label>
-                                        <div className="relative">
-                                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                            <Input
-                                                id="confirmPassword"
-                                                type="password"
-                                                placeholder="Repite tu contraseña"
-                                                value={confirmPassword}
-                                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                                className="pl-10"
-                                                required
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <Button type="submit" className="w-full" size="lg" loading={loading}>
-                                        Actualizar contraseña
-                                    </Button>
-                                </form>
-
-                                {success && (
-                                    <div className="mt-6 text-center text-sm text-gray-600">
-                                        <Link
-                                            href="/login"
-                                            className="font-semibold text-[hsl(210,100%,40%)] hover:underline"
-                                        >
-                                            Ir a iniciar sesión
-                                        </Link>
-                                    </div>
-                                )}
-                            </>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
-        </div>
+                    <Button type="submit" variant="coral" className="w-full rounded-xl h-12" loading={loading}>
+                        Actualizar contraseña
+                    </Button>
+                </form>
+            )}
+        </AuthShell>
     )
 }
