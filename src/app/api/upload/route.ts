@@ -10,7 +10,7 @@ export const runtime = "nodejs"
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"]
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 
-export const BANNER_DIMENSIONS = {
+const BANNER_DIMENSIONS = {
     width: 1200,
     height: 630,
     aspectRatio: "1200:630",
