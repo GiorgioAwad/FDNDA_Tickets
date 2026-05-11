@@ -91,7 +91,7 @@ export function DisciplinesGrid() {
                         Encuentra tu pasión
                     </p>
                     <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-foreground">
-                        Disciplinas <span className="text-gradient-coral">acuáticas</span>
+                        Disciplinas acuáticas
                     </h2>
                 </div>
 
