@@ -19,42 +19,45 @@ type Discipline = {
 // el componente cae automáticamente al icono Lucide. Sube los SVGs a:
 //   https://assets.ticketingfdnda.pe/disciplinas/<slug>.svg
 // y aparecen automáticamente al siguiente refresh, sin tocar código.
+// Gradient unificado: pictogramas azul navy destacan bien sobre azul medio → aqua.
+const TILE_GRADIENT = "from-fdnda-secondary to-fdnda-accent"
+
 const disciplines: Discipline[] = [
     {
         name: "Natación",
         icon: Waves,
         image: `${ASSETS_BASE}/natacion.svg`,
-        gradient: "from-fdnda-secondary to-fdnda-accent",
+        gradient: TILE_GRADIENT,
     },
     {
         name: "Waterpolo",
         icon: Users,
         image: `${ASSETS_BASE}/waterpolo.svg`,
-        gradient: "from-fdnda-primary to-fdnda-secondary",
+        gradient: TILE_GRADIENT,
     },
     {
         name: "Clavados",
         icon: Activity,
         image: `${ASSETS_BASE}/clavados.svg`,
-        gradient: "from-fdnda-accent to-coral",
+        gradient: TILE_GRADIENT,
     },
     {
         name: "Natación Artística",
         icon: Sun,
         image: `${ASSETS_BASE}/natacion-artistica.svg`,
-        gradient: "from-coral to-coral-strong",
+        gradient: TILE_GRADIENT,
     },
     {
         name: "Aguas Abiertas",
         icon: Wind,
         image: `${ASSETS_BASE}/aguas-abiertas.svg`,
-        gradient: "from-fdnda-secondary to-fdnda-primary",
+        gradient: TILE_GRADIENT,
     },
     {
         name: "Master",
         icon: Trophy,
         image: `${ASSETS_BASE}/master.svg`,
-        gradient: "from-fdnda-primary to-coral",
+        gradient: TILE_GRADIENT,
     },
 ]
 

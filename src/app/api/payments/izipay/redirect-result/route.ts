@@ -24,6 +24,22 @@ function buildRedirectUrl(request: NextRequest, pathname: string, orderId?: stri
     return url
 }
 
+// Izipay envía GET cuando el usuario hace click en "Volver al comercio"
+// sin completar el pago. El callback real con datos del pago es POST con
+// form-data. En GET, redirigimos al carrito con un aviso amistoso.
+export async function GET(request: NextRequest) {
+    const orderId = request.nextUrl.searchParams.get("orderId") || undefined
+    return NextResponse.redirect(
+        buildRedirectUrl(
+            request,
+            "/checkout/cancel",
+            orderId,
+            "Volviste sin completar el pago. Puedes reintentar cuando quieras."
+        ),
+        { status: 303 }
+    )
+}
+
 export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const body = Object.fromEntries(formData.entries())
