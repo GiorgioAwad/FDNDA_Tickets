@@ -182,9 +182,24 @@ export async function POST(
                     nextDates = schedule.dates.filter((d) => newDateKeysSet.has(d))
                 }
 
+                const nextSlotsByDate = new Map<string, string[]>()
+                for (const slot of schedule.slots ?? []) {
+                    const targetDates = remap
+                        ? newDateKeys.filter((dateKey) => dowOfDateKey(dateKey) === dowOfDateKey(slot.date))
+                        : nextDates.includes(slot.date)
+                            ? [slot.date]
+                            : []
+
+                    for (const targetDate of targetDates) {
+                        const current = nextSlotsByDate.get(targetDate) ?? []
+                        nextSlotsByDate.set(targetDate, Array.from(new Set([...current, ...slot.shifts])))
+                    }
+                }
+
                 const validDaysPayload = buildTicketValidDaysPayload({
                     dates: nextDates,
                     shifts: schedule.shifts,
+                    slots: Array.from(nextSlotsByDate.entries()).map(([date, shifts]) => ({ date, shifts })),
                     requireShiftSelection: schedule.requireShiftSelection,
                 })
 

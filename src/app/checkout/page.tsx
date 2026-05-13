@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { buildNaturalPersonFullName } from "@/lib/billing"
+import { getShiftOptionsForDate } from "@/lib/ticket-schedule"
 import { formatDate, formatPrice } from "@/lib/utils"
 import type { IzipayCheckoutConfig } from "@/lib/izipay"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
@@ -152,6 +153,12 @@ export default function CheckoutPage() {
                     if (selectedDates.has(selection.date)) return true
                     selectedDates.add(selection.date)
                     if (requiresShift && !selection?.shift) return true
+                    if (
+                        requiresShift &&
+                        !getShiftOptionsForDate(item.scheduleConfig!, selection.date).includes(selection.shift || "")
+                    ) {
+                        return true
+                    }
                 }
                 return false
             })
@@ -755,6 +762,10 @@ export default function CheckoutPage() {
                                                                 {Array.from({ length: requiredSelections }).map((_, selectionIndex) => {
                                                                     const selection =
                                                                         attendee.scheduleSelections?.[selectionIndex] ?? { date: "", shift: "" }
+                                                                    const shiftOptionsForDate = getShiftOptionsForDate(
+                                                                        scheduleConfig,
+                                                                        selection.date
+                                                                    )
                                                                     return (
                                                                         <div key={selectionIndex} className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                                             <div>
@@ -765,15 +776,32 @@ export default function CheckoutPage() {
                                                                                 </label>
                                                                                 <select
                                                                                     value={selection.date}
-                                                                                    onChange={(e) =>
+                                                                                    onChange={(e) => {
+                                                                                        const nextDate = e.target.value
+                                                                                        const nextShiftOptions = getShiftOptionsForDate(
+                                                                                            scheduleConfig,
+                                                                                            nextDate
+                                                                                        )
                                                                                         updateAttendeeScheduleSelection(
                                                                                             itemKey,
                                                                                             attendeeIndex,
                                                                                             selectionIndex,
                                                                                             "date",
-                                                                                            e.target.value
+                                                                                            nextDate
                                                                                         )
-                                                                                    }
+                                                                                        if (
+                                                                                            selection.shift &&
+                                                                                            !nextShiftOptions.includes(selection.shift)
+                                                                                        ) {
+                                                                                            updateAttendeeScheduleSelection(
+                                                                                                itemKey,
+                                                                                                attendeeIndex,
+                                                                                                selectionIndex,
+                                                                                                "shift",
+                                                                                                ""
+                                                                                            )
+                                                                                        }
+                                                                                    }}
                                                                                     className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                                                                                 >
                                                                                     <option value="">Seleccionar dia</option>
@@ -800,10 +828,15 @@ export default function CheckoutPage() {
                                                                                                 e.target.value
                                                                                             )
                                                                                         }
+                                                                                        disabled={!selection.date || shiftOptionsForDate.length === 0}
                                                                                         className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                                                                                     >
-                                                                                        <option value="">Seleccionar turno</option>
-                                                                                        {scheduleConfig.shifts.map((shift) => (
+                                                                                        <option value="">
+                                                                                            {selection.date
+                                                                                                ? "Seleccionar turno"
+                                                                                                : "Selecciona un dia primero"}
+                                                                                        </option>
+                                                                                        {shiftOptionsForDate.map((shift) => (
                                                                                             <option key={shift} value={shift}>
                                                                                                 {shift}
                                                                                             </option>

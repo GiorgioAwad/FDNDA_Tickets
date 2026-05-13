@@ -7,7 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Trash2, Edit, Save, Power, FileJson } from "lucide-react"
 import { formatDate, formatPrice } from "@/lib/utils"
-import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
+import {
+    buildTicketValidDaysPayload,
+    getShiftOptionsForDate,
+    parseTicketScheduleConfig,
+} from "@/lib/ticket-schedule"
 import ServilexServiceCombobox from "@/components/admin/ServilexServiceCombobox"
 import { AbioCatalogControls } from "@/components/admin/AbioCatalogControls"
 import { AbioBindingSelector } from "@/components/admin/AbioBindingSelector"
@@ -110,6 +114,28 @@ const parseShiftString = (shift: string): ShiftEntry => {
     return { name: shift.trim(), startTime: "", endTime: "" }
 }
 
+const EVENT_SHIFT_PRESETS: Array<{ label: string; shifts: ShiftEntry[] }> = [
+    {
+        label: "Manana / Tarde",
+        shifts: [
+            { name: "Manana", startTime: "09:00", endTime: "12:00" },
+            { name: "Tarde", startTime: "14:00", endTime: "18:00" },
+        ],
+    },
+    {
+        label: "Manana / Tarde / Noche",
+        shifts: [
+            { name: "Manana", startTime: "09:00", endTime: "12:00" },
+            { name: "Tarde", startTime: "14:00", endTime: "18:00" },
+            { name: "Noche", startTime: "19:00", endTime: "22:00" },
+        ],
+    },
+    {
+        label: "Unico turno",
+        shifts: [{ name: "General", startTime: "", endTime: "" }],
+    },
+]
+
 const toUTCDateOnly = (value: string | Date): Date | null => {
     const parsed = value instanceof Date ? new Date(value) : new Date(value)
     if (Number.isNaN(parsed.getTime())) return null
@@ -208,6 +234,7 @@ export function TicketTypeManager({
 
     const [selectedValidDays, setSelectedValidDays] = useState<string[]>([])
     const [shiftEntries, setShiftEntries] = useState<ShiftEntry[]>([])
+    const [dateShiftSelections, setDateShiftSelections] = useState<Record<string, string[]>>({})
     const [requireShiftSelection, setRequireShiftSelection] = useState(true)
     const [fullDayPackageDays, setFullDayPackageDays] = useState(4)
 
@@ -231,7 +258,8 @@ export function TicketTypeManager({
     const [showInactive, setShowInactive] = useState(false)
 
     const inactiveCount = ticketTypes.filter((t) => t.isActive === false).length
-    const configuredShiftCount = shiftEntries.filter((entry) => entry.name.trim()).length
+    const currentShiftOptions = useMemo(() => serializeShifts(shiftEntries), [shiftEntries])
+    const configuredShiftCount = currentShiftOptions.length
     const scheduleMode = requireShiftSelection ? "per_shift" : "full_day"
 
     useEffect(() => {
@@ -244,6 +272,22 @@ export function TicketTypeManager({
             }
         })
     }, [eventSucursal.code])
+
+    useEffect(() => {
+        if (entryMode !== "shift" || !requireShiftSelection) {
+            return
+        }
+
+        setDateShiftSelections((prev) => {
+            const next: Record<string, string[]> = {}
+            for (const date of selectedValidDays) {
+                const hasExisting = Object.prototype.hasOwnProperty.call(prev, date)
+                const selectedForDate = hasExisting ? prev[date] : currentShiftOptions
+                next[date] = selectedForDate.filter((shift) => currentShiftOptions.includes(shift))
+            }
+            return next
+        })
+    }, [currentShiftOptions, entryMode, requireShiftSelection, selectedValidDays])
 
     const isShiftTicketType = (ticket: TicketType) => {
         const schedule = parseTicketScheduleConfig(ticket.validDays)
@@ -445,11 +489,44 @@ export function TicketTypeManager({
         setShiftEntries((prev) => prev.filter((_, i) => i !== index))
     }
 
+    const setAllShiftsForDate = (date: string, shifts: string[]) => {
+        setDateShiftSelections((prev) => ({
+            ...prev,
+            [date]: shifts,
+        }))
+    }
+
+    const toggleShiftForDate = (date: string, shift: string) => {
+        setDateShiftSelections((prev) => {
+            const current = prev[date] ?? currentShiftOptions
+            const selected = current.includes(shift)
+            return {
+                ...prev,
+                [date]: selected
+                    ? current.filter((item) => item !== shift)
+                    : [...current, shift],
+            }
+        })
+    }
+
+    const applyShiftPreset = (shifts: ShiftEntry[]) => {
+        const nextShiftEntries = shifts.map((shift) => ({ ...shift }))
+        const nextShiftOptions = serializeShifts(nextShiftEntries)
+        setRequireShiftSelection(true)
+        setShiftEntries(nextShiftEntries)
+        setDateShiftSelections(
+            Object.fromEntries(
+                selectedValidDays.map((date) => [date, nextShiftOptions])
+            )
+        )
+    }
+
     const resetForm = () => {
         setFormData(buildEmptyFormData(eventSucursal.code))
         setCapacityInput("100")
         setSelectedValidDays([])
         setShiftEntries([])
+        setDateShiftSelections({})
         setRequireShiftSelection(true)
         setFullDayPackageDays(4)
         setEntryMode("standard")
@@ -463,6 +540,7 @@ export function TicketTypeManager({
         setCapacityInput("100")
         setSelectedValidDays([])
         setShiftEntries([])
+        setDateShiftSelections({})
         setRequireShiftSelection(true)
         setFullDayPackageDays(4)
         setIsAdding(true)
@@ -478,6 +556,7 @@ export function TicketTypeManager({
         setCapacityInput("100")
         setSelectedValidDays([])
         setShiftEntries([])
+        setDateShiftSelections({})
         setRequireShiftSelection(true)
         setFullDayPackageDays(4)
         setIsAdding(true)
@@ -493,6 +572,7 @@ export function TicketTypeManager({
         setCapacityInput("100")
         setSelectedValidDays([...dateOptions])
         setShiftEntries([])
+        setDateShiftSelections({})
         setRequireShiftSelection(false)
         setFullDayPackageDays(4)
         setIsAdding(true)
@@ -508,12 +588,17 @@ export function TicketTypeManager({
             return
         }
 
-        const shifts = serializeShifts(shiftEntries)
+        const shifts = currentShiftOptions
         const selectedDays = Array.from(new Set(selectedValidDays)).sort((a, b) => a.localeCompare(b))
         const shouldUseSpecificDays = entryMode === "shift"
 
         if (shouldUseSpecificDays && selectedDays.length === 0) {
             alert("Selecciona al menos un dia valido")
+            return
+        }
+
+        if (shouldUseSpecificDays && requireShiftSelection && shifts.length === 0) {
+            alert("Agrega al menos un turno para esta entrada")
             return
         }
 
@@ -581,10 +666,26 @@ export function TicketTypeManager({
             }
         }
 
+        const shiftSlots =
+            shouldUseSpecificDays && requireShiftSelection && shifts.length > 0
+                ? selectedDays.map((date) => ({
+                    date,
+                    shifts: shifts.filter((shift) =>
+                        (dateShiftSelections[date] ?? shifts).includes(shift)
+                    ),
+                }))
+                : undefined
+
+        if (shiftSlots?.some((slot) => slot.shifts.length === 0)) {
+            alert("Cada dia seleccionado debe tener al menos un turno habilitado")
+            return
+        }
+
         const validDaysPayload = shouldUseSpecificDays
             ? buildTicketValidDaysPayload({
                 dates: selectedDays,
                 shifts,
+                slots: shiftSlots,
                 requireShiftSelection: requireShiftSelection && shifts.length > 0,
             })
             : []
@@ -607,9 +708,12 @@ export function TicketTypeManager({
                 body: JSON.stringify(body),
             })
 
-            if (!response.ok) throw new Error("Error al guardar")
+            const payload = await response.json().catch(() => ({}))
+            if (!response.ok || payload.success === false) {
+                throw new Error(payload.error || "Error al guardar")
+            }
 
-            const { data } = await response.json()
+            const { data } = payload
 
             if (editingId) {
                 setTicketTypes(ticketTypes.map(t => t.id === editingId ? data : t))
@@ -620,7 +724,7 @@ export function TicketTypeManager({
             resetForm()
         } catch (error) {
             console.error(error)
-            alert("Error al guardar tipo de entrada")
+            alert((error as Error).message || "Error al guardar tipo de entrada")
         } finally {
             setLoading(false)
         }
@@ -1643,6 +1747,7 @@ export function TicketTypeManager({
                         {entryMode === "shift" && (
                         <>
                             {/* Plantilla rapida */}
+                            {!requireShiftSelection && (
                             <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
                                 <div className="text-sm font-semibold text-blue-800 mb-2">
                                     Plantilla rapida
@@ -1683,6 +1788,7 @@ export function TicketTypeManager({
                                     </Button>
                                 </div>
                             </div>
+                            )}
 
                             {/* Dias validos */}
                             <div className="rounded-lg border bg-white p-3 space-y-3">
@@ -1784,6 +1890,31 @@ export function TicketTypeManager({
                                     </div>
                                 </div>
 
+                                {scheduleMode === "per_shift" && (
+                                    <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-3">
+                                        <div className="mb-2 text-xs font-semibold text-blue-900">
+                                            Atajo para eventos por turno
+                                        </div>
+                                        <div className="mb-3 text-[11px] text-blue-700">
+                                            Define los turnos una vez y luego marca abajo en que dias aplica cada uno.
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {EVENT_SHIFT_PRESETS.map((preset) => (
+                                                <Button
+                                                    key={preset.label}
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 bg-white text-xs"
+                                                    onClick={() => applyShiftPreset(preset.shifts)}
+                                                >
+                                                    {preset.label}
+                                                </Button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="space-y-2">
                                     {shiftEntries.map((entry, index) => (
                                         <div key={index} className="flex items-center gap-2">
@@ -1828,6 +1959,81 @@ export function TicketTypeManager({
                                     <Plus className="h-4 w-4 mr-1" />
                                     Agregar turno
                                 </Button>
+
+                                {scheduleMode === "per_shift" && selectedValidDays.length > 0 && (
+                                    <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3 space-y-3">
+                                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                            <div>
+                                                <div className="text-xs font-semibold text-gray-700">3. Turnos por dia</div>
+                                                <div className="text-[11px] text-gray-500">
+                                                    Marca en que turnos se puede vender esta misma entrada para cada dia.
+                                                </div>
+                                            </div>
+                                            <div className="text-[11px] text-gray-500">
+                                                {selectedValidDays.length} dia(s), {currentShiftOptions.length} turno(s)
+                                            </div>
+                                        </div>
+                                        {currentShiftOptions.length === 0 ? (
+                                            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                                                Escribe el nombre del turno o usa un atajo para habilitar la seleccion por dia.
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2 max-h-64 overflow-y-auto">
+                                                {Array.from(new Set(selectedValidDays))
+                                                .sort((a, b) => a.localeCompare(b))
+                                                .map((date) => {
+                                                    const selectedForDate = dateShiftSelections[date] ?? currentShiftOptions
+                                                    return (
+                                                        <div key={date} className="rounded-md border bg-white p-2">
+                                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                                                <div className="text-xs font-medium text-gray-700">
+                                                                    {formatDate(date, { dateStyle: "medium" })}
+                                                                </div>
+                                                                <div className="flex gap-1">
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="h-7 px-2 text-[11px]"
+                                                                        onClick={() => setAllShiftsForDate(date, currentShiftOptions)}
+                                                                    >
+                                                                        Todos
+                                                                    </Button>
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="h-7 px-2 text-[11px]"
+                                                                        onClick={() => setAllShiftsForDate(date, [])}
+                                                                    >
+                                                                        Ninguno
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                                {currentShiftOptions.map((shift) => {
+                                                                    const selected = selectedForDate.includes(shift)
+                                                                    return (
+                                                                        <Button
+                                                                            key={`${date}-${shift}`}
+                                                                            type="button"
+                                                                            size="sm"
+                                                                            variant={selected ? "default" : "outline"}
+                                                                            className="h-8 text-xs"
+                                                                            onClick={() => toggleShiftForDate(date, shift)}
+                                                                        >
+                                                                            {shift}
+                                                                        </Button>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {shiftEntries.length > 0 && (
                                     <div className={`text-xs ${scheduleMode === "full_day" ? "text-blue-700" : "text-gray-600"}`}>
@@ -1997,6 +2203,14 @@ export function TicketTypeManager({
                                                     setCapacityInput(String(ticket.capacity ?? 0))
                                                     setSelectedValidDays(schedule.dates)
                                                     setShiftEntries(schedule.shifts.map(parseShiftString))
+                                                    setDateShiftSelections(
+                                                        Object.fromEntries(
+                                                            schedule.dates.map((date) => [
+                                                                date,
+                                                                getShiftOptionsForDate(schedule, date),
+                                                            ])
+                                                        )
+                                                    )
                                                     setRequireShiftSelection(schedule.requireShiftSelection)
                                                     setFullDayPackageDays(ticket.packageDaysCount ?? 4)
                                                 }}

@@ -108,7 +108,10 @@ export const buildAttendanceSummary = (ticket: ScanTicket): AttendanceSummary =>
     const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
     const explicitValidDates = scheduleConfig.dates
     const configuredShifts = scheduleConfig.shifts
-    const shiftMultiplier = configuredShifts.length > 1 ? configuredShifts.length : 1
+    const shiftMultiplier =
+        !scheduleConfig.requireShiftSelection && configuredShifts.length > 1
+            ? configuredShifts.length
+            : 1
 
     // Try to extract total from ticket type name (e.g., "8 clases")
     const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
@@ -119,7 +122,8 @@ export const buildAttendanceSummary = (ticket: ScanTicket): AttendanceSummary =>
     } else if (ticket.ticketType.isPackage) {
         total = (nameTotal ?? total) * shiftMultiplier
     } else if (explicitValidDates.length > 0) {
-        total = explicitValidDates.length * shiftMultiplier
+        const dateTotal = ticket.entitlements.length > 0 ? ticket.entitlements.length : explicitValidDates.length
+        total = dateTotal * shiftMultiplier
     } else if (ticket.event?.startDate && ticket.event?.endDate) {
         const label = extractDaysLabel(ticket.ticketType.name)
         const validDays = label

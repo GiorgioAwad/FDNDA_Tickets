@@ -38,10 +38,6 @@ export function EventCard({ event, priority, sizes, className }: EventCardProps)
         setDays(Math.ceil(ms / (1000 * 60 * 60 * 24)))
     }, [event.startDate])
     const soonish = days != null && days >= 0 && days <= 7
-    const remaining = event.capacity != null && event.soldCount != null ? event.capacity - event.soldCount : null
-    const lowStock = remaining != null && remaining > 0 && remaining < 50
-    const fillRate = event.capacity && event.soldCount != null ? Math.min(1, event.soldCount / event.capacity) : null
-    const isHot = fillRate != null && fillRate > 0.7
 
     return (
         <motion.div
@@ -83,11 +79,6 @@ export function EventCard({ event, priority, sizes, className }: EventCardProps)
                                         {days === 0 ? "¡Hoy!" : days === 1 ? "Mañana" : `En ${days} días`}
                                     </Badge>
                                 )}
-                                {!soonish && isHot && (
-                                    <Badge className="bg-coral/95 text-white font-semibold shadow-md">
-                                        <Flame className="h-3 w-3 mr-1" />Top venta
-                                    </Badge>
-                                )}
                             </div>
                         </div>
 
@@ -118,25 +109,6 @@ export function EventCard({ event, priority, sizes, className }: EventCardProps)
                                 <span className="line-clamp-1">{event.venue}, {event.location}</span>
                             </div>
                         </div>
-
-                        {/* Capacity bar */}
-                        {fillRate != null && fillRate > 0 && (
-                            <div className="mb-3">
-                                <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
-                                    <span>{Math.round(fillRate * 100)}% vendido</span>
-                                    {lowStock && <span className="text-coral font-semibold">Quedan {remaining}</span>}
-                                </div>
-                                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                                    <div
-                                        className={cn(
-                                            "h-full rounded-full transition-all duration-700",
-                                            fillRate > 0.85 ? "bg-coral" : "bg-gradient-to-r from-fdnda-secondary to-fdnda-accent"
-                                        )}
-                                        style={{ width: `${fillRate * 100}%` }}
-                                    />
-                                </div>
-                            </div>
-                        )}
 
                         <div className="mt-auto flex items-center justify-between pt-3 border-t border-border">
                             <div>

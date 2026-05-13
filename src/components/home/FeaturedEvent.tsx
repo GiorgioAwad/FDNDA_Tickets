@@ -17,8 +17,6 @@ interface FeaturedEventProps {
 
 export function FeaturedEvent({ event }: FeaturedEventProps) {
     const prefersReducedMotion = useReducedMotion()
-    const remaining = event.capacity != null && event.soldCount != null ? event.capacity - event.soldCount : null
-    const lowStock = remaining != null && remaining > 0 && remaining < 50
     const [showCountdown, setShowCountdown] = React.useState(false)
 
     React.useEffect(() => {
@@ -34,7 +32,6 @@ export function FeaturedEvent({ event }: FeaturedEventProps) {
             transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
             className="relative overflow-hidden rounded-3xl shadow-elevated"
         >
-            {/* Background image with parallax-ish overlay */}
             <div className="absolute inset-0">
                 {event.bannerUrl ? (
                     <EventBannerMedia
@@ -62,11 +59,6 @@ export function FeaturedEvent({ event }: FeaturedEventProps) {
                                 {event.discipline}
                             </Badge>
                         )}
-                        {lowStock && (
-                            <Badge className="bg-warning text-warning-foreground">
-                                ¡Quedan {remaining}!
-                            </Badge>
-                        )}
                     </div>
 
                     <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight mb-3 drop-shadow-lg">
@@ -80,7 +72,9 @@ export function FeaturedEvent({ event }: FeaturedEventProps) {
                         </div>
                         <div className="flex items-center gap-1.5">
                             <MapPin className="h-4 w-4 text-fdnda-accent" />
-                            <span>{event.venue}, {event.location}</span>
+                            <span>
+                                {event.venue}, {event.location}
+                            </span>
                         </div>
                     </div>
 

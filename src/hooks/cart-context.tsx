@@ -7,8 +7,14 @@ import { buildNaturalPersonFullName, splitNaturalPersonName } from "@/lib/billin
 export interface CartScheduleConfig {
     dates: string[]
     shifts: string[]
+    slots?: CartScheduleSlot[]
     requiredDays: number | null
     requireShiftSelection: boolean
+}
+
+export interface CartScheduleSlot {
+    date: string
+    shifts: string[]
 }
 
 export interface CartScheduleSelection {
@@ -129,6 +135,37 @@ const normalizeShifts = (values: unknown): string[] => {
     return Array.from(new Set(normalized))
 }
 
+const normalizeScheduleSlots = (values: unknown): CartScheduleSlot[] => {
+    if (!Array.isArray(values)) return []
+
+    const byDate = new Map<string, string[]>()
+    for (const value of values) {
+        if (!value || typeof value !== "object") continue
+        const record = value as Record<string, unknown>
+        const date = typeof record.date === "string" ? record.date.trim() : ""
+        if (!DATE_REGEX.test(date)) continue
+
+        const shifts = normalizeShifts(record.shifts)
+        if (shifts.length === 0) continue
+
+        const current = byDate.get(date) ?? []
+        byDate.set(date, Array.from(new Set([...current, ...shifts])))
+    }
+
+    return Array.from(byDate.entries())
+        .map(([date, shifts]) => ({ date, shifts }))
+        .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+const getShiftOptionsForDate = (
+    scheduleConfig: CartScheduleConfig | undefined,
+    date: string
+): string[] => {
+    if (!scheduleConfig) return []
+    const slot = scheduleConfig.slots?.find((entry) => entry.date === date)
+    return slot?.shifts.length ? slot.shifts : scheduleConfig.shifts
+}
+
 const normalizeScheduleConfig = (input: unknown): CartScheduleConfig | undefined => {
     if (!input || typeof input !== "object") return undefined
 
@@ -143,8 +180,9 @@ const normalizeScheduleConfig = (input: unknown): CartScheduleConfig | undefined
     const requiredDays =
         Number.isFinite(requiredDaysNum) && requiredDaysNum > 0 ? Math.floor(requiredDaysNum) : null
 
-    const dates = normalizeDates(record.dates)
-    const shifts = normalizeShifts(record.shifts)
+    const slots = normalizeScheduleSlots(record.slots)
+    const dates = Array.from(new Set([...normalizeDates(record.dates), ...slots.map((slot) => slot.date)]))
+    const shifts = Array.from(new Set([...normalizeShifts(record.shifts), ...slots.flatMap((slot) => slot.shifts)]))
     const requireShiftSelectionRaw = record.requireShiftSelection
     const shiftOptionalRaw = record.shiftOptional
     const requireShiftSelection =
@@ -163,6 +201,7 @@ const normalizeScheduleConfig = (input: unknown): CartScheduleConfig | undefined
     return {
         dates,
         shifts,
+        slots,
         requiredDays,
         requireShiftSelection,
     }
@@ -178,13 +217,17 @@ const getRequiredScheduleSelections = (scheduleConfig?: CartScheduleConfig): num
 
 const createDefaultScheduleSelection = (
     scheduleConfig?: CartScheduleConfig
-): CartScheduleSelection => ({
-    date: scheduleConfig?.dates.length === 1 ? scheduleConfig.dates[0] : "",
-    shift:
-        scheduleConfig?.shifts.length === 1 && (scheduleConfig.requireShiftSelection ?? true)
-            ? scheduleConfig.shifts[0]
-            : "",
-})
+): CartScheduleSelection => {
+    const date = scheduleConfig?.dates.length === 1 ? scheduleConfig.dates[0] : ""
+    const shiftOptions = getShiftOptionsForDate(scheduleConfig, date)
+    return {
+        date,
+        shift:
+            shiftOptions.length === 1 && (scheduleConfig?.requireShiftSelection ?? true)
+                ? shiftOptions[0]
+                : "",
+    }
+}
 
 const createEmptySelections = (
     count: number,
@@ -544,9 +587,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 }
 
                 const target = scheduleSelections[selectionIndex] ?? { date: "", shift: "" }
-                scheduleSelections[selectionIndex] = {
+                const nextSelection = {
                     ...target,
                     [field]: value,
+                }
+                if (
+                    field === "date" &&
+                    nextSelection.shift &&
+                    !getShiftOptionsForDate(item.scheduleConfig, value).includes(nextSelection.shift)
+                ) {
+                    nextSelection.shift = ""
+                }
+                scheduleSelections[selectionIndex] = {
+                    ...nextSelection,
                 }
 
                 attendees[attendeeIndex] = {

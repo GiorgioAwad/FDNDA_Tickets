@@ -8,6 +8,12 @@ import { createOrderSchema } from "@/lib/validations"
 import { onTicketSold } from "@/lib/cached-queries"
 import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
+import {
+    getShiftOptionsForDate,
+    normalizeScheduleSelections,
+    normalizeShiftLabel,
+    parseTicketScheduleConfig,
+} from "@/lib/ticket-schedule"
 import { z } from "zod"
 
 export const runtime = "nodejs"
@@ -31,6 +37,18 @@ const buildGeneratedServilexMatricula = (seed: string): string => {
         hash = (hash * 31 + char.charCodeAt(0)) % 10_000_000
     }
     return String(hash).padStart(7, "0")
+}
+
+const shiftLabelsMatch = (left: unknown, right: unknown): boolean => {
+    const normalizedLeft = normalizeShiftLabel(left)?.toLowerCase() ?? null
+    const normalizedRight = normalizeShiftLabel(right)?.toLowerCase() ?? null
+
+    if (!normalizedLeft && !normalizedRight) return true
+    if (normalizedLeft === normalizedRight) return true
+
+    const compactLeft = normalizedLeft?.replace(/\s*\(.*\)\s*$/, "").trim() ?? null
+    const compactRight = normalizedRight?.replace(/\s*\(.*\)\s*$/, "").trim() ?? null
+    return compactLeft !== null && compactLeft === compactRight
 }
 
 export async function POST(request: NextRequest) {
@@ -158,6 +176,8 @@ export async function POST(request: NextRequest) {
                         price: Prisma.Decimal
                         eventId: string
                         capacity: number
+                        isPackage: boolean
+                        packageDaysCount: number | null
                         validDays: Prisma.JsonValue | null
                         servilexEnabled: boolean
                         servilexIndicator: string | null
@@ -179,6 +199,8 @@ export async function POST(request: NextRequest) {
                             price: true,
                             eventId: true,
                             capacity: true,
+                            isPackage: true,
+                            packageDaysCount: true,
                             validDays: true,
                             isActive: true,
                             servilexEnabled: true,
@@ -238,6 +260,8 @@ export async function POST(request: NextRequest) {
                             price: Prisma.Decimal
                             eventId: string
                             capacity: number
+                            isPackage: boolean
+                            packageDaysCount: number | null
                             validDays: Prisma.JsonValue | null
                             servilexEnabled: boolean
                             servilexIndicator: string | null
@@ -262,6 +286,8 @@ export async function POST(request: NextRequest) {
                             "price",
                             "eventId",
                             "capacity",
+                            "isPackage",
+                            "packageDaysCount",
                             "validDays",
                             "servilexEnabled",
                             "servilexIndicator",
@@ -307,6 +333,65 @@ export async function POST(request: NextRequest) {
                     }
                 }
 
+                const scheduleConfig = parseTicketScheduleConfig(reservedTicketType.validDays)
+                const requiredScheduleSelections =
+                    scheduleConfig.dates.length > 0
+                        ? reservedTicketType.isPackage && reservedTicketType.packageDaysCount
+                            ? reservedTicketType.packageDaysCount
+                            : 1
+                        : 0
+
+                if (requiredScheduleSelections > 0) {
+                    const availableDates = new Set(scheduleConfig.dates)
+                    const requiresShift =
+                        scheduleConfig.requireShiftSelection && scheduleConfig.shifts.length > 0
+
+                    if (attendeeData.length < item.quantity) {
+                        throw new Error(`Debes completar todos los asistentes para "${reservedTicketType.name}"`)
+                    }
+
+                    attendeeData = attendeeData.map((attendee) => {
+                        const selections = normalizeScheduleSelections(attendee.scheduleSelections)
+                        if (selections.length < requiredScheduleSelections) {
+                            throw new Error(`Selecciona dia${requiresShift ? " y turno" : ""} para "${reservedTicketType.name}"`)
+                        }
+
+                        const selectedDates = new Set<string>()
+                        const scheduleSelections: Array<{ date: string; shift?: string }> = []
+
+                        for (let i = 0; i < requiredScheduleSelections; i++) {
+                            const selection = selections[i]
+                            if (!selection?.date || !availableDates.has(selection.date)) {
+                                throw new Error(`Selecciona un dia valido para "${reservedTicketType.name}"`)
+                            }
+
+                            if (selectedDates.has(selection.date)) {
+                                throw new Error(`No repitas el mismo dia en "${reservedTicketType.name}"`)
+                            }
+                            selectedDates.add(selection.date)
+
+                            if (requiresShift) {
+                                const allowedShifts = getShiftOptionsForDate(scheduleConfig, selection.date)
+                                const selectedShift = selection.shift || ""
+                                if (
+                                    !selectedShift ||
+                                    !allowedShifts.some((shift) => shiftLabelsMatch(shift, selectedShift))
+                                ) {
+                                    throw new Error(`Selecciona un turno valido para "${reservedTicketType.name}"`)
+                                }
+                                scheduleSelections.push({ date: selection.date, shift: selectedShift })
+                            } else {
+                                scheduleSelections.push({ date: selection.date })
+                            }
+                        }
+
+                        return {
+                            ...attendee,
+                            scheduleSelections,
+                        }
+                    })
+                }
+
                 const subtotal = Number(reservedTicketType.price) * item.quantity
                 totalAmount += subtotal
 
@@ -336,7 +421,7 @@ export async function POST(request: NextRequest) {
                             throw new Error(`El tipo de entrada "${reservedTicketType.name}" no tiene configuracion Servilex AC completa`)
                         }
 
-                        const attendees = item.attendees || []
+                        const attendees = attendeeData
                         if (attendees.length < item.quantity) {
                             throw new Error(`Debes completar todos los asistentes para "${reservedTicketType.name}"`)
                         }
@@ -504,6 +589,8 @@ export async function POST(request: NextRequest) {
             message.includes("Ubigeo") ||
             message.includes("matricula") ||
             message.includes("asistentes") ||
+            message.includes("dia") ||
+            message.includes("turno") ||
             message.includes("Servilex")
 
         return NextResponse.json(

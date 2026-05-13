@@ -22,6 +22,21 @@ const normalizeValidDays = (value: unknown): Prisma.InputJsonValue => {
     return buildTicketValidDaysPayload(config) as Prisma.InputJsonValue
 }
 
+const getTicketTypeErrorMessage = (error: unknown, fallback: string): string => {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === "P2002") return "Ya existe un registro con esos datos"
+        if (error.code === "P2003") return "La configuracion seleccionada referencia un registro que ya no existe"
+        if (error.code === "P2025") return "Tipo de entrada no encontrado"
+        return `${fallback} (${error.code})`
+    }
+
+    if (process.env.NODE_ENV !== "production" && error instanceof Error && error.message) {
+        return `${fallback}: ${error.message}`
+    }
+
+    return fallback
+}
+
 const normalizeDescription = (value: unknown): string | null | undefined => {
     if (value === undefined) return undefined
     if (value === null) return null
@@ -254,7 +269,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         console.error("Error creating ticket type:", error)
         return NextResponse.json(
-            { success: false, error: "Error al crear tipo de entrada" },
+            { success: false, error: getTicketTypeErrorMessage(error, "Error al crear tipo de entrada") },
             { status: 500 }
         )
     }
@@ -546,7 +561,7 @@ export async function PUT(request: NextRequest) {
     } catch (error) {
         console.error("Error updating ticket type:", error)
         return NextResponse.json(
-            { success: false, error: "Error al actualizar tipo de entrada" },
+            { success: false, error: getTicketTypeErrorMessage(error, "Error al actualizar tipo de entrada") },
             { status: 500 }
         )
     }

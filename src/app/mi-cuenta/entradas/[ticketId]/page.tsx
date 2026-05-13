@@ -45,6 +45,7 @@ interface TicketDetail {
     shifts?: string[]
     qrDataUrl: string
     qrDate: string
+    qrShift?: string | null
 }
 
 const getWeekdayIndexes = (label: string) => {
@@ -165,8 +166,9 @@ export default function TicketDetailPage() {
     }
 
     const isPiscina = ticket.event?.category === "PISCINA_LIBRE"
-    const clasesLabel = isPiscina ? "asistencias" : "clases"
-    const claseLabel = isPiscina ? "Asistencia" : "Clase"
+    const isEvento = ticket.event?.category === "EVENTO"
+    const clasesLabel = isPiscina ? "asistencias" : isEvento ? "entradas" : "clases"
+    const claseLabel = isPiscina ? "Asistencia" : isEvento ? "Entrada" : "Clase"
 
     const entitlements = ticket.entitlements || []
     const classCount = extractClassCount(ticket.ticketType.name)
@@ -193,7 +195,8 @@ export default function TicketDetailPage() {
 
     // Multi-shift support
     const shifts = ticket.shifts || []
-    const hasMultipleShifts = shifts.length > 1
+    const selectedQrShift = ticket.qrShift || null
+    const hasMultipleShifts = shifts.length > 1 && !selectedQrShift
     const scans = ticket.scans || []
 
     // Match a scan's shift against a configured shift (flexible matching)
@@ -219,7 +222,24 @@ export default function TicketDetailPage() {
     let displayEntitlements: { date: string; status: "AVAILABLE" | "USED"; usedAt: string | null; label?: string; shiftLabel?: string }[]
     let usedDisplayCount: number
 
-    if (hasMultipleShifts && isPackageLike) {
+    if (selectedQrShift && !isPackageLike) {
+        totalCount = Math.max(entitlements.length, 1)
+        const selectedShiftEntitlements = entitlements.length > 0
+            ? entitlements
+            : [{
+                date: ticket.qrDate,
+                status: "AVAILABLE" as const,
+                usedAt: null,
+            }]
+        displayEntitlements = selectedShiftEntitlements.map((entitlement, index) => ({
+            date: entitlement.date,
+            status: entitlement.status,
+            usedAt: entitlement.usedAt,
+            label: `Entrada ${index + 1}`,
+            shiftLabel: shortShiftLabel(selectedQrShift),
+        }))
+        usedDisplayCount = displayEntitlements.filter((item) => item.status === "USED").length
+    } else if (hasMultipleShifts && isPackageLike) {
         // Multi-shift package (e.g., "Full day - 4 días" with Mañana/Tarde)
         const dayCount = ticket.ticketType.packageDaysCount ?? classCount ?? (isPiscina ? 1 : 0)
         totalCount = dayCount * shifts.length
@@ -377,6 +397,11 @@ export default function TicketDetailPage() {
                                 <p className="text-sm text-gray-500 text-center mb-2">
                                     Valido para: <span className="font-bold text-gray-900">{formatDate(ticket.qrDate)}</span>
                                 </p>
+                                {ticket.qrShift && (
+                                    <p className="text-sm text-gray-500 text-center mb-2">
+                                        Turno: <span className="font-bold text-gray-900">{shortShiftLabel(ticket.qrShift)}</span>
+                                    </p>
+                                )}
                                 <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
                                     <RefreshCw className="h-3 w-3" />
                                     El codigo QR se actualiza diariamente
@@ -438,7 +463,9 @@ export default function TicketDetailPage() {
                     <div className="bg-white p-4 sm:p-6 border-t carnet-section print-carnet-section">
                         <div className="flex items-center justify-between mb-4">
                             <div>
-                                <h3 className="text-base sm:text-lg font-semibold">Carnet de asistencia</h3>
+                                <h3 className="text-base sm:text-lg font-semibold">
+                                    {isEvento ? "Entrada valida" : "Carnet de asistencia"}
+                                </h3>
                                 <p className="text-sm text-gray-500">
                                     {usedDisplayCount}/{totalCount} {clasesLabel} usadas - {remainingCount} restantes
                                 </p>

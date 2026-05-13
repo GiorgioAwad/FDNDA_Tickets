@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { getTodayDateString } from "@/lib/qr"
-import { normalizeShiftLabel, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
+import { getShiftOptionsForDate, normalizeShiftLabel, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import {
     getExpectedShiftForDate,
     getTicketScheduleSelectionsForAttendee,
@@ -276,7 +276,7 @@ export async function POST(request: NextRequest) {
         const todayDate = new Date(`${today}T12:00:00Z`)
         const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
         const strictDateSchedule = scheduleConfig.dates.length > 0
-        const configuredShifts = scheduleConfig.shifts
+        const configuredShifts = getShiftOptionsForDate(scheduleConfig, today)
         const requiresShiftSelection = scheduleConfig.requireShiftSelection && configuredShifts.length > 0
         const hasMultipleShifts = configuredShifts.length > 1
 
@@ -288,32 +288,58 @@ export async function POST(request: NextRequest) {
         })
         const expectedShift = getExpectedShiftForDate(scheduleSelections, today)
 
-        // Para tickets con multiples turnos:
-        // - Si es full day, el turno es opcional (pero si se envia debe ser valido).
-        // - Si requiere turno, se exige seleccionar turno actual.
-        if (hasMultipleShifts) {
-            if (requiresShiftSelection && !currentShift) {
+        // Para tickets por turno, el turno esperado viene de la compra.
+        // Para full day, el turno es opcional, pero si se envia debe existir para el dia.
+        if (requiresShiftSelection) {
+            if (!currentShift) {
                 return NextResponse.json({
                     success: false,
                     valid: false,
                     reason: "SHIFT_REQUIRED",
-                    message: `Selecciona el turno actual para validar este ticket.`,
+                    message: expectedShift
+                        ? `Selecciona el turno actual (${expectedShift}) para validar este ticket.`
+                        : `Selecciona el turno actual para validar este ticket.`,
                 })
             }
 
-            if (currentShift) {
-                const isValidShift = configuredShifts.some((shiftOption) =>
-                    shiftsMatch(shiftOption, currentShift)
+            if (expectedShift && !shiftsMatch(currentShift, expectedShift)) {
+                await logScan(
+                    ticket.id,
+                    user.id,
+                    eventId,
+                    "WRONG_DAY",
+                    `Turno incorrecto. Esperado: ${expectedShift}`,
+                    currentShift
                 )
-                if (!isValidShift) {
-                    await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Turno no configurado: ${currentShift}`, currentShift)
-                    return NextResponse.json({
-                        success: false,
-                        valid: false,
-                        reason: "WRONG_SHIFT",
-                        message: `Este turno no esta configurado para este tipo de ticket.`,
-                    })
-                }
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "WRONG_SHIFT",
+                    message: `Este ticket es valido para el turno "${expectedShift}".`,
+                })
+            }
+
+            if (!configuredShifts.some((shiftOption) => shiftsMatch(shiftOption, currentShift))) {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Turno no configurado: ${currentShift}`, currentShift)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "WRONG_SHIFT",
+                    message: `Este turno no esta configurado para este dia.`,
+                })
+            }
+        } else if (hasMultipleShifts && currentShift) {
+            const isValidShift = configuredShifts.some((shiftOption) =>
+                shiftsMatch(shiftOption, currentShift)
+            )
+            if (!isValidShift) {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Turno no configurado: ${currentShift}`, currentShift)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "WRONG_SHIFT",
+                    message: `Este turno no esta configurado para este dia.`,
+                })
             }
         } else if (expectedShift) {
             if (!currentShift) {
@@ -366,7 +392,7 @@ export async function POST(request: NextRequest) {
 
         const computeAttendance = () => {
             if (isPackageLike && packageLimit) {
-                const shiftMultiplier = hasMultipleShifts ? configuredShifts.length : 1
+                const shiftMultiplier = !requiresShiftSelection && hasMultipleShifts ? configuredShifts.length : 1
                 const adjustedTotal = packageLimit * shiftMultiplier
                 const usedEntitlements = ticket.entitlements.filter((item) => item.status === "USED").length
                 const used = Math.max(usedEntitlements, scanCount)
@@ -460,7 +486,7 @@ export async function POST(request: NextRequest) {
 
         if (entitlement.status === "USED") {
             // Si hay multiples turnos, permitir un scan por cada turno distinto
-            if (hasMultipleShifts && currentShift) {
+            if (!requiresShiftSelection && hasMultipleShifts && currentShift) {
                 const todayScans = await prisma.scan.findMany({
                     where: {
                         ticketId: ticket.id,

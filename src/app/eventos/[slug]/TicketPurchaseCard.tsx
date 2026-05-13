@@ -503,6 +503,9 @@ export default function TicketPurchaseCard({
                 scheduleConfig: {
                     dates: selectedDate ? [selectedDate] : metadata.schedule.dates,
                     shifts: metadata.schedule.shifts,
+                    slots: selectedDate
+                        ? metadata.schedule.slots?.filter((slot) => slot.date === selectedDate)
+                        : metadata.schedule.slots,
                     requiredDays: ticket.isPackage ? (ticket.packageDaysCount ?? null) : null,
                     requireShiftSelection: metadata.schedule.requireShiftSelection,
                 },

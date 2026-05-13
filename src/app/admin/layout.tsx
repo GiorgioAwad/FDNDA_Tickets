@@ -13,5 +13,11 @@ export default async function AdminLayout({
         redirect("/")
     }
 
-    return <AdminLayoutClient>{children}</AdminLayoutClient>
+    return (
+        <AdminLayoutClient>
+            <main className="flex-1 p-4 lg:p-6">
+                {children}
+            </main>
+        </AdminLayoutClient>
+    )
 }

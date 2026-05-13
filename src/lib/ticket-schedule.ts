@@ -4,6 +4,12 @@ export interface TicketScheduleConfig {
     dates: string[]
     shifts: string[]
     requireShiftSelection: boolean
+    slots?: TicketScheduleSlot[]
+}
+
+export interface TicketScheduleSlot {
+    date: string
+    shifts: string[]
 }
 
 export interface ScheduleSelection {
@@ -64,6 +70,44 @@ function normalizeShiftArray(values: unknown): string[] {
     return Array.from(new Set(normalized))
 }
 
+function normalizeScheduleSlots(values: unknown): TicketScheduleSlot[] {
+    if (!Array.isArray(values)) return []
+
+    const byDate = new Map<string, string[]>()
+    for (const value of values) {
+        if (!value || typeof value !== "object") continue
+        const record = value as Record<string, unknown>
+        const date = normalizeDate(record.date ?? record.day)
+        if (!date) continue
+
+        const shifts = normalizeShiftArray(record.shifts ?? record.turns)
+        if (shifts.length === 0) continue
+
+        const current = byDate.get(date) ?? []
+        byDate.set(date, Array.from(new Set([...current, ...shifts])))
+    }
+
+    return Array.from(byDate.entries())
+        .map(([date, shifts]) => ({ date, shifts }))
+        .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+function normalizeDateShiftMap(value: unknown): TicketScheduleSlot[] {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return []
+
+    const slots: TicketScheduleSlot[] = []
+    for (const [dateKey, shiftsValue] of Object.entries(value as Record<string, unknown>)) {
+        const date = normalizeDate(dateKey)
+        if (!date) continue
+
+        const shifts = normalizeShiftArray(shiftsValue)
+        if (shifts.length === 0) continue
+        slots.push({ date, shifts })
+    }
+
+    return slots.sort((a, b) => a.date.localeCompare(b.date))
+}
+
 export function parseTicketScheduleConfig(validDays: unknown): TicketScheduleConfig {
     if (Array.isArray(validDays)) {
         return {
@@ -80,8 +124,17 @@ export function parseTicketScheduleConfig(validDays: unknown): TicketScheduleCon
         const byDays = normalizeDateArray(record.days)
         const byShifts = normalizeShiftArray(record.shifts)
         const byTurns = normalizeShiftArray(record.turns)
-        const dates = byDates.length > 0 ? byDates : byValidDays.length > 0 ? byValidDays : byDays
-        const shifts = byShifts.length > 0 ? byShifts : byTurns
+        const slots = normalizeScheduleSlots(record.slots)
+        const dateShiftSlots = normalizeDateShiftMap(record.dateShifts ?? record.dayShifts)
+        const explicitSlots = slots.length > 0 ? slots : dateShiftSlots
+        const configuredDates = byDates.length > 0 ? byDates : byValidDays.length > 0 ? byValidDays : byDays
+        const dates = Array.from(
+            new Set([...configuredDates, ...explicitSlots.map((slot) => slot.date)])
+        ).sort((a, b) => a.localeCompare(b))
+        const configuredShifts = byShifts.length > 0 ? byShifts : byTurns
+        const shifts = Array.from(
+            new Set([...configuredShifts, ...explicitSlots.flatMap((slot) => slot.shifts)])
+        )
         const requireShiftSelectionRaw = record.requireShiftSelection
         const shiftOptionalRaw = record.shiftOptional
         const requireShiftSelection =
@@ -97,6 +150,7 @@ export function parseTicketScheduleConfig(validDays: unknown): TicketScheduleCon
             dates,
             shifts,
             requireShiftSelection,
+            slots: explicitSlots,
         }
     }
 
@@ -106,6 +160,7 @@ export function parseTicketScheduleConfig(validDays: unknown): TicketScheduleCon
 export function buildTicketValidDaysPayload(config: TicketScheduleConfig): unknown {
     const dates = normalizeDateArray(config.dates)
     const shifts = normalizeShiftArray(config.shifts)
+    const slots = normalizeScheduleSlots(config.slots).filter((slot) => dates.includes(slot.date))
 
     if (dates.length === 0) return []
     if (shifts.length === 0) return dates
@@ -113,10 +168,15 @@ export function buildTicketValidDaysPayload(config: TicketScheduleConfig): unkno
     const payload: {
         dates: string[]
         shifts: string[]
+        slots?: TicketScheduleSlot[]
         requireShiftSelection?: boolean
     } = {
         dates,
         shifts,
+    }
+
+    if (slots.length > 0) {
+        payload.slots = slots
     }
 
     if (config.requireShiftSelection === false) {
@@ -156,4 +216,15 @@ export function extractTicketValidDates(validDays: unknown): string[] {
 
 export function extractTicketShiftOptions(validDays: unknown): string[] {
     return parseTicketScheduleConfig(validDays).shifts
+}
+
+export function getShiftOptionsForDate(
+    config: TicketScheduleConfig,
+    dateValue: unknown
+): string[] {
+    const date = normalizeDate(dateValue)
+    if (!date) return config.shifts
+
+    const slot = config.slots?.find((item) => item.date === date)
+    return slot?.shifts.length ? slot.shifts : config.shifts
 }
