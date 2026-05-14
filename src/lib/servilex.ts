@@ -804,7 +804,7 @@ function normalizeSerieSucursal(sucursal: string, fallback: string): string {
     return digits.slice(-2).padStart(2, "0")
 }
 
-function buildSucursalSerie(prefix: "BA" | "BW" | "FW", sucursal: string, config: ServilexConfig): string {
+function buildSucursalSerie(prefix: "BA" | "FA" | "BW" | "FW", sucursal: string, config: ServilexConfig): string {
     return `${prefix}${normalizeSerieSucursal(sucursal, config.sucursal)}`
 }
 
@@ -842,8 +842,8 @@ function resolveServilexSerie(input: {
         return buildSucursalSerie(buyerIsFactura ? "FW" : "BW", snapshot.sucursal, config)
     }
 
-    if (!buyerIsFactura && eventCategory === "EVENTO") {
-        return buildSucursalSerie("BA", snapshot.sucursal, config)
+    if (eventCategory === "EVENTO") {
+        return buildSucursalSerie(buyerIsFactura ? "FA" : "BA", snapshot.sucursal, config)
     }
 
     return buyerIsFactura ? config.serieFactura : config.serieBoleta

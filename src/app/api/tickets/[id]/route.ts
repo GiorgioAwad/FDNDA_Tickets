@@ -222,16 +222,17 @@ export async function GET(
             hasEntitlement = true
         }
 
+        const scheduleSelections = await getTicketScheduleSelectionsForAttendee({
+            orderId: ticket.orderId,
+            ticketTypeId: ticket.ticketTypeId,
+            attendeeName: ticket.attendeeName,
+            attendeeDni: ticket.attendeeDni,
+        })
+
         let qrDataUrl: string | null = null
         let qrShift: string | null = null
 
         if (hasEntitlement && ticket.status === "ACTIVE") {
-            const scheduleSelections = await getTicketScheduleSelectionsForAttendee({
-                orderId: ticket.orderId,
-                ticketTypeId: ticket.ticketTypeId,
-                attendeeName: ticket.attendeeName,
-                attendeeDni: ticket.attendeeDni,
-            })
             qrShift = getExpectedShiftForDate(scheduleSelections, dateStr)
 
             const qrPayload = createQRPayload(
@@ -255,6 +256,7 @@ export async function GET(
                 scanCount,
                 scans: scans.map(s => ({ date: formatDateUTC(s.date), shift: s.shift })),
                 shifts: scheduleConfig.shifts,
+                scheduleSelections,
                 qrDataUrl,
                 qrDate: dateStr,
                 qrShift,

@@ -1,24 +1,56 @@
-export const ABIO_EVENT_SUCURSALES = [
-    { code: "01", name: "Campo de Marte" },
-    { code: "02", name: "Trujillo - Mansiche" },
-    { code: "03", name: "Videna" },
-    { code: "04", name: "VMT" },
-    { code: "05", name: "HUANCHACO" },
-    { code: "06", name: "VIDENITA - PIURA" },
-    { code: "07", name: "TINGO MARIA" },
-    { code: "08", name: "PISCINA OLIMPICA - PIURA" },
-] as const
+export interface AbioEventSucursal {
+    code: string
+    name: string
+}
 
-export type AbioEventSucursalCode = (typeof ABIO_EVENT_SUCURSALES)[number]["code"]
+// Registro de nombres conocidos. Si ABIO crea una sucursal con codigo nuevo,
+// el sync la descubre automaticamente y aqui se le mapea un nombre amigable.
+// Sin nombre mapeado, se muestra "Sucursal {codigo}".
+const ABIO_SUCURSAL_NAME_REGISTRY: Record<string, string> = {
+    "01": "Campo de Marte",
+    "02": "Trujillo - Mansiche",
+    "03": "Videna",
+    "04": "VMT",
+    "05": "HUANCHACO",
+    "06": "VIDENITA - PIURA",
+    "07": "TINGO MARIA",
+    "08": "PISCINA OLIMPICA - PIURA",
+    "09": "TARAPOTO",
+}
+
+export const ABIO_EVENT_SUCURSALES: readonly AbioEventSucursal[] = Object.entries(
+    ABIO_SUCURSAL_NAME_REGISTRY
+).map(([code, name]) => ({ code, name }))
+
+export type AbioEventSucursalCode = string
 
 export const DEFAULT_ABIO_EVENT_SUCURSAL_CODE: AbioEventSucursalCode = "01"
 
-export function getAbioEventSucursalByCode(code: unknown) {
+function normalizeSucursalCode(code: unknown): string | null {
     if (typeof code !== "string") return null
-    const normalized = code.trim()
-    return ABIO_EVENT_SUCURSALES.find((sucursal) => sucursal.code === normalized) || null
+    const trimmed = code.trim()
+    if (!trimmed) return null
+    return /^\d+$/.test(trimmed) ? trimmed.padStart(2, "0") : trimmed.toUpperCase()
 }
 
-export function getDefaultAbioEventSucursal() {
-    return ABIO_EVENT_SUCURSALES[0]
+export function resolveAbioSucursalName(code: unknown): string {
+    const normalized = normalizeSucursalCode(code)
+    if (!normalized) return "Sucursal desconocida"
+    return ABIO_SUCURSAL_NAME_REGISTRY[normalized] ?? `Sucursal ${normalized}`
+}
+
+export function getAbioEventSucursalByCode(code: unknown): AbioEventSucursal | null {
+    const normalized = normalizeSucursalCode(code)
+    if (!normalized) return null
+    return {
+        code: normalized,
+        name: resolveAbioSucursalName(normalized),
+    }
+}
+
+export function getDefaultAbioEventSucursal(): AbioEventSucursal {
+    return {
+        code: DEFAULT_ABIO_EVENT_SUCURSAL_CODE,
+        name: resolveAbioSucursalName(DEFAULT_ABIO_EVENT_SUCURSAL_CODE),
+    }
 }

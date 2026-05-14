@@ -135,7 +135,7 @@ function buildCheckoutConfig(input: {
         documentType,
         document,
     }
-    const redirectResultUrl = `${input.appUrl}/api/payments/izipay/redirect-result`
+    const redirectResultUrl = `${input.appUrl}/api/payments/izipay/redirect-result?orderId=${encodeURIComponent(input.order.id)}`
 
     return {
         action: "pay",
@@ -161,14 +161,11 @@ function buildCheckoutConfig(input: {
             container:
                 input.mode === "embedded" ? `#${IZIPAY_EMBEDDED_CONTAINER_ID}` : undefined,
             showButtonProcessForm: input.mode === "embedded" ? true : undefined,
-            redirectUrls:
-                input.mode === "redirect"
-                    ? {
-                        onSuccess: redirectResultUrl,
-                        onError: redirectResultUrl,
-                        onCancel: redirectResultUrl,
-                    }
-                    : undefined,
+            redirectUrls: {
+                onSuccess: redirectResultUrl,
+                onError: redirectResultUrl,
+                onCancel: redirectResultUrl,
+            },
         },
         urlIPN: `${input.appUrl}/api/payments/izipay/webhook`,
     }

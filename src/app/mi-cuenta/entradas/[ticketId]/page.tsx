@@ -43,6 +43,7 @@ interface TicketDetail {
     scanCount?: number
     scans?: { date: string; shift: string | null }[]
     shifts?: string[]
+    scheduleSelections?: { date: string; shift: string | null }[]
     qrDataUrl: string
     qrDate: string
     qrShift?: string | null
@@ -167,8 +168,8 @@ export default function TicketDetailPage() {
 
     const isPiscina = ticket.event?.category === "PISCINA_LIBRE"
     const isEvento = ticket.event?.category === "EVENTO"
-    const clasesLabel = isPiscina ? "asistencias" : isEvento ? "entradas" : "clases"
-    const claseLabel = isPiscina ? "Asistencia" : isEvento ? "Entrada" : "Clase"
+    const clasesLabel = isEvento ? "entradas" : "asistencias"
+    const claseLabel = isEvento ? "Entrada" : "Asistencia"
 
     const entitlements = ticket.entitlements || []
     const classCount = extractClassCount(ticket.ticketType.name)
@@ -198,6 +199,8 @@ export default function TicketDetailPage() {
     const selectedQrShift = ticket.qrShift || null
     const hasMultipleShifts = shifts.length > 1 && !selectedQrShift
     const scans = ticket.scans || []
+    const scheduleSelections = (ticket.scheduleSelections || []).filter((sel) => sel.date)
+    const hasShiftSelections = scheduleSelections.some((sel) => sel.shift)
 
     // Match a scan's shift against a configured shift (flexible matching)
     const shiftMatchesConfig = (scanShift: string | null, configuredShift: string): boolean => {
@@ -207,15 +210,6 @@ export default function TicketDetailPage() {
         if (a === b) return true
         // Compare short labels (without time range)
         return shortShiftLabel(scanShift).trim().toLowerCase() === shortShiftLabel(configuredShift).trim().toLowerCase()
-    }
-
-    // Find which configured shift index a scan matches (-1 if none)
-    const findShiftIndex = (scanShift: string | null): number => {
-        if (!scanShift) return -1
-        for (let i = 0; i < shifts.length; i++) {
-            if (shiftMatchesConfig(scanShift, shifts[i])) return i
-        }
-        return -1
     }
 
     let totalCount: number
@@ -239,62 +233,54 @@ export default function TicketDetailPage() {
             shiftLabel: shortShiftLabel(selectedQrShift),
         }))
         usedDisplayCount = displayEntitlements.filter((item) => item.status === "USED").length
-    } else if (hasMultipleShifts && isPackageLike) {
-        // Multi-shift package (e.g., "Full day - 4 días" with Mañana/Tarde)
-        const dayCount = ticket.ticketType.packageDaysCount ?? classCount ?? (isPiscina ? 1 : 0)
-        totalCount = dayCount * shifts.length
+    } else if (hasShiftSelections && (isPackageLike || hasMultipleShifts)) {
+        // Render strictly from the buyer's actual selections (date + shift pairs).
+        // Avoids painting unselected shifts when the buyer only picked one per day.
+        const sortedSelections = [...scheduleSelections].sort((a, b) => {
+            if (a.date !== b.date) return a.date.localeCompare(b.date)
+            return (a.shift ?? "").localeCompare(b.shift ?? "")
+        })
+        const uniqueDayKeys = Array.from(new Set(sortedSelections.map((sel) => sel.date)))
+        const dayIndexByKey = new Map(uniqueDayKeys.map((key, index) => [key, index]))
 
-        // Keep day numbering aligned with configured entitlement dates when available.
-        const entitlementDates = Array.from(
-            new Set(entitlements.map((item) => formatDateKey(item.date)))
-        ).sort((a, b) => a.localeCompare(b))
-        const uniqueScanDates = Array.from(new Set(scans.map((scan) => scan.date))).sort((a, b) =>
-            a.localeCompare(b)
-        )
-        const orderedDayKeys = entitlementDates.length > 0 ? [...entitlementDates] : [...uniqueScanDates]
-        for (const scanDate of uniqueScanDates) {
-            if (orderedDayKeys.length >= dayCount) break
-            if (!orderedDayKeys.includes(scanDate)) {
-                orderedDayKeys.push(scanDate)
-            }
-        }
-        const dayKeys = orderedDayKeys.slice(0, dayCount)
-        const dayIndexByKey = new Map(dayKeys.map((key, index) => [key, index]))
+        // Track which (date, shiftIdx-in-selections) is consumed by scans
+        const usedSlots = new Set<number>()
+        const remainingByDate = new Map<string, number[]>()
+        sortedSelections.forEach((sel, idx) => {
+            const list = remainingByDate.get(sel.date) ?? []
+            list.push(idx)
+            remainingByDate.set(sel.date, list)
+        })
 
-        // Build set of used day+shift combos from real scan data
-        const usedSlots = new Set<string>()
         for (const scan of scans) {
-            const dayNumber = dayIndexByKey.get(scan.date)
-            if (dayNumber === undefined) continue
+            const available = remainingByDate.get(scan.date)
+            if (!available || available.length === 0) continue
 
-            const shiftIdx = findShiftIndex(scan.shift)
-            if (shiftIdx >= 0) {
-                // Scan has a recognized shift
-                usedSlots.add(`${dayNumber}::${shiftIdx}`)
-            } else {
-                // Scan without shift or unrecognized shift: assign to first available slot on that day
-                for (let si = 0; si < shifts.length; si++) {
-                    if (!usedSlots.has(`${dayNumber}::${si}`)) {
-                        usedSlots.add(`${dayNumber}::${si}`)
-                        break
-                    }
+            let chosen = -1
+            for (let i = 0; i < available.length; i++) {
+                const candidate = sortedSelections[available[i]]
+                if (scan.shift && candidate.shift && shiftMatchesConfig(scan.shift, candidate.shift)) {
+                    chosen = i
+                    break
+                }
+                if (!scan.shift && !candidate.shift) {
+                    chosen = i
+                    break
                 }
             }
+            if (chosen === -1) chosen = 0
+            const selIndex = available.splice(chosen, 1)[0]
+            usedSlots.add(selIndex)
         }
 
-        displayEntitlements = []
-        for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
-            for (let shiftIndex = 0; shiftIndex < shifts.length; shiftIndex++) {
-                const isUsed = usedSlots.has(`${dayIndex}::${shiftIndex}`)
-                displayEntitlements.push({
-                    date: dayKeys[dayIndex] ?? `slot-${dayIndex + 1}`,
-                    status: isUsed ? "USED" : "AVAILABLE",
-                    usedAt: null,
-                    label: `Día ${dayIndex + 1}`,
-                    shiftLabel: shortShiftLabel(shifts[shiftIndex]),
-                })
-            }
-        }
+        totalCount = sortedSelections.length
+        displayEntitlements = sortedSelections.map((sel, index) => ({
+            date: sel.date,
+            status: usedSlots.has(index) ? ("USED" as const) : ("AVAILABLE" as const),
+            usedAt: null,
+            label: `Día ${(dayIndexByKey.get(sel.date) ?? 0) + 1}`,
+            shiftLabel: sel.shift ? shortShiftLabel(sel.shift) : undefined,
+        }))
         usedDisplayCount = displayEntitlements.filter((item) => item.status === "USED").length
     } else if (hasMultipleShifts && !isPackageLike) {
         // Multi-shift event-based (non-package with explicit days)
@@ -346,6 +332,17 @@ export default function TicketDetailPage() {
     }
 
     const remainingCount = Math.max(totalCount - usedDisplayCount, 0)
+
+    const shiftsPerDay = (() => {
+        const byDate = new Map<string, number>()
+        for (const item of displayEntitlements) {
+            if (!item.shiftLabel) continue
+            byDate.set(item.date, (byDate.get(item.date) ?? 0) + 1)
+        }
+        if (byDate.size === 0) return 0
+        return Math.max(...Array.from(byDate.values()))
+    })()
+    const carnetGridColumns = shiftsPerDay > 1 ? shiftsPerDay : hasMultipleShifts ? shifts.length : 4
 
     return (
         <div className="min-h-screen bg-gray-50 py-6 sm:py-8 px-4 print-page">
@@ -476,8 +473,9 @@ export default function TicketDetailPage() {
                         </div>
 
                         {displayEntitlements.length > 0 ? (
-                            <div className={`grid gap-2 print-carnet-grid ${hasMultipleShifts ? `grid-cols-${shifts.length}` : "grid-cols-4"}`}
-                                style={hasMultipleShifts ? { gridTemplateColumns: `repeat(${shifts.length}, minmax(0, 1fr))` } : undefined}
+                            <div
+                                className="grid gap-2 print-carnet-grid"
+                                style={{ gridTemplateColumns: `repeat(${carnetGridColumns}, minmax(0, 1fr))` }}
                             >
                                 {displayEntitlements.map((entitlement, index) => (
                                     <div

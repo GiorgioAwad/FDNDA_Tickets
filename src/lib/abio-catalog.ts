@@ -12,7 +12,11 @@ export interface AbioCatalogConfig {
     disciplinesEndpoint: string
     schedulesEndpoint: string
     defaultSucursales: string[]
+    sucursalProbeMax: number
 }
+
+const DEFAULT_SUCURSAL_PROBE_MAX = 30
+const SUCURSAL_PROBE_HARD_CAP = 99
 
 interface AbioCatalogMeta {
     version: string
@@ -110,15 +114,33 @@ const normalizeCode = (value: unknown): string => normalizeString(value).toUpper
 
 const nowIsoUtc = (): string => new Date().toISOString().replace(/\.\d{3}Z$/, "Z")
 
-const parseCsvCodes = (value: string | undefined, fallback: string): string[] => {
-    const raw = typeof value === "string" ? value : fallback
-    return raw
+const parseCsvCodes = (value: string | undefined): string[] => {
+    if (typeof value !== "string") return []
+    return value
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean)
 }
 
+function parseProbeMax(value: string | undefined): number {
+    if (typeof value !== "string" || !value.trim()) return DEFAULT_SUCURSAL_PROBE_MAX
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_SUCURSAL_PROBE_MAX
+    return Math.min(SUCURSAL_PROBE_HARD_CAP, Math.floor(parsed))
+}
+
+export function buildSucursalProbeRange(max: number): string[] {
+    const upper = Math.min(SUCURSAL_PROBE_HARD_CAP, Math.max(1, Math.floor(max)))
+    const codes: string[] = []
+    for (let i = 1; i <= upper; i++) {
+        codes.push(String(i).padStart(2, "0"))
+    }
+    return codes
+}
+
 export function getAbioCatalogConfig(): AbioCatalogConfig {
+    const sucursalProbeMax = parseProbeMax(process.env.ABIO_CATALOG_SUCURSAL_PROBE_MAX)
+    const explicitSucursales = parseCsvCodes(process.env.ABIO_CATALOG_SUCURSALES)
     return {
         token: process.env.SERVILEX_TOKEN || "",
         empresa: process.env.SERVILEX_EMPRESA || "FPDN",
@@ -130,10 +152,11 @@ export function getAbioCatalogConfig(): AbioCatalogConfig {
             process.env.ABIO_CATALOG_DISCIPLINES_ENDPOINT || DEFAULT_DISCIPLINES_ENDPOINT,
         schedulesEndpoint:
             process.env.ABIO_CATALOG_SCHEDULES_ENDPOINT || DEFAULT_SCHEDULES_ENDPOINT,
-        defaultSucursales: parseCsvCodes(
-            process.env.ABIO_CATALOG_SUCURSALES,
-            process.env.SERVILEX_SUCURSAL || "01"
-        ),
+        defaultSucursales:
+            explicitSucursales.length > 0
+                ? explicitSucursales
+                : buildSucursalProbeRange(sucursalProbeMax),
+        sucursalProbeMax,
     }
 }
 

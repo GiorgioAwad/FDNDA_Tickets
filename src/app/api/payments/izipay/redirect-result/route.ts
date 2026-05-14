@@ -7,6 +7,7 @@ import {
 } from "@/lib/izipay"
 import { acquireLock, releaseLock } from "@/lib/cache"
 import { cancelIzipayOrder, fulfillIzipayOrder, resolveIzipayOrderId } from "@/lib/izipay-payment"
+import { prisma } from "@/lib/prisma"
 import { getPublicAppUrl } from "@/lib/public-url"
 
 export const runtime = "nodejs"
@@ -24,16 +25,62 @@ function buildRedirectUrl(request: NextRequest, pathname: string, orderId?: stri
     return url
 }
 
-// Izipay envía GET cuando el usuario hace click en "Volver al comercio"
-// sin completar el pago. El callback real con datos del pago es POST con
-// form-data. En GET, redirigimos al carrito con un aviso amistoso.
+// Izipay hace GET cuando el usuario presiona "Redirigir al comercio" en la
+// pagina de resumen hospedada (con countdown). El payload del pago llega por
+// POST/IPN, asi que aqui consultamos el estado real de la orden antes de
+// decidir el destino: PAID -> success, CANCELLED/EXPIRED -> cancel,
+// PENDING -> mensaje de procesamiento.
 export async function GET(request: NextRequest) {
-    const orderId = request.nextUrl.searchParams.get("orderId") || undefined
+    const params = request.nextUrl.searchParams
+    const orderRef =
+        params.get("orderId") ||
+        params.get("orderNumber") ||
+        params.get("merchantOrderNumber") ||
+        ""
+
+    const resolvedOrderId = orderRef ? await resolveIzipayOrderId(orderRef) : null
+
+    if (resolvedOrderId) {
+        const order = await prisma.order.findUnique({
+            where: { id: resolvedOrderId },
+            select: { status: true },
+        })
+
+        if (order?.status === "PAID") {
+            return NextResponse.redirect(
+                buildRedirectUrl(request, "/checkout/success", resolvedOrderId),
+                { status: 303 }
+            )
+        }
+
+        if (order?.status === "CANCELLED" || order?.status === "REFUNDED") {
+            return NextResponse.redirect(
+                buildRedirectUrl(
+                    request,
+                    "/checkout/cancel",
+                    resolvedOrderId,
+                    "El pago no se completo. Puedes reintentar cuando quieras."
+                ),
+                { status: 303 }
+            )
+        }
+
+        return NextResponse.redirect(
+            buildRedirectUrl(
+                request,
+                "/checkout/cancel",
+                resolvedOrderId,
+                "Tu pago aun se esta procesando. Te avisaremos por correo cuando se confirme."
+            ),
+            { status: 303 }
+        )
+    }
+
     return NextResponse.redirect(
         buildRedirectUrl(
             request,
             "/checkout/cancel",
-            orderId,
+            undefined,
             "Volviste sin completar el pago. Puedes reintentar cuando quieras."
         ),
         { status: 303 }

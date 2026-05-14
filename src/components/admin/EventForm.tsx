@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +15,7 @@ import { formatDateInput } from "@/lib/utils"
 import {
     ABIO_EVENT_SUCURSALES,
     DEFAULT_ABIO_EVENT_SUCURSAL_CODE,
+    type AbioEventSucursal,
     getAbioEventSucursalByCode,
     getDefaultAbioEventSucursal,
 } from "@/lib/abio-sucursales"
@@ -113,6 +114,41 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
         price: Number(ticket.price),
         packageDaysCount: ticket.packageDaysCount ?? undefined,
     })) || []
+
+    const [sucursalOptions, setSucursalOptions] = useState<AbioEventSucursal[]>(() => {
+        const base = [...ABIO_EVENT_SUCURSALES]
+        if (initialSucursal && !base.some((entry) => entry.code === initialSucursal.code)) {
+            base.push(initialSucursal)
+        }
+        return base.sort((a, b) => a.code.localeCompare(b.code))
+    })
+
+    useEffect(() => {
+        let ignore = false
+        fetch("/api/admin/abio-sucursales", { cache: "no-store" })
+            .then(async (response) => {
+                if (!response.ok) return
+                const payload = (await response.json().catch(() => ({}))) as {
+                    data?: Array<{ code: string; name: string }>
+                }
+                if (ignore || !Array.isArray(payload.data)) return
+                const fromDb = payload.data.map((entry) => ({ code: entry.code, name: entry.name }))
+                const merged = new Map<string, AbioEventSucursal>()
+                for (const entry of fromDb) {
+                    merged.set(entry.code, entry)
+                }
+                if (initialSucursal && !merged.has(initialSucursal.code)) {
+                    merged.set(initialSucursal.code, initialSucursal)
+                }
+                setSucursalOptions(
+                    Array.from(merged.values()).sort((a, b) => a.code.localeCompare(b.code))
+                )
+            })
+            .catch(() => {})
+        return () => {
+            ignore = true
+        }
+    }, [initialSucursal])
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const value = e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value
@@ -319,7 +355,7 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                                         className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
                                         required
                                     >
-                                        {ABIO_EVENT_SUCURSALES.map((sucursal) => (
+                                        {sucursalOptions.map((sucursal) => (
                                             <option key={sucursal.code} value={sucursal.code}>
                                                 {sucursal.code} - {sucursal.name}
                                             </option>

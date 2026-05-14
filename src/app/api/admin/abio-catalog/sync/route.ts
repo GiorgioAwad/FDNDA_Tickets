@@ -117,89 +117,103 @@ async function syncServices(input: {
     const summaries: Record<string, SyncSummary> = {}
 
     for (const sucursal of input.sucursales) {
-        const run = await prisma.abioCatalogSyncRun.create({
-            data: {
-                resource: "services",
-                status: "RUNNING",
-                requestPayload: { codigoEmp: config.codigoEmp, sucursal },
-            },
-        })
-
         try {
             const result = await fetchAbioServices({ config, sucursal })
+
             if (!result.ok) {
-                throw new Error(result.errorMessage || `HTTP ${result.status}`)
+                console.warn(
+                    `[abio-sync] sucursal ${sucursal} error: ${result.errorMessage || `HTTP ${result.status}`} — saltando`
+                )
+                continue
             }
 
-            for (const row of result.rows) {
-                await prisma.abioCatalogService.upsert({
-                    where: {
-                        codigoEmp_sucursalCodigo_servicioCodigo: {
+            // Sucursal sin servicios: no creamos run ni filas (silent skip)
+            if (result.rows.length === 0) {
+                continue
+            }
+
+            const run = await prisma.abioCatalogSyncRun.create({
+                data: {
+                    resource: "services",
+                    status: "RUNNING",
+                    requestPayload: { codigoEmp: config.codigoEmp, sucursal },
+                },
+            })
+
+            try {
+                for (const row of result.rows) {
+                    await prisma.abioCatalogService.upsert({
+                        where: {
+                            codigoEmp_sucursalCodigo_servicioCodigo: {
+                                codigoEmp: config.codigoEmp,
+                                sucursalCodigo: sucursal,
+                                servicioCodigo: row.servicioCodigo,
+                            },
+                        },
+                        update: {
+                            servicioDescripcion: row.servicioDescripcion,
+                            isActive: true,
+                            rawPayload: row.raw,
+                            syncedAt: new Date(),
+                        },
+                        create: {
                             codigoEmp: config.codigoEmp,
                             sucursalCodigo: sucursal,
                             servicioCodigo: row.servicioCodigo,
+                            servicioDescripcion: row.servicioDescripcion,
+                            isActive: true,
+                            rawPayload: row.raw,
+                            syncedAt: new Date(),
                         },
-                    },
-                    update: {
-                        servicioDescripcion: row.servicioDescripcion,
-                        isActive: true,
-                        rawPayload: row.raw,
-                        syncedAt: new Date(),
-                    },
-                    create: {
-                        codigoEmp: config.codigoEmp,
-                        sucursalCodigo: sucursal,
-                        servicioCodigo: row.servicioCodigo,
-                        servicioDescripcion: row.servicioDescripcion,
-                        isActive: true,
-                        rawPayload: row.raw,
-                        syncedAt: new Date(),
-                    },
-                })
-            }
+                    })
+                }
 
-            let deactivated = 0
-            if (input.replaceMissing) {
-                const activeCodes = result.rows.map((row) => row.servicioCodigo)
-                const resultUpdate = await prisma.abioCatalogService.updateMany({
-                    where: {
-                        codigoEmp: config.codigoEmp,
-                        sucursalCodigo: sucursal,
-                        isActive: true,
-                        servicioCodigo: {
-                            notIn: activeCodes.length > 0 ? activeCodes : ["__NO_MATCH__"],
+                let deactivated = 0
+                if (input.replaceMissing) {
+                    const activeCodes = result.rows.map((row) => row.servicioCodigo)
+                    const resultUpdate = await prisma.abioCatalogService.updateMany({
+                        where: {
+                            codigoEmp: config.codigoEmp,
+                            sucursalCodigo: sucursal,
+                            isActive: true,
+                            servicioCodigo: {
+                                notIn: activeCodes.length > 0 ? activeCodes : ["__NO_MATCH__"],
+                            },
                         },
-                    },
+                        data: {
+                            isActive: false,
+                            syncedAt: new Date(),
+                        },
+                    })
+                    deactivated = resultUpdate.count
+                }
+
+                await prisma.abioCatalogSyncRun.update({
+                    where: { id: run.id },
                     data: {
-                        isActive: false,
-                        syncedAt: new Date(),
+                        status: "SUCCESS",
+                        importedCount: result.rows.length,
+                        deactivatedCount: deactivated,
+                        responsePayload: result.rawResponse as object,
+                        finishedAt: new Date(),
                     },
                 })
-                deactivated = resultUpdate.count
+
+                summaries[sucursal] = { imported: result.rows.length, deactivated }
+            } catch (innerError) {
+                await prisma.abioCatalogSyncRun.update({
+                    where: { id: run.id },
+                    data: {
+                        status: "ERROR",
+                        errorMessage:
+                            innerError instanceof Error ? innerError.message : "Error desconocido",
+                        finishedAt: new Date(),
+                    },
+                })
+                console.error(`[abio-sync] sucursal ${sucursal} upsert error:`, innerError)
             }
-
-            await prisma.abioCatalogSyncRun.update({
-                where: { id: run.id },
-                data: {
-                    status: "SUCCESS",
-                    importedCount: result.rows.length,
-                    deactivatedCount: deactivated,
-                    responsePayload: result.rawResponse as object,
-                    finishedAt: new Date(),
-                },
-            })
-
-            summaries[sucursal] = { imported: result.rows.length, deactivated }
         } catch (error) {
-            await prisma.abioCatalogSyncRun.update({
-                where: { id: run.id },
-                data: {
-                    status: "ERROR",
-                    errorMessage: error instanceof Error ? error.message : "Error desconocido",
-                    finishedAt: new Date(),
-                },
-            })
-            throw error
+            console.error(`[abio-sync] sucursal ${sucursal} fetch error:`, error)
         }
     }
 

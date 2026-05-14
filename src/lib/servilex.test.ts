@@ -608,7 +608,7 @@ test("usa series BW y FW para piscina libre con la sucursal", () => {
     assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "FW04")
 })
 
-test("usa serie BA para boletas de eventos y mantiene factura configurada", () => {
+test("usa series BA y FA para eventos con la sucursal", () => {
     const ticketType = buildTicketType("OS", {
         event: {
             id: "evento-sucursal-5",
@@ -641,7 +641,7 @@ test("usa serie BA para boletas de eventos y mantiene factura configurada", () =
     )
 
     assert.equal(buildServilexPayload(boletaSource, TEST_CONFIG).cabecera.comprobante.serie, "BA05")
-    assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "F001")
+    assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "FA05")
 })
 
 test("getServilexConfig usa ejecutivo 0020 por defecto", () => {
