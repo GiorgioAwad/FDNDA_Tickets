@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { 
-    Settings, 
+import {
+    Settings,
     CreditCard,
     Mail,
     Shield,
@@ -15,6 +15,7 @@ import {
     Save,
     CheckCircle,
     Info,
+    Database,
 } from "lucide-react"
 
 import {
@@ -26,6 +27,7 @@ import {
     USD_TO_PEN_FALLBACK,
     getFixedFeePerTxPen,
 } from "@/lib/commission-rates"
+import { AbioCatalogControls } from "@/components/admin/AbioCatalogControls"
 
 export default function ConfiguracionPage() {
     const [saved, setSaved] = useState(false)
@@ -128,6 +130,26 @@ export default function ConfiguracionPage() {
                             </div>
                         </div>
                     </div>
+                </CardContent>
+            </Card>
+
+            {/* ABIO / Servilex Catalog */}
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-indigo-100">
+                            <Database className="h-5 w-5 text-indigo-600" />
+                        </div>
+                        <div>
+                            <CardTitle>Catálogo ABIO / Servilex</CardTitle>
+                            <CardDescription>
+                                Sincroniza sucursales, servicios, disciplinas y horarios desde ABIO. Las sucursales nuevas aparecen automáticamente en los selectores tras sincronizar.
+                            </CardDescription>
+                        </div>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <AbioCatalogControls />
                 </CardContent>
             </Card>
 

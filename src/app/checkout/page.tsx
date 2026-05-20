@@ -14,6 +14,7 @@ import { formatDate, formatPrice } from "@/lib/utils"
 import type { IzipayCheckoutConfig } from "@/lib/izipay"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
 import AuthModal from "@/components/auth/AuthModal"
+import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
 
 const IzipayCheckout = dynamic(
     () => import("@/components/checkout/izipay-checkout"),
@@ -480,7 +481,7 @@ export default function CheckoutPage() {
                                         )}
                                     </div>
                                 )}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="text-xs text-gray-500 mb-1 block">Email para comprobante</label>
                                         <Input
@@ -500,15 +501,18 @@ export default function CheckoutPage() {
                                             className="bg-white"
                                         />
                                     </div>
-                                    <div>
-                                        <label className="text-xs text-gray-500 mb-1 block">Ubigeo</label>
-                                        <Input
-                                            value={billingData.buyerUbigeo}
-                                            onChange={(e) => updateBillingData("buyerUbigeo", e.target.value.replace(/\D/g, "").slice(0, 6))}
-                                            placeholder="150101"
-                                            className="bg-white"
-                                        />
-                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-500 mb-1 block">Ubicación (Ubigeo)</label>
+                                    <UbigeoSelector
+                                        value={billingData.buyerUbigeo}
+                                        onChange={(ubigeo) => updateBillingData("buyerUbigeo", ubigeo)}
+                                    />
+                                    {!billingData.buyerUbigeo && (
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            Selecciona departamento, provincia y distrito; el ubigeo se completa automáticamente.
+                                        </p>
+                                    )}
                                 </div>
 
                                 {billingData.documentType === "BOLETA" && (

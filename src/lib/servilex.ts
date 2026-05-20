@@ -636,6 +636,34 @@ function getAcAttendeeData(raw: unknown): ServilexAttendeeRecord {
     }
 }
 
+// ABIO valida "Otros Servicios" por `servicio` contra una sola deuda
+// registrada: multiples lineas del mismo servicio gatillan "monto a pagar
+// mayor a la deuda". Ademas ABIO trata `precio` como VALOR UNITARIO y calcula
+// el total de linea como `cantidad x precio`. Como cada entrada puede tener un
+// precio distinto (6, 5, 12...), no se pueden expresar como una sola
+// `cantidad x unitario`; la unica representacion exacta para un solo servicio
+// es una linea con `cantidad: 1` y `precio` = monto total de ese servicio.
+// `precio` en el snapshot ya es el monto completo asignado a la unidad, asi
+// que el total del grupo es la suma de precios. Forzar `cantidad: 1` tambien
+// corrige el bug latente de `cantidad > 1` (ABIO lo multiplicaba). Se aplica
+// al construir el snapshot y al re-parsearlo en el envio, cubriendo snapshots
+// persistidos antes de esta correccion y reintentos del worker.
+function consolidateOtrosServiciosDetalle(
+    items: ServilexDetalleOtrosServiciosItem[]
+): ServilexDetalleOtrosServiciosItem[] {
+    const consolidated = new Map<string, ServilexDetalleOtrosServiciosItem>()
+    for (const item of items) {
+        const key = `${item.servicio}::${item.descuento}`
+        const existing = consolidated.get(key)
+        if (existing) {
+            existing.precio = roundCurrency(existing.precio + item.precio)
+        } else {
+            consolidated.set(key, { ...item, cantidad: 1 })
+        }
+    }
+    return Array.from(consolidated.values())
+}
+
 function allocateLineAmounts(baseAmounts: number[], finalTotal: number): number[] {
     const finalTotalCents = Math.round(finalTotal * 100)
     const baseCents = baseAmounts.map((amount) => Math.round(amount * 100))
@@ -1056,13 +1084,15 @@ export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): Servi
         }
 
         if (group.indicator === "OS") {
-            const detalle = group.units.map((unit, index) => {
+            const expandedDetalle = group.units.map((unit, index) => {
                 const typedUnit = unit as ServilexOtrosServiciosUnit
                 return {
                     ...typedUnit.detalle,
                     precio: lineAmounts[index] ?? 0,
                 }
             })
+
+            const detalle = consolidateOtrosServiciosDetalle(expandedDetalle)
 
             return {
                 indicator: group.indicator,
@@ -1206,7 +1236,7 @@ function parseInvoiceSnapshot(
             indicator === "AC"
                 ? parseAcademiaDetalle(detalleRaw)
                 : indicator === "OS"
-                  ? parseOtrosServiciosDetalle(detalleRaw)
+                  ? consolidateOtrosServiciosDetalle(parseOtrosServiciosDetalle(detalleRaw))
                   : parsePiscinaDetalle(detalleRaw)
         const assignedTotal = roundCurrency(
             detalle.reduce((sum, item) => sum + toAmountNumber(item.precio), 0)

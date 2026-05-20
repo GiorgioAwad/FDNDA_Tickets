@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 import {
-    DEFAULT_ABIO_EVENT_SUCURSAL_CODE,
+    ABIO_EVENT_SUCURSALES,
     resolveAbioSucursalName,
 } from "@/lib/abio-sucursales"
 
@@ -21,22 +21,28 @@ export async function GET() {
         _count: { _all: true },
     })
 
-    const byCode = new Map<string, number>()
+    const countByCode = new Map<string, number>()
     for (const group of groups) {
-        byCode.set(group.sucursalCodigo, group._count._all)
+        countByCode.set(group.sucursalCodigo, group._count._all)
     }
 
-    if (!byCode.has(DEFAULT_ABIO_EVENT_SUCURSAL_CODE)) {
-        byCode.set(DEFAULT_ABIO_EVENT_SUCURSAL_CODE, 0)
+    // Union: codigos del registro (siempre visibles, aunque sin servicios sincronizados todavia)
+    // + codigos auto-descubiertos en BD que no estan en el registro (futuras sucursales).
+    const codeSet = new Set<string>()
+    for (const entry of ABIO_EVENT_SUCURSALES) {
+        codeSet.add(entry.code)
+    }
+    for (const code of countByCode.keys()) {
+        codeSet.add(code)
     }
 
-    const data = Array.from(byCode.entries())
-        .map(([code, servicesCount]) => ({
+    const data = Array.from(codeSet)
+        .sort((a, b) => a.localeCompare(b))
+        .map((code) => ({
             code,
             name: resolveAbioSucursalName(code),
-            servicesCount,
+            servicesCount: countByCode.get(code) ?? 0,
         }))
-        .sort((a, b) => a.code.localeCompare(b.code))
 
     return NextResponse.json({ data })
 }

@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getInvoiceQueueStats, processInvoiceQueue } from "@/lib/invoice-worker"
+import { redis } from "@/lib/redis"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
+
+// Lock para garantizar el requisito de ABIO: un solo envio batch corriendo
+// a la vez. TTL ligeramente menor al intervalo de 2 min para auto-liberar
+// si la funcion muere a mitad de batch.
+const ABIO_BATCH_LOCK_KEY = "abio:batch:lock"
+const ABIO_BATCH_LOCK_TTL_SECONDS = 110
 
 function isCronAuthorized(request: NextRequest): boolean {
     const cronSecret = process.env.CRON_SECRET
@@ -17,10 +24,36 @@ function isCronAuthorized(request: NextRequest): boolean {
     return false
 }
 
+async function acquireBatchLock(): Promise<string | null> {
+    if (!redis) return "no-redis"
+    const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const result = await redis.set(ABIO_BATCH_LOCK_KEY, token, {
+        nx: true,
+        ex: ABIO_BATCH_LOCK_TTL_SECONDS,
+    })
+    return result === "OK" ? token : null
+}
+
+async function releaseBatchLock(token: string): Promise<void> {
+    if (!redis || token === "no-redis") return
+    const current = await redis.get<string>(ABIO_BATCH_LOCK_KEY)
+    if (current === token) await redis.del(ABIO_BATCH_LOCK_KEY)
+}
+
 async function runQueueAndGetStats() {
-    const { processed, failed, skipped } = await processInvoiceQueue(10)
-    const stats = await getInvoiceQueueStats()
-    return { processed, failed, skipped, stats }
+    const lockToken = await acquireBatchLock()
+    if (!lockToken) {
+        const stats = await getInvoiceQueueStats()
+        return { processed: 0, failed: 0, skipped: 0, stats, lockSkipped: true }
+    }
+
+    try {
+        const { processed, failed, skipped } = await processInvoiceQueue(10)
+        const stats = await getInvoiceQueueStats()
+        return { processed, failed, skipped, stats, lockSkipped: false }
+    } finally {
+        await releaseBatchLock(lockToken)
+    }
 }
 
 export async function POST(request: NextRequest) {

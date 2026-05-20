@@ -1,4 +1,28 @@
+import { formatUbigeoLocation } from "@/lib/ubigeo-peru"
+
 export type BillingDocumentType = "BOLETA" | "FACTURA"
+
+/** Quita acentos y baja a minúsculas para comparar nombres de lugares de forma laxa. */
+function deburr(s: string): string {
+    return s
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .trim()
+}
+
+/**
+ * Une la calle con "Distrito, Provincia, Departamento" derivados del ubigeo.
+ * Si la calle ya menciona el distrito, no lo duplica.
+ */
+function composeBuyerAddress(street: string, ubigeo: string): string {
+    const location = formatUbigeoLocation(ubigeo)
+    if (!location) return street
+    if (!street) return location
+    const distrito = location.split(",")[0]?.trim() ?? ""
+    if (distrito && deburr(street).includes(deburr(distrito))) return street
+    return `${street}, ${location}`
+}
 
 export interface BillingSnapshotInput {
     documentType: BillingDocumentType
@@ -117,7 +141,10 @@ export function buildBillingSnapshot(
                     lastNameMaternal: buyerLastNameMaternal,
                 })
                 : normalizedName,
-        buyerAddress: normalizeSpaces(input.buyerAddress),
+        buyerAddress: composeBuyerAddress(
+            normalizeSpaces(input.buyerAddress),
+            normalizeSpaces(input.buyerUbigeo)
+        ),
         buyerEmail: normalizeSpaces(input.buyerEmail) || normalizeSpaces(fallbackEmail),
         buyerPhone: normalizeSpaces(input.buyerPhone),
         buyerUbigeo: normalizeSpaces(input.buyerUbigeo),

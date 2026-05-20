@@ -21,12 +21,18 @@ export interface TicketCardItemProps {
     bannerUrl?: string | null
     isPast?: boolean
     index?: number
+    groupIndex?: number
+    groupTotal?: number
+    used?: boolean
 }
 
-const statusConfig: Record<TicketCardItemProps["status"], { label: string; tone: string }> = {
+type CardStatus = "ACTIVE" | "CANCELLED" | "EXPIRED" | "USED"
+
+const statusConfig: Record<CardStatus, { label: string; tone: string }> = {
     ACTIVE: { label: "Activo", tone: "bg-success text-white" },
     CANCELLED: { label: "Cancelado", tone: "bg-coral text-white" },
     EXPIRED: { label: "Expirado", tone: "bg-muted-foreground/80 text-white" },
+    USED: { label: "Usada", tone: "bg-emerald-600 text-white" },
 }
 
 export function TicketCardItem({
@@ -41,11 +47,19 @@ export function TicketCardItem({
     bannerUrl,
     isPast = false,
     index = 0,
+    groupIndex,
+    groupTotal,
+    used = false,
 }: TicketCardItemProps) {
     const prefersReducedMotion = useReducedMotion()
-    const cfg = statusConfig[status]
-    const effectiveStatus = isPast && status === "ACTIVE" ? "EXPIRED" : status
+    const effectiveStatus: CardStatus =
+        status === "ACTIVE" && used
+            ? "USED"
+            : isPast && status === "ACTIVE"
+                ? "EXPIRED"
+                : status
     const effectiveCfg = statusConfig[effectiveStatus]
+    const showGroupBadge = typeof groupIndex === "number" && typeof groupTotal === "number" && groupTotal > 1
 
     return (
         <motion.div
@@ -72,9 +86,16 @@ export function TicketCardItem({
                         )}
                         <div className="relative h-full p-4 flex flex-col justify-between text-white">
                             <div className="flex justify-between items-start gap-2">
-                                <Badge className="bg-white/15 backdrop-blur-md text-white ring-1 ring-white/30 hover:bg-white/25 font-medium">
-                                    {typeName}
-                                </Badge>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    <Badge className="bg-white/20 text-white ring-1 ring-white/30 hover:bg-white/30 font-medium">
+                                        {typeName}
+                                    </Badge>
+                                    {showGroupBadge && (
+                                        <span className="inline-flex items-center rounded-full bg-black/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-white/20">
+                                            Entrada {groupIndex} de {groupTotal}
+                                        </span>
+                                    )}
+                                </div>
                                 <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold", effectiveCfg.tone)}>
                                     {effectiveCfg.label}
                                 </span>

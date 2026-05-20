@@ -168,8 +168,76 @@ test("OS genera detalle con servicio, cantidad, descuento y precio", () => {
     assert.equal(payload.cabecera.indicador, "OS")
     assert.equal(payload.cabecera.tipoTributo, "1000")
     assert.deepEqual(Object.keys(detalle).sort(), ["cantidad", "descuento", "precio", "servicio"])
-    assert.equal(detalle.cantidad, 2)
+    // ABIO calcula total de linea = cantidad x precio (precio = valor unitario).
+    // `precio` ya es el monto completo asignado, asi que cantidad debe ser 1
+    // para que ABIO totalice 1 x 40 = 40 (no 2 x 40 = 80).
+    assert.equal(detalle.cantidad, 1)
+    assert.equal(detalle.precio, 40)
     assert.equal(detalle.descuento, 5)
+    assert.equal(payload.cabecera.total, 40)
+    assert.equal(payload.cobranza.totalPago, 40)
+})
+
+test("OS consolida snapshot persistido con multiples lineas del mismo servicio", () => {
+    // Reproduce un snapshot guardado ANTES de la consolidacion: 3 lineas B06.
+    // ABIO valida OS por servicio contra una sola deuda, asi que el payload
+    // re-parseado por el worker debe salir consolidado en una sola linea.
+    const order = buildOrder({
+        totalAmount: 23,
+        orderItems: [
+            {
+                quantity: 3,
+                unitPrice: 23 / 3,
+                attendeeData: [],
+                ticketType: buildTicketType("OS", {
+                    servilexServiceCode: "B06",
+                }),
+            },
+        ],
+    })
+
+    const staleSnapshot = {
+        indicator: "OS",
+        sucursal: "01",
+        eventCategory: "EVENTO",
+        groupType: "INDICATOR",
+        groupKey: "OS:01",
+        groupLabel: "OS-01",
+        assignedTotal: 23,
+        alumno: null,
+        detalle: [
+            { servicio: "B06", cantidad: 1, descuento: 0, precio: 6 },
+            { servicio: "B06", cantidad: 1, descuento: 0, precio: 5 },
+            { servicio: "B06", cantidad: 1, descuento: 0, precio: 12 },
+        ],
+    }
+
+    const source = {
+        id: "stale-1",
+        orderId: order.id ?? "order-1",
+        traceId: null,
+        invoiceNumber: null,
+        servilexIndicator: "OS",
+        servilexGroupKey: "OS:01",
+        servilexGroupLabel: "OS-01",
+        servilexAssignedTotal: 23,
+        servilexSucursalCode: "01",
+        alumnoSnapshot: null,
+        servilexPayloadSnapshot: staleSnapshot,
+        order,
+    }
+
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.detalle.length, 1)
+    const detalle = payload.detalle[0] as unknown as Record<string, unknown>
+    assert.equal(detalle.servicio, "B06")
+    // cantidad = 1 para que ABIO totalice 1 x 23 = 23 (no 3 x 23 = 69).
+    assert.equal(detalle.cantidad, 1)
+    assert.equal(detalle.precio, 23)
+    assert.equal(payload.cabecera.total, 23)
+    assert.equal(payload.cobranza.totalPago, 23)
+    assert.equal(payload.cabecera.total, payload.cobranza.totalPago)
 })
 
 test("serializa montos Servilex con dos decimales en el JSON final", () => {
