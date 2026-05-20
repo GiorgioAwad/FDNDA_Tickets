@@ -1,8 +1,9 @@
-# Setup: Staging en el VPS Hetzner (homologo a produccion)
+# Setup: Staging en el VPS Vultr (homologo a produccion)
 
-Este runbook crea `https://staging.ticketingfdnda.pe` en el **mismo VPS**
-donde corre produccion. Asi reusamos la IP fija que ABIO ya whitelisteo:
-no necesitamos pedir whitelist adicional para el ambiente de pruebas.
+Este runbook crea `https://staging.ticketingfdnda.pe` en el **mismo VPS
+Vultr** donde corre produccion. Asi reusamos la IP fija que ABIO ya
+whitelisteo: no necesitamos pedir whitelist adicional para el ambiente
+de pruebas.
 
 > Reemplaza `STAGING_VERCEL_SETUP.md`. Vercel quedo descartado porque no
 > expone IP fija para funciones serverless.

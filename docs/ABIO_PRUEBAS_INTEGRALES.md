@@ -6,7 +6,7 @@ tarjetas de prueba, envio batch de ventas y log detallado de cada envio.
 **Importante - ambiente homologo**: ABIO requiere que la prueba se ejecute
 desde un ambiente publico equivalente a produccion, no desde `localhost`,
 y desde la **misma IP fija** que tienen whitelisteada. Para eso desplegamos
-`https://staging.ticketingfdnda.pe` en el mismo VPS Hetzner de prod (ver
+`https://staging.ticketingfdnda.pe` en el mismo VPS Vultr de prod (ver
 [STAGING_VPS_SETUP.md](./STAGING_VPS_SETUP.md)). El runbook local sigue
 documentado al final como herramienta de debug, pero la evidencia oficial
 que se entrega a ABIO debe salir del ambiente staging.
