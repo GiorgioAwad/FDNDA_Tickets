@@ -1,0 +1,56 @@
+services:
+  # ==================== Prisma Migrations (staging) ====================
+  migrate-staging:
+    image: ${TOOLS_IMAGE:-fdnda-tickets-tools:local}
+    profiles:
+      - tools
+    env_file:
+      - .env.staging
+    command: ["/bin/sh", "-lc", "./node_modules/.bin/prisma migrate deploy"]
+    networks:
+      - staging-internal
+
+  # ==================== Next.js App (staging) ====================
+  app-staging:
+    image: ${APP_IMAGE:-fdnda-tickets-app:local}
+    container_name: fdnda_app_staging
+    restart: unless-stopped
+    # Sin port mapping: Caddy lo alcanza via red compartida
+    expose:
+      - "3000"
+    env_file:
+      - .env.staging
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    volumes:
+      - uploads_staging_data:/app/public/uploads
+    networks:
+      - staging-internal
+      # Importante: la red `prod_web` la crea el compose de prod. Ver
+      # docs/STAGING_VPS_SETUP.md "Paso 2" si necesitas declararla manualmente.
+      - prod_web
+
+  # ==================== Background Worker (staging) ====================
+  worker-staging:
+    image: ${TOOLS_IMAGE:-fdnda-tickets-tools:local}
+    container_name: fdnda_worker_staging
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    environment:
+      NODE_ENV: production
+    command: ["npm", "run", "worker"]
+    networks:
+      - staging-internal
+
+volumes:
+  uploads_staging_data:
+    driver: local
+
+networks:
+  staging-internal:
+    driver: bridge
+  prod_web:
+    external: true
+    name: fdnda-tickets_web
