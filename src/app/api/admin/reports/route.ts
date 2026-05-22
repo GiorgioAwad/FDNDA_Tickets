@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
         // Filter by event if needed (post-fetch since orderItems are nested)
         const filteredOrders = eventId
             ? orders.filter((order: ReportOrderItem) =>
-                order.orderItems.some((item) => item.ticketType.eventId === eventId)
+                order.orderItems.some((item) => item.ticketType?.eventId === eventId)
             )
             : orders
 

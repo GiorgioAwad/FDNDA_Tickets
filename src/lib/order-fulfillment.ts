@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import { generateTicketCode, getDaysBetween, formatPrice } from "@/lib/utils"
-import { sendPurchaseEmail } from "@/lib/email"
+import { sendPurchaseEmail, sendMerchOrderConfirmationEmail, type MerchOrderEmailItem } from "@/lib/email"
 import { onTicketSold } from "@/lib/cached-queries"
 import { extractTicketValidDates, normalizeScheduleSelections } from "@/lib/ticket-schedule"
 import { buildNaturalPersonFullName } from "@/lib/billing"
@@ -412,6 +412,11 @@ export async function fulfillPaidOrder({
                             event: true,
                         },
                     },
+                    merchVariant: {
+                        include: {
+                            product: true,
+                        },
+                    },
                 },
             },
         },
@@ -425,6 +430,24 @@ export async function fulfillPaidOrder({
         return { success: false, error: "Order has no items" }
     }
 
+    // Merch orders: branch al inicio — no generan tickets, despachan stock + email
+    if (order.orderType === "MERCH") {
+        return fulfillMerchOrder({
+            order,
+            orderId,
+            providerRef,
+            providerResponse,
+            providerOrderNumber,
+            providerTransactionId,
+        })
+    }
+
+    const ticketOrderItems = order.orderItems.filter(
+        (item): item is typeof item & { ticketType: NonNullable<typeof item.ticketType>; ticketTypeId: string } =>
+            item.ticketType !== null && item.ticketTypeId !== null
+    )
+    const orderForInvoicing = { ...order, orderItems: ticketOrderItems }
+
     if (order.status === "PAID" && order.tickets.length > 0) {
         await syncPaidOrderMetadata(order.id, {
             orderId,
@@ -433,7 +456,7 @@ export async function fulfillPaidOrder({
             providerOrderNumber,
             providerTransactionId,
         })
-        await syncServilexInvoices(prisma, order)
+        await syncServilexInvoices(prisma, orderForInvoicing)
         return { success: true, alreadyPaid: true }
     }
 
@@ -494,12 +517,14 @@ export async function fulfillPaidOrder({
         })
 
         if (existingTickets > 0) {
-            await syncServilexInvoices(tx, order)
+            await syncServilexInvoices(tx, orderForInvoicing)
             return { alreadyPaid: true }
         }
 
-        for (const item of order.orderItems) {
-            const event = item.ticketType.event
+        for (const item of ticketOrderItems) {
+            const ticketType = item.ticketType
+            const ticketTypeId = item.ticketTypeId
+            const event = ticketType.event
             const attendeeData = Array.isArray(item.attendeeData)
                 ? (item.attendeeData as StoredAttendeeData[])
                 : []
@@ -515,9 +540,9 @@ export async function fulfillPaidOrder({
                     }) || attendee.name || order.user.name
                 const entitlementDates = buildEntitlementDates({
                     ticketType: {
-                        isPackage: item.ticketType.isPackage,
-                        packageDaysCount: item.ticketType.packageDaysCount,
-                        validDays: item.ticketType.validDays,
+                        isPackage: ticketType.isPackage,
+                        packageDaysCount: ticketType.packageDaysCount,
+                        validDays: ticketType.validDays,
                     },
                     event: {
                         startDate: event.startDate,
@@ -533,10 +558,10 @@ export async function fulfillPaidOrder({
                         orderId: order.id,
                         userId: order.userId,
                         eventId: event.id,
-                        ticketTypeId: item.ticketTypeId,
+                        ticketTypeId,
                         ticketCode,
                         attendeeName: attendeeFullName,
-                        attendeeDni: attendee.dni || null,
+                        attendeeDni: attendee.dni || undefined,
                         status: "ACTIVE",
                         entitlements: {
                             create: entitlementDates.map((date) => ({
@@ -548,13 +573,13 @@ export async function fulfillPaidOrder({
                 })
             }
 
-            if (!cacheToInvalidate.has(item.ticketType.eventId)) {
-                cacheToInvalidate.set(item.ticketType.eventId, new Set())
+            if (!cacheToInvalidate.has(ticketType.eventId)) {
+                cacheToInvalidate.set(ticketType.eventId, new Set())
             }
-            cacheToInvalidate.get(item.ticketType.eventId)?.add(item.ticketTypeId)
+            cacheToInvalidate.get(ticketType.eventId)?.add(ticketTypeId)
         }
 
-        await syncServilexInvoices(tx, order)
+        await syncServilexInvoices(tx, orderForInvoicing)
 
         return { alreadyPaid: false }
     })
@@ -576,10 +601,11 @@ export async function fulfillPaidOrder({
         }
     }
 
-    if (order.orderItems.length > 0) {
-        const eventTitle = order.orderItems[0]?.ticketType.event.title || "Evento FDNDA"
-        const eventId = order.orderItems[0]?.ticketType.eventId
-        const ticketCount = order.orderItems.reduce(
+    if (ticketOrderItems.length > 0) {
+        const firstTicketItem = ticketOrderItems[0]
+        const eventTitle = firstTicketItem.ticketType.event.title || "Evento FDNDA"
+        const eventId = firstTicketItem.ticketType.eventId
+        const ticketCount = ticketOrderItems.reduce(
             (sum: number, item: { quantity: number }) => sum + item.quantity,
             0
         )
@@ -595,10 +621,193 @@ export async function fulfillPaidOrder({
         )
 
         // Invalidar cache de evento si no se hizo en el loop
-        if (eventId) {
-            await onTicketSold(eventId, order.orderItems[0].ticketTypeId)
-        }
+        await onTicketSold(eventId, firstTicketItem.ticketTypeId)
     }
+
+    return { success: true }
+}
+
+// ==================== MERCH FULFILLMENT ====================
+
+interface MerchSnapshot {
+    productId?: string
+    productName?: string
+    category?: string
+    zone?: string
+    size?: string | null
+    sku?: string
+    imageUrl?: string | null
+}
+
+function readMerchSnapshot(value: Prisma.JsonValue | null | undefined): MerchSnapshot {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+    return value as MerchSnapshot
+}
+
+interface FulfillMerchOrderArgs {
+    order: Awaited<ReturnType<typeof loadOrderForMerchFulfillment>>
+    orderId: string
+    providerRef?: string
+    providerResponse?: Prisma.InputJsonValue
+    providerOrderNumber?: string
+    providerTransactionId?: string
+}
+
+// type helper para inferir el shape del order ya cargado en fulfillPaidOrder
+async function loadOrderForMerchFulfillment(orderId: string) {
+    return prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+            user: true,
+            invoices: { select: { id: true, servilexGroupKey: true, status: true } },
+            tickets: { select: { id: true } },
+            orderItems: {
+                include: {
+                    ticketType: { include: { event: true } },
+                    merchVariant: { include: { product: true } },
+                },
+            },
+        },
+    })
+}
+
+export async function fulfillMerchOrder({
+    order,
+    orderId,
+    providerRef,
+    providerResponse,
+    providerOrderNumber,
+    providerTransactionId,
+}: FulfillMerchOrderArgs): Promise<FulfillOrderResult> {
+    if (!order) {
+        return { success: false, error: "Order not found" }
+    }
+
+    if (order.status === "PAID" && order.fulfillmentStatus && order.fulfillmentStatus !== "PENDING") {
+        await syncPaidOrderMetadata(order.id, {
+            orderId,
+            providerRef,
+            providerResponse,
+            providerOrderNumber,
+            providerTransactionId,
+        })
+        return { success: true, alreadyPaid: true }
+    }
+
+    if (order.status === "CANCELLED" || order.status === "REFUNDED") {
+        return { success: false, error: "Order not payable" }
+    }
+
+    const merchItems = order.orderItems.filter(
+        (item): item is typeof item & { merchVariant: NonNullable<typeof item.merchVariant>; merchVariantId: string } =>
+            item.merchVariant !== null && item.merchVariantId !== null
+    )
+
+    if (merchItems.length === 0) {
+        return { success: false, error: "Orden MERCH sin variantes" }
+    }
+
+    const updateData: Prisma.OrderUpdateManyMutationInput = {
+        status: "PAID",
+        fulfillmentStatus: "PENDING",
+        ...buildOrderPaymentMetadata({
+            providerRef,
+            providerResponse,
+            providerOrderNumber,
+            providerTransactionId,
+        }),
+    }
+
+    if (!order.paidAt) {
+        updateData.paidAt = new Date()
+    }
+
+    const alreadyConfirmed = await prisma.$transaction(async (tx) => {
+        // Marcar orden como PAID atómicamente. Si ya estaba PAID, saltamos el decremento.
+        const transition = await tx.order.updateMany({
+            where: { id: order.id, status: "PENDING" },
+            data: updateData,
+        })
+
+        if (transition.count === 0) {
+            const current = await tx.order.findUnique({
+                where: { id: order.id },
+                select: { status: true },
+            })
+            if (!current) throw new Error("Order not found")
+            if (current.status === "PAID") return true
+            if (current.status === "CANCELLED" || current.status === "REFUNDED") {
+                throw new Error("Order not payable")
+            }
+        }
+
+        // Confirma stock: reserved -> sold (no decrementa "stock" porque eso refleja inventario físico bruto)
+        for (const item of merchItems) {
+            await tx.$queryRaw`
+                UPDATE "merch_variants"
+                SET "reserved" = GREATEST("reserved" - ${item.quantity}, 0),
+                    "sold" = "sold" + ${item.quantity},
+                    "updatedAt" = NOW()
+                WHERE "id" = ${item.merchVariantId}
+            `
+        }
+
+        return false
+    })
+
+    if (alreadyConfirmed) {
+        await syncPaidOrderMetadata(order.id, {
+            orderId,
+            providerRef,
+            providerResponse,
+            providerOrderNumber,
+            providerTransactionId,
+        })
+        return { success: true, alreadyPaid: true }
+    }
+
+    // Email de confirmación (best-effort, no rompe si falla)
+    try {
+        const pickupEventTitle = order.pickupEventId
+            ? await prisma.event
+                .findUnique({ where: { id: order.pickupEventId }, select: { title: true } })
+                .then((evt) => evt?.title ?? null)
+            : null
+
+        const emailItems: MerchOrderEmailItem[] = merchItems.map((item) => {
+            const snapshot = readMerchSnapshot(item.merchSnapshot)
+            return {
+                productName: snapshot.productName || item.merchVariant.product.name,
+                size: snapshot.size ?? item.merchVariant.size,
+                zone: snapshot.zone ?? item.merchVariant.product.zone,
+                quantity: item.quantity,
+                unitPrice: Number(item.unitPrice),
+            }
+        })
+
+        const subtotal = emailItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0)
+        const shippingCost = order.shippingCost ? Number(order.shippingCost) : 0
+
+        await sendMerchOrderConfirmationEmail({
+            email: order.user.email,
+            name: order.user.name,
+            orderId: order.id,
+            items: emailItems,
+            subtotal,
+            shippingCost,
+            total: Number(order.totalAmount),
+            deliveryMethod: order.deliveryMethod ?? "PICKUP_OFFICE",
+            pickupEventTitle,
+            shippingAddress: order.shippingAddress,
+            shippingDistrito: order.shippingDistrito,
+            shippingReference: order.shippingReference,
+            shippingPhone: order.shippingPhone,
+        })
+    } catch (err) {
+        console.error("Failed to send merch confirmation email:", err)
+    }
+
+    // TODO: emitir boleta Servilex desde MerchProduct.servilexService (PR 3)
 
     return { success: true }
 }

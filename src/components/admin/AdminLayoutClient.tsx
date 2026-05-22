@@ -31,6 +31,7 @@ import {
     Bell,
     QrCode,
     Receipt,
+    ShoppingBag,
 } from "lucide-react"
 
 interface NavItem {
@@ -59,6 +60,7 @@ const adminNavigation: NavGroup[] = [
         items: [
             { label: "Entradas", href: "/admin/entradas", icon: Ticket },
             { label: "Cortesías", href: "/admin/cortesias", icon: Gift },
+            { label: "Merch", href: "/admin/merch", icon: ShoppingBag },
             { label: "Ingresos", href: "/admin/ingresos", icon: DollarSign },
         ],
     },

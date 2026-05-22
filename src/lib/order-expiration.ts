@@ -67,6 +67,7 @@ export async function expirePendingOrders(
                 where: { orderId: order.id },
                 select: {
                     ticketTypeId: true,
+                    merchVariantId: true,
                     quantity: true,
                     attendeeData: true,
                     ticketType: {
@@ -90,20 +91,35 @@ export async function expirePendingOrders(
             const keys: string[] = []
 
             for (const item of orderItems) {
-                if (isPoolFreeEventCategory(item.ticketType.event.category)) {
+                // Branch MERCH: libera la reserva en merch_variants
+                if (item.merchVariantId) {
+                    await tx.$queryRaw`
+                        UPDATE "merch_variants"
+                        SET "reserved" = GREATEST("reserved" - ${item.quantity}, 0),
+                            "updatedAt" = NOW()
+                        WHERE "id" = ${item.merchVariantId}
+                    `
+                    released += item.quantity
+                    continue
+                }
+
+                if (!item.ticketType || !item.ticketTypeId) continue
+                const ticketType = item.ticketType
+                const ticketTypeId = item.ticketTypeId
+                if (isPoolFreeEventCategory(ticketType.event.category)) {
                     const reservationCounts = buildPoolFreeReservationCounts({
                         attendees: Array.isArray(item.attendeeData) ? item.attendeeData : [],
                         quantity: item.quantity,
-                        validDays: item.ticketType.validDays,
-                        eventStartDate: item.ticketType.event.startDate,
-                        eventEndDate: item.ticketType.event.endDate,
-                        ticketLabel: item.ticketType.name,
+                        validDays: ticketType.validDays,
+                        eventStartDate: ticketType.event.startDate,
+                        eventEndDate: ticketType.event.endDate,
+                        ticketLabel: ticketType.name,
                         strict: false,
                     })
 
                     if (reservationCounts.size > 0) {
                         await releaseTicketTypeDateInventory(tx, {
-                            ticketTypeId: item.ticketTypeId,
+                            ticketTypeId,
                             reservations: reservationCounts,
                         })
                     }
@@ -111,7 +127,7 @@ export async function expirePendingOrders(
 
                 const decrement = await tx.ticketType.updateMany({
                     where: {
-                        id: item.ticketTypeId,
+                        id: ticketTypeId,
                         sold: { gte: item.quantity },
                     },
                     data: {
@@ -121,7 +137,7 @@ export async function expirePendingOrders(
 
                 if (decrement.count > 0) {
                     released += item.quantity
-                    keys.push(`${item.ticketType.eventId}:${item.ticketTypeId}`)
+                    keys.push(`${ticketType.eventId}:${ticketTypeId}`)
                 }
             }
 

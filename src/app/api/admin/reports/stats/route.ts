@@ -31,6 +31,7 @@ export async function GET() {
         const eventSales: Record<string, number> = {}
         paidOrders.forEach(order => {
             order.orderItems.forEach(item => {
+                if (!item.ticketType) return
                 const eventTitle = item.ticketType.event.title
                 eventSales[eventTitle] = (eventSales[eventTitle] || 0) + Number(item.subtotal)
             })

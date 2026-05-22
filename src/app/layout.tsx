@@ -4,6 +4,7 @@ import { Toaster } from "sonner"
 import "./globals.css"
 import { Providers } from "@/components/providers"
 import { CartProvider } from "@/hooks/cart-context"
+import { MerchCartProvider } from "@/hooks/merch-cart-context"
 import { MainLayoutWrapper } from "@/components/layout/MainLayoutWrapper"
 
 const sans = Plus_Jakarta_Sans({
@@ -122,9 +123,11 @@ export default function RootLayout({
         />
         <Providers>
           <CartProvider>
-            <MainLayoutWrapper>
-              {children}
-            </MainLayoutWrapper>
+            <MerchCartProvider>
+              <MainLayoutWrapper>
+                {children}
+              </MainLayoutWrapper>
+            </MerchCartProvider>
           </CartProvider>
         </Providers>
         <Toaster

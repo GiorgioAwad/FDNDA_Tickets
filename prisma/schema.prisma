@@ -98,6 +98,41 @@ enum ComplaintBookStatus {
   CLOSED
 }
 
+enum OrderType {
+  TICKET
+  MERCH
+}
+
+enum MerchCategory {
+  POLERA
+  GORRA
+  PIN
+  OTROS
+}
+
+enum MerchZone {
+  LIMA
+  SUR
+  NORTE
+  ORIENTE
+  GENERICA
+}
+
+enum DeliveryMethod {
+  PICKUP_EVENT
+  SHIPPING_HOME
+  PICKUP_OFFICE
+}
+
+enum FulfillmentStatus {
+  PENDING
+  READY
+  SHIPPED
+  DELIVERED
+  PICKED_UP
+  CANCELLED
+}
+
 // ==================== MODELS ====================
 
 model User {
@@ -297,6 +332,7 @@ model Order {
   id               String      @id @default(cuid())
   userId           String
   status           OrderStatus @default(PENDING)
+  orderType        OrderType   @default(TICKET)
   totalAmount      Decimal     @db.Decimal(10, 2)
   currency         String      @default("PEN")
   provider         String      @default("IZIPAY")
@@ -308,6 +344,18 @@ model Order {
   paymentLastSyncAt DateTime?
   paymentNeedsReview Boolean   @default(false)
   paidAt           DateTime?
+  // Merch delivery (null for TICKET orders)
+  deliveryMethod    DeliveryMethod?
+  pickupEventId     String?
+  shippingAddress   String?
+  shippingDistrito  String?
+  shippingUbigeo    String?
+  shippingReference String?
+  shippingPhone     String?
+  shippingCost      Decimal?           @db.Decimal(10, 2)
+  fulfillmentStatus FulfillmentStatus?
+  fulfilledAt       DateTime?
+  trackingCode      String?
   // Billing data
   documentType     String?     // "BOLETA" or "FACTURA"
   buyerDocType     String?     // "1" = DNI, "6" = RUC
@@ -341,17 +389,20 @@ model Order {
 }
 
 model OrderItem {
-  id           String  @id @default(cuid())
-  orderId      String
-  ticketTypeId String
-  quantity     Int
-  unitPrice    Decimal @db.Decimal(10, 2)
-  subtotal     Decimal @db.Decimal(10, 2)
-  attendeeData Json?   // [{name, dni}, {name, dni}] for each ticket
+  id             String  @id @default(cuid())
+  orderId        String
+  ticketTypeId   String?
+  merchVariantId String?
+  quantity       Int
+  unitPrice      Decimal @db.Decimal(10, 2)
+  subtotal       Decimal @db.Decimal(10, 2)
+  attendeeData   Json?   // [{name, dni}, {name, dni}] for each ticket
+  merchSnapshot  Json?   // {productName, size, zone, imageUrl, category} at purchase time
 
   // Relations
-  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  ticketType TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ticketType   TicketType?   @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  merchVariant MerchVariant? @relation(fields: [merchVariantId], references: [id])
 
   @@map("order_items")
 }
@@ -526,7 +577,8 @@ model ServilexService {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  ticketTypes TicketType[]
+  ticketTypes   TicketType[]
+  merchProducts MerchProduct[]
 
   @@index([indicador])
   @@index([isActive])
@@ -718,4 +770,54 @@ model TicketIssuanceLog {
   @@index([outcome, createdAt])
   @@index([createdAt])
   @@map("ticket_issuance_logs")
+}
+
+// ==================== MERCH ====================
+
+model MerchProduct {
+  id                String        @id @default(cuid())
+  slug              String        @unique
+  name              String
+  description       String?       @db.Text
+  category          MerchCategory
+  zone              MerchZone     @default(GENERICA)
+  etapa             String?
+  price             Decimal       @db.Decimal(10, 2)
+  currency          String        @default("PEN")
+  imageUrl          String?
+  imageUrls         Json?
+  hasSizes          Boolean       @default(false)
+  availableSizes    Json?
+  isActive          Boolean       @default(true)
+  sortOrder         Int           @default(0)
+  servilexServiceId String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  servilexService ServilexService? @relation(fields: [servilexServiceId], references: [id])
+  variants        MerchVariant[]
+
+  @@index([category, zone, isActive])
+  @@index([isActive, sortOrder])
+  @@map("merch_products")
+}
+
+model MerchVariant {
+  id        String   @id @default(cuid())
+  productId String
+  size      String?
+  sku       String   @unique
+  stock     Int      @default(0)
+  reserved  Int      @default(0)
+  sold      Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product    MerchProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+
+  @@unique([productId, size])
+  @@index([productId, isActive])
+  @@map("merch_variants")
 }

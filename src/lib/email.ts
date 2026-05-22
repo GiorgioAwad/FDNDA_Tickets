@@ -414,3 +414,165 @@ export async function sendCourtesyClaimedEmail(
     }
 }
 
+// ==================== MERCH EMAILS ====================
+
+export interface MerchOrderEmailItem {
+    productName: string
+    size: string | null
+    zone: string | null
+    quantity: number
+    unitPrice: number
+}
+
+export interface MerchOrderEmailInput {
+    email: string
+    name: string
+    orderId: string
+    items: MerchOrderEmailItem[]
+    subtotal: number
+    shippingCost: number
+    total: number
+    deliveryMethod: "PICKUP_EVENT" | "SHIPPING_HOME" | "PICKUP_OFFICE"
+    pickupEventTitle?: string | null
+    shippingAddress?: string | null
+    shippingDistrito?: string | null
+    shippingReference?: string | null
+    shippingPhone?: string | null
+}
+
+const ZONE_LABEL_FOR_EMAIL: Record<string, string> = {
+    LIMA: "Lima",
+    SUR: "Sur",
+    NORTE: "Norte",
+    ORIENTE: "Oriente",
+    GENERICA: "",
+}
+
+const formatPenForEmail = (value: number): string =>
+    new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN" }).format(value)
+
+export async function sendMerchOrderConfirmationEmail(input: MerchOrderEmailInput): Promise<EmailResult> {
+    const {
+        email,
+        name,
+        orderId,
+        items,
+        subtotal,
+        shippingCost,
+        total,
+        deliveryMethod,
+        pickupEventTitle,
+        shippingAddress,
+        shippingDistrito,
+        shippingReference,
+        shippingPhone,
+    } = input
+
+    const shortOrderId = orderId.slice(-8).toUpperCase()
+    const orderUrl = `${APP_URL}/mi-cuenta`
+
+    const deliveryBlock =
+        deliveryMethod === "PICKUP_EVENT"
+            ? `<p style="margin:8px 0 0;">📍 <strong>Recojo en evento:</strong> ${pickupEventTitle || "Evento FDNDA"}.</p>
+               <p style="margin:4px 0 0; color:#64748b; font-size:13px;">Acércate al módulo de FDNDA el día del evento con tu DNI.</p>`
+            : deliveryMethod === "SHIPPING_HOME"
+                ? `<p style="margin:8px 0 0;">🚚 <strong>Envío a domicilio</strong></p>
+                   <p style="margin:4px 0 0;">${shippingAddress || ""}, ${shippingDistrito || ""}</p>
+                   ${shippingReference ? `<p style="margin:0; color:#64748b; font-size:13px;">Ref: ${shippingReference}</p>` : ""}
+                   <p style="margin:4px 0 0; color:#64748b; font-size:13px;">Contacto: ${shippingPhone || ""}</p>
+                   <p style="margin:8px 0 0; color:#64748b; font-size:13px;">Te coordinaremos por WhatsApp para confirmar la entrega.</p>`
+                : `<p style="margin:8px 0 0;">🏢 <strong>Recojo en oficina FDNDA</strong></p>`
+
+    const itemsTable = items
+        .map((item) => {
+            const zoneTxt = item.zone && ZONE_LABEL_FOR_EMAIL[item.zone]
+                ? ` · Zona ${ZONE_LABEL_FOR_EMAIL[item.zone]}`
+                : ""
+            const sizeTxt = item.size ? ` · Talla ${item.size}` : ""
+            return `<tr>
+                <td style="padding:10px 8px; border-bottom:1px solid #e2e8f0;">
+                    <div style="font-weight:600; color:#0f172a;">${item.productName}</div>
+                    <div style="font-size:12px; color:#64748b;">${zoneTxt.replace(/^ · /, "")}${sizeTxt}</div>
+                </td>
+                <td style="padding:10px 8px; border-bottom:1px solid #e2e8f0; text-align:center;">${item.quantity}</td>
+                <td style="padding:10px 8px; border-bottom:1px solid #e2e8f0; text-align:right; font-weight:600;">
+                    ${formatPenForEmail(item.unitPrice * item.quantity)}
+                </td>
+            </tr>`
+        })
+        .join("")
+
+    try {
+        const result = await sendTransactionalEmail({
+            from: FROM_EMAIL,
+            to: email,
+            subject: `Confirmación de pedido #${shortOrderId} - ${APP_NAME}`,
+            html: `
+                <!DOCTYPE html>
+                <html lang="es">
+                <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background:#f8fafc; margin:0; padding:24px;">
+                    <table align="center" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.05);">
+                        <tr>
+                            <td style="padding:32px 28px; background:linear-gradient(135deg, hsl(210,100%,25%), hsl(210,100%,40%)); color:#fff;">
+                                <div style="font-size:13px; opacity:0.85; letter-spacing:0.05em; text-transform:uppercase;">${BRAND_TAGLINE}</div>
+                                <h1 style="margin:8px 0 0; font-size:24px;">¡Gracias por tu pedido, ${name}!</h1>
+                                <p style="margin:6px 0 0; opacity:0.9; font-size:14px;">Orden #${shortOrderId}</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:24px 28px;">
+                                <p style="margin:0 0 12px; color:#0f172a;">Hemos recibido tu pago. Aquí está el detalle de tu pedido de merch oficial:</p>
+
+                                <table cellpadding="0" cellspacing="0" width="100%" style="margin:16px 0;">
+                                    <thead>
+                                        <tr style="background:#f1f5f9;">
+                                            <th align="left" style="padding:10px 8px; font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em;">Producto</th>
+                                            <th align="center" style="padding:10px 8px; font-size:11px; color:#64748b; text-transform:uppercase;">Cant.</th>
+                                            <th align="right" style="padding:10px 8px; font-size:11px; color:#64748b; text-transform:uppercase;">Subtotal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${itemsTable}</tbody>
+                                </table>
+
+                                <table cellpadding="0" cellspacing="0" width="100%" style="margin-top:12px;">
+                                    <tr>
+                                        <td style="color:#64748b; font-size:13px;">Subtotal</td>
+                                        <td style="text-align:right; font-size:13px;">${formatPenForEmail(subtotal)}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="color:#64748b; font-size:13px;">Envío</td>
+                                        <td style="text-align:right; font-size:13px;">${shippingCost > 0 ? formatPenForEmail(shippingCost) : "Gratis"}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding-top:8px; font-weight:700; font-size:16px; color:#0f172a;">Total</td>
+                                        <td style="padding-top:8px; text-align:right; font-weight:700; font-size:16px; color:hsl(210,100%,30%);">${formatPenForEmail(total)}</td>
+                                    </tr>
+                                </table>
+
+                                <div style="margin-top:24px; padding:16px; background:#f8fafc; border-radius:12px;">
+                                    <div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">Entrega</div>
+                                    ${deliveryBlock}
+                                </div>
+
+                                <p style="margin:24px 0 0; font-size:14px; color:#475569;">
+                                    Puedes ver tus pedidos en <a href="${orderUrl}" style="color:hsl(210,100%,40%);">tu cuenta</a>.
+                                    Si necesitas ayuda, escríbenos por WhatsApp al <strong>+51 941 632 535</strong>.
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:16px 28px; background:#0f172a; color:#94a3b8; font-size:12px; text-align:center;">
+                                ${APP_NAME} — ${BRAND_TAGLINE}
+                            </td>
+                        </tr>
+                    </table>
+                </body>
+                </html>
+            `,
+        })
+        return { success: true, messageId: result.messageId }
+    } catch (err) {
+        return { success: false, error: (err as Error).message }
+    }
+}
+
