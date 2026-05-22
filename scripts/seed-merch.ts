@@ -11,16 +11,23 @@
  */
 
 import { PrismaClient, MerchCategory, MerchZone } from "@prisma/client"
+import { PrismaPg } from "@prisma/adapter-pg"
+import { Pool } from "pg"
 
-const prisma = new PrismaClient()
-
-const PUBLIC_BASE = (process.env.R2_PUBLIC_BASE_URL || "").replace(/\/+$/, "")
-
-if (!PUBLIC_BASE) {
-    console.error("[ERROR] R2_PUBLIC_BASE_URL no está seteado en el entorno.")
-    console.error("Setea esa variable en .env.local antes de correr el seed.")
+const DATABASE_URL = process.env.DATABASE_URL
+if (!DATABASE_URL) {
+    console.error("[ERROR] DATABASE_URL no está seteado en el entorno.")
     process.exit(1)
 }
+
+const PUBLIC_BASE = (process.env.R2_PUBLIC_BASE_URL || "").replace(/\/+$/, "")
+if (!PUBLIC_BASE) {
+    console.error("[ERROR] R2_PUBLIC_BASE_URL no está seteado en el entorno.")
+    process.exit(1)
+}
+
+const pool = new Pool({ connectionString: DATABASE_URL, max: 5 })
+const prisma = new PrismaClient({ adapter: new PrismaPg(pool) })
 
 interface SeedProduct {
     slug: string
