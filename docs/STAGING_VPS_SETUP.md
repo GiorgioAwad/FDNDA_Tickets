@@ -140,16 +140,21 @@ docker compose -f docker-compose.prod.yml exec caddy \
 > bloque. Alternativa mas robusta: usar `import` en el Caddyfile (ver
 > seccion "Alternativa con import" al final).
 
-## Paso 7 - Construir imagenes y aplicar migraciones
+## Paso 7 - Pull de imagenes GHCR y aplicar migraciones
 
-Las imagenes Docker pueden ser las mismas de prod (mismo codigo), solo
-cambia el `.env.staging` montado. Pero como staging puede estar en una
-rama distinta, conviene compilar imagenes propias:
+> Las imagenes se buildean en GitHub Actions (`.github/workflows/publish-images.yml`)
+> en cada push a `staging`. El VPS NO buildea (poco espacio en disco) — solo
+> hace `pull`. Tags usados:
+> - `ghcr.io/giorgioawad/fdnda-tickets-app:staging`
+> - `ghcr.io/giorgioawad/fdnda-tickets-tools:staging`
+
+Requisito una vez: estar logueado en GHCR en el VPS (mismo PAT que prod
+con `read:packages` — ver `docs/PROD_GHCR_DEPLOY.md` seccion "GHCR login").
 
 ```bash
 cd ~/fdnda-staging
-docker compose -f docker-compose.staging.yml build app-staging
-docker compose -f docker-compose.staging.yml build worker-staging
+docker compose -f docker-compose.staging.yml --profile tools \
+  --env-file .env.staging pull app-staging worker-staging migrate-staging
 ```
 
 Migrar la BD staging:
@@ -244,10 +249,11 @@ Para ejecutar las pruebas integrales ver
 ## Mantenimiento
 
 ```bash
-# Pull de cambios (rama staging)
+# Pull de cambios (rama staging) — el build lo hizo GitHub Actions
 cd ~/fdnda-staging
 git pull origin staging
-docker compose -f docker-compose.staging.yml build app-staging worker-staging
+docker compose -f docker-compose.staging.yml --profile tools \
+  --env-file .env.staging pull app-staging worker-staging migrate-staging
 docker compose -f docker-compose.staging.yml --profile tools \
   --env-file .env.staging run --rm migrate-staging
 docker compose -f docker-compose.staging.yml up -d

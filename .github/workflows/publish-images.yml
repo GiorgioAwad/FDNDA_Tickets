@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - staging
   workflow_dispatch:
 
 permissions:
@@ -20,7 +21,15 @@ jobs:
 
       - name: Normalize image owner
         id: vars
-        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "channel=latest" >> "$GITHUB_OUTPUT"
+            echo "app_url=https://ticketingfdnda.pe" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=staging" >> "$GITHUB_OUTPUT"
+            echo "app_url=https://staging.ticketingfdnda.pe" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -40,12 +49,12 @@ jobs:
           target: runner
           push: true
           tags: |
-            ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-app:latest
-            ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-app:${{ github.sha }}
+            ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-app:${{ steps.vars.outputs.channel }}
+            ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-app:${{ steps.vars.outputs.channel }}-${{ github.sha }}
           build-args: |
-            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://ticketingfdnda.pe' }}
+            NEXT_PUBLIC_APP_URL=${{ steps.vars.outputs.app_url }}
             NEXT_PUBLIC_APP_NAME=${{ vars.NEXT_PUBLIC_APP_NAME || 'Ticketing FDNDA' }}
-            NEXT_PUBLIC_PAYMENTS_MODE=${{ vars.NEXT_PUBLIC_PAYMENTS_MODE || 'mock' }}
+            NEXT_PUBLIC_PAYMENTS_MODE=${{ vars.NEXT_PUBLIC_PAYMENTS_MODE || 'izipay' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -57,7 +66,7 @@ jobs:
           target: tools
           push: true
           tags: |
-            ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-tools:latest
-            ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-tools:${{ github.sha }}
+            ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-tools:${{ steps.vars.outputs.channel }}
+            ghcr.io/${{ steps.vars.outputs.owner }}/fdnda-tickets-tools:${{ steps.vars.outputs.channel }}-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

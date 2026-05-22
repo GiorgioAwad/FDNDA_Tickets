@@ -8,7 +8,16 @@ The heavy build is done in GitHub Actions instead of the VPS.
 On every `git push origin main`, the workflow publishes:
 
 - `ghcr.io/giorgioawad/fdnda-tickets-app:latest`
+- `ghcr.io/giorgioawad/fdnda-tickets-app:latest-<sha>`
 - `ghcr.io/giorgioawad/fdnda-tickets-tools:latest`
+- `ghcr.io/giorgioawad/fdnda-tickets-tools:latest-<sha>`
+
+On every `git push origin staging`, the workflow publishes:
+
+- `ghcr.io/giorgioawad/fdnda-tickets-app:staging`
+- `ghcr.io/giorgioawad/fdnda-tickets-app:staging-<sha>`
+- `ghcr.io/giorgioawad/fdnda-tickets-tools:staging`
+- `ghcr.io/giorgioawad/fdnda-tickets-tools:staging-<sha>`
 
 ## GitHub Actions variables
 

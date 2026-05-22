@@ -1,7 +1,7 @@
 services:
   # ==================== Prisma Migrations (staging) ====================
   migrate-staging:
-    image: ${TOOLS_IMAGE:-fdnda-tickets-tools:local}
+    image: ${TOOLS_IMAGE:-ghcr.io/giorgioawad/fdnda-tickets-tools:staging}
     profiles:
       - tools
     env_file:
@@ -12,7 +12,7 @@ services:
 
   # ==================== Next.js App (staging) ====================
   app-staging:
-    image: ${APP_IMAGE:-fdnda-tickets-app:local}
+    image: ${APP_IMAGE:-ghcr.io/giorgioawad/fdnda-tickets-app:staging}
     container_name: fdnda_app_staging
     restart: unless-stopped
     # Sin port mapping: Caddy lo alcanza via red compartida
@@ -33,7 +33,7 @@ services:
 
   # ==================== Background Worker (staging) ====================
   worker-staging:
-    image: ${TOOLS_IMAGE:-fdnda-tickets-tools:local}
+    image: ${TOOLS_IMAGE:-ghcr.io/giorgioawad/fdnda-tickets-tools:staging}
     container_name: fdnda_worker_staging
     restart: unless-stopped
     env_file:
