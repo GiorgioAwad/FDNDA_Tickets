@@ -175,7 +175,7 @@ export function EventDashboard({ eventId, ticketTypes }: EventDashboardProps) {
                                 </div>
                                 <div>
                                     <div className="text-sm text-gray-500">
-                                        Comision Izipay ({data.commissionPercent}%)
+                                        Comision Izipay ({data.commissionPercent.toFixed(2)}%)
                                     </div>
                                     <div className="text-2xl font-bold">
                                         {formatPrice(data.commissionAmount, totalsCurrency)}
