@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { AlertCircle, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import {
     IZIPAY_EMBEDDED_CONTAINER_ID,
     type IzipayCheckoutConfig,
@@ -45,6 +45,9 @@ declare global {
     }
 }
 
+const SDK_LOAD_ERROR_MESSAGE =
+    "No pudimos cargar el método de pago. Suele deberse a un bloqueador de anuncios, una extensión del navegador o tu red. Prueba: desactivar extensiones, usar modo incógnito o cambiar de navegador, y vuelve a intentar."
+
 function loadIzipayScript(src: string): Promise<void> {
     return new Promise((resolve, reject) => {
         const existing = document.querySelector<HTMLScriptElement>(
@@ -60,7 +63,7 @@ function loadIzipayScript(src: string): Promise<void> {
             existing.addEventListener("load", () => resolve(), { once: true })
             existing.addEventListener(
                 "error",
-                () => reject(new Error("No se pudo cargar el SDK de Izipay")),
+                () => reject(new Error(SDK_LOAD_ERROR_MESSAGE)),
                 { once: true }
             )
             return
@@ -75,7 +78,10 @@ function loadIzipayScript(src: string): Promise<void> {
             script.dataset.loaded = "true"
             resolve()
         }
-        script.onerror = () => reject(new Error("No se pudo cargar el SDK de Izipay"))
+        script.onerror = () => {
+            script.remove()
+            reject(new Error(SDK_LOAD_ERROR_MESSAGE))
+        }
 
         document.head.appendChild(script)
     })
@@ -242,7 +248,7 @@ export default function IzipayCheckout({
 
     return (
         <div className="space-y-4">
-            {loading && (
+            {loading && !error && (
                 <div className="flex items-center justify-center py-10 text-gray-500">
                     <Loader2 className="mr-2 h-6 w-6 animate-spin" />
                     <span className="text-sm">
@@ -255,12 +261,7 @@ export default function IzipayCheckout({
                 </div>
             )}
 
-            {error && (
-                <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-600">
-                    <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                    <span>{error}</span>
-                </div>
-            )}
+            {/* El error lo muestra el componente padre via onError(); no duplicarlo aqui */}
 
             {mode === "embedded" && (
                 <div

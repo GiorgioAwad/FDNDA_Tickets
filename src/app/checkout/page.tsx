@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
@@ -97,9 +97,16 @@ export default function CheckoutPage() {
         ]
     )
 
+    const emailAutofilledRef = useRef(false)
     useEffect(() => {
+        if (emailAutofilledRef.current) return
         if (status !== "authenticated") return
-        if (!session?.user?.email || billingData.buyerEmail) return
+        if (!session?.user?.email) return
+        if (billingData.buyerEmail) {
+            emailAutofilledRef.current = true
+            return
+        }
+        emailAutofilledRef.current = true
         updateBillingData("buyerEmail", session.user.email)
     }, [status, session?.user?.email, billingData.buyerEmail, updateBillingData])
 
