@@ -689,3 +689,33 @@ model Invoice {
   @@index([status])
   @@map("invoices")
 }
+
+enum TicketIssuanceOutcome {
+  OK
+  NO_ENTITLEMENT
+  TICKET_NOT_ACTIVE
+  TICKET_NOT_FOUND
+  UNAUTHORIZED
+  QR_GENERATION_ERROR
+  INTERNAL_ERROR
+}
+
+model TicketIssuanceLog {
+  id        String                @id @default(cuid())
+  ticketId  String?
+  userId    String?
+  eventId   String?
+  outcome   TicketIssuanceOutcome
+  reason    String?               @db.Text
+  qrDate    String?
+  qrShift   String?
+  requestedDate String?
+  userAgent String?               @db.Text
+  ipAddress String?
+  createdAt DateTime              @default(now())
+
+  @@index([ticketId, createdAt])
+  @@index([outcome, createdAt])
+  @@index([createdAt])
+  @@map("ticket_issuance_logs")
+}

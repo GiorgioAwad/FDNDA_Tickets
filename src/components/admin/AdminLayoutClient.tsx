@@ -29,6 +29,7 @@ import {
     ChevronLeft,
     ChevronRight,
     Bell,
+    QrCode,
 } from "lucide-react"
 
 interface NavItem {
@@ -66,6 +67,7 @@ const adminNavigation: NavGroup[] = [
             { label: "Reportes", href: "/admin/reportes", icon: FileText },
             { label: "Reclamos", href: "/admin/reclamos", icon: AlertCircle },
             { label: "Estadísticas", href: "/admin/estadisticas", icon: BarChart3 },
+            { label: "Diagnóstico QR", href: "/admin/diagnostico-qr", icon: QrCode },
         ],
     },
     {
@@ -283,6 +285,7 @@ function AdminTopBar({ onMenuClick, title }: AdminTopBarProps) {
         if (pathname.includes("/usuarios")) return "Usuarios"
         if (pathname.includes("/configuracion")) return "Configuración"
         if (pathname.includes("/asistencia")) return "Asistencia"
+        if (pathname.includes("/diagnostico-qr")) return "Diagnóstico QR"
         return "Admin"
     })()
 

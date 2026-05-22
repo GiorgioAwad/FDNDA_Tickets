@@ -5,6 +5,7 @@ import { createQRPayload, generateQRDataURL, formatDateLocal, formatDateUTC } fr
 import { getDaysBetween } from "@/lib/utils"
 import { extractTicketValidDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { getExpectedShiftForDate, getTicketScheduleSelectionsForAttendee } from "@/lib/ticket-shift"
+import { logTicketIssuance } from "@/lib/ticket-issuance-log"
 export const runtime = "nodejs"
 
 type TicketEntitlement = {
@@ -53,19 +54,28 @@ export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const { id: rawId } = await params
+    const { searchParams } = new URL(request.url)
+    const dateParam = searchParams.get("date")
+
     try {
         const user = await getCurrentUser()
 
         if (!user) {
+            await logTicketIssuance({
+                outcome: "UNAUTHORIZED",
+                reason: "Sesión no autenticada al solicitar QR",
+                ticketId: rawId,
+                requestedDate: dateParam,
+                request,
+            })
             return NextResponse.json(
                 { success: false, error: "No autorizado" },
                 { status: 401 }
             )
         }
 
-        const { id } = await params
-        const { searchParams } = new URL(request.url)
-        const dateParam = searchParams.get("date")
+        const id = rawId
 
         const ticket = await prisma.ticket.findFirst({
             where: {
@@ -96,6 +106,14 @@ export async function GET(
         })
 
         if (!ticket) {
+            await logTicketIssuance({
+                outcome: "TICKET_NOT_FOUND",
+                reason: `No existe ticket con id/code "${rawId}" para el usuario ${user.id}`,
+                ticketId: rawId,
+                userId: user.id,
+                requestedDate: dateParam,
+                request,
+            })
             return NextResponse.json(
                 { success: false, error: "Ticket no encontrado" },
                 { status: 404 }
@@ -232,18 +250,79 @@ export async function GET(
         let qrDataUrl: string | null = null
         let qrShift: string | null = null
 
-        if (hasEntitlement && ticket.status === "ACTIVE") {
+        if (ticket.status !== "ACTIVE") {
+            await logTicketIssuance({
+                outcome: "TICKET_NOT_ACTIVE",
+                reason: `Ticket en estado ${ticket.status} — no se genera QR`,
+                ticketId: ticket.id,
+                userId: ticket.userId,
+                eventId: ticket.eventId,
+                qrDate: dateStr,
+                requestedDate: dateParam,
+                request,
+            })
+        } else if (!hasEntitlement) {
+            const reasonParts: string[] = []
+            if (!isWithinEventRange) {
+                reasonParts.push(`Fecha ${dateStr} fuera del rango del evento (${eventStart} a ${eventEnd})`)
+            }
+            if (entitlementDates.length === 0) {
+                reasonParts.push("El ticket no tiene entitlements (días válidos) configurados")
+            } else if (!entitlementDates.includes(dateStr)) {
+                reasonParts.push(`Fecha ${dateStr} no está en los días habilitados (${entitlementDates.join(", ")})`)
+            }
+            if (isPackage && usedCount >= (packageDaysCount ?? 0)) {
+                reasonParts.push(`Paquete agotado: ${usedCount}/${packageDaysCount} usos consumidos`)
+            }
+            await logTicketIssuance({
+                outcome: "NO_ENTITLEMENT",
+                reason: reasonParts.join(" | ") || "Sin entitlement disponible para la fecha solicitada",
+                ticketId: ticket.id,
+                userId: ticket.userId,
+                eventId: ticket.eventId,
+                qrDate: dateStr,
+                requestedDate: dateParam,
+                request,
+            })
+        } else {
             qrShift = getExpectedShiftForDate(scheduleSelections, dateStr)
 
-            const qrPayload = createQRPayload(
-                ticket.id,
-                ticket.eventId,
-                ticket.userId,
-                ticket.ticketCode,
-                qrDate,
-                qrShift
-            )
-            qrDataUrl = await generateQRDataURL(qrPayload)
+            try {
+                const qrPayload = createQRPayload(
+                    ticket.id,
+                    ticket.eventId,
+                    ticket.userId,
+                    ticket.ticketCode,
+                    qrDate,
+                    qrShift
+                )
+                qrDataUrl = await generateQRDataURL(qrPayload)
+                await logTicketIssuance({
+                    outcome: "OK",
+                    ticketId: ticket.id,
+                    userId: ticket.userId,
+                    eventId: ticket.eventId,
+                    qrDate: dateStr,
+                    qrShift,
+                    requestedDate: dateParam,
+                    request,
+                })
+            } catch (qrErr) {
+                const message = qrErr instanceof Error ? `${qrErr.name}: ${qrErr.message}` : String(qrErr)
+                console.error("QR generation error:", qrErr)
+                await logTicketIssuance({
+                    outcome: "QR_GENERATION_ERROR",
+                    reason: message,
+                    ticketId: ticket.id,
+                    userId: ticket.userId,
+                    eventId: ticket.eventId,
+                    qrDate: dateStr,
+                    qrShift,
+                    requestedDate: dateParam,
+                    request,
+                })
+                qrDataUrl = null
+            }
         }
 
         const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
@@ -264,6 +343,14 @@ export async function GET(
         })
     } catch (error) {
         console.error("Error fetching ticket:", error)
+        const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+        await logTicketIssuance({
+            outcome: "INTERNAL_ERROR",
+            reason: message,
+            ticketId: rawId,
+            requestedDate: dateParam,
+            request,
+        })
         return NextResponse.json(
             { success: false, error: "Error al obtener ticket" },
             { status: 500 }
