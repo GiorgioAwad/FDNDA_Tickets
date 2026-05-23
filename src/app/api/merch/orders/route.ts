@@ -8,7 +8,7 @@ import { rateLimit } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
-const MIN_MERCH_ITEMS_PER_ORDER = 2
+const MIN_MERCH_ORDER_SUBTOTAL = 30
 const SHIPPING_COST_PROVINCE = Number(process.env.MERCH_SHIPPING_COST_PROV ?? "10")
 
 const merchItemSchema = z.object({
@@ -90,14 +90,6 @@ export async function POST(request: NextRequest) {
         }
 
         const { items, billing, delivery } = parsed.data
-        const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0)
-
-        if (totalQuantity < MIN_MERCH_ITEMS_PER_ORDER) {
-            return NextResponse.json(
-                { success: false, error: "La compra minima de merch es de 2 productos." },
-                { status: 400 }
-            )
-        }
 
         if (!billing.buyerUbigeo) {
             return NextResponse.json(
@@ -193,6 +185,10 @@ export async function POST(request: NextRequest) {
                         imageUrl: product.imageUrl,
                     } as Prisma.InputJsonValue,
                 })
+            }
+
+            if (itemsTotal < MIN_MERCH_ORDER_SUBTOTAL) {
+                throw new Error(`La compra minima de merch es de S/ ${MIN_MERCH_ORDER_SUBTOTAL}.`)
             }
 
             const totalAmount = itemsTotal + shippingCost

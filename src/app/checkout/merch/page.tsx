@@ -64,7 +64,7 @@ const DEFAULT_BILLING: BillingState = {
     buyerUbigeo: "",
 }
 
-const MIN_MERCH_ITEMS_PER_ORDER = 2
+const MIN_MERCH_ORDER_SUBTOTAL = 30
 const SHIPPING_COST_PROVINCE = Number(process.env.NEXT_PUBLIC_MERCH_SHIPPING_COST_PROV ?? "10")
 const LIMA_PICKUP_LOCATION = "Campo de Marte"
 
@@ -135,6 +135,7 @@ export default function MerchCheckoutPage() {
 
     const grandTotal = itemsTotal + shippingCost
     const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
+    const minimumRemaining = Math.max(MIN_MERCH_ORDER_SUBTOTAL - itemsTotal, 0)
 
     const boletaFullName = useMemo(
         () =>
@@ -149,7 +150,7 @@ export default function MerchCheckoutPage() {
 
     const validate = useCallback((): string | null => {
         if (items.length === 0) return "Tu carrito está vacío"
-        if (itemCount < MIN_MERCH_ITEMS_PER_ORDER) return "La compra minima de merch es de 2 productos."
+        if (itemsTotal < MIN_MERCH_ORDER_SUBTOTAL) return `La compra minima de merch es de ${formatPrice(MIN_MERCH_ORDER_SUBTOTAL)}.`
         if (!billing.buyerEmail || !/\S+@\S+\.\S+/.test(billing.buyerEmail)) return "Email inválido"
         if (!billing.buyerPhone || billing.buyerPhone.length < 6) return "Teléfono requerido"
 
@@ -179,7 +180,7 @@ export default function MerchCheckoutPage() {
             if (!shippingPhone.trim()) return "Teléfono de contacto para envío requerido"
         }
         return null
-    }, [items.length, itemCount, billing, destinationIsLima, deliveryMethod, shippingAddress, shippingDistrito, shippingPhone])
+    }, [items.length, itemsTotal, billing, destinationIsLima, deliveryMethod, shippingAddress, shippingDistrito, shippingPhone])
 
     const handleCheckout = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -413,9 +414,9 @@ export default function MerchCheckoutPage() {
                                         </div>
                                     )
                                 })}
-                                {itemCount < MIN_MERCH_ITEMS_PER_ORDER && (
+                                {minimumRemaining > 0 && (
                                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                                        La compra minima de merch es de 2 productos. Puedes combinar gorra, polera o pin.
+                                        La compra minima de merch es de {formatPrice(MIN_MERCH_ORDER_SUBTOTAL)}. Agrega {formatPrice(minimumRemaining)} mas en productos.
                                     </div>
                                 )}
                             </CardContent>
