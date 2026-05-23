@@ -481,7 +481,8 @@ export async function sendMerchOrderConfirmationEmail(input: MerchOrderEmailInpu
                    ${shippingReference ? `<p style="margin:0; color:#64748b; font-size:13px;">Ref: ${shippingReference}</p>` : ""}
                    <p style="margin:4px 0 0; color:#64748b; font-size:13px;">Contacto: ${shippingPhone || ""}</p>
                    <p style="margin:8px 0 0; color:#64748b; font-size:13px;">Te coordinaremos por WhatsApp para confirmar la entrega.</p>`
-                : `<p style="margin:8px 0 0;">🏢 <strong>Recojo en oficina FDNDA</strong></p>`
+                : `<p style="margin:8px 0 0;">🏢 <strong>Recojo en sede Campo de Marte</strong></p>
+                   <p style="margin:4px 0 0; color:#64748b; font-size:13px;">Presenta tu numero de orden y DNI al momento del recojo.</p>`
 
     const itemsTable = items
         .map((item) => {

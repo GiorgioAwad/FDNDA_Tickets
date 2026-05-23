@@ -68,6 +68,7 @@ const adminNavigation: NavGroup[] = [
         title: "Reportes",
         items: [
             { label: "Reportes", href: "/admin/reportes", icon: FileText },
+            { label: "Reporte merch", href: "/admin/reportes/merch", icon: ShoppingBag },
             { label: "Reclamos", href: "/admin/reclamos", icon: AlertCircle },
             { label: "Estadísticas", href: "/admin/estadisticas", icon: BarChart3 },
             { label: "Diagnóstico QR", href: "/admin/diagnostico-qr", icon: QrCode },
@@ -162,7 +163,7 @@ function AdminSidebar({ isOpen, onClose, collapsed, onToggleCollapse }: AdminSid
                                 <ul className="space-y-0.5">
                                     {group.items.map((item) => {
                                         const isActive = pathname === item.href ||
-                                            (item.href !== "/admin" && pathname.startsWith(item.href))
+                                            (item.href !== "/admin" && item.href !== "/admin/reportes" && pathname.startsWith(item.href))
                                         return (
                                             <li key={item.href}>
                                                 <Link
@@ -283,6 +284,7 @@ function AdminTopBar({ onMenuClick, title }: AdminTopBarProps) {
         if (pathname.includes("/entradas")) return "Entradas"
         if (pathname.includes("/cortesias")) return "Cortesías"
         if (pathname.includes("/ingresos")) return "Ingresos"
+        if (pathname.includes("/reportes/merch")) return "Reporte merch"
         if (pathname.includes("/reportes")) return "Reportes"
         if (pathname.includes("/estadisticas")) return "Estadísticas"
         if (pathname.includes("/reclamos")) return "Reclamos"

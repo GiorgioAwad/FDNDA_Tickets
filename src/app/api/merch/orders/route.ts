@@ -8,8 +8,8 @@ import { rateLimit } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
-const SHIPPING_COST_LIMA = Number(process.env.MERCH_SHIPPING_COST_LIMA ?? "10")
-const SHIPPING_COST_PROVINCE = Number(process.env.MERCH_SHIPPING_COST_PROV ?? "15")
+const MIN_MERCH_ITEMS_PER_ORDER = 2
+const SHIPPING_COST_PROVINCE = Number(process.env.MERCH_SHIPPING_COST_PROV ?? "10")
 
 const merchItemSchema = z.object({
     productId: z.string().min(1),
@@ -43,7 +43,7 @@ const merchOrderSchema = z.object({
             method: z.literal("SHIPPING_HOME"),
             shippingAddress: z.string().min(5),
             shippingDistrito: z.string().min(1),
-            shippingUbigeo: z.string().optional().nullable(),
+            shippingUbigeo: z.string().min(1),
             shippingReference: z.string().optional().nullable(),
             shippingPhone: z.string().min(6),
         }),
@@ -53,11 +53,14 @@ const merchOrderSchema = z.object({
     ]),
 })
 
-// Determina costo de envío según ubigeo (00 = Lima Metropolitana)
+function isLimaDestination(ubigeo: string | null | undefined): boolean {
+    return Boolean(ubigeo?.startsWith("15"))
+}
+
+// Provincia tiene envio fijo. Lima se atiende con recojo en Campo de Marte.
 function calculateShippingCost(ubigeo: string | null | undefined): number {
-    if (!ubigeo) return SHIPPING_COST_PROVINCE
-    // Ubigeo INEI: primeros 2 dígitos son departamento. 15 = Lima
-    return ubigeo.startsWith("15") ? SHIPPING_COST_LIMA : SHIPPING_COST_PROVINCE
+    if (!ubigeo || isLimaDestination(ubigeo)) return 0
+    return SHIPPING_COST_PROVINCE
 }
 
 export async function POST(request: NextRequest) {
@@ -87,22 +90,49 @@ export async function POST(request: NextRequest) {
         }
 
         const { items, billing, delivery } = parsed.data
+        const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0)
+
+        if (totalQuantity < MIN_MERCH_ITEMS_PER_ORDER) {
+            return NextResponse.json(
+                { success: false, error: "La compra minima de merch es de 2 productos." },
+                { status: 400 }
+            )
+        }
+
+        if (!billing.buyerUbigeo) {
+            return NextResponse.json(
+                { success: false, error: "Selecciona tu ubicacion para definir recojo o envio." },
+                { status: 400 }
+            )
+        }
+
+        if (delivery.method === "PICKUP_EVENT") {
+            return NextResponse.json(
+                { success: false, error: "El recojo de merch en Lima es en la sede Campo de Marte." },
+                { status: 400 }
+            )
+        }
+
+        if (delivery.method === "SHIPPING_HOME" && isLimaDestination(delivery.shippingUbigeo)) {
+            return NextResponse.json(
+                { success: false, error: "Para Lima, el recojo de merch es en la sede Campo de Marte." },
+                { status: 400 }
+            )
+        }
+
+        if (delivery.method === "PICKUP_OFFICE" && !isLimaDestination(billing.buyerUbigeo)) {
+            return NextResponse.json(
+                { success: false, error: "Para provincia, selecciona envio a domicilio. El costo es S/ 10." },
+                { status: 400 }
+            )
+        }
+
         const billingSnapshot = buildBillingSnapshot(billing, user.email)
 
         // Resolver shipping cost antes de transacción
         let shippingCost = 0
-        let pickupEventId: string | null = null
         if (delivery.method === "SHIPPING_HOME") {
             shippingCost = calculateShippingCost(delivery.shippingUbigeo)
-        } else if (delivery.method === "PICKUP_EVENT") {
-            const event = await prisma.event.findFirst({
-                where: { id: delivery.pickupEventId, isPublished: true },
-                select: { id: true },
-            })
-            if (!event) {
-                return NextResponse.json({ success: false, error: "Evento de recojo inválido" }, { status: 400 })
-            }
-            pickupEventId = event.id
         }
 
         const order = await prisma.$transaction(async (tx) => {
@@ -176,7 +206,7 @@ export async function POST(request: NextRequest) {
                 provider: "IZIPAY",
                 fulfillmentStatus: "PENDING",
                 deliveryMethod: delivery.method,
-                pickupEventId,
+                pickupEventId: null,
                 shippingCost: shippingCost > 0 ? shippingCost : null,
                 ...(delivery.method === "SHIPPING_HOME"
                     ? {

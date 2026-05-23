@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { buildNaturalPersonFullName } from "@/lib/billing"
-import { formatPrice, formatDate } from "@/lib/utils"
+import { formatPrice } from "@/lib/utils"
 import { getUbigeoNames } from "@/lib/ubigeo-peru"
 import { ZONE_THEME } from "@/components/merch/theme"
 import type { IzipayCheckoutConfig } from "@/lib/izipay"
@@ -34,15 +34,7 @@ const IzipayCheckout = dynamic(
     { ssr: false }
 )
 
-type DeliveryMethod = "PICKUP_EVENT" | "SHIPPING_HOME" | "PICKUP_OFFICE"
-
-interface PickupEvent {
-    id: string
-    title: string
-    venue: string
-    location: string
-    startDate: string
-}
+type DeliveryMethod = "SHIPPING_HOME" | "PICKUP_OFFICE"
 
 interface BillingState {
     documentType: "BOLETA" | "FACTURA"
@@ -72,8 +64,13 @@ const DEFAULT_BILLING: BillingState = {
     buyerUbigeo: "",
 }
 
-const SHIPPING_COST_LIMA = Number(process.env.NEXT_PUBLIC_MERCH_SHIPPING_COST_LIMA ?? "10")
-const SHIPPING_COST_PROVINCE = Number(process.env.NEXT_PUBLIC_MERCH_SHIPPING_COST_PROV ?? "15")
+const MIN_MERCH_ITEMS_PER_ORDER = 2
+const SHIPPING_COST_PROVINCE = Number(process.env.NEXT_PUBLIC_MERCH_SHIPPING_COST_PROV ?? "10")
+const LIMA_PICKUP_LOCATION = "Campo de Marte"
+
+function isLimaDestination(ubigeo: string | null | undefined): boolean {
+    return Boolean(ubigeo?.startsWith("15"))
+}
 
 export default function MerchCheckoutPage() {
     const router = useRouter()
@@ -87,11 +84,9 @@ export default function MerchCheckoutPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState("")
     const [showAuthModal, setShowAuthModal] = useState(false)
-    const [pickupEvents, setPickupEvents] = useState<PickupEvent[]>([])
 
     const [billing, setBilling] = useState<BillingState>(DEFAULT_BILLING)
-    const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("SHIPPING_HOME")
-    const [pickupEventId, setPickupEventId] = useState<string>("")
+    const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("PICKUP_OFFICE")
     const [shippingAddress, setShippingAddress] = useState("")
     const [shippingDistrito, setShippingDistrito] = useState("")
     const [shippingReference, setShippingReference] = useState("")
@@ -123,36 +118,23 @@ export default function MerchCheckoutPage() {
         if (names) setShippingDistrito(names.distrito)
     }, [shippingUbigeo, shippingDistrito])
 
-    // Load active events for pickup option
+    const destinationIsLima = useMemo(() => {
+        if (!shippingUbigeo) return null
+        return isLimaDestination(shippingUbigeo)
+    }, [shippingUbigeo])
+
     useEffect(() => {
-        fetch("/api/events")
-            .then((res) => res.json())
-            .then((data) => {
-                if (!data?.success || !Array.isArray(data.data)) return
-                const events = data.data
-                    .filter((e: { isPublished?: boolean; endDate?: string }) => e.isPublished !== false && (!e.endDate || new Date(e.endDate) >= new Date()))
-                    .slice(0, 10)
-                    .map((e: { id: string; title: string; venue: string; location: string; startDate: string }) => ({
-                        id: e.id,
-                        title: e.title,
-                        venue: e.venue,
-                        location: e.location,
-                        startDate: e.startDate,
-                    }))
-                setPickupEvents(events)
-                if (events.length > 0 && !pickupEventId) setPickupEventId(events[0].id)
-            })
-            .catch(() => {})
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+        if (destinationIsLima === null) return
+        setDeliveryMethod(destinationIsLima ? "PICKUP_OFFICE" : "SHIPPING_HOME")
+    }, [destinationIsLima])
 
     const shippingCost = useMemo(() => {
         if (deliveryMethod !== "SHIPPING_HOME") return 0
-        if (!shippingUbigeo) return SHIPPING_COST_PROVINCE
-        return shippingUbigeo.startsWith("15") ? SHIPPING_COST_LIMA : SHIPPING_COST_PROVINCE
-    }, [deliveryMethod, shippingUbigeo])
+        return SHIPPING_COST_PROVINCE
+    }, [deliveryMethod])
 
     const grandTotal = itemsTotal + shippingCost
+    const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
 
     const boletaFullName = useMemo(
         () =>
@@ -167,6 +149,7 @@ export default function MerchCheckoutPage() {
 
     const validate = useCallback((): string | null => {
         if (items.length === 0) return "Tu carrito está vacío"
+        if (itemCount < MIN_MERCH_ITEMS_PER_ORDER) return "La compra minima de merch es de 2 productos."
         if (!billing.buyerEmail || !/\S+@\S+\.\S+/.test(billing.buyerEmail)) return "Email inválido"
         if (!billing.buyerPhone || billing.buyerPhone.length < 6) return "Teléfono requerido"
 
@@ -182,15 +165,21 @@ export default function MerchCheckoutPage() {
         }
         if (!billing.buyerUbigeo) return "Selecciona tu ubicación (departamento/provincia/distrito)"
 
+        if (destinationIsLima && deliveryMethod !== "PICKUP_OFFICE") {
+            return `Para Lima, el recojo es en la sede ${LIMA_PICKUP_LOCATION}.`
+        }
+
+        if (destinationIsLima === false && deliveryMethod !== "SHIPPING_HOME") {
+            return "Para provincia, selecciona envio a domicilio. El costo es S/ 10."
+        }
+
         if (deliveryMethod === "SHIPPING_HOME") {
             if (!shippingAddress.trim()) return "Dirección de envío requerida"
             if (!shippingDistrito.trim()) return "Distrito requerido"
             if (!shippingPhone.trim()) return "Teléfono de contacto para envío requerido"
-        } else if (deliveryMethod === "PICKUP_EVENT") {
-            if (!pickupEventId) return "Selecciona un evento para recoger"
         }
         return null
-    }, [items.length, billing, deliveryMethod, shippingAddress, shippingDistrito, shippingPhone, pickupEventId])
+    }, [items.length, itemCount, billing, destinationIsLima, deliveryMethod, shippingAddress, shippingDistrito, shippingPhone])
 
     const handleCheckout = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -221,18 +210,16 @@ export default function MerchCheckoutPage() {
                     buyerName: billing.documentType === "BOLETA" ? boletaFullName : billing.buyerName,
                 },
                 delivery:
-                    deliveryMethod === "PICKUP_EVENT"
-                        ? { method: "PICKUP_EVENT" as const, pickupEventId }
-                        : deliveryMethod === "SHIPPING_HOME"
-                            ? {
+                    deliveryMethod === "SHIPPING_HOME"
+                        ? {
                                 method: "SHIPPING_HOME" as const,
                                 shippingAddress,
                                 shippingDistrito,
-                                shippingUbigeo: shippingUbigeo || null,
+                                shippingUbigeo,
                                 shippingReference: shippingReference || null,
                                 shippingPhone,
                             }
-                            : { method: "PICKUP_OFFICE" as const },
+                        : { method: "PICKUP_OFFICE" as const },
             }
 
             const orderResponse = await fetch("/api/merch/orders", {
@@ -426,6 +413,11 @@ export default function MerchCheckoutPage() {
                                         </div>
                                     )
                                 })}
+                                {itemCount < MIN_MERCH_ITEMS_PER_ORDER && (
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                                        La compra minima de merch es de 2 productos. Puedes combinar gorra, polera o pin.
+                                    </div>
+                                )}
                             </CardContent>
                         </Card>
 
@@ -438,11 +430,16 @@ export default function MerchCheckoutPage() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-4">
+                                <div className="rounded-lg border border-fdnda-primary/20 bg-fdnda-primary/5 p-3 text-sm text-muted-foreground">
+                                    Lima: recojo sin costo en la sede {LIMA_PICKUP_LOCATION}. Provincia: envio a domicilio por S/ {SHIPPING_COST_PROVINCE}.
+                                </div>
+
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <button
                                         type="button"
                                         onClick={() => setDeliveryMethod("SHIPPING_HOME")}
-                                        className={`p-4 rounded-xl border-2 text-left transition-all ${
+                                        disabled={destinationIsLima === true}
+                                        className={`p-4 rounded-xl border-2 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                                             deliveryMethod === "SHIPPING_HOME"
                                                 ? "border-fdnda-primary bg-fdnda-primary/5"
                                                 : "border-border bg-white hover:border-fdnda-primary/50"
@@ -452,43 +449,31 @@ export default function MerchCheckoutPage() {
                                             <Truck className="h-4 w-4 text-fdnda-primary" />
                                             <span className="font-semibold text-sm">Envío a domicilio</span>
                                         </div>
-                                        <p className="text-xs text-muted-foreground">Lima: S/ {SHIPPING_COST_LIMA} · Provincia: S/ {SHIPPING_COST_PROVINCE}</p>
+                                        <p className="text-xs text-muted-foreground">Solo provincia · S/ {SHIPPING_COST_PROVINCE}</p>
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => setDeliveryMethod("PICKUP_EVENT")}
-                                        disabled={pickupEvents.length === 0}
+                                        onClick={() => setDeliveryMethod("PICKUP_OFFICE")}
+                                        disabled={destinationIsLima === false}
                                         className={`p-4 rounded-xl border-2 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                                            deliveryMethod === "PICKUP_EVENT"
+                                            deliveryMethod === "PICKUP_OFFICE"
                                                 ? "border-fdnda-primary bg-fdnda-primary/5"
                                                 : "border-border bg-white hover:border-fdnda-primary/50"
                                         }`}
                                     >
                                         <div className="flex items-center gap-2 mb-1">
                                             <MapPin className="h-4 w-4 text-fdnda-primary" />
-                                            <span className="font-semibold text-sm">Recojo en evento</span>
+                                            <span className="font-semibold text-sm">Recojo en sede</span>
                                         </div>
-                                        <p className="text-xs text-muted-foreground">Sin costo de envío</p>
+                                        <p className="text-xs text-muted-foreground">Lima · {LIMA_PICKUP_LOCATION} · Sin costo</p>
                                     </button>
                                 </div>
 
-                                {deliveryMethod === "PICKUP_EVENT" && (
-                                    <div>
-                                        <label className="text-sm font-semibold block mb-1.5">Evento de recojo</label>
-                                        <select
-                                            value={pickupEventId}
-                                            onChange={(e) => setPickupEventId(e.target.value)}
-                                            className="w-full h-11 rounded-lg border border-input bg-white px-3 text-sm"
-                                        >
-                                            <option value="">— Selecciona un evento —</option>
-                                            {pickupEvents.map((event) => (
-                                                <option key={event.id} value={event.id}>
-                                                    {event.title} · {formatDate(event.startDate, { dateStyle: "medium" })}
-                                                </option>
-                                            ))}
-                                        </select>
+                                {deliveryMethod === "PICKUP_OFFICE" && (
+                                    <div className="rounded-lg bg-gray-50 border border-border p-3">
+                                        <p className="text-sm font-semibold text-foreground">Recojo en {LIMA_PICKUP_LOCATION}</p>
                                         <p className="text-xs text-muted-foreground mt-1">
-                                            Recoge tu pedido el día del evento en el módulo de FDNDA.
+                                            Disponible para compras destinadas a Lima. Presenta tu numero de orden al momento del recojo.
                                         </p>
                                     </div>
                                 )}
@@ -632,11 +617,11 @@ export default function MerchCheckoutPage() {
                                 </CardHeader>
                                 <CardContent className="space-y-2 text-sm">
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Productos ({items.reduce((s, i) => s + i.quantity, 0)})</span>
+                                        <span className="text-muted-foreground">Productos ({itemCount})</span>
                                         <span>{formatPrice(itemsTotal)}</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Envío</span>
+                                        <span className="text-muted-foreground">{deliveryMethod === "SHIPPING_HOME" ? "Envio" : "Recojo"}</span>
                                         <span>{shippingCost > 0 ? formatPrice(shippingCost) : "Gratis"}</span>
                                     </div>
                                     <div className="h-px bg-border my-2" />

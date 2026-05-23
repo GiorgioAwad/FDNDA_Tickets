@@ -52,6 +52,7 @@ export async function GET() {
         }
 
         const orders = await prisma.order.findMany({
+            where: { orderType: "TICKET" },
             include: {
                 user: {
                     select: {

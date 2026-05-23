@@ -23,6 +23,7 @@ import {
     ChevronLeft,
     ChevronRight,
     Bell,
+    ShoppingBag,
 } from "lucide-react"
 
 interface NavItem {
@@ -49,6 +50,7 @@ const treasuryNavigation: NavGroup[] = [
         items: [
             { label: "Ingresos", href: "/tesoreria/ingresos", icon: DollarSign },
             { label: "Reportes", href: "/tesoreria/reportes", icon: FileText },
+            { label: "Reporte merch", href: "/tesoreria/reportes/merch", icon: ShoppingBag },
             { label: "Estadísticas", href: "/tesoreria/estadisticas", icon: BarChart3 },
             { label: "Reclamos", href: "/tesoreria/reclamos", icon: AlertCircle },
         ],
@@ -61,6 +63,7 @@ function resolveTitle(pathname: string) {
     if (pathname === "/tesoreria") return "Resumen"
     if (pathname.includes("/tesoreria/eventos")) return "Eventos"
     if (pathname.includes("/tesoreria/ingresos")) return "Ingresos"
+    if (pathname.includes("/tesoreria/reportes/merch")) return "Reporte merch"
     if (pathname.includes("/tesoreria/reportes")) return "Reportes"
     if (pathname.includes("/tesoreria/estadisticas")) return "Estadísticas"
     if (pathname.includes("/tesoreria/reclamos")) return "Reclamos"
@@ -139,7 +142,7 @@ function TreasurySidebar({
                                 <ul className="space-y-0.5">
                                     {group.items.map((item) => {
                                         const isActive = pathname === item.href ||
-                                            (item.href !== "/tesoreria" && pathname.startsWith(item.href))
+                                            (item.href !== "/tesoreria" && item.href !== "/tesoreria/reportes" && pathname.startsWith(item.href))
                                         return (
                                             <li key={item.href}>
                                                 <Link
