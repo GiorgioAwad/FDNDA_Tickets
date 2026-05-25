@@ -239,6 +239,7 @@ export interface ServilexSourceTicketType {
 }
 
 export interface ServilexSourceOrderItem {
+    id?: string | null
     quantity: number
     unitPrice: unknown
     attendeeData: unknown
@@ -292,6 +293,7 @@ export interface ServilexInvoiceSnapshot {
     eventCategory: ServilexEventCategory | null
     groupType: ServilexInvoiceGroupType
     groupKey: string
+    legacyGroupKey?: string
     groupLabel: string
     assignedTotal: number
     alumno: ServilexSnapshotAlumno | null
@@ -332,6 +334,8 @@ type ServilexUnitBase = {
     sucursal: string
     eventCategory: ServilexEventCategory | null
     baseAmount: number
+    sourceItemKey: string
+    sourceUnitIndex: number
 }
 
 type ServilexAcademiaUnit = ServilexUnitBase & {
@@ -473,6 +477,31 @@ function asString(value: unknown): string | null {
     if (typeof value !== "string") return null
     const normalized = value.trim()
     return normalized ? normalized : null
+}
+
+function normalizeGroupKeySegment(value: string): string {
+    const normalized = value
+        .trim()
+        .replace(/[^A-Za-z0-9_-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^[-_]+|[-_]+$/g, "")
+
+    return normalized || "item"
+}
+
+function buildSourceItemKey(item: ServilexSourceOrderItem, itemIndex: number): string {
+    const itemId = asString(item.id)
+    if (itemId) {
+        return normalizeGroupKeySegment(itemId)
+    }
+
+    const fallbackParts = [
+        item.ticketType?.event.id,
+        item.ticketType?.name,
+        String(itemIndex + 1),
+    ].filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+
+    return normalizeGroupKeySegment(fallbackParts.join("-"))
 }
 
 function asPositiveNumber(value: unknown): number | null {
@@ -634,34 +663,6 @@ function getAcAttendeeData(raw: unknown): ServilexAttendeeRecord {
         matricula,
         scheduleSelections: normalizeScheduleSelections(attendeeRecord?.scheduleSelections),
     }
-}
-
-// ABIO valida "Otros Servicios" por `servicio` contra una sola deuda
-// registrada: multiples lineas del mismo servicio gatillan "monto a pagar
-// mayor a la deuda". Ademas ABIO trata `precio` como VALOR UNITARIO y calcula
-// el total de linea como `cantidad x precio`. Como cada entrada puede tener un
-// precio distinto (6, 5, 12...), no se pueden expresar como una sola
-// `cantidad x unitario`; la unica representacion exacta para un solo servicio
-// es una linea con `cantidad: 1` y `precio` = monto total de ese servicio.
-// `precio` en el snapshot ya es el monto completo asignado a la unidad, asi
-// que el total del grupo es la suma de precios. Forzar `cantidad: 1` tambien
-// corrige el bug latente de `cantidad > 1` (ABIO lo multiplicaba). Se aplica
-// al construir el snapshot y al re-parsearlo en el envio, cubriendo snapshots
-// persistidos antes de esta correccion y reintentos del worker.
-function consolidateOtrosServiciosDetalle(
-    items: ServilexDetalleOtrosServiciosItem[]
-): ServilexDetalleOtrosServiciosItem[] {
-    const consolidated = new Map<string, ServilexDetalleOtrosServiciosItem>()
-    for (const item of items) {
-        const key = `${item.servicio}::${item.descuento}`
-        const existing = consolidated.get(key)
-        if (existing) {
-            existing.precio = roundCurrency(existing.precio + item.precio)
-        } else {
-            consolidated.set(key, { ...item, cantidad: 1 })
-        }
-    }
-    return Array.from(consolidated.values())
 }
 
 function allocateLineAmounts(baseAmounts: number[], finalTotal: number): number[] {
@@ -884,7 +885,9 @@ function buildAcademiaUnit(
     item: ServilexSourceOrderItem,
     attendee: ServilexAttendeeRecord,
     order: ServilexSourceOrder,
-    unitPrice: number
+    unitPrice: number,
+    sourceItemKey: string,
+    sourceUnitIndex: number
 ): ServilexAcademiaUnit {
     if (!item.ticketType) {
         throw new Error("buildAcademiaUnit: item.ticketType es null")
@@ -905,6 +908,8 @@ function buildAcademiaUnit(
         sucursal,
         eventCategory: getServilexItemEventCategory(item),
         baseAmount: unitPrice,
+        sourceItemKey,
+        sourceUnitIndex,
         attendee,
         alumno: buildAttendeeAlumnoSnapshot(attendee, order),
         detalle: {
@@ -921,7 +926,9 @@ function buildAcademiaUnit(
 
 function buildOtrosServiciosUnit(
     item: ServilexSourceOrderItem,
-    unitPrice: number
+    unitPrice: number,
+    sourceItemKey: string,
+    sourceUnitIndex: number
 ): ServilexOtrosServiciosUnit {
     if (!item.ticketType) {
         throw new Error("buildOtrosServiciosUnit: item.ticketType es null")
@@ -934,6 +941,8 @@ function buildOtrosServiciosUnit(
         sucursal: getServilexItemSucursal(item),
         eventCategory: getServilexItemEventCategory(item),
         baseAmount: unitPrice,
+        sourceItemKey,
+        sourceUnitIndex,
         detalle: {
             servicio: normalizeCode(ticketType.servilexServiceCode, "servicio"),
             cantidad: asPositiveNumber(extraConfig.cantidad) || 1,
@@ -945,7 +954,9 @@ function buildOtrosServiciosUnit(
 function buildPiscinaLibreUnit(
     item: ServilexSourceOrderItem,
     indicator: "PN" | "PA",
-    unitPrice: number
+    unitPrice: number,
+    sourceItemKey: string,
+    sourceUnitIndex: number
 ): ServilexPiscinaLibreUnit {
     if (!item.ticketType) {
         throw new Error("buildPiscinaLibreUnit: item.ticketType es null")
@@ -958,6 +969,8 @@ function buildPiscinaLibreUnit(
         sucursal: getServilexItemSucursal(item),
         eventCategory: getServilexItemEventCategory(item),
         baseAmount: unitPrice,
+        sourceItemKey,
+        sourceUnitIndex,
         detalle: {
             servicio: normalizeCode(ticketType.servilexServiceCode, "servicio"),
             cantidad: asPositiveNumber(extraConfig.cantidad) || 1,
@@ -970,10 +983,20 @@ function buildPiscinaLibreUnit(
 }
 
 function buildInvoiceUnits(order: ServilexSourceOrder): ServilexInvoiceUnit[] {
-    const servilexItems = order.orderItems.filter(
-        (item): item is typeof item & { ticketType: NonNullable<typeof item.ticketType> } =>
-            item.ticketType !== null && item.ticketType.servilexEnabled
-    )
+    const servilexItems = order.orderItems
+        .map((item, itemIndex) => ({ item, itemIndex }))
+        .filter((
+            entry
+        ): entry is {
+            item: ServilexSourceOrderItem & { ticketType: ServilexSourceTicketType }
+            itemIndex: number
+        } => entry.item.ticketType !== null && entry.item.ticketType.servilexEnabled)
+        .sort((a, b) => {
+            const aId = asString(a.item.id)
+            const bId = asString(b.item.id)
+            if (aId && bId) return aId.localeCompare(bId)
+            return a.itemIndex - b.itemIndex
+        })
 
     if (servilexItems.length === 0) {
         return []
@@ -987,7 +1010,7 @@ function buildInvoiceUnits(order: ServilexSourceOrder): ServilexInvoiceUnit[] {
 
     const units: ServilexInvoiceUnit[] = []
 
-    for (const item of servilexItems) {
+    for (const { item, itemIndex } of servilexItems) {
         if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
             throw new Error(`Cantidad Servilex inválida en ${item.ticketType.name}`)
         }
@@ -997,20 +1020,21 @@ function buildInvoiceUnits(order: ServilexSourceOrder): ServilexInvoiceUnit[] {
             ? (item.attendeeData as unknown[])
             : []
         const unitPrice = roundCurrency(toAmountNumber(item.unitPrice))
+        const sourceItemKey = buildSourceItemKey(item, itemIndex)
 
         for (let index = 0; index < item.quantity; index++) {
             if (indicator === "AC") {
                 const attendee = getAcAttendeeData(attendeeData[index])
-                units.push(buildAcademiaUnit(item, attendee, order, unitPrice))
+                units.push(buildAcademiaUnit(item, attendee, order, unitPrice, sourceItemKey, index))
                 continue
             }
 
             if (indicator === "OS") {
-                units.push(buildOtrosServiciosUnit(item, unitPrice))
+                units.push(buildOtrosServiciosUnit(item, unitPrice, sourceItemKey, index))
                 continue
             }
 
-            units.push(buildPiscinaLibreUnit(item, indicator, unitPrice))
+            units.push(buildPiscinaLibreUnit(item, indicator, unitPrice, sourceItemKey, index))
         }
     }
 
@@ -1025,127 +1049,121 @@ function buildIndicatorGroupKey(unit: ServilexOtrosServiciosUnit | ServilexPisci
     return `${unit.indicator}:${unit.sucursal}`
 }
 
+function buildLegacyGroupKey(unit: ServilexInvoiceUnit): string {
+    return unit.indicator === "AC"
+        ? buildAcademiaGroupKey(unit)
+        : buildIndicatorGroupKey(unit)
+}
+
+function buildUnitGroupKey(unit: ServilexInvoiceUnit, legacyGroupKey: string, shouldSplit: boolean): string {
+    if (!shouldSplit) return legacyGroupKey
+
+    return `${legacyGroupKey}:item:${unit.sourceItemKey}:${unit.sourceUnitIndex + 1}`
+}
+
+function buildUnitGroupLabel(unit: ServilexInvoiceUnit): string {
+    if (unit.indicator === "AC") {
+        return unit.attendee.name
+    }
+
+    return `${unit.indicator}-${unit.sucursal}`
+}
+
+function buildUnitSnapshot(
+    unit: ServilexInvoiceUnit,
+    groupKey: string,
+    legacyGroupKey: string,
+    assignedTotal: number
+): ServilexInvoiceSnapshot {
+    if (unit.indicator === "AC") {
+        const detalle = [{
+            ...unit.detalle,
+            precio: assignedTotal,
+        }]
+
+        return {
+            indicator: unit.indicator,
+            sucursal: unit.sucursal,
+            eventCategory: unit.eventCategory,
+            groupType: "ALUMNO",
+            groupKey,
+            legacyGroupKey,
+            groupLabel: buildUnitGroupLabel(unit),
+            assignedTotal,
+            alumno: unit.alumno,
+            detalle,
+        }
+    }
+
+    if (unit.indicator === "OS") {
+        const detalle = [{
+            ...unit.detalle,
+            cantidad: 1,
+            precio: assignedTotal,
+        }]
+
+        return {
+            indicator: unit.indicator,
+            sucursal: unit.sucursal,
+            eventCategory: unit.eventCategory,
+            groupType: "INDICATOR",
+            groupKey,
+            legacyGroupKey,
+            groupLabel: buildUnitGroupLabel(unit),
+            assignedTotal,
+            alumno: null,
+            detalle,
+        }
+    }
+
+    const detalle = [{
+        ...unit.detalle,
+        precio: assignedTotal,
+    }]
+
+    return {
+        indicator: unit.indicator,
+        sucursal: unit.sucursal,
+        eventCategory: unit.eventCategory,
+        groupType: "INDICATOR",
+        groupKey,
+        legacyGroupKey,
+        groupLabel: buildUnitGroupLabel(unit),
+        assignedTotal,
+        alumno: null,
+        detalle,
+    }
+}
+
 export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): ServilexInvoiceSnapshot[] {
     const units = buildInvoiceUnits(order)
     if (units.length === 0) return []
 
-    const groups = new Map<string, {
-        indicator: ServilexIndicator
-        sucursal: string
-        eventCategory: ServilexEventCategory | null
-        groupType: ServilexInvoiceGroupType
-        groupLabel: string
-        alumno: ServilexSnapshotAlumno | null
-        units: ServilexInvoiceUnit[]
-    }>()
-
-    for (const unit of units) {
-        const groupKey =
-            unit.indicator === "AC"
-                ? buildAcademiaGroupKey(unit)
-                : buildIndicatorGroupKey(unit)
-
-        if (!groups.has(groupKey)) {
-            groups.set(groupKey, {
-                indicator: unit.indicator,
-                sucursal: unit.sucursal,
-                eventCategory: unit.eventCategory,
-                groupType: unit.indicator === "AC" ? "ALUMNO" : "INDICATOR",
-                groupLabel:
-                    unit.indicator === "AC"
-                        ? unit.attendee.name
-                        : `${unit.indicator}-${unit.sucursal}`,
-                alumno: unit.indicator === "AC" ? unit.alumno : null,
-                units: [],
-            })
-        }
-
-        const group = groups.get(groupKey)
-        if (group && !group.eventCategory && unit.eventCategory) {
-            group.eventCategory = unit.eventCategory
-        }
-        group?.units.push(unit)
+    const legacyGroupKeys = units.map((unit) => buildLegacyGroupKey(unit))
+    const legacyGroupCounts = new Map<string, number>()
+    for (const key of legacyGroupKeys) {
+        legacyGroupCounts.set(key, (legacyGroupCounts.get(key) || 0) + 1)
     }
 
-    const orderedGroups = Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b))
-    const assignedTotals = allocateLineAmounts(
-        orderedGroups.map(([, group]) =>
-            group.units.reduce((sum, unit) => sum + unit.baseAmount, 0)
-        ),
+    const lineAmounts = allocateLineAmounts(
+        units.map((unit) => unit.baseAmount),
         roundCurrency(toAmountNumber(order.totalAmount))
     )
 
-    return orderedGroups.map(([groupKey, group], groupIndex) => {
-        const lineAmounts = allocateLineAmounts(
-            group.units.map((unit) => unit.baseAmount),
-            assignedTotals[groupIndex] ?? 0
+    return units.map((unit, index) => {
+        const legacyGroupKey = legacyGroupKeys[index]
+        const groupKey = buildUnitGroupKey(
+            unit,
+            legacyGroupKey,
+            (legacyGroupCounts.get(legacyGroupKey) || 0) > 1
         )
 
-        if (group.indicator === "AC") {
-            const detalle = group.units.map((unit, index) => {
-                const typedUnit = unit as ServilexAcademiaUnit
-                return {
-                    ...typedUnit.detalle,
-                    precio: lineAmounts[index] ?? 0,
-                }
-            })
-
-            return {
-                indicator: group.indicator,
-                sucursal: group.sucursal,
-                eventCategory: group.eventCategory,
-                groupType: group.groupType,
-                groupKey,
-                groupLabel: group.groupLabel,
-                assignedTotal: roundCurrency(detalle.reduce((sum, item) => sum + item.precio, 0)),
-                alumno: group.alumno,
-                detalle,
-            } satisfies ServilexInvoiceSnapshot
-        }
-
-        if (group.indicator === "OS") {
-            const expandedDetalle = group.units.map((unit, index) => {
-                const typedUnit = unit as ServilexOtrosServiciosUnit
-                return {
-                    ...typedUnit.detalle,
-                    precio: lineAmounts[index] ?? 0,
-                }
-            })
-
-            const detalle = consolidateOtrosServiciosDetalle(expandedDetalle)
-
-            return {
-                indicator: group.indicator,
-                sucursal: group.sucursal,
-                eventCategory: group.eventCategory,
-                groupType: group.groupType,
-                groupKey,
-                groupLabel: group.groupLabel,
-                assignedTotal: roundCurrency(detalle.reduce((sum, item) => sum + item.precio, 0)),
-                alumno: null,
-                detalle,
-            } satisfies ServilexInvoiceSnapshot
-        }
-
-        const detalle = group.units.map((unit, index) => {
-            const typedUnit = unit as ServilexPiscinaLibreUnit
-            return {
-                ...typedUnit.detalle,
-                precio: lineAmounts[index] ?? 0,
-            }
-        })
-
-        return {
-            indicator: group.indicator,
-            sucursal: group.sucursal,
-            eventCategory: group.eventCategory,
-            groupType: group.groupType,
+        return buildUnitSnapshot(
+            unit,
             groupKey,
-            groupLabel: group.groupLabel,
-            assignedTotal: roundCurrency(detalle.reduce((sum, item) => sum + item.precio, 0)),
-            alumno: null,
-            detalle,
-        } satisfies ServilexInvoiceSnapshot
+            legacyGroupKey,
+            roundCurrency(lineAmounts[index] ?? 0)
+        )
     })
 }
 
@@ -1256,7 +1274,7 @@ function parseInvoiceSnapshot(
             indicator === "AC"
                 ? parseAcademiaDetalle(detalleRaw)
                 : indicator === "OS"
-                  ? consolidateOtrosServiciosDetalle(parseOtrosServiciosDetalle(detalleRaw))
+                  ? parseOtrosServiciosDetalle(detalleRaw)
                   : parsePiscinaDetalle(detalleRaw)
         const assignedTotal = roundCurrency(
             detalle.reduce((sum, item) => sum + toAmountNumber(item.precio), 0)
@@ -1272,6 +1290,10 @@ function parseInvoiceSnapshot(
             groupType:
                 asString(snapshotRecord.groupType) === "ALUMNO" ? "ALUMNO" : "INDICATOR",
             groupKey: asString(snapshotRecord.groupKey) || source.servilexGroupKey,
+            legacyGroupKey:
+                asString(snapshotRecord.legacyGroupKey) ||
+                asString(snapshotRecord.groupKey) ||
+                source.servilexGroupKey,
             groupLabel:
                 asString(snapshotRecord.groupLabel) ||
                 asString(source.servilexGroupLabel) ||
@@ -1290,6 +1312,7 @@ function parseInvoiceSnapshot(
         eventCategory: null,
         groupType: "INDICATOR",
         groupKey: source.servilexGroupKey,
+        legacyGroupKey: source.servilexGroupKey,
         groupLabel: asString(source.servilexGroupLabel) || source.servilexGroupKey,
         assignedTotal: roundCurrency(toAmountNumber(source.servilexAssignedTotal)),
         alumno: parseSnapshotAlumno(source.alumnoSnapshot),
@@ -1345,6 +1368,12 @@ export function buildServilexPayload(
 
     if (snapshot.detalle.length === 0) {
         throw new Error(`Invoice Servilex ${source.servilexGroupKey} no tiene detalle`)
+    }
+
+    if (snapshot.detalle.length > 1) {
+        throw new Error(
+            `Invoice Servilex ${source.servilexGroupKey} tiene ${snapshot.detalle.length} detalles; ABIO requiere un comprobante por item`
+        )
     }
 
     const alumnoPayload =

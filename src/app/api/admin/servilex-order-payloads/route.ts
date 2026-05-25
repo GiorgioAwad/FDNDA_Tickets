@@ -127,6 +127,7 @@ export async function GET(request: NextRequest) {
                             orderItems: order.orderItems
                                 .filter((item): item is typeof item & { ticketType: NonNullable<typeof item.ticketType> } => item.ticketType !== null)
                                 .map((item) => ({
+                                    id: item.id,
                                     quantity: item.quantity,
                                     unitPrice: item.unitPrice,
                                     attendeeData: item.attendeeData,
