@@ -2,6 +2,11 @@ import { Ratelimit } from "@upstash/ratelimit"
 import { redis, shouldUseInMemoryFallback } from "@/lib/redis"
 
 const memoryCache = new Map<string, { count: number; resetAt: number }>()
+const isStagingDeployment =
+    process.env.NEXT_PUBLIC_APP_URL?.includes("staging.") ||
+    process.env.NEXTAUTH_URL?.includes("staging.")
+
+type RateLimitType = keyof typeof rateLimiters
 
 export const rateLimiters = {
     auth: redis
@@ -38,39 +43,8 @@ export const rateLimiters = {
         : null,
 }
 
-export async function rateLimit(
-    identifier: string,
-    type: keyof typeof rateLimiters = "api"
-): Promise<{ success: boolean; remaining: number; reset: number }> {
-    const limiter = rateLimiters[type]
-
-    if (limiter) {
-        const result = await limiter.limit(identifier)
-        return {
-            success: result.success,
-            remaining: result.remaining,
-            reset: result.reset,
-        }
-    }
-
-    // In production without Redis, reject critical operations (auth, payment)
-    if (!shouldUseInMemoryFallback(`rate-limit.${type}`)) {
-        if (type === "auth" || type === "payment") {
-            console.error(`[rate-limit] Redis unavailable for critical type "${type}" — rejecting request`)
-            return {
-                success: false,
-                remaining: 0,
-                reset: Date.now() + 60_000,
-            }
-        }
-        return {
-            success: true,
-            remaining: Number.MAX_SAFE_INTEGER,
-            reset: Date.now() + 60_000,
-        }
-    }
-
-    const limits: Record<keyof typeof rateLimiters, { max: number; window: number }> = {
+function getInMemoryRateLimit(identifier: string, type: RateLimitType) {
+    const limits: Record<RateLimitType, { max: number; window: number }> = {
         auth: { max: 5, window: 60_000 },
         api: { max: 100, window: 60_000 },
         payment: { max: 10, window: 60_000 },
@@ -93,6 +67,68 @@ export async function rateLimit(
 
     entry.count += 1
     return { success: true, remaining: max - entry.count, reset: entry.resetAt }
+}
+
+function canFallbackToMemory(type: RateLimitType): boolean {
+    return shouldUseInMemoryFallback(`rate-limit.${type}`) || Boolean(isStagingDeployment)
+}
+
+export async function rateLimit(
+    identifier: string,
+    type: RateLimitType = "api"
+): Promise<{ success: boolean; remaining: number; reset: number }> {
+    const limiter = rateLimiters[type]
+
+    if (limiter) {
+        try {
+            const result = await limiter.limit(identifier)
+            return {
+                success: result.success,
+                remaining: result.remaining,
+                reset: result.reset,
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            console.error(`[rate-limit] Redis limiter failed for "${type}": ${message}`)
+
+            if (canFallbackToMemory(type)) {
+                return getInMemoryRateLimit(identifier, type)
+            }
+
+            if (type === "auth" || type === "payment") {
+                return {
+                    success: false,
+                    remaining: 0,
+                    reset: Date.now() + 60_000,
+                }
+            }
+
+            return {
+                success: true,
+                remaining: Number.MAX_SAFE_INTEGER,
+                reset: Date.now() + 60_000,
+            }
+        }
+    }
+
+    // In production without Redis, reject critical operations (auth, payment)
+    if (!canFallbackToMemory(type)) {
+        if (type === "auth" || type === "payment") {
+            console.error(`[rate-limit] Redis unavailable for critical type "${type}" — rejecting request`)
+            return {
+                success: false,
+                remaining: 0,
+                reset: Date.now() + 60_000,
+            }
+        }
+        return {
+            success: true,
+            remaining: Number.MAX_SAFE_INTEGER,
+            reset: Date.now() + 60_000,
+        }
+    }
+
+    return getInMemoryRateLimit(identifier, type)
 }
 
 export function getClientIP(request: Request): string {
