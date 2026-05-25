@@ -54,7 +54,7 @@ export async function GET(
             )
         }
 
-        const eventTitle = order.orderItems[0]?.ticketType.event.title || null
+        const eventTitle = order.orderItems[0]?.ticketType?.event.title || null
 
         return NextResponse.json(
             {

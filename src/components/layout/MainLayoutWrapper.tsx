@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation"
 import { Header } from "./Header"
 import { Footer } from "./Footer"
 import CartFloatingButton from "@/components/cart/CartFloatingButton"
+import MerchCartFloatingButton from "@/components/merch/MerchCartFloatingButton"
 
 export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname()
@@ -20,6 +21,7 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
             <Header />
             <main className="flex-1 overflow-x-hidden">{children}</main>
             <CartFloatingButton />
+            <MerchCartFloatingButton />
             <Footer />
         </div>
     )

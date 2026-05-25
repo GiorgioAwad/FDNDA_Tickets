@@ -7,9 +7,13 @@
     "dev:https": "next dev --experimental-https --experimental-https-key certs/localhost-key.pem --experimental-https-cert certs/localhost.pem",
     "build": "prisma generate && next build --webpack",
     "postinstall": "prisma generate",
-    "worker": "tsx --tsconfig tsconfig.json src/worker/index.ts",
+    "worker": "tsx --tsconfig tsconfig.json scripts/worker-runner.mjs",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "abio:batch": "tsx --tsconfig tsconfig.json scripts/abio-process-batch-once.mjs",
+    "abio:log": "node scripts/abio-export-batch-log.mjs",
+    "abio:remote-batch": "node scripts/abio-remote-batch.mjs",
+    "abio:stress-existing": "tsx --tsconfig tsconfig.json scripts/abio-existing-events-stress.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

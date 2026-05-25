@@ -25,6 +25,7 @@ import {
     ChevronDown,
     DollarSign,
     LifeBuoy,
+    ShoppingBag,
 } from "lucide-react"
 
 export function Header() {
@@ -163,6 +164,16 @@ export function Header() {
                                 )}
                             >
                                 Eventos
+                            </Link>
+                            <Link
+                                href="/merch"
+                                className={cn(
+                                    "text-sm font-medium px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5",
+                                    startsWith("/merch") ? "text-coral bg-coral-soft" : "text-foreground/80 hover:text-coral hover:bg-coral-soft/50"
+                                )}
+                            >
+                                <ShoppingBag className="h-4 w-4" />
+                                Merch
                             </Link>
                             {status === "authenticated" ? (
                                 <>
@@ -342,6 +353,15 @@ export function Header() {
                                             label="Eventos"
                                             icon={Calendar}
                                             active={startsWith("/eventos")}
+                                            onClick={() => setMobileMenuOpen(false)}
+                                        />
+                                    </motion.div>
+                                    <motion.div variants={drawerItemVariants}>
+                                        <DrawerLink
+                                            href="/merch"
+                                            label="Merch oficial"
+                                            icon={ShoppingBag}
+                                            active={startsWith("/merch")}
                                             onClick={() => setMobileMenuOpen(false)}
                                         />
                                     </motion.div>

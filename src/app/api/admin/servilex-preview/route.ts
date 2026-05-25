@@ -122,7 +122,7 @@ function mapOrderToPreviewSource(order: {
                 category: string
                 servilexSucursalCode: string
             }
-        }
+        } | null
     }>
 }): ServilexSourceOrder {
     return {
@@ -149,28 +149,30 @@ function mapOrderToPreviewSource(order: {
         paidAt: order.paidAt,
         createdAt: order.createdAt,
         user: { email: order.user.email },
-        orderItems: order.orderItems.map((item) => ({
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            attendeeData: item.attendeeData,
-            ticketType: {
-                name: item.ticketType.name,
-                servilexEnabled: item.ticketType.servilexEnabled,
-                servilexIndicator: item.ticketType.servilexIndicator,
-                servilexSucursalCode: item.ticketType.servilexSucursalCode,
-                servilexServiceCode: item.ticketType.servilexServiceCode,
-                servilexDisciplineCode: item.ticketType.servilexDisciplineCode,
-                servilexScheduleCode: item.ticketType.servilexScheduleCode,
-                servilexPoolCode: item.ticketType.servilexPoolCode,
-                servilexExtraConfig: item.ticketType.servilexExtraConfig,
-                event: {
-                    id: item.ticketType.event.id,
-                    startDate: item.ticketType.event.startDate,
-                    category: item.ticketType.event.category,
-                    servilexSucursalCode: item.ticketType.event.servilexSucursalCode,
+        orderItems: order.orderItems
+            .filter((item): item is typeof item & { ticketType: NonNullable<typeof item.ticketType> } => item.ticketType !== null)
+            .map((item) => ({
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                attendeeData: item.attendeeData,
+                ticketType: {
+                    name: item.ticketType.name,
+                    servilexEnabled: item.ticketType.servilexEnabled,
+                    servilexIndicator: item.ticketType.servilexIndicator,
+                    servilexSucursalCode: item.ticketType.servilexSucursalCode,
+                    servilexServiceCode: item.ticketType.servilexServiceCode,
+                    servilexDisciplineCode: item.ticketType.servilexDisciplineCode,
+                    servilexScheduleCode: item.ticketType.servilexScheduleCode,
+                    servilexPoolCode: item.ticketType.servilexPoolCode,
+                    servilexExtraConfig: item.ticketType.servilexExtraConfig,
+                    event: {
+                        id: item.ticketType.event.id,
+                        startDate: item.ticketType.event.startDate,
+                        category: item.ticketType.event.category,
+                        servilexSucursalCode: item.ticketType.event.servilexSucursalCode,
+                    },
                 },
-            },
-        })),
+            })),
     }
 }
 

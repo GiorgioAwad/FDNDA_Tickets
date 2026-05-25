@@ -113,6 +113,7 @@ export async function GET(
         })
 
         items.forEach((item) => {
+            if (!item.ticketTypeId) return
             totals.totalRevenue += Number(item.subtotal)
             totals.ticketsSold += item.quantity
             totals.orderIds.add(item.orderId)

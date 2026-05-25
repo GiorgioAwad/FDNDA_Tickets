@@ -95,6 +95,10 @@ export default async function AdminEventsPage() {
     })
     const pastEvents = events.filter((event) => new Date(event.endDate) < new Date())
 
+    const financeByEvent = new Map(
+        financeSummaries.map((summary) => [summary.id, summary])
+    )
+
     const completedExportRows: CompletedEventExportRow[] = financeSummaries
         .filter((event) => event.isCompleted)
         .map((event) => ({
@@ -191,7 +195,7 @@ export default async function AdminEventsPage() {
                     </h2>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                         {ongoingEvents.map((event) => (
-                            <EventCard key={event.id} event={event} status="ongoing" />
+                            <EventCard key={event.id} event={event} status="ongoing" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} />
                         ))}
                     </div>
                 </div>
@@ -202,7 +206,7 @@ export default async function AdminEventsPage() {
                     <h2 className="mb-3 text-lg font-semibold">Proximos ({upcomingEvents.length})</h2>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                         {upcomingEvents.map((event) => (
-                            <EventCard key={event.id} event={event} status="upcoming" />
+                            <EventCard key={event.id} event={event} status="upcoming" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} />
                         ))}
                     </div>
                 </div>
@@ -213,7 +217,7 @@ export default async function AdminEventsPage() {
                     <h2 className="mb-3 text-lg font-semibold text-gray-500">Pasados ({pastEvents.length})</h2>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                         {pastEvents.slice(0, 6).map((event) => (
-                            <EventCard key={event.id} event={event} status="past" />
+                            <EventCard key={event.id} event={event} status="past" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} />
                         ))}
                     </div>
                 </div>
@@ -293,14 +297,13 @@ export default async function AdminEventsPage() {
 function EventCard({
     event,
     status,
+    paidRevenue,
 }: {
     event: EventWithStats
     status: "ongoing" | "upcoming" | "past"
+    paidRevenue: number
 }) {
-    const totalRevenue = event.ticketTypes.reduce(
-        (acc, ticketType) => acc + Number(ticketType.price) * ticketType.sold,
-        0
-    )
+    const totalRevenue = paidRevenue
     const totalCapacity = event.ticketTypes.reduce(
         (acc, ticketType) => acc + (ticketType.capacity || 0),
         0

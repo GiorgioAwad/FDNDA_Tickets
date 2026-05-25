@@ -4,38 +4,31 @@ import { withSentryConfig } from "@sentry/nextjs";
 const isProduction = process.env.NODE_ENV === "production";
 
 function buildContentSecurityPolicy() {
-  const scriptSrc = isProduction
-    ? [
-        "'self'",
-        "'unsafe-inline'", // Required by Izipay SDK — migrate to nonces when possible
-        "https://checkout.izipay.pe",
-      ]
-    : [
-        "'self'",
-        "'unsafe-inline'",
-        "https://sandbox-checkout.izipay.pe",
-        "https://checkout.izipay.pe",
-      ];
+  // Whitelist sandbox + prod del mismo proveedor en TODOS los entornos.
+  // Razon: staging corre con NODE_ENV=production (Docker) pero apunta al SDK
+  // sandbox. Si separamos por entorno terminamos bloqueando el SDK valido.
+  // Sandbox y prod son del mismo proveedor (Izipay), no abre superficie de
+  // ataque real.
+  const scriptSrc = [
+    "'self'",
+    "'unsafe-inline'", // Required by Izipay SDK — migrate to nonces when possible
+    "https://sandbox-checkout.izipay.pe",
+    "https://checkout.izipay.pe",
+  ];
 
   const styleSrc = [
     "'self'",
     "'unsafe-inline'", // Required by Next.js for styled-jsx
   ];
 
-  const connectSrc = isProduction
-    ? [
-        "'self'",
-        "https://checkout.izipay.pe",
-        "https://api-pw.izipay.pe",
-        "https://api.izipay.pe",
-      ]
-    : [
-        "'self'",
-        "https://sandbox-checkout.izipay.pe",
-        "https://checkout.izipay.pe",
-        "https://sandbox-api-pw.izipay.pe",
-        "https://api-pw.izipay.pe",
-      ];
+  const connectSrc = [
+    "'self'",
+    "https://sandbox-checkout.izipay.pe",
+    "https://checkout.izipay.pe",
+    "https://sandbox-api-pw.izipay.pe",
+    "https://api-pw.izipay.pe",
+    "https://api.izipay.pe",
+  ];
 
   const imgSrc = [
     "'self'",
@@ -44,16 +37,17 @@ function buildContentSecurityPolicy() {
     "https:",
   ];
 
-  const frameSrc = isProduction
-    ? [
-        "'self'",
-        "https://checkout.izipay.pe",
-      ]
-    : [
-        "'self'",
-        "https://sandbox-checkout.izipay.pe",
-        "https://checkout.izipay.pe",
-      ];
+  const frameSrc = [
+    "'self'",
+    "https://sandbox-checkout.izipay.pe",
+    "https://checkout.izipay.pe",
+  ];
+
+  const formAction = [
+    "'self'",
+    "https://sandbox-checkout.izipay.pe",
+    "https://checkout.izipay.pe",
+  ];
 
   const directives = [
     `default-src 'self'`,
@@ -66,7 +60,7 @@ function buildContentSecurityPolicy() {
     `font-src 'self' data:`,
     `connect-src ${connectSrc.join(" ")}`,
     `frame-src ${frameSrc.join(" ")}`,
-    `form-action 'self' ${isProduction ? "https://checkout.izipay.pe" : "https://sandbox-checkout.izipay.pe https://checkout.izipay.pe"}`,
+    `form-action ${formAction.join(" ")}`,
     `manifest-src 'self'`,
     `worker-src 'self' blob:`,
   ];

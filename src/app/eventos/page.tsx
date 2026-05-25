@@ -9,7 +9,6 @@ import { EventCard, type EventCardEvent } from "@/components/home/EventCard"
 import { Search, Filter, ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react"
 
 export const revalidate = 60
-export const dynamic = "force-dynamic"
 
 const PAGE_SIZE = 12
 

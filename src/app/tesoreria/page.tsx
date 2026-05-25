@@ -385,7 +385,7 @@ export default async function TreasuryDashboardPage() {
                                                     </div>
                                                 </td>
                                                 <td className="py-3 pr-4 text-gray-700">
-                                                    {order.orderItems[0]?.ticketType.event.title || "-"}
+                                                    {order.orderItems[0]?.ticketType?.event.title || "-"}
                                                 </td>
                                                 <td className="py-3 pr-4 text-gray-700">
                                                     {payment.methodLabel || order.provider || "-"}

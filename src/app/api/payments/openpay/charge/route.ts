@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
         }
 
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-        const eventTitle = order.orderItems[0]?.ticketType.event.title || "Evento FDNDA"
+        const eventTitle = order.orderItems[0]?.ticketType?.event.title || "Evento FDNDA"
 
         // OpenPay amount is in PEN decimal (NOT cents)
         const chargeResult = await createOpenPayCharge({

@@ -33,7 +33,7 @@ type OrderSnapshot = {
             event: {
                 title: string
             }
-        }
+        } | null
     }>
 }
 
@@ -60,7 +60,7 @@ export interface ReconcilePendingIzipayOrdersResult {
 }
 
 function getEventTitle(order: Pick<OrderSnapshot, "orderItems">): string | null {
-    return order.orderItems[0]?.ticketType.event.title || null
+    return order.orderItems[0]?.ticketType?.event.title || null
 }
 
 function hasIzipayCorrelation(order: Pick<OrderSnapshot, "providerOrderNumber" | "providerTransactionId">) {

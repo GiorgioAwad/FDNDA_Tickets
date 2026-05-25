@@ -7,27 +7,35 @@ import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useCart } from "@/hooks/cart-context"
+import { useMerchCart } from "@/hooks/merch-cart-context"
 import { Confetti } from "@/components/checkout/Confetti"
-import { AlertCircle, CheckCircle, Loader2, Ticket, XCircle, ArrowRight, Calendar } from "lucide-react"
+import { AlertCircle, CheckCircle, Loader2, Ticket, XCircle, ArrowRight, Calendar, ShoppingBag } from "lucide-react"
 
 type OrderStatus = "PENDING" | "PAID" | "CANCELLED" | "REFUNDED"
+type OrderType = "TICKET" | "MERCH"
 
 export default function CheckoutSuccessClient() {
     const searchParams = useSearchParams()
     const orderId = searchParams.get("orderId")
     const { clearCart } = useCart()
+    const { clearCart: clearMerchCart } = useMerchCart()
 
     const [status, setStatus] = useState<OrderStatus | null>(null)
+    const [orderType, setOrderType] = useState<OrderType | null>(null)
     const [eventTitle, setEventTitle] = useState<string | null>(null)
     const [reviewRequired, setReviewRequired] = useState(false)
     const [statusMessage, setStatusMessage] = useState("")
     const [error, setError] = useState("")
 
     useEffect(() => {
-        if (status === "PAID") {
+        if (status !== "PAID" || !orderType) return
+
+        if (orderType === "MERCH") {
+            clearMerchCart()
+        } else {
             clearCart()
         }
-    }, [clearCart, status])
+    }, [clearCart, clearMerchCart, orderType, status])
 
     useEffect(() => {
         if (!orderId) return
@@ -52,6 +60,7 @@ export default function CheckoutSuccessClient() {
                 }
 
                 setStatus(data.data.status)
+                setOrderType(data.data.orderType)
                 setEventTitle(data.data.eventTitle)
                 setReviewRequired(Boolean(data.data.reviewRequired))
                 setStatusMessage(data.data.message || "")
@@ -122,6 +131,7 @@ export default function CheckoutSuccessClient() {
     }
 
     const isPaid = status === "PAID"
+    const isMerchOrder = orderType === "MERCH"
     const isManualReview = status === "PENDING" && reviewRequired
     const isProcessing = status === null || (status === "PENDING" && !reviewRequired)
 
@@ -177,7 +187,7 @@ export default function CheckoutSuccessClient() {
                                     ¡Pago confirmado!
                                 </p>
                                 <h1 className="font-display text-3xl sm:text-4xl font-bold mb-3">
-                                    ¡Listo, nos vemos allá! 🎉
+                                    {isMerchOrder ? "Pedido de merch confirmado" : "¡Listo, nos vemos allá! 🎉"}
                                 </h1>
 
                                 <p className="text-muted-foreground mb-2">
@@ -190,20 +200,22 @@ export default function CheckoutSuccessClient() {
                                     </p>
                                 )}
                                 <p className="text-sm text-muted-foreground mb-8">
-                                    Hemos enviado tus tickets a tu correo electrónico. También están disponibles en tu cuenta.
+                                    {isMerchOrder
+                                        ? "Hemos enviado el detalle de tu pedido a tu correo electronico."
+                                        : "Hemos enviado tus tickets a tu correo electrónico. También están disponibles en tu cuenta."}
                                 </p>
 
                                 <div className="space-y-3">
-                                    <Link href="/mi-cuenta/entradas">
+                                    <Link href={isMerchOrder ? "/merch" : "/mi-cuenta/entradas"}>
                                         <Button variant="coral" className="w-full rounded-full" size="lg">
-                                            <Ticket className="h-4 w-4" />
-                                            Ver mis entradas
+                                            {isMerchOrder ? <ShoppingBag className="h-4 w-4" /> : <Ticket className="h-4 w-4" />}
+                                            {isMerchOrder ? "Seguir viendo merch" : "Ver mis entradas"}
                                             <ArrowRight className="h-4 w-4" />
                                         </Button>
                                     </Link>
-                                    <Link href="/eventos">
+                                    <Link href={isMerchOrder ? "/" : "/eventos"}>
                                         <Button variant="outline" className="w-full rounded-full">
-                                            Explorar más eventos
+                                            {isMerchOrder ? "Volver al inicio" : "Explorar más eventos"}
                                         </Button>
                                     </Link>
                                 </div>
@@ -229,9 +241,9 @@ export default function CheckoutSuccessClient() {
                                 {statusMessage && (
                                     <p className="text-xs text-muted-foreground italic mb-6">{statusMessage}</p>
                                 )}
-                                <Link href="/eventos">
+                                <Link href={isMerchOrder ? "/merch" : "/eventos"}>
                                     <Button variant="outline" className="w-full rounded-full">
-                                        Volver a eventos
+                                        {isMerchOrder ? "Volver a merch" : "Volver a eventos"}
                                     </Button>
                                 </Link>
                             </>
@@ -250,7 +262,7 @@ export default function CheckoutSuccessClient() {
                                     La orden <span className="font-mono font-semibold text-foreground">#{orderId.slice(-8).toUpperCase()}</span> no pudo confirmarse. Intenta nuevamente o contacta soporte.
                                 </p>
                                 <div className="space-y-3">
-                                    <Link href="/eventos">
+                                    <Link href={isMerchOrder ? "/checkout/merch" : "/eventos"}>
                                         <Button variant="coral" className="w-full rounded-full" size="lg">
                                             Intentar nuevamente
                                         </Button>

@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
             select: {
                 id: true,
                 userId: true,
+                orderType: true,
             },
         })
 
@@ -84,6 +85,7 @@ export async function GET(request: NextRequest) {
                 data: {
                     orderId: status.orderId,
                     status: status.status,
+                    orderType: order.orderType,
                     source: status.source,
                     reviewRequired: status.reviewRequired,
                     eventTitle: status.eventTitle,

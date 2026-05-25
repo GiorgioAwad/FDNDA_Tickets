@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
                         where: { orderId: order.id },
                         select: {
                             ticketTypeId: true,
+                            merchVariantId: true,
                             quantity: true,
                             attendeeData: true,
                             ticketType: {
@@ -147,37 +148,54 @@ export async function POST(request: NextRequest) {
                     })
 
                     for (const item of orderItems) {
-                        if (isPoolFreeEventCategory(item.ticketType.event.category)) {
+                        // Liberar reserva merch
+                        if (item.merchVariantId) {
+                            await tx.$queryRaw`
+                                UPDATE "merch_variants"
+                                SET "reserved" = GREATEST("reserved" - ${item.quantity}, 0),
+                                    "updatedAt" = NOW()
+                                WHERE "id" = ${item.merchVariantId}
+                            `
+                            continue
+                        }
+
+                        if (!item.ticketType || !item.ticketTypeId) continue
+                        const ticketType = item.ticketType
+                        const ticketTypeId = item.ticketTypeId
+
+                        if (isPoolFreeEventCategory(ticketType.event.category)) {
                             const reservationCounts = buildPoolFreeReservationCounts({
                                 attendees: Array.isArray(item.attendeeData) ? item.attendeeData : [],
                                 quantity: item.quantity,
-                                validDays: item.ticketType.validDays,
-                                eventStartDate: item.ticketType.event.startDate,
-                                eventEndDate: item.ticketType.event.endDate,
-                                ticketLabel: item.ticketType.name,
+                                validDays: ticketType.validDays,
+                                eventStartDate: ticketType.event.startDate,
+                                eventEndDate: ticketType.event.endDate,
+                                ticketLabel: ticketType.name,
                                 strict: false,
                             })
 
                             if (reservationCounts.size > 0) {
                                 await releaseTicketTypeDateInventory(tx, {
-                                    ticketTypeId: item.ticketTypeId,
+                                    ticketTypeId,
                                     reservations: reservationCounts,
                                 })
                             }
                         }
 
                         await tx.ticketType.updateMany({
-                            where: { id: item.ticketTypeId, sold: { gte: item.quantity } },
+                            where: { id: ticketTypeId, sold: { gte: item.quantity } },
                             data: { sold: { decrement: item.quantity } },
                         })
                     }
 
                     return {
                         cancelled: true,
-                        invalidations: orderItems.map((item) => ({
-                            eventId: item.ticketType.eventId,
-                            ticketTypeId: item.ticketTypeId,
-                        })),
+                        invalidations: orderItems
+                            .filter((item) => item.ticketType && item.ticketTypeId)
+                            .map((item) => ({
+                                eventId: item.ticketType!.eventId,
+                                ticketTypeId: item.ticketTypeId!,
+                            })),
                     }
                 })
 

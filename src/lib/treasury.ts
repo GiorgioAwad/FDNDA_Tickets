@@ -91,6 +91,7 @@ export async function getTreasuryEventSummaries(): Promise<TreasuryEventSummary[
     })
 
     for (const item of items) {
+        if (!item.ticketTypeId) continue
         const eventId = ticketTypeToEvent.get(item.ticketTypeId)
         if (!eventId) continue
 

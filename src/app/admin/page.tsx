@@ -255,7 +255,7 @@ export default async function AdminDashboardPage() {
                     value={formatPrice(netRevenue)}
                     icon={<CreditCard />}
                     tone="primary"
-                    hint={`Comisión ${grossRevenue > 0 ? ((izipayCommission / grossRevenue) * 100).toFixed(1) : (TOTAL_COMMISSION_RATE * 100).toFixed(1)}%`}
+                    hint={`Comisión ${grossRevenue > 0 ? ((izipayCommission / grossRevenue) * 100).toFixed(2) : (TOTAL_COMMISSION_RATE * 100).toFixed(2)}%`}
                 />
                 <KpiCard
                     label="Entradas vendidas"

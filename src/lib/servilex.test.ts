@@ -38,8 +38,8 @@ const TEST_CONFIG: ServilexConfig = {
 
 function buildTicketType(
     indicator: ServilexIndicator,
-    overrides: Partial<ServilexSourceOrder["orderItems"][number]["ticketType"]> = {}
-): ServilexSourceOrder["orderItems"][number]["ticketType"] {
+    overrides: Partial<NonNullable<ServilexSourceOrder["orderItems"][number]["ticketType"]>> = {}
+): NonNullable<ServilexSourceOrder["orderItems"][number]["ticketType"]> {
     return {
         name: `${indicator} test`,
         servilexEnabled: true,

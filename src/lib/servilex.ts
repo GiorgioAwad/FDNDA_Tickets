@@ -242,7 +242,7 @@ export interface ServilexSourceOrderItem {
     quantity: number
     unitPrice: unknown
     attendeeData: unknown
-    ticketType: ServilexSourceTicketType
+    ticketType: ServilexSourceTicketType | null
 }
 
 export interface ServilexSourceOrder {
@@ -815,6 +815,7 @@ function buildAttendeeAlumnoSnapshot(
 }
 
 function getServilexItemSucursal(item: ServilexSourceOrderItem): string {
+    if (!item.ticketType) return getServilexConfig().sucursal
     return (
         asString(item.ticketType.event.servilexSucursalCode) ||
         asString(item.ticketType.servilexSucursalCode) ||
@@ -823,6 +824,7 @@ function getServilexItemSucursal(item: ServilexSourceOrderItem): string {
 }
 
 function getServilexItemEventCategory(item: ServilexSourceOrderItem): ServilexEventCategory | null {
+    if (!item.ticketType) return null
     return normalizeEventCategory(item.ticketType.event.category)
 }
 
@@ -843,6 +845,7 @@ function inferSnapshotEventCategory(
     if (snapshot.eventCategory) return snapshot.eventCategory
 
     const matchingItem = order.orderItems.find((item) => {
+        if (!item.ticketType) return false
         if (!item.ticketType.servilexEnabled) return false
         if (normalizeIndicator(item.ticketType.servilexIndicator) !== snapshot.indicator) return false
         return getServilexItemSucursal(item) === snapshot.sucursal
@@ -883,15 +886,19 @@ function buildAcademiaUnit(
     order: ServilexSourceOrder,
     unitPrice: number
 ): ServilexAcademiaUnit {
-    const servicio = normalizeCode(item.ticketType.servilexServiceCode, "servicio")
-    const disciplina = normalizeCode(item.ticketType.servilexDisciplineCode, "disciplina")
-    const horario = normalizeCode(item.ticketType.servilexScheduleCode, "horario")
-    const piscina = normalizeCode(item.ticketType.servilexPoolCode, "piscina")
+    if (!item.ticketType) {
+        throw new Error("buildAcademiaUnit: item.ticketType es null")
+    }
+    const ticketType = item.ticketType
+    const servicio = normalizeCode(ticketType.servilexServiceCode, "servicio")
+    const disciplina = normalizeCode(ticketType.servilexDisciplineCode, "disciplina")
+    const horario = normalizeCode(ticketType.servilexScheduleCode, "horario")
+    const piscina = normalizeCode(ticketType.servilexPoolCode, "piscina")
     const sucursal = getServilexItemSucursal(item)
     const selectedDate = attendee.scheduleSelections[0]?.date
     const serviceDate = selectedDate
         ? new Date(`${selectedDate}T12:00:00Z`)
-        : item.ticketType.event.startDate
+        : ticketType.event.startDate
 
     return {
         indicator: "AC",
@@ -916,7 +923,11 @@ function buildOtrosServiciosUnit(
     item: ServilexSourceOrderItem,
     unitPrice: number
 ): ServilexOtrosServiciosUnit {
-    const extraConfig = getJsonObject(item.ticketType.servilexExtraConfig)
+    if (!item.ticketType) {
+        throw new Error("buildOtrosServiciosUnit: item.ticketType es null")
+    }
+    const ticketType = item.ticketType
+    const extraConfig = getJsonObject(ticketType.servilexExtraConfig)
 
     return {
         indicator: "OS",
@@ -924,7 +935,7 @@ function buildOtrosServiciosUnit(
         eventCategory: getServilexItemEventCategory(item),
         baseAmount: unitPrice,
         detalle: {
-            servicio: normalizeCode(item.ticketType.servilexServiceCode, "servicio"),
+            servicio: normalizeCode(ticketType.servilexServiceCode, "servicio"),
             cantidad: asPositiveNumber(extraConfig.cantidad) || 1,
             descuento: roundCurrency(asNonNegativeNumber(extraConfig.descuento) || 0),
         },
@@ -936,7 +947,11 @@ function buildPiscinaLibreUnit(
     indicator: "PN" | "PA",
     unitPrice: number
 ): ServilexPiscinaLibreUnit {
-    const extraConfig = getJsonObject(item.ticketType.servilexExtraConfig)
+    if (!item.ticketType) {
+        throw new Error("buildPiscinaLibreUnit: item.ticketType es null")
+    }
+    const ticketType = item.ticketType
+    const extraConfig = getJsonObject(ticketType.servilexExtraConfig)
 
     return {
         indicator,
@@ -944,24 +959,29 @@ function buildPiscinaLibreUnit(
         eventCategory: getServilexItemEventCategory(item),
         baseAmount: unitPrice,
         detalle: {
-            servicio: normalizeCode(item.ticketType.servilexServiceCode, "servicio"),
+            servicio: normalizeCode(ticketType.servilexServiceCode, "servicio"),
             cantidad: asPositiveNumber(extraConfig.cantidad) || 1,
             horaInicio: normalizeHora(extraConfig.horaInicio, "horaInicio"),
             horaFin: normalizeHora(extraConfig.horaFin, "horaFin"),
             duracion: asPositiveNumber(extraConfig.duracion) || 1,
-            piscina: normalizeCode(item.ticketType.servilexPoolCode, "piscina"),
+            piscina: normalizeCode(ticketType.servilexPoolCode, "piscina"),
         },
     }
 }
 
 function buildInvoiceUnits(order: ServilexSourceOrder): ServilexInvoiceUnit[] {
-    const servilexItems = order.orderItems.filter((item) => item.ticketType.servilexEnabled)
+    const servilexItems = order.orderItems.filter(
+        (item): item is typeof item & { ticketType: NonNullable<typeof item.ticketType> } =>
+            item.ticketType !== null && item.ticketType.servilexEnabled
+    )
 
     if (servilexItems.length === 0) {
         return []
     }
 
-    if (servilexItems.length !== order.orderItems.length) {
+    // Verificar que todos los items de ticket también tengan Servilex habilitado (los items merch se ignoran)
+    const ticketOnlyItems = order.orderItems.filter((item) => item.ticketType !== null)
+    if (servilexItems.length !== ticketOnlyItems.length) {
         throw new Error("La orden mezcla items con y sin Servilex")
     }
 

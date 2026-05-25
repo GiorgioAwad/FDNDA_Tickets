@@ -8,6 +8,7 @@ import { HeroSection } from "@/components/home/HeroSection"
 import { EventCard, type EventCardEvent } from "@/components/home/EventCard"
 import { FeaturedEvent } from "@/components/home/FeaturedEvent"
 import { DisciplinesGrid } from "@/components/home/DisciplinesGrid"
+import { MerchTeaser } from "@/components/home/MerchTeaser"
 import { HowItWorks } from "@/components/home/HowItWorks"
 import { EmptyState } from "@/components/ui/empty-state"
 import { MotionSection, MotionStagger, MotionItem } from "@/components/ui/motion-section"
@@ -153,6 +154,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       </section>
 
       <DisciplinesGrid />
+
+      <MerchTeaser />
 
       <HowItWorks />
 

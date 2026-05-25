@@ -1,0 +1,40 @@
+# Caddyfile.staging - Subdominio para pruebas integrales ABIO
+#
+# Este snippet se agrega manualmente al Caddyfile principal del VPS
+# (que corre en el contenedor fdnda_caddy del compose prod). Una vez
+# pegado, ejecutar:
+#   docker compose -f docker-compose.prod.yml exec caddy caddy reload --config /etc/caddy/Caddyfile
+#
+# Reverse proxy al contenedor staging que vive en la red prod_web
+# (red externa fdnda-tickets_web creada por el compose prod).
+
+staging.ticketingfdnda.pe {
+    tls {
+        protocols tls1.2 tls1.3
+    }
+
+    reverse_proxy fdnda_app_staging:3000
+
+    encode gzip zstd
+
+    log {
+        output file /data/access-staging.log {
+            roll_size 10MB
+            roll_keep 5
+        }
+    }
+
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        # Marca clara para distinguir respuestas de staging
+        X-Environment "staging"
+        -Server
+    }
+
+    @static {
+        path /_next/static/* /favicon.ico /icon.png *.svg *.png *.jpg *.webp
+    }
+    header @static Cache-Control "public, max-age=31536000, immutable"
+}

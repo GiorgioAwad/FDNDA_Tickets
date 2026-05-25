@@ -13,7 +13,7 @@ export async function GET() {
 
         // Fetch orders for stats
         const paidOrders = await prisma.order.findMany({
-            where: { status: "PAID" },
+            where: { status: "PAID", orderType: "TICKET" },
             include: {
                 orderItems: {
                     include: {
@@ -31,6 +31,7 @@ export async function GET() {
         const eventSales: Record<string, number> = {}
         paidOrders.forEach(order => {
             order.orderItems.forEach(item => {
+                if (!item.ticketType) return
                 const eventTitle = item.ticketType.event.title
                 eventSales[eventTitle] = (eventSales[eventTitle] || 0) + Number(item.subtotal)
             })
@@ -88,7 +89,7 @@ export async function GET() {
         const avgOrderValue = paidOrders.length > 0 ? totalRevenue / paidOrders.length : 0
 
         // Simple conversion rate (paid / total orders)
-        const totalOrders = await prisma.order.count()
+        const totalOrders = await prisma.order.count({ where: { orderType: "TICKET" } })
         const conversionRate = totalOrders > 0 ? (paidOrders.length / totalOrders) * 100 : 0
 
         return NextResponse.json({
