@@ -22,6 +22,7 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
     const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
     const [quantity, setQuantity] = useState(1)
     const [confirmation, setConfirmation] = useState(false)
+    const displayImageUrl = product?.imageUrl || product?.imageUrls[0] || null
 
     // Resetear estado cuando se abre un producto distinto (sin useEffect — patrón React 19)
     if (product && product.id !== trackedProductId) {
@@ -64,7 +65,7 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
             category: product.category,
             zone: product.zone,
             size: selectedVariant.size,
-            imageUrl: product.imageUrl,
+            imageUrl: displayImageUrl,
             price: product.price,
             quantity,
         })
@@ -83,7 +84,7 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.2 }}
-                    className="fixed inset-0 z-[80] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6"
+                    className="fixed inset-0 z-[80] bg-black/65 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-3 sm:p-6 lg:items-center"
                     onClick={onClose}
                 >
                     <motion.div
@@ -91,7 +92,7 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
                         animate={{ scale: 1, opacity: 1, y: 0 }}
                         exit={{ scale: 0.96, opacity: 0, y: 10 }}
                         transition={{ type: "spring", damping: 22, stiffness: 240 }}
-                        className="relative bg-white rounded-3xl shadow-elevated w-full max-w-5xl max-h-[92vh] overflow-hidden grid grid-cols-1 lg:grid-cols-[1.1fr,1fr]"
+                        className="relative my-3 w-full max-w-5xl overflow-visible rounded-2xl bg-white shadow-elevated grid grid-cols-1 lg:my-0 lg:max-h-[92vh] lg:overflow-hidden lg:rounded-3xl lg:grid-cols-[1.1fr,1fr]"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <button
@@ -104,16 +105,16 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
                         </button>
 
                         {/* Spin preview */}
-                        <div className="relative h-[55vh] lg:h-[92vh] max-h-[700px]">
+                        <div className="relative h-[38vh] min-h-[220px] max-h-[360px] lg:h-[92vh] lg:max-h-[700px]">
                             <MerchSpinPreview
-                                imageUrl={product.imageUrl}
+                                imageUrl={displayImageUrl}
                                 alt={product.name}
                                 bgClass={ZONE_THEME[product.zone].bg}
                             />
                         </div>
 
                         {/* Details */}
-                        <div className="flex flex-col overflow-y-auto p-6 sm:p-8 gap-4">
+                        <div className="flex flex-col gap-4 p-5 sm:p-8 lg:overflow-y-auto">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <Badge className={ZONE_THEME[product.zone].badge}>
                                     {product.zone === "GENERICA" ? CATEGORY_SINGULAR[product.category] : `Zona ${ZONE_THEME[product.zone].short}`}

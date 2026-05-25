@@ -99,6 +99,14 @@ const nextConfig: NextConfig = {
         hostname: "assets.ticketingfdnda.pe",
       },
       {
+        protocol: "https",
+        hostname: "**.r2.dev",
+      },
+      {
+        protocol: "https",
+        hostname: "**.r2.cloudflarestorage.com",
+      },
+      {
         protocol: "http",
         hostname: "localhost",
       },

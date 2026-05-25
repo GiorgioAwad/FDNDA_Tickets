@@ -1,9 +1,8 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import Image from "next/image"
 import { motion, useMotionValue, useTransform, animate } from "framer-motion"
-import { RotateCw } from "lucide-react"
+import { ShoppingBag } from "lucide-react"
 
 interface MerchSpinPreviewProps {
     imageUrl: string | null
@@ -13,9 +12,7 @@ interface MerchSpinPreviewProps {
 
 export function MerchSpinPreview({ imageUrl, alt, bgClass = "bg-gradient-to-br from-fdnda-light/50 via-white to-coral/10" }: MerchSpinPreviewProps) {
     const rotation = useMotionValue(-180)
-    const [hint, setHint] = useState(true)
-    const dragStartX = useRef<number | null>(null)
-    const dragStartRotation = useRef(0)
+    const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null)
     const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const autoSpinControls = useRef<ReturnType<typeof animate> | null>(null)
 
@@ -33,14 +30,13 @@ export function MerchSpinPreview({ imageUrl, alt, bgClass = "bg-gradient-to-br f
             mass: 0.9,
         })
 
-        const hintTimer = setTimeout(() => setHint(false), 4000)
-
         return () => {
             controls.stop()
-            clearTimeout(hintTimer)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
+
+    const imageFailed = Boolean(imageUrl && failedImageUrl === imageUrl)
 
     const stopAutoSpin = () => {
         if (autoSpinControls.current) {
@@ -70,38 +66,11 @@ export function MerchSpinPreview({ imageUrl, alt, bgClass = "bg-gradient-to-br f
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-        stopAutoSpin()
-        if (idleTimer.current) clearTimeout(idleTimer.current)
-        setHint(false)
-        dragStartX.current = event.clientX
-        dragStartRotation.current = rotation.get()
-        ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
-    }
-
-    const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (dragStartX.current === null) return
-        const deltaX = event.clientX - dragStartX.current
-        const deltaDeg = deltaX * 0.6
-        rotation.set(dragStartRotation.current + deltaDeg)
-    }
-
-    const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (dragStartX.current === null) return
-        dragStartX.current = null
-        ;(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId)
-        scheduleAutoSpin()
-    }
-
     return (
         <div className={`relative w-full h-full overflow-hidden rounded-2xl ${bgClass}`}>
             <div
-                className="relative w-full h-full select-none cursor-grab active:cursor-grabbing touch-none"
+                className="relative w-full h-full select-none"
                 style={{ perspective: "1400px" }}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
             >
                 <motion.div
                     className="absolute inset-0 flex items-center justify-center"
@@ -111,20 +80,22 @@ export function MerchSpinPreview({ imageUrl, alt, bgClass = "bg-gradient-to-br f
                         backfaceVisibility: "visible",
                     }}
                 >
-                    {imageUrl ? (
+                    {imageUrl && !imageFailed ? (
                         <div className="relative w-[85%] h-[85%]">
-                            <Image
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
                                 src={imageUrl}
                                 alt={alt}
-                                fill
                                 draggable={false}
-                                className="object-contain drop-shadow-2xl pointer-events-none"
-                                sizes="(max-width: 768px) 90vw, 50vw"
-                                priority
+                                onError={() => setFailedImageUrl(imageUrl)}
+                                className="h-full w-full object-contain drop-shadow-2xl pointer-events-none"
                             />
                         </div>
                     ) : (
-                        <div className="text-muted-foreground text-sm">Sin imagen</div>
+                        <div className="flex flex-col items-center justify-center gap-3 text-fdnda-primary/60">
+                            <ShoppingBag className="h-20 w-20" />
+                            <span className="text-xs font-semibold uppercase tracking-widest">Merch oficial</span>
+                        </div>
                     )}
                 </motion.div>
 
@@ -136,19 +107,6 @@ export function MerchSpinPreview({ imageUrl, alt, bgClass = "bg-gradient-to-br f
                 />
             </div>
 
-            {/* Drag hint */}
-            {hint && (
-                <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ delay: 1.4 }}
-                    className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm"
-                >
-                    <RotateCw className="h-3 w-3" />
-                    Desliza para girar
-                </motion.div>
-            )}
         </div>
     )
 }

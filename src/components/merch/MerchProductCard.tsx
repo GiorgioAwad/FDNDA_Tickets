@@ -1,6 +1,6 @@
 "use client"
 
-import Image from "next/image"
+import { useState } from "react"
 import { motion, useReducedMotion } from "framer-motion"
 import { ShoppingBag, Sparkles } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -19,6 +19,9 @@ export function MerchProductCard({ product, onOpen, priority }: MerchProductCard
     const prefersReducedMotion = useReducedMotion()
     const zoneTheme = ZONE_THEME[product.zone]
     const categoryLabel = product.category === "POLERA" ? "Polera" : product.category === "GORRA" ? "Gorra" : product.category === "PIN" ? "Pin" : "Producto"
+    const displayImageUrl = product.imageUrl || product.imageUrls[0] || null
+    const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null)
+    const imageFailed = Boolean(displayImageUrl && failedImageUrl === displayImageUrl)
 
     return (
         <motion.button
@@ -30,18 +33,21 @@ export function MerchProductCard({ product, onOpen, priority }: MerchProductCard
         >
             <article className="relative h-full flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-300 group-hover:shadow-card-hover">
                 <div className={cn("relative aspect-[3/4] overflow-hidden", zoneTheme.bg)}>
-                    {product.imageUrl ? (
-                        <Image
-                            src={product.imageUrl}
+                    {displayImageUrl && !imageFailed ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                            src={displayImageUrl}
                             alt={product.name}
-                            fill
-                            sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
-                            priority={priority}
-                            className="object-contain p-4 transition-transform duration-700 group-hover:scale-105 drop-shadow-xl"
+                            loading={priority ? "eager" : "lazy"}
+                            onError={() => setFailedImageUrl(displayImageUrl)}
+                            className="absolute inset-0 h-full w-full object-contain p-4 transition-transform duration-700 group-hover:scale-105 drop-shadow-xl"
                         />
                     ) : (
-                        <div className="w-full h-full flex items-center justify-center text-white/40">
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-fdnda-primary/60">
                             <ShoppingBag className="h-16 w-16" />
+                            <span className="text-xs font-semibold uppercase tracking-widest text-fdnda-primary/70">
+                                {categoryLabel}
+                            </span>
                         </div>
                     )}
 
