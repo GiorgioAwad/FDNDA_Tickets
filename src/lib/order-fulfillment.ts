@@ -122,6 +122,7 @@ async function syncServilexInvoices(
             email: string
         }
         orderItems: Array<{
+            id: string
             quantity: number
             unitPrice: Prisma.Decimal
             attendeeData: Prisma.JsonValue | null
@@ -193,6 +194,7 @@ async function syncServilexInvoices(
         createdAt: order.createdAt,
         user: { email: order.user.email },
         orderItems: order.orderItems.map((item) => ({
+            id: item.id,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             attendeeData: item.attendeeData,
@@ -231,9 +233,19 @@ async function syncServilexInvoices(
     const existingByGroupKey = new Map(
         order.invoices.map((invoice) => [invoice.servilexGroupKey, invoice])
     )
+    const issuedGroupKeys = new Set(
+        order.invoices
+            .filter((invoice) => invoice.status === "ISSUED")
+            .map((invoice) => invoice.servilexGroupKey)
+    )
 
     for (const snapshot of snapshots) {
         const existing = existingByGroupKey.get(snapshot.groupKey)
+        const legacyGroupKey = snapshot.legacyGroupKey || snapshot.groupKey
+
+        if (snapshot.groupKey !== legacyGroupKey && issuedGroupKeys.has(legacyGroupKey)) {
+            continue
+        }
 
         if (existing?.status === "ISSUED") {
             continue

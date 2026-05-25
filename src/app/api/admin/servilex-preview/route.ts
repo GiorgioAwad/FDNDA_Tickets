@@ -103,6 +103,7 @@ function mapOrderToPreviewSource(order: {
     createdAt: Date
     user: { email: string }
     orderItems: Array<{
+        id?: string | null
         quantity: number
         unitPrice: unknown
         attendeeData: unknown
@@ -152,6 +153,7 @@ function mapOrderToPreviewSource(order: {
         orderItems: order.orderItems
             .filter((item): item is typeof item & { ticketType: NonNullable<typeof item.ticketType> } => item.ticketType !== null)
             .map((item) => ({
+                id: item.id,
                 quantity: item.quantity,
                 unitPrice: item.unitPrice,
                 attendeeData: item.attendeeData,
@@ -282,6 +284,7 @@ export async function GET(request: NextRequest) {
                 createdAt: new Date(),
                 user: { email: "test@fdnda.org.pe" },
                 orderItems: [{
+                    id: `preview-item-${ticketType.id}`,
                     quantity: 1,
                     unitPrice: ticketType.price,
                     attendeeData: [{

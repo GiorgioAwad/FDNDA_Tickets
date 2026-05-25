@@ -178,10 +178,62 @@ test("OS genera detalle con servicio, cantidad, descuento y precio", () => {
     assert.equal(payload.cobranza.totalPago, 40)
 })
 
-test("OS consolida snapshot persistido con multiples lineas del mismo servicio", () => {
-    // Reproduce un snapshot guardado ANTES de la consolidacion: 3 lineas B06.
-    // ABIO valida OS por servicio contra una sola deuda, asi que el payload
-    // re-parseado por el worker debe salir consolidado en una sola linea.
+test("OS genera un comprobante separado por cada item del mismo servicio", () => {
+    const order = buildOrder({
+        totalAmount: 23,
+        orderItems: [
+            {
+                id: "item-1",
+                quantity: 1,
+                unitPrice: 6,
+                attendeeData: [],
+                ticketType: buildTicketType("OS", {
+                    servilexServiceCode: "B06",
+                }),
+            },
+            {
+                id: "item-2",
+                quantity: 1,
+                unitPrice: 5,
+                attendeeData: [],
+                ticketType: buildTicketType("OS", {
+                    servilexServiceCode: "B06",
+                }),
+            },
+            {
+                id: "item-3",
+                quantity: 1,
+                unitPrice: 12,
+                attendeeData: [],
+                ticketType: buildTicketType("OS", {
+                    servilexServiceCode: "B06",
+                }),
+            },
+        ],
+    })
+
+    const sources = buildServilexPreviewSources(order, "os-split-preview")
+    const payloads = sources.map((source) => buildServilexPayload(source, TEST_CONFIG))
+
+    assert.equal(sources.length, 3)
+    assert.deepEqual(
+        sources.map((source) => source.servilexGroupKey),
+        [
+            "OS:01:item:item-1:1",
+            "OS:01:item:item-2:1",
+            "OS:01:item:item-3:1",
+        ]
+    )
+    assert.deepEqual(payloads.map((payload) => payload.detalle.length), [1, 1, 1])
+    assert.deepEqual(payloads.map((payload) => payload.cabecera.total), [6, 5, 12])
+    assert.deepEqual(payloads.map((payload) => payload.cobranza.totalPago), [6, 5, 12])
+    assert.equal(
+        payloads.reduce((sum, payload) => sum + payload.cabecera.total, 0),
+        23
+    )
+})
+
+test("rechaza snapshot persistido con multiples detalles", () => {
     const order = buildOrder({
         totalAmount: 23,
         orderItems: [
@@ -227,17 +279,10 @@ test("OS consolida snapshot persistido con multiples lineas del mismo servicio",
         order,
     }
 
-    const payload = buildServilexPayload(source, TEST_CONFIG)
-
-    assert.equal(payload.detalle.length, 1)
-    const detalle = payload.detalle[0] as unknown as Record<string, unknown>
-    assert.equal(detalle.servicio, "B06")
-    // cantidad = 1 para que ABIO totalice 1 x 23 = 23 (no 3 x 23 = 69).
-    assert.equal(detalle.cantidad, 1)
-    assert.equal(detalle.precio, 23)
-    assert.equal(payload.cabecera.total, 23)
-    assert.equal(payload.cobranza.totalPago, 23)
-    assert.equal(payload.cabecera.total, payload.cobranza.totalPago)
+    assert.throws(
+        () => buildServilexPayload(source, TEST_CONFIG),
+        /ABIO requiere un comprobante por item/
+    )
 })
 
 test("serializa montos Servilex con dos decimales en el JSON final", () => {
