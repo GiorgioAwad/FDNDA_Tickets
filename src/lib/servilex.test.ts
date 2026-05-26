@@ -1107,3 +1107,33 @@ test("merch: usa servilexSucursalCode del producto si esta definido", () => {
     assert.equal(payload.cabecera.sucursal, "04")
     assert.equal(payload.cabecera.indicador, "OS")
 })
+
+test("merch: usa series BA y FA con la sucursal del producto", () => {
+    const baseOrder = {
+        totalAmount: 80,
+        orderItems: [
+            {
+                id: "merch-serie",
+                quantity: 1,
+                unitPrice: 80,
+                attendeeData: [],
+                ticketType: null,
+                merchVariant: buildMerchVariant({ codigo: "TPOL08", sucursal: "04" }),
+            },
+        ],
+    }
+
+    const [boletaSource] = buildServilexPreviewSources(buildOrder(baseOrder), "merch-ba-preview")
+    const [facturaSource] = buildServilexPreviewSources(
+        buildOrder({
+            ...baseOrder,
+            documentType: "FACTURA",
+            buyerDocType: "6",
+            buyerDocNumber: "20123456789",
+        }),
+        "merch-fa-preview"
+    )
+
+    assert.equal(buildServilexPayload(boletaSource, TEST_CONFIG).cabecera.comprobante.serie, "BA04")
+    assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "FA04")
+})
