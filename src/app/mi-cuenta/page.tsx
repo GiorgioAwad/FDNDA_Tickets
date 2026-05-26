@@ -95,6 +95,11 @@ export default async function MyAccountPage() {
                                     <Ticket className="h-4 w-4" /> Mis entradas
                                 </Button>
                             </Link>
+                            <Link href="/mi-cuenta/merch">
+                                <Button variant="glass" size="sm" className="rounded-full">
+                                    <ShoppingBag className="h-4 w-4" /> Mis pedidos
+                                </Button>
+                            </Link>
                             <Link href="/eventos">
                                 <Button variant="coral" size="sm" className="rounded-full">
                                     <Sparkles className="h-4 w-4" /> Explorar eventos
@@ -190,6 +195,15 @@ export default async function MyAccountPage() {
                                         <div className="flex items-center gap-3">
                                             <Ticket className="h-4 w-4 text-fdnda-secondary" />
                                             <span className="text-sm font-medium">Ver mis entradas</span>
+                                        </div>
+                                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                                    </button>
+                                </Link>
+                                <Link href="/mi-cuenta/merch" className="block">
+                                    <button className="flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-3 text-left transition-all hover:border-fdnda-secondary hover:bg-fdnda-light/30">
+                                        <div className="flex items-center gap-3">
+                                            <ShoppingBag className="h-4 w-4 text-fdnda-secondary" />
+                                            <span className="text-sm font-medium">Mis pedidos de merch</span>
                                         </div>
                                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                                     </button>

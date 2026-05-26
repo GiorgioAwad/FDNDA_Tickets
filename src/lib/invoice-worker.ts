@@ -72,6 +72,20 @@ async function loadInvoices(maxJobs: number) {
                                     },
                                 },
                             },
+                            merchVariant: {
+                                select: {
+                                    id: true,
+                                    size: true,
+                                    product: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            servilexServiceCode: true,
+                                            servilexSucursalCode: true,
+                                        },
+                                    },
+                                },
+                            },
                         },
                     },
                 },

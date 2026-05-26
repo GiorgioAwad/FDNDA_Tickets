@@ -64,6 +64,20 @@ export async function GET(request: NextRequest) {
                                 },
                             },
                         },
+                        merchVariant: {
+                            select: {
+                                id: true,
+                                size: true,
+                                product: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        servilexServiceCode: true,
+                                        servilexSucursalCode: true,
+                                    },
+                                },
+                            },
+                        },
                     },
                 },
                 invoices: {
@@ -124,31 +138,43 @@ export async function GET(request: NextRequest) {
                             user: {
                                 email: order.user.email,
                             },
-                            orderItems: order.orderItems
-                                .filter((item): item is typeof item & { ticketType: NonNullable<typeof item.ticketType> } => item.ticketType !== null)
-                                .map((item) => ({
-                                    id: item.id,
-                                    quantity: item.quantity,
-                                    unitPrice: item.unitPrice,
-                                    attendeeData: item.attendeeData,
-                                    ticketType: {
-                                        name: item.ticketType.name,
-                                        servilexEnabled: item.ticketType.servilexEnabled,
-                                        servilexIndicator: item.ticketType.servilexIndicator,
-                                        servilexSucursalCode: item.ticketType.servilexSucursalCode,
-                                        servilexServiceCode: item.ticketType.servilexServiceCode,
-                                        servilexDisciplineCode: item.ticketType.servilexDisciplineCode,
-                                        servilexScheduleCode: item.ticketType.servilexScheduleCode,
-                                        servilexPoolCode: item.ticketType.servilexPoolCode,
-                                        servilexExtraConfig: item.ticketType.servilexExtraConfig,
-                                        event: {
-                                            id: item.ticketType.event.id,
-                                            startDate: item.ticketType.event.startDate,
-                                            category: item.ticketType.event.category,
-                                            servilexSucursalCode: item.ticketType.event.servilexSucursalCode,
-                                        },
-                                    },
-                                })),
+                            orderItems: order.orderItems.map((item) => ({
+                                id: item.id,
+                                quantity: item.quantity,
+                                unitPrice: item.unitPrice,
+                                attendeeData: item.attendeeData,
+                                ticketType: item.ticketType
+                                    ? {
+                                          name: item.ticketType.name,
+                                          servilexEnabled: item.ticketType.servilexEnabled,
+                                          servilexIndicator: item.ticketType.servilexIndicator,
+                                          servilexSucursalCode: item.ticketType.servilexSucursalCode,
+                                          servilexServiceCode: item.ticketType.servilexServiceCode,
+                                          servilexDisciplineCode: item.ticketType.servilexDisciplineCode,
+                                          servilexScheduleCode: item.ticketType.servilexScheduleCode,
+                                          servilexPoolCode: item.ticketType.servilexPoolCode,
+                                          servilexExtraConfig: item.ticketType.servilexExtraConfig,
+                                          event: {
+                                              id: item.ticketType.event.id,
+                                              startDate: item.ticketType.event.startDate,
+                                              category: item.ticketType.event.category,
+                                              servilexSucursalCode: item.ticketType.event.servilexSucursalCode,
+                                          },
+                                      }
+                                    : null,
+                                merchVariant: item.merchVariant
+                                    ? {
+                                          id: item.merchVariant.id,
+                                          size: item.merchVariant.size,
+                                          product: {
+                                              id: item.merchVariant.product.id,
+                                              name: item.merchVariant.product.name,
+                                              servilexServiceCode: item.merchVariant.product.servilexServiceCode,
+                                              servilexSucursalCode: item.merchVariant.product.servilexSucursalCode,
+                                          },
+                                      }
+                                    : null,
+                            })),
                         },
                     },
                     config
