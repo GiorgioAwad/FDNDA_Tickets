@@ -869,6 +869,10 @@ function inferSnapshotEventCategory(
     return matchingItem ? getServilexItemEventCategory(matchingItem) : null
 }
 
+function isMerchOrder(order: ServilexSourceOrder): boolean {
+    return order.orderItems.some((item) => item.merchVariant != null)
+}
+
 function resolveServilexSerie(input: {
     buyerIsFactura: boolean
     snapshot: ServilexInvoiceSnapshot
@@ -888,7 +892,7 @@ function resolveServilexSerie(input: {
         return buildSucursalSerie(buyerIsFactura ? "FW" : "BW", snapshot.sucursal, config)
     }
 
-    if (eventCategory === "EVENTO") {
+    if (eventCategory === "EVENTO" || isMerchOrder(order)) {
         return buildSucursalSerie(buyerIsFactura ? "FA" : "BA", snapshot.sucursal, config)
     }
 
