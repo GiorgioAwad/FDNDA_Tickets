@@ -238,12 +238,32 @@ export interface ServilexSourceTicketType {
     event: ServilexSourceEvent
 }
 
+export interface ServilexSourceMerchService {
+    id: string
+    codigo: string
+    indicador: string
+    sede: string | null
+}
+
+export interface ServilexSourceMerchProduct {
+    id: string
+    name: string
+    servilexService: ServilexSourceMerchService | null
+}
+
+export interface ServilexSourceMerchVariant {
+    id: string
+    size: string | null
+    product: ServilexSourceMerchProduct
+}
+
 export interface ServilexSourceOrderItem {
     id?: string | null
     quantity: number
     unitPrice: unknown
     attendeeData: unknown
     ticketType: ServilexSourceTicketType | null
+    merchVariant?: ServilexSourceMerchVariant | null
 }
 
 export interface ServilexSourceOrder {
@@ -982,8 +1002,49 @@ function buildPiscinaLibreUnit(
     }
 }
 
-function buildInvoiceUnits(order: ServilexSourceOrder): ServilexInvoiceUnit[] {
-    const servilexItems = order.orderItems
+function buildMerchOtrosServiciosUnit(
+    item: ServilexSourceOrderItem,
+    unitPrice: number,
+    sourceItemKey: string,
+    sourceUnitIndex: number,
+    config: ServilexConfig
+): ServilexOtrosServiciosUnit {
+    if (!item.merchVariant) {
+        throw new Error("buildMerchOtrosServiciosUnit: item.merchVariant es null")
+    }
+    const service = item.merchVariant.product.servilexService
+    if (!service) {
+        throw new Error("buildMerchOtrosServiciosUnit: producto sin servilexService")
+    }
+    const indicator = normalizeIndicator(service.indicador, "OS")
+    if (indicator !== "OS") {
+        throw new Error(
+            `Merch ${item.merchVariant.product.name}: el servicio Servilex ${service.codigo} es ${indicator}, se esperaba OS`
+        )
+    }
+
+    return {
+        indicator: "OS",
+        sucursal: config.sucursal,
+        eventCategory: null,
+        baseAmount: unitPrice,
+        sourceItemKey,
+        sourceUnitIndex,
+        detalle: {
+            servicio: service.codigo,
+            cantidad: 1,
+            descuento: 0,
+        },
+    }
+}
+
+interface ServilexInvoiceUnitsResult {
+    units: ServilexInvoiceUnit[]
+    apportionmentTotal: number
+}
+
+function buildInvoiceUnits(order: ServilexSourceOrder): ServilexInvoiceUnitsResult {
+    const ticketServilexItems = order.orderItems
         .map((item, itemIndex) => ({ item, itemIndex }))
         .filter((
             entry
@@ -998,47 +1059,106 @@ function buildInvoiceUnits(order: ServilexSourceOrder): ServilexInvoiceUnit[] {
             return a.itemIndex - b.itemIndex
         })
 
-    if (servilexItems.length === 0) {
-        return []
+    const merchServilexItems = order.orderItems
+        .map((item, itemIndex) => ({ item, itemIndex }))
+        .filter((
+            entry
+        ): entry is {
+            item: ServilexSourceOrderItem & { merchVariant: ServilexSourceMerchVariant }
+            itemIndex: number
+        } =>
+            entry.item.merchVariant != null &&
+            entry.item.merchVariant.product.servilexService != null
+        )
+        .sort((a, b) => {
+            const aId = asString(a.item.id)
+            const bId = asString(b.item.id)
+            if (aId && bId) return aId.localeCompare(bId)
+            return a.itemIndex - b.itemIndex
+        })
+
+    if (ticketServilexItems.length === 0 && merchServilexItems.length === 0) {
+        return { units: [], apportionmentTotal: 0 }
     }
 
-    // Verificar que todos los items de ticket también tengan Servilex habilitado (los items merch se ignoran)
-    const ticketOnlyItems = order.orderItems.filter((item) => item.ticketType !== null)
-    if (servilexItems.length !== ticketOnlyItems.length) {
-        throw new Error("La orden mezcla items con y sin Servilex")
+    if (ticketServilexItems.length > 0 && merchServilexItems.length > 0) {
+        throw new Error("La orden Servilex mezcla tickets y merch")
     }
 
-    const units: ServilexInvoiceUnit[] = []
-
-    for (const { item, itemIndex } of servilexItems) {
-        if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
-            throw new Error(`Cantidad Servilex inválida en ${item.ticketType.name}`)
+    if (ticketServilexItems.length > 0) {
+        const ticketOnlyItems = order.orderItems.filter((item) => item.ticketType !== null)
+        if (ticketServilexItems.length !== ticketOnlyItems.length) {
+            throw new Error("La orden mezcla items con y sin Servilex")
         }
 
-        const indicator = normalizeIndicator(item.ticketType.servilexIndicator)
-        const attendeeData = Array.isArray(item.attendeeData)
-            ? (item.attendeeData as unknown[])
-            : []
+        const units: ServilexInvoiceUnit[] = []
+
+        for (const { item, itemIndex } of ticketServilexItems) {
+            if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+                throw new Error(`Cantidad Servilex inválida en ${item.ticketType.name}`)
+            }
+
+            const indicator = normalizeIndicator(item.ticketType.servilexIndicator)
+            const attendeeData = Array.isArray(item.attendeeData)
+                ? (item.attendeeData as unknown[])
+                : []
+            const unitPrice = roundCurrency(toAmountNumber(item.unitPrice))
+            const sourceItemKey = buildSourceItemKey(item, itemIndex)
+
+            for (let index = 0; index < item.quantity; index++) {
+                if (indicator === "AC") {
+                    const attendee = getAcAttendeeData(attendeeData[index])
+                    units.push(buildAcademiaUnit(item, attendee, order, unitPrice, sourceItemKey, index))
+                    continue
+                }
+
+                if (indicator === "OS") {
+                    units.push(buildOtrosServiciosUnit(item, unitPrice, sourceItemKey, index))
+                    continue
+                }
+
+                units.push(buildPiscinaLibreUnit(item, indicator, unitPrice, sourceItemKey, index))
+            }
+        }
+
+        return {
+            units,
+            apportionmentTotal: roundCurrency(toAmountNumber(order.totalAmount)),
+        }
+    }
+
+    // Merch path: solo items merch con servilexService vinculado se facturan; el envío se omite
+    const merchOnlyItems = order.orderItems.filter((item) => item.merchVariant != null)
+    if (merchServilexItems.length !== merchOnlyItems.length) {
+        throw new Error("La orden merch mezcla productos con y sin Servilex")
+    }
+
+    const config = getServilexConfig()
+    const units: ServilexInvoiceUnit[] = []
+    let merchSubtotal = 0
+
+    for (const { item, itemIndex } of merchServilexItems) {
+        if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+            throw new Error(
+                `Cantidad Servilex inválida en ${item.merchVariant.product.name}`
+            )
+        }
+
         const unitPrice = roundCurrency(toAmountNumber(item.unitPrice))
         const sourceItemKey = buildSourceItemKey(item, itemIndex)
+        merchSubtotal += unitPrice * item.quantity
 
         for (let index = 0; index < item.quantity; index++) {
-            if (indicator === "AC") {
-                const attendee = getAcAttendeeData(attendeeData[index])
-                units.push(buildAcademiaUnit(item, attendee, order, unitPrice, sourceItemKey, index))
-                continue
-            }
-
-            if (indicator === "OS") {
-                units.push(buildOtrosServiciosUnit(item, unitPrice, sourceItemKey, index))
-                continue
-            }
-
-            units.push(buildPiscinaLibreUnit(item, indicator, unitPrice, sourceItemKey, index))
+            units.push(
+                buildMerchOtrosServiciosUnit(item, unitPrice, sourceItemKey, index, config)
+            )
         }
     }
 
-    return units
+    return {
+        units,
+        apportionmentTotal: roundCurrency(merchSubtotal),
+    }
 }
 
 function buildAcademiaGroupKey(unit: ServilexAcademiaUnit): string {
@@ -1136,7 +1256,7 @@ function buildUnitSnapshot(
 }
 
 export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): ServilexInvoiceSnapshot[] {
-    const units = buildInvoiceUnits(order)
+    const { units, apportionmentTotal } = buildInvoiceUnits(order)
     if (units.length === 0) return []
 
     const legacyGroupKeys = units.map((unit) => buildLegacyGroupKey(unit))
@@ -1147,7 +1267,7 @@ export function buildServilexInvoiceSnapshots(order: ServilexSourceOrder): Servi
 
     const lineAmounts = allocateLineAmounts(
         units.map((unit) => unit.baseAmount),
-        roundCurrency(toAmountNumber(order.totalAmount))
+        roundCurrency(apportionmentTotal)
     )
 
     return units.map((unit, index) => {

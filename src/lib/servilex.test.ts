@@ -955,3 +955,167 @@ test("stringifyServilexJson preserva fechas y evita objetos vacios para Date", (
 
     assert.match(raw, /"paidAt":"2026-04-10T18:09:20\.000Z"/)
 })
+
+function buildMerchVariant(overrides: {
+    codigo: string
+    indicador?: string
+    sede?: string | null
+    size?: string | null
+    productName?: string
+}): NonNullable<NonNullable<ServilexSourceOrder["orderItems"][number]>["merchVariant"]> {
+    return {
+        id: `var-${overrides.codigo}-${overrides.size ?? "uni"}`,
+        size: overrides.size ?? null,
+        product: {
+            id: `prod-${overrides.codigo}`,
+            name: overrides.productName ?? `Polera ${overrides.codigo}`,
+            servilexService: {
+                id: `svc-${overrides.codigo}`,
+                codigo: overrides.codigo,
+                indicador: overrides.indicador ?? "OS",
+                sede: overrides.sede ?? "LIMA",
+            },
+        },
+    }
+}
+
+test("merch: emite un comprobante OS por cada unidad y excluye el envio del apportionment", () => {
+    const order = buildOrder({
+        // Total real = 2 poleras × 80 + 1 gorra × 50 + envio 10 = 220 (con envío)
+        totalAmount: 220,
+        orderItems: [
+            {
+                id: "merch-item-1",
+                quantity: 2,
+                unitPrice: 80,
+                attendeeData: [],
+                ticketType: null,
+                merchVariant: buildMerchVariant({ codigo: "TPOL08", size: "M" }),
+            },
+            {
+                id: "merch-item-2",
+                quantity: 1,
+                unitPrice: 50,
+                attendeeData: [],
+                ticketType: null,
+                merchVariant: buildMerchVariant({ codigo: "TGOR01", size: null, productName: "Gorra" }),
+            },
+        ],
+    })
+
+    const sources = buildServilexPreviewSources(order, "merch-preview")
+    const payloads = sources.map((source) => buildServilexPayload(source, TEST_CONFIG))
+
+    // 3 unidades (2 + 1) => 3 comprobantes
+    assert.equal(sources.length, 3)
+    assert.equal(payloads.length, 3)
+
+    // Cada payload tiene exactamente 1 detalle (ABIO requiere 1 detalle por comprobante)
+    assert.deepEqual(payloads.map((p) => p.detalle.length), [1, 1, 1])
+
+    // Indicador OS y tipoTributo 1000 para todos
+    assert.deepEqual(payloads.map((p) => p.cabecera.indicador), ["OS", "OS", "OS"])
+    assert.deepEqual(payloads.map((p) => p.cabecera.tipoTributo), ["1000", "1000", "1000"])
+
+    // Totales por comprobante = precio unitario (envio NO entra)
+    assert.deepEqual(payloads.map((p) => p.cabecera.total), [80, 80, 50])
+    assert.deepEqual(payloads.map((p) => p.cobranza.totalPago), [80, 80, 50])
+
+    // Suma total Servilex = subtotal de items merch elegibles (sin envío)
+    assert.equal(
+        payloads.reduce((sum, p) => sum + p.cabecera.total, 0),
+        210
+    )
+
+    // Detalle usa el codigo del ServilexService como "servicio"
+    const detalles = payloads.map((p) => p.detalle[0] as unknown as Record<string, unknown>)
+    assert.deepEqual(detalles.map((d) => d.servicio), ["TPOL08", "TPOL08", "TGOR01"])
+    assert.deepEqual(detalles.map((d) => d.cantidad), [1, 1, 1])
+    assert.deepEqual(detalles.map((d) => d.descuento), [0, 0, 0])
+})
+
+test("merch: rechaza ordenes que mezclan productos con y sin servilexService", () => {
+    const order = buildOrder({
+        totalAmount: 130,
+        orderItems: [
+            {
+                id: "merch-with",
+                quantity: 1,
+                unitPrice: 80,
+                attendeeData: [],
+                ticketType: null,
+                merchVariant: buildMerchVariant({ codigo: "TPOL08" }),
+            },
+            {
+                id: "merch-without",
+                quantity: 1,
+                unitPrice: 50,
+                attendeeData: [],
+                ticketType: null,
+                merchVariant: {
+                    id: "var-no-srv",
+                    size: null,
+                    product: {
+                        id: "prod-no-srv",
+                        name: "Pin sin Servilex",
+                        servilexService: null,
+                    },
+                },
+            },
+        ],
+    })
+
+    assert.throws(
+        () => buildServilexInvoiceSnapshots(order),
+        /merch mezcla productos con y sin Servilex/
+    )
+})
+
+test("merch: rechaza ordenes que mezclan tickets y merch en Servilex", () => {
+    const order = buildOrder({
+        totalAmount: 150,
+        orderItems: [
+            {
+                id: "ticket-item",
+                quantity: 1,
+                unitPrice: 70,
+                attendeeData: [],
+                ticketType: buildTicketType("OS"),
+            },
+            {
+                id: "merch-item",
+                quantity: 1,
+                unitPrice: 80,
+                attendeeData: [],
+                ticketType: null,
+                merchVariant: buildMerchVariant({ codigo: "TPOL08" }),
+            },
+        ],
+    })
+
+    assert.throws(
+        () => buildServilexInvoiceSnapshots(order),
+        /mezcla tickets y merch/
+    )
+})
+
+test("merch: rechaza servicio Servilex con indicador distinto de OS", () => {
+    const order = buildOrder({
+        totalAmount: 80,
+        orderItems: [
+            {
+                id: "merch-bad-indicator",
+                quantity: 1,
+                unitPrice: 80,
+                attendeeData: [],
+                ticketType: null,
+                merchVariant: buildMerchVariant({ codigo: "ACSVC", indicador: "AC" }),
+            },
+        ],
+    })
+
+    assert.throws(
+        () => buildServilexInvoiceSnapshots(order),
+        /se esperaba OS/
+    )
+})

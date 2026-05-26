@@ -82,7 +82,7 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
 
     useEffect(() => {
         let cancelled = false
-        fetch("/api/admin/servilex-services")
+        fetch("/api/admin/servilex-services?indicator=OS")
             .then((res) => res.json())
             .then((data) => {
                 if (cancelled) return

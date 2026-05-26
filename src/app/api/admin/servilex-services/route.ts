@@ -37,9 +37,9 @@ export async function GET(request: NextRequest) {
             },
         })
 
-        return NextResponse.json({ data: services })
+        return NextResponse.json({ success: true, data: services })
     } catch (error) {
         console.error("Error fetching servilex services:", error)
-        return NextResponse.json({ error: "Error interno" }, { status: 500 })
+        return NextResponse.json({ success: false, error: "Error interno" }, { status: 500 })
     }
 }
