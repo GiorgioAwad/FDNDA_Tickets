@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
                     : {}),
             },
             orderBy: [{ servicioCodigo: "asc" }],
-            take: 200,
+            take: 1000,
         })
 
         return NextResponse.json({ data: services })
