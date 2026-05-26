@@ -451,6 +451,151 @@ const ZONE_LABEL_FOR_EMAIL: Record<string, string> = {
 const formatPenForEmail = (value: number): string =>
     new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN" }).format(value)
 
+export type MerchFulfillmentNotifyStatus =
+    | "READY"
+    | "SHIPPED"
+    | "DELIVERED"
+    | "PICKED_UP"
+    | "CANCELLED"
+
+export interface MerchFulfillmentEmailInput {
+    email: string
+    name: string
+    orderId: string
+    status: MerchFulfillmentNotifyStatus
+    deliveryMethod: "PICKUP_EVENT" | "SHIPPING_HOME" | "PICKUP_OFFICE" | null
+    trackingCode?: string | null
+    shippingAddress?: string | null
+    shippingDistrito?: string | null
+    items: MerchOrderEmailItem[]
+}
+
+interface FulfillmentCopy {
+    subject: string
+    headline: string
+    intro: string
+    extraBlock?: string
+}
+
+function buildFulfillmentCopy(input: MerchFulfillmentEmailInput, shortOrderId: string): FulfillmentCopy {
+    const { status, deliveryMethod, trackingCode, shippingAddress, shippingDistrito } = input
+
+    if (status === "READY") {
+        const isShipping = deliveryMethod === "SHIPPING_HOME"
+        return {
+            subject: `Tu pedido #${shortOrderId} esta listo - ${APP_NAME}`,
+            headline: isShipping ? "Tu pedido esta listo para envio" : "Tu pedido esta listo para recojo",
+            intro: isShipping
+                ? "Ya empacamos tu merch y lo dejaremos pronto en manos del courier. Te avisaremos cuando este en camino."
+                : "Ya empacamos tu merch. Acercate a la sede Campo de Marte con tu numero de orden y DNI para recogerlo.",
+        }
+    }
+
+    if (status === "SHIPPED") {
+        const trackingLine = trackingCode
+            ? `<p style="margin:8px 0 0;">📦 <strong>Codigo de tracking:</strong> ${trackingCode}</p>`
+            : ""
+        const addressLine =
+            shippingAddress || shippingDistrito
+                ? `<p style="margin:4px 0 0; color:#64748b; font-size:13px;">Direccion: ${[shippingAddress, shippingDistrito].filter(Boolean).join(", ")}</p>`
+                : ""
+        return {
+            subject: `Tu pedido #${shortOrderId} esta en camino - ${APP_NAME}`,
+            headline: "Tu merch esta en camino",
+            intro: "Tu pedido ya fue despachado y va rumbo a tu direccion.",
+            extraBlock: `${trackingLine}${addressLine}`,
+        }
+    }
+
+    if (status === "DELIVERED" || status === "PICKED_UP") {
+        const isPickup = status === "PICKED_UP"
+        return {
+            subject: `Pedido #${shortOrderId} ${isPickup ? "entregado" : "recibido"} - ${APP_NAME}`,
+            headline: isPickup ? "Gracias por recoger tu pedido" : "Tu pedido fue entregado",
+            intro: isPickup
+                ? "Confirmamos que ya recogiste tu pedido en sede. Esperamos que disfrutes tu merch oficial."
+                : "Confirmamos que tu pedido fue entregado. Esperamos que disfrutes tu merch oficial.",
+        }
+    }
+
+    return {
+        subject: `Pedido #${shortOrderId} cancelado - ${APP_NAME}`,
+        headline: "Tu pedido fue cancelado",
+        intro: "Tu pedido de merch fue cancelado. Si tu pago ya fue cobrado, nos contactaremos contigo para coordinar el reembolso.",
+    }
+}
+
+export async function sendMerchFulfillmentStatusEmail(
+    input: MerchFulfillmentEmailInput
+): Promise<EmailResult> {
+    const shortOrderId = input.orderId.slice(-8).toUpperCase()
+    const orderUrl = `${APP_URL}/mi-cuenta/merch`
+    const copy = buildFulfillmentCopy(input, shortOrderId)
+
+    const itemsList = input.items
+        .map((item) => {
+            const sizeTxt = item.size ? ` · Talla ${item.size}` : ""
+            const zoneTxt = item.zone && ZONE_LABEL_FOR_EMAIL[item.zone]
+                ? ` · Zona ${ZONE_LABEL_FOR_EMAIL[item.zone]}`
+                : ""
+            return `<li style="margin:0 0 6px; color:#0f172a;">
+                <strong>${item.quantity}×</strong> ${item.productName}
+                <span style="color:#64748b; font-size:13px;">${sizeTxt}${zoneTxt}</span>
+            </li>`
+        })
+        .join("")
+
+    try {
+        const result = await sendTransactionalEmail({
+            from: FROM_EMAIL,
+            to: input.email,
+            subject: copy.subject,
+            html: `
+                <!DOCTYPE html>
+                <html lang="es">
+                <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background:#f8fafc; margin:0; padding:24px;">
+                    <table align="center" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.05);">
+                        <tr>
+                            <td style="padding:32px 28px; background:linear-gradient(135deg, hsl(210,100%,25%), hsl(210,100%,40%)); color:#fff;">
+                                <div style="font-size:13px; opacity:0.85; letter-spacing:0.05em; text-transform:uppercase;">${BRAND_TAGLINE}</div>
+                                <h1 style="margin:8px 0 0; font-size:24px;">${copy.headline}</h1>
+                                <p style="margin:6px 0 0; opacity:0.9; font-size:14px;">Orden #${shortOrderId}</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:24px 28px;">
+                                <p style="margin:0 0 12px; color:#0f172a;">Hola ${input.name},</p>
+                                <p style="margin:0 0 12px; color:#0f172a;">${copy.intro}</p>
+
+                                ${copy.extraBlock ? `<div style="margin-top:16px; padding:16px; background:#f8fafc; border-radius:12px;">${copy.extraBlock}</div>` : ""}
+
+                                <div style="margin-top:20px;">
+                                    <div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; font-weight:600; margin-bottom:8px;">Tu pedido</div>
+                                    <ul style="margin:0; padding-left:18px;">${itemsList}</ul>
+                                </div>
+
+                                <p style="margin:24px 0 0; font-size:14px; color:#475569;">
+                                    Puedes seguir el estado en <a href="${orderUrl}" style="color:hsl(210,100%,40%);">tus pedidos</a>.
+                                    Si necesitas ayuda, escribenos por WhatsApp al <strong>+51 941 632 535</strong>.
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:16px 28px; background:#0f172a; color:#94a3b8; font-size:12px; text-align:center;">
+                                ${APP_NAME} — ${BRAND_TAGLINE}
+                            </td>
+                        </tr>
+                    </table>
+                </body>
+                </html>
+            `,
+        })
+        return { success: true, messageId: result.messageId }
+    } catch (err) {
+        return { success: false, error: (err as Error).message }
+    }
+}
+
 export async function sendMerchOrderConfirmationEmail(input: MerchOrderEmailInput): Promise<EmailResult> {
     const {
         email,

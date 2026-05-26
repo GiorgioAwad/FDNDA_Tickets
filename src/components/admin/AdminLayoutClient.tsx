@@ -32,6 +32,7 @@ import {
     QrCode,
     Receipt,
     ShoppingBag,
+    Package,
 } from "lucide-react"
 
 interface NavItem {
@@ -61,6 +62,7 @@ const adminNavigation: NavGroup[] = [
             { label: "Entradas", href: "/admin/entradas", icon: Ticket },
             { label: "Cortesías", href: "/admin/cortesias", icon: Gift },
             { label: "Merch", href: "/admin/merch", icon: ShoppingBag },
+            { label: "Pedidos merch", href: "/admin/merch/pedidos", icon: Package },
             { label: "Ingresos", href: "/admin/ingresos", icon: DollarSign },
         ],
     },
@@ -285,6 +287,7 @@ function AdminTopBar({ onMenuClick, title }: AdminTopBarProps) {
         if (pathname.includes("/cortesias")) return "Cortesías"
         if (pathname.includes("/ingresos")) return "Ingresos"
         if (pathname.includes("/reportes/merch")) return "Reporte merch"
+        if (pathname.includes("/merch/pedidos")) return "Pedidos merch"
         if (pathname.includes("/reportes")) return "Reportes"
         if (pathname.includes("/estadisticas")) return "Estadísticas"
         if (pathname.includes("/reclamos")) return "Reclamos"
