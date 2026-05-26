@@ -123,12 +123,8 @@ type SyncServilexOrderItem = {
         product: {
             id: string
             name: string
-            servilexService: {
-                id: string
-                codigo: string
-                indicador: string
-                sede: string | null
-            } | null
+            servilexServiceCode: string | null
+            servilexSucursalCode: string | null
         }
     } | null
 }
@@ -240,14 +236,8 @@ async function syncServilexInvoices(
                     product: {
                         id: item.merchVariant.product.id,
                         name: item.merchVariant.product.name,
-                        servilexService: item.merchVariant.product.servilexService
-                            ? {
-                                id: item.merchVariant.product.servilexService.id,
-                                codigo: item.merchVariant.product.servilexService.codigo,
-                                indicador: item.merchVariant.product.servilexService.indicador,
-                                sede: item.merchVariant.product.servilexService.sede,
-                            }
-                            : null,
+                        servilexServiceCode: item.merchVariant.product.servilexServiceCode,
+                        servilexSucursalCode: item.merchVariant.product.servilexSucursalCode,
                     },
                 }
                 : null,
@@ -462,11 +452,7 @@ export async function fulfillPaidOrder({
                     },
                     merchVariant: {
                         include: {
-                            product: {
-                                include: {
-                                    servilexService: true,
-                                },
-                            },
+                            product: true,
                         },
                     },
                 },
@@ -718,11 +704,7 @@ async function loadOrderForMerchFulfillment(orderId: string) {
                     ticketType: { include: { event: true } },
                     merchVariant: {
                         include: {
-                            product: {
-                                include: {
-                                    servilexService: true,
-                                },
-                            },
+                            product: true,
                         },
                     },
                 },

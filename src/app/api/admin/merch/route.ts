@@ -49,7 +49,6 @@ export async function GET() {
         const products = await prisma.merchProduct.findMany({
             include: {
                 variants: { orderBy: { size: "asc" } },
-                servilexService: { select: { id: true, codigo: true, descripcion: true } },
                 _count: { select: { variants: true } },
             },
             orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -93,7 +92,8 @@ export async function POST(request: NextRequest) {
             initialStock,
             isActive = true,
             sortOrder = 0,
-            servilexServiceId,
+            servilexServiceCode,
+            servilexSucursalCode,
         } = body
 
         if (typeof name !== "string" || !name.trim()) {
@@ -155,7 +155,14 @@ export async function POST(request: NextRequest) {
                 availableSizes: hasSizes ? (sizesArray as Prisma.InputJsonValue) : Prisma.JsonNull,
                 isActive: Boolean(isActive),
                 sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 0,
-                servilexServiceId: typeof servilexServiceId === "string" && servilexServiceId ? servilexServiceId : null,
+                servilexServiceCode:
+                    typeof servilexServiceCode === "string" && servilexServiceCode.trim()
+                        ? servilexServiceCode.trim()
+                        : null,
+                servilexSucursalCode:
+                    typeof servilexSucursalCode === "string" && servilexSucursalCode.trim()
+                        ? servilexSucursalCode.trim()
+                        : null,
                 variants: { create: variantsData },
             },
             include: { variants: true },

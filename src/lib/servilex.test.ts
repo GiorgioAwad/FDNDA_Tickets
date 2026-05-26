@@ -957,24 +957,19 @@ test("stringifyServilexJson preserva fechas y evita objetos vacios para Date", (
 })
 
 function buildMerchVariant(overrides: {
-    codigo: string
-    indicador?: string
-    sede?: string | null
+    codigo: string | null
+    sucursal?: string | null
     size?: string | null
     productName?: string
 }): NonNullable<NonNullable<ServilexSourceOrder["orderItems"][number]>["merchVariant"]> {
     return {
-        id: `var-${overrides.codigo}-${overrides.size ?? "uni"}`,
+        id: `var-${overrides.codigo ?? "none"}-${overrides.size ?? "uni"}`,
         size: overrides.size ?? null,
         product: {
-            id: `prod-${overrides.codigo}`,
-            name: overrides.productName ?? `Polera ${overrides.codigo}`,
-            servilexService: {
-                id: `svc-${overrides.codigo}`,
-                codigo: overrides.codigo,
-                indicador: overrides.indicador ?? "OS",
-                sede: overrides.sede ?? "LIMA",
-            },
+            id: `prod-${overrides.codigo ?? "none"}`,
+            name: overrides.productName ?? `Polera ${overrides.codigo ?? "sin-servilex"}`,
+            servilexServiceCode: overrides.codigo,
+            servilexSucursalCode: overrides.sucursal ?? null,
         },
     }
 }
@@ -1034,7 +1029,7 @@ test("merch: emite un comprobante OS por cada unidad y excluye el envio del appo
     assert.deepEqual(detalles.map((d) => d.descuento), [0, 0, 0])
 })
 
-test("merch: rechaza ordenes que mezclan productos con y sin servilexService", () => {
+test("merch: rechaza ordenes que mezclan productos con y sin servilexServiceCode", () => {
     const order = buildOrder({
         totalAmount: 130,
         orderItems: [
@@ -1052,15 +1047,7 @@ test("merch: rechaza ordenes que mezclan productos con y sin servilexService", (
                 unitPrice: 50,
                 attendeeData: [],
                 ticketType: null,
-                merchVariant: {
-                    id: "var-no-srv",
-                    size: null,
-                    product: {
-                        id: "prod-no-srv",
-                        name: "Pin sin Servilex",
-                        servilexService: null,
-                    },
-                },
+                merchVariant: buildMerchVariant({ codigo: null, productName: "Pin sin Servilex" }),
             },
         ],
     })
@@ -1099,23 +1086,24 @@ test("merch: rechaza ordenes que mezclan tickets y merch en Servilex", () => {
     )
 })
 
-test("merch: rechaza servicio Servilex con indicador distinto de OS", () => {
+test("merch: usa servilexSucursalCode del producto si esta definido", () => {
     const order = buildOrder({
         totalAmount: 80,
         orderItems: [
             {
-                id: "merch-bad-indicator",
+                id: "merch-custom-sucursal",
                 quantity: 1,
                 unitPrice: 80,
                 attendeeData: [],
                 ticketType: null,
-                merchVariant: buildMerchVariant({ codigo: "ACSVC", indicador: "AC" }),
+                merchVariant: buildMerchVariant({ codigo: "TPOL08", sucursal: "04" }),
             },
         ],
     })
 
-    assert.throws(
-        () => buildServilexInvoiceSnapshots(order),
-        /se esperaba OS/
-    )
+    const [source] = buildServilexPreviewSources(order, "merch-sucursal")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.cabecera.sucursal, "04")
+    assert.equal(payload.cabecera.indicador, "OS")
 })

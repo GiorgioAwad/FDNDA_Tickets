@@ -775,24 +775,26 @@ model TicketIssuanceLog {
 // ==================== MERCH ====================
 
 model MerchProduct {
-  id                String        @id @default(cuid())
-  slug              String        @unique
-  name              String
-  description       String?       @db.Text
-  category          MerchCategory
-  zone              MerchZone     @default(GENERICA)
-  etapa             String?
-  price             Decimal       @db.Decimal(10, 2)
-  currency          String        @default("PEN")
-  imageUrl          String?
-  imageUrls         Json?
-  hasSizes          Boolean       @default(false)
-  availableSizes    Json?
-  isActive          Boolean       @default(true)
-  sortOrder         Int           @default(0)
-  servilexServiceId String?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id                  String        @id @default(cuid())
+  slug                String        @unique
+  name                String
+  description         String?       @db.Text
+  category            MerchCategory
+  zone                MerchZone     @default(GENERICA)
+  etapa               String?
+  price               Decimal       @db.Decimal(10, 2)
+  currency            String        @default("PEN")
+  imageUrl            String?
+  imageUrls           Json?
+  hasSizes            Boolean       @default(false)
+  availableSizes      Json?
+  isActive            Boolean       @default(true)
+  sortOrder           Int           @default(0)
+  servilexServiceId   String?       // deprecated: usar servilexServiceCode (codigo del catalogo ABIO)
+  servilexServiceCode String?       // codigo ABIO (AbioCatalogService.servicioCodigo) para emitir boleta OS
+  servilexSucursalCode String?      // sucursal ABIO para el comprobante (default env SERVILEX_SUCURSAL si null)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   servilexService ServilexService? @relation(fields: [servilexServiceId], references: [id])
   variants        MerchVariant[]

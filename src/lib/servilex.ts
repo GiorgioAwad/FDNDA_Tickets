@@ -238,17 +238,11 @@ export interface ServilexSourceTicketType {
     event: ServilexSourceEvent
 }
 
-export interface ServilexSourceMerchService {
-    id: string
-    codigo: string
-    indicador: string
-    sede: string | null
-}
-
 export interface ServilexSourceMerchProduct {
     id: string
     name: string
-    servilexService: ServilexSourceMerchService | null
+    servilexServiceCode: string | null
+    servilexSucursalCode: string | null
 }
 
 export interface ServilexSourceMerchVariant {
@@ -1012,26 +1006,24 @@ function buildMerchOtrosServiciosUnit(
     if (!item.merchVariant) {
         throw new Error("buildMerchOtrosServiciosUnit: item.merchVariant es null")
     }
-    const service = item.merchVariant.product.servilexService
-    if (!service) {
-        throw new Error("buildMerchOtrosServiciosUnit: producto sin servilexService")
-    }
-    const indicator = normalizeIndicator(service.indicador, "OS")
-    if (indicator !== "OS") {
+    const product = item.merchVariant.product
+    const code = asString(product.servilexServiceCode)
+    if (!code) {
         throw new Error(
-            `Merch ${item.merchVariant.product.name}: el servicio Servilex ${service.codigo} es ${indicator}, se esperaba OS`
+            `Merch ${product.name}: falta servilexServiceCode (codigo del catalogo ABIO)`
         )
     }
+    const sucursal = asString(product.servilexSucursalCode) || config.sucursal
 
     return {
         indicator: "OS",
-        sucursal: config.sucursal,
+        sucursal,
         eventCategory: null,
         baseAmount: unitPrice,
         sourceItemKey,
         sourceUnitIndex,
         detalle: {
-            servicio: service.codigo,
+            servicio: code,
             cantidad: 1,
             descuento: 0,
         },
@@ -1068,7 +1060,7 @@ function buildInvoiceUnits(order: ServilexSourceOrder): ServilexInvoiceUnitsResu
             itemIndex: number
         } =>
             entry.item.merchVariant != null &&
-            entry.item.merchVariant.product.servilexService != null
+            asString(entry.item.merchVariant.product.servilexServiceCode) != null
         )
         .sort((a, b) => {
             const aId = asString(a.item.id)
