@@ -95,6 +95,40 @@ const toJsonValue = (
     return String(value)
 }
 
+type SyncServilexOrderItem = {
+    id: string
+    quantity: number
+    unitPrice: Prisma.Decimal
+    attendeeData: Prisma.JsonValue | null
+    ticketType: {
+        name: string
+        servilexEnabled: boolean
+        servilexIndicator: string | null
+        servilexSucursalCode: string | null
+        servilexServiceCode: string | null
+        servilexDisciplineCode: string | null
+        servilexScheduleCode: string | null
+        servilexPoolCode: string | null
+        servilexExtraConfig: Prisma.JsonValue | null
+        event: {
+            id: string
+            startDate: Date
+            category: string
+            servilexSucursalCode: string
+        }
+    } | null
+    merchVariant: {
+        id: string
+        size: string | null
+        product: {
+            id: string
+            name: string
+            servilexServiceCode: string | null
+            servilexSucursalCode: string | null
+        }
+    } | null
+}
+
 async function syncServilexInvoices(
     db: InvoiceDbClient,
     order: {
@@ -121,29 +155,7 @@ async function syncServilexInvoices(
         user: {
             email: string
         }
-        orderItems: Array<{
-            id: string
-            quantity: number
-            unitPrice: Prisma.Decimal
-            attendeeData: Prisma.JsonValue | null
-            ticketType: {
-                name: string
-                servilexEnabled: boolean
-                servilexIndicator: string | null
-                servilexSucursalCode: string | null
-                servilexServiceCode: string | null
-                servilexDisciplineCode: string | null
-                servilexScheduleCode: string | null
-                servilexPoolCode: string | null
-                servilexExtraConfig: Prisma.JsonValue | null
-                event: {
-                    id: string
-                    startDate: Date
-                    category: string
-                    servilexSucursalCode: string
-                }
-            }
-        }>
+        orderItems: Array<SyncServilexOrderItem>
         invoices: Array<{
             id: string
             servilexGroupKey: string
@@ -198,23 +210,37 @@ async function syncServilexInvoices(
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             attendeeData: item.attendeeData,
-            ticketType: {
-                name: item.ticketType.name,
-                servilexEnabled: item.ticketType.servilexEnabled,
-                servilexIndicator: item.ticketType.servilexIndicator,
-                servilexSucursalCode: item.ticketType.servilexSucursalCode,
-                servilexServiceCode: item.ticketType.servilexServiceCode,
-                servilexDisciplineCode: item.ticketType.servilexDisciplineCode,
-                servilexScheduleCode: item.ticketType.servilexScheduleCode,
-                servilexPoolCode: item.ticketType.servilexPoolCode,
-                servilexExtraConfig: item.ticketType.servilexExtraConfig,
-                event: {
-                    id: item.ticketType.event.id,
-                    startDate: item.ticketType.event.startDate,
-                    category: item.ticketType.event.category,
-                    servilexSucursalCode: item.ticketType.event.servilexSucursalCode,
-                },
-            },
+            ticketType: item.ticketType
+                ? {
+                    name: item.ticketType.name,
+                    servilexEnabled: item.ticketType.servilexEnabled,
+                    servilexIndicator: item.ticketType.servilexIndicator,
+                    servilexSucursalCode: item.ticketType.servilexSucursalCode,
+                    servilexServiceCode: item.ticketType.servilexServiceCode,
+                    servilexDisciplineCode: item.ticketType.servilexDisciplineCode,
+                    servilexScheduleCode: item.ticketType.servilexScheduleCode,
+                    servilexPoolCode: item.ticketType.servilexPoolCode,
+                    servilexExtraConfig: item.ticketType.servilexExtraConfig,
+                    event: {
+                        id: item.ticketType.event.id,
+                        startDate: item.ticketType.event.startDate,
+                        category: item.ticketType.event.category,
+                        servilexSucursalCode: item.ticketType.event.servilexSucursalCode,
+                    },
+                }
+                : null,
+            merchVariant: item.merchVariant
+                ? {
+                    id: item.merchVariant.id,
+                    size: item.merchVariant.size,
+                    product: {
+                        id: item.merchVariant.product.id,
+                        name: item.merchVariant.product.name,
+                        servilexServiceCode: item.merchVariant.product.servilexServiceCode,
+                        servilexSucursalCode: item.merchVariant.product.servilexSucursalCode,
+                    },
+                }
+                : null,
         })),
     })
 
@@ -676,7 +702,11 @@ async function loadOrderForMerchFulfillment(orderId: string) {
             orderItems: {
                 include: {
                     ticketType: { include: { event: true } },
-                    merchVariant: { include: { product: true } },
+                    merchVariant: {
+                        include: {
+                            product: true,
+                        },
+                    },
                 },
             },
         },
@@ -764,6 +794,8 @@ export async function fulfillMerchOrder({
             `
         }
 
+        await syncServilexInvoices(tx, order)
+
         return false
     })
 
@@ -775,6 +807,7 @@ export async function fulfillMerchOrder({
             providerOrderNumber,
             providerTransactionId,
         })
+        await syncServilexInvoices(prisma, order)
         return { success: true, alreadyPaid: true }
     }
 

@@ -11,10 +11,10 @@ import { Save, Trash2 } from "lucide-react"
 type Category = "POLERA" | "GORRA" | "PIN" | "OTROS"
 type Zone = "LIMA" | "SUR" | "NORTE" | "ORIENTE" | "GENERICA"
 
-interface ServilexServiceOption {
-    id: string
-    codigo: string
-    descripcion: string
+interface AbioServiceOption {
+    servicioCodigo: string
+    servicioDescripcion: string
+    sucursalCodigo: string
 }
 
 interface MerchProductFormData {
@@ -30,7 +30,8 @@ interface MerchProductFormData {
     availableSizes: string[]
     isActive: boolean
     sortOrder: number
-    servilexServiceId: string | null
+    servilexServiceCode: string | null
+    servilexSucursalCode: string | null
     initialStock?: number
 }
 
@@ -60,7 +61,11 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
     const router = useRouter()
     const [submitting, setSubmitting] = useState(false)
     const [deleting, setDeleting] = useState(false)
-    const [servilexServices, setServilexServices] = useState<ServilexServiceOption[]>([])
+    const [abioServices, setAbioServices] = useState<AbioServiceOption[]>([])
+    const [abioSucursal, setAbioSucursal] = useState<string>(
+        initialData?.servilexSucursalCode ?? ""
+    )
+    const [sucursalOptions, setSucursalOptions] = useState<Array<{ code: string; label: string }>>([])
 
     const [form, setForm] = useState<MerchProductFormData>({
         name: initialData?.name ?? "",
@@ -76,25 +81,57 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
             : DEFAULT_SIZES,
         isActive: initialData?.isActive ?? true,
         sortOrder: initialData?.sortOrder ?? 0,
-        servilexServiceId: initialData?.servilexServiceId ?? null,
+        servilexServiceCode: initialData?.servilexServiceCode ?? null,
+        servilexSucursalCode: initialData?.servilexSucursalCode ?? null,
         initialStock: 0,
     })
 
+    // Cargar sucursales disponibles del catalogo ABIO
     useEffect(() => {
         let cancelled = false
-        fetch("/api/admin/servilex-services")
+        fetch("/api/admin/abio-sucursales")
             .then((res) => res.json())
             .then((data) => {
                 if (cancelled) return
-                if (data?.success && Array.isArray(data.data)) {
-                    setServilexServices(data.data)
+                const rows = Array.isArray(data?.data) ? data.data : []
+                const options = rows
+                    .map((row: { code?: string; name?: string; servicesCount?: number }) => ({
+                        code: row.code ?? "",
+                        label: row.name ? `${row.code} — ${row.name}` : row.code ?? "",
+                    }))
+                    .filter((opt: { code: string }) => opt.code)
+                setSucursalOptions(options)
+                if (!abioSucursal && options.length > 0) {
+                    setAbioSucursal(options[0].code)
                 }
             })
             .catch(() => {})
         return () => {
             cancelled = true
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
+
+    // Cargar servicios del catalogo ABIO segun la sucursal seleccionada
+    useEffect(() => {
+        if (!abioSucursal) {
+            setAbioServices([])
+            return
+        }
+        let cancelled = false
+        fetch(`/api/admin/abio-catalog/services?sucursal=${encodeURIComponent(abioSucursal)}`)
+            .then((res) => res.json())
+            .then((data) => {
+                if (cancelled) return
+                if (Array.isArray(data?.data)) {
+                    setAbioServices(data.data)
+                }
+            })
+            .catch(() => {})
+        return () => {
+            cancelled = true
+        }
+    }, [abioSucursal])
 
     // Auto-suggest hasSizes based on category
     useEffect(() => {
@@ -151,7 +188,8 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
                 availableSizes: form.hasSizes ? form.availableSizes : null,
                 isActive: form.isActive,
                 sortOrder: Number(form.sortOrder) || 0,
-                servilexServiceId: form.servilexServiceId,
+                servilexServiceCode: form.servilexServiceCode,
+                servilexSucursalCode: form.servilexServiceCode ? abioSucursal || null : null,
                 ...(isEdit ? {} : { initialStock: Number(form.initialStock) || 0 }),
             }
 
@@ -342,26 +380,54 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
 
                     <div className="bg-white rounded-xl border border-border p-5 space-y-4">
                         <h3 className="font-display font-bold text-lg text-foreground">Facturación (Servilex)</h3>
-                        <div>
-                            <label className="text-sm font-semibold text-foreground block mb-1.5">
-                                Servicio Servilex (opcional)
-                            </label>
-                            <select
-                                value={form.servilexServiceId ?? ""}
-                                onChange={(e) => setForm({ ...form, servilexServiceId: e.target.value || null })}
-                                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                            >
-                                <option value="">— Sin Servilex (sin boleta automática) —</option>
-                                {servilexServices.map((svc) => (
-                                    <option key={svc.id} value={svc.id}>
-                                        {svc.codigo} · {svc.descripcion}
-                                    </option>
-                                ))}
-                            </select>
-                            <p className="text-xs text-muted-foreground mt-1">
-                                Si vinculas un servicio, las ventas se enviarán a Servilex para emisión de boleta automática.
-                            </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-sm font-semibold text-foreground block mb-1.5">
+                                    Sucursal ABIO
+                                </label>
+                                <select
+                                    value={abioSucursal}
+                                    onChange={(e) => {
+                                        setAbioSucursal(e.target.value)
+                                        // al cambiar sucursal, limpia el servicio seleccionado
+                                        setForm((f) => ({ ...f, servilexServiceCode: null }))
+                                    }}
+                                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                >
+                                    {sucursalOptions.length === 0 && (
+                                        <option value="">— cargando sucursales —</option>
+                                    )}
+                                    {sucursalOptions.map((opt) => (
+                                        <option key={opt.code} value={opt.code}>
+                                            {opt.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-sm font-semibold text-foreground block mb-1.5">
+                                    Servicio ABIO (opcional)
+                                </label>
+                                <select
+                                    value={form.servilexServiceCode ?? ""}
+                                    onChange={(e) =>
+                                        setForm({ ...form, servilexServiceCode: e.target.value || null })
+                                    }
+                                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                >
+                                    <option value="">— Sin Servilex (sin boleta automática) —</option>
+                                    {abioServices.map((svc) => (
+                                        <option key={svc.servicioCodigo} value={svc.servicioCodigo}>
+                                            {svc.servicioCodigo} · {svc.servicioDescripcion}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
+                        <p className="text-xs text-muted-foreground">
+                            Si vinculas un servicio del catálogo ABIO, las ventas de este producto generarán
+                            una boleta OS por cada unidad vendida (ABIO acepta solo un detalle por comprobante).
+                        </p>
                     </div>
                 </div>
 

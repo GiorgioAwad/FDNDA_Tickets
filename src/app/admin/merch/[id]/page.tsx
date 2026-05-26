@@ -67,7 +67,8 @@ export default async function AdminMerchEditPage({ params }: AdminMerchEditPageP
                     availableSizes,
                     isActive: product.isActive,
                     sortOrder: product.sortOrder,
-                    servilexServiceId: product.servilexServiceId,
+                    servilexServiceCode: product.servilexServiceCode,
+                    servilexSucursalCode: product.servilexSucursalCode,
                 }}
             />
 

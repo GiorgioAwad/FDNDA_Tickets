@@ -50,7 +50,6 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
             where: { id },
             include: {
                 variants: { orderBy: { size: "asc" } },
-                servilexService: true,
             },
         })
 
@@ -113,10 +112,21 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         if (body.sortOrder !== undefined && Number.isFinite(Number(body.sortOrder))) {
             data.sortOrder = Number(body.sortOrder)
         }
-        if (typeof body.servilexServiceId === "string" && body.servilexServiceId) {
-            data.servilexService = { connect: { id: body.servilexServiceId } }
-        } else if (body.servilexServiceId === null) {
-            data.servilexService = { disconnect: true }
+        if (body.servilexServiceCode === null) {
+            data.servilexServiceCode = null
+            data.servilexSucursalCode = null
+        } else if (typeof body.servilexServiceCode === "string") {
+            const trimmed = body.servilexServiceCode.trim()
+            data.servilexServiceCode = trimmed || null
+            if (!trimmed) {
+                data.servilexSucursalCode = null
+            }
+        }
+        if (body.servilexSucursalCode === null) {
+            data.servilexSucursalCode = null
+        } else if (typeof body.servilexSucursalCode === "string") {
+            const trimmed = body.servilexSucursalCode.trim()
+            data.servilexSucursalCode = trimmed || null
         }
 
         const newHasSizes = typeof body.hasSizes === "boolean" ? body.hasSizes : existing.hasSizes
