@@ -26,6 +26,7 @@ interface MerchProductFormData {
     etapa: string
     price: number | string
     imageUrl: string
+    backImageUrl: string
     hasSizes: boolean
     availableSizes: string[]
     isActive: boolean
@@ -36,7 +37,7 @@ interface MerchProductFormData {
 }
 
 interface MerchProductFormProps {
-    initialData?: Partial<MerchProductFormData>
+    initialData?: Partial<MerchProductFormData> & { imageUrls?: string[] }
     isEdit?: boolean
 }
 
@@ -75,6 +76,7 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
         etapa: initialData?.etapa ?? "",
         price: initialData?.price ?? "",
         imageUrl: initialData?.imageUrl ?? "",
+        backImageUrl: initialData?.backImageUrl ?? initialData?.imageUrls?.[0] ?? "",
         hasSizes: initialData?.hasSizes ?? true,
         availableSizes: initialData?.availableSizes && initialData.availableSizes.length > 0
             ? initialData.availableSizes
@@ -176,6 +178,7 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
             const url = isEdit && initialData?.id ? `/api/admin/merch/${initialData.id}` : "/api/admin/merch"
             const method = isEdit ? "PATCH" : "POST"
 
+            const backImage = form.category === "POLERA" ? form.backImageUrl.trim() : ""
             const payload = {
                 name: form.name.trim(),
                 description: form.description.trim() || null,
@@ -184,6 +187,7 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
                 etapa: form.etapa.trim() || null,
                 price: priceNum,
                 imageUrl: form.imageUrl || null,
+                imageUrls: backImage ? [backImage] : [],
                 hasSizes: form.hasSizes,
                 availableSizes: form.hasSizes ? form.availableSizes : null,
                 isActive: form.isActive,
@@ -433,14 +437,36 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
 
                 <div className="space-y-6">
                     <div className="bg-white rounded-xl border border-border p-5 space-y-4">
-                        <h3 className="font-display font-bold text-lg text-foreground">Imagen</h3>
-                        <ImageUploader
-                            value={form.imageUrl}
-                            onChange={(url) => setForm({ ...form, imageUrl: url })}
-                            type="merch"
-                            label=""
-                            placeholder="URL de la imagen del producto"
-                        />
+                        <h3 className="font-display font-bold text-lg text-foreground">
+                            {form.category === "POLERA" ? "Imágenes (Frente y Espalda)" : "Imagen"}
+                        </h3>
+                        <div>
+                            {form.category === "POLERA" && (
+                                <p className="text-xs font-semibold text-foreground mb-1.5">Frente</p>
+                            )}
+                            <ImageUploader
+                                value={form.imageUrl}
+                                onChange={(url) => setForm({ ...form, imageUrl: url })}
+                                type="merch"
+                                label=""
+                                placeholder="URL de la imagen del producto"
+                            />
+                        </div>
+                        {form.category === "POLERA" && (
+                            <div>
+                                <p className="text-xs font-semibold text-foreground mb-1.5">Espalda</p>
+                                <ImageUploader
+                                    value={form.backImageUrl}
+                                    onChange={(url) => setForm({ ...form, backImageUrl: url })}
+                                    type="merch"
+                                    label=""
+                                    placeholder="URL de la espalda de la polera"
+                                />
+                                <p className="text-[11px] text-muted-foreground mt-2">
+                                    Opcional. Si la subes, el preview gira 3D mostrando ambos lados.
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     <div className="bg-white rounded-xl border border-border p-5 space-y-4">
