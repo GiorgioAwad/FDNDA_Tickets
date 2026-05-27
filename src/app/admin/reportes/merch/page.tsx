@@ -155,8 +155,8 @@ export default function MerchReportPage() {
         const rows = filteredOrders.flatMap((order) =>
             order.items.map((item) => ({
                 "Orden": `#${order.id.slice(-8).toUpperCase()}`,
-                "Fecha": new Date(order.createdAt).toLocaleString("es-PE"),
-                "Fecha Pago": order.paidAt ? new Date(order.paidAt).toLocaleString("es-PE") : "",
+                "Fecha": new Date(order.createdAt).toLocaleString("es-PE", { timeZone: "America/Lima" }),
+                "Fecha Pago": order.paidAt ? new Date(order.paidAt).toLocaleString("es-PE", { timeZone: "America/Lima" }) : "",
                 "Estado": statusLabel[order.status] || order.status,
                 "Numero Operacion Izipay": order.paymentOperationNumber || "",
                 "Metodo Pago": order.paymentMethod || order.provider || "",

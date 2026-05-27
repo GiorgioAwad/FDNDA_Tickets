@@ -44,6 +44,7 @@ function formatDate(value: Date | null): string {
         year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
+        timeZone: "America/Lima",
     })
 }
 

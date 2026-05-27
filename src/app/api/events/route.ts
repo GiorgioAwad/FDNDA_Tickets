@@ -51,6 +51,7 @@ type EventPayload = {
     mode: "RANGE" | "DAYS"
     category?: EventCategory
     advanceAmount?: number | string
+    academiaWeeklyFrequency?: number | string | null
     isPublished?: boolean
     visibility?: EventVisibility
     bannerUrl?: string
@@ -135,6 +136,7 @@ export async function POST(request: NextRequest) {
             mode,
             category,
             advanceAmount,
+            academiaWeeklyFrequency,
             isPublished,
             visibility,
             bannerUrl,
@@ -143,6 +145,14 @@ export async function POST(request: NextRequest) {
             eventDays,   // Optional array of days to create
         } = body
         const parsedAdvanceAmount = Number(advanceAmount || 0)
+        const parsedAcademiaWeeklyFrequency = (() => {
+            if (academiaWeeklyFrequency === undefined || academiaWeeklyFrequency === null || academiaWeeklyFrequency === "") {
+                return null
+            }
+            const n = Number(academiaWeeklyFrequency)
+            if (!Number.isFinite(n) || n < 1 || n > 7) return null
+            return Math.floor(n)
+        })()
         const resolvedVisibility: EventVisibility = visibility === "PRIVATE" ? "PRIVATE" : "PUBLIC"
         const accessToken = resolvedVisibility === "PRIVATE" ? generateAccessToken() : null
         const selectedSucursal = getAbioEventSucursalByCode(servilexSucursalCode)
@@ -185,6 +195,7 @@ export async function POST(request: NextRequest) {
                 mode,
                 category: category || "EVENTO",
                 advanceAmount: parsedAdvanceAmount,
+                academiaWeeklyFrequency: parsedAcademiaWeeklyFrequency,
                 isPublished,
                 visibility: resolvedVisibility,
                 accessToken,

@@ -233,6 +233,9 @@ model Event {
   mode        EventMode @default(RANGE)
   category    EventCategory @default(EVENTO)
   advanceAmount Decimal @default(0) @db.Decimal(10, 2)
+  // Solo aplica si category = ACADEMIA. Cantidad de clases por semana del paquete
+  // (1..7). Se usa para autocompletar `packageDaysCount` en el creador de entradas.
+  academiaWeeklyFrequency Int?
   isPublished Boolean   @default(false)
   visibility  EventVisibility @default(PUBLIC)
   accessToken String?   @unique

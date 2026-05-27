@@ -1115,7 +1115,7 @@ export default function CourtesyPage() {
                                                                 {ticket.claimedAt && (
                                                                     <div className="flex items-center gap-2 text-xs text-gray-400">
                                                                         <Calendar className="h-3 w-3" />
-                                                                        {new Date(ticket.claimedAt).toLocaleString("es-PE")}
+                                                                        {new Date(ticket.claimedAt).toLocaleString("es-PE", { timeZone: "America/Lima" })}
                                                                     </div>
                                                                 )}
                                                                 {ticket.generatedTicket && (
@@ -1133,7 +1133,7 @@ export default function CourtesyPage() {
                                                                         <QrCode className="h-3.5 w-3.5" />
                                                                         <span>Escaneado:</span>
                                                                         <span className="font-medium">
-                                                                            {new Date(ticket.generatedTicket.scans[0].scannedAt).toLocaleString("es-PE")}
+                                                                            {new Date(ticket.generatedTicket.scans[0].scannedAt).toLocaleString("es-PE", { timeZone: "America/Lima" })}
                                                                         </span>
                                                                         {ticket.generatedTicket.scans[0].eventDay && (
                                                                             <span>· {ticket.generatedTicket.scans[0].eventDay.name}</span>

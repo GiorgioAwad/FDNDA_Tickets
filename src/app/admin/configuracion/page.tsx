@@ -122,7 +122,7 @@ export default function ConfiguracionPage() {
                                         • Fee fijo Cybersource: <strong>USD {IZIPAY_CYBERSOURCE_FEE_USD.toFixed(2)}</strong> ≈ S/ {(IZIPAY_CYBERSOURCE_FEE_USD * usdRate).toFixed(2)}
                                         <span className="text-xs ml-1">
                                             (TC S/ {usdRate.toFixed(4)} · {usdRateSource === "fallback" ? "fallback local" : `${usdRateSource} en vivo`}
-                                            {usdRateFetchedAt && ` · actualizado ${new Date(usdRateFetchedAt).toLocaleString("es-PE")}`})
+                                            {usdRateFetchedAt && ` · actualizado ${new Date(usdRateFetchedAt).toLocaleString("es-PE", { timeZone: "America/Lima" })}`})
                                         </span>
                                     </li>
                                     <li>• <strong>Total fee fijo: S/ {fixedFeePerTx.toFixed(2)}</strong> por transacción</li>
