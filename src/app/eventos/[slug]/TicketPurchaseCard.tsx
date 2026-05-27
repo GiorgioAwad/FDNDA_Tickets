@@ -506,7 +506,13 @@ export default function TicketPurchaseCard({
                     slots: selectedDate
                         ? metadata.schedule.slots?.filter((slot) => slot.date === selectedDate)
                         : metadata.schedule.slots,
-                    requiredDays: ticket.isPackage ? (ticket.packageDaysCount ?? null) : null,
+                    // Para ACADEMIA el paquete es flexible: el comprador no preselecciona fechas,
+                    // las N clases se consumen en cualquier dia del rango. Para otros tipos
+                    // (full-day, paquete de turnos) si exigimos seleccion explicita.
+                    requiredDays:
+                        ticket.isPackage && eventCategory !== "ACADEMIA"
+                            ? (ticket.packageDaysCount ?? null)
+                            : null,
                     requireShiftSelection: metadata.schedule.requireShiftSelection,
                 },
                 servilexEnabled: Boolean(ticket.servilexEnabled),
