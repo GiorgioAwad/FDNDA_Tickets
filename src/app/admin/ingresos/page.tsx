@@ -478,7 +478,8 @@ export default function IncomePage() {
                                         month: "long",
                                         year: "numeric",
                                         hour: "2-digit",
-                                        minute: "2-digit"
+                                        minute: "2-digit",
+                                        timeZone: "America/Lima",
                                     })}
                                 </p>
                             </div>
@@ -631,7 +632,7 @@ export default function IncomePage() {
                                         </p>
                                         {selectedOrder.paymentLastSyncAt && (
                                             <p className="text-xs text-gray-400 mt-1">
-                                                Última sync: {new Date(selectedOrder.paymentLastSyncAt).toLocaleString("es-PE")}
+                                                Última sync: {new Date(selectedOrder.paymentLastSyncAt).toLocaleString("es-PE", { timeZone: "America/Lima" })}
                                             </p>
                                         )}
                                         {selectedOrder.paymentNeedsReview && (
@@ -644,7 +645,7 @@ export default function IncomePage() {
                                         )}
                                         {selectedOrder.paidAt && (
                                             <p className="text-xs text-gray-400 mt-1">
-                                                Pagado: {new Date(selectedOrder.paidAt).toLocaleString("es-PE")}
+                                                Pagado: {new Date(selectedOrder.paidAt).toLocaleString("es-PE", { timeZone: "America/Lima" })}
                                             </p>
                                         )}
                                     </div>

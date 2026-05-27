@@ -34,6 +34,7 @@ interface EventFormData {
     servilexSucursalCode: string
     discipline: string
     category: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA"
+    academiaWeeklyFrequency: string
     advanceAmount: string
     startDate: string
     endDate: string
@@ -59,6 +60,9 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
         servilexSucursalCode: initialSucursal.code || DEFAULT_ABIO_EVENT_SUCURSAL_CODE,
         discipline: initialData?.discipline || "",
         category: initialData?.category || "EVENTO",
+        academiaWeeklyFrequency: initialData?.academiaWeeklyFrequency
+            ? String(initialData.academiaWeeklyFrequency)
+            : "",
         advanceAmount: initialData?.advanceAmount ? String(initialData.advanceAmount) : "0",
         startDate: initialData?.startDate ? formatDateInput(initialData.startDate) : "",
         endDate: initialData?.endDate ? formatDateInput(initialData.endDate) : "",
@@ -316,6 +320,35 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                                 </div>
                             </div>
 
+                            {formData.category === "ACADEMIA" && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">
+                                            Frecuencia semanal (clases/semana)
+                                        </label>
+                                        <select
+                                            name="academiaWeeklyFrequency"
+                                            value={formData.academiaWeeklyFrequency}
+                                            onChange={handleChange}
+                                            className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                        >
+                                            <option value="">— no definir —</option>
+                                            <option value="1">1 vez por semana</option>
+                                            <option value="2">2 veces por semana</option>
+                                            <option value="3">3 veces por semana</option>
+                                            <option value="4">4 veces por semana</option>
+                                            <option value="5">5 veces por semana</option>
+                                            <option value="6">6 veces por semana</option>
+                                            <option value="7">7 veces por semana</option>
+                                        </select>
+                                        <p className="text-xs text-gray-500">
+                                            Se usa para sugerir cantidad de clases del paquete cuando creas
+                                            entradas (ej: 3/sem × 4 semanas = 12 clases).
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium">Adelanto aplicado</label>
@@ -498,6 +531,11 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                         eventStartDate={formData.startDate || initialData.startDate}
                         eventEndDate={formData.endDate || initialData.endDate}
                         eventSucursalCode={savedEventSucursalCode}
+                        eventAcademiaWeeklyFrequency={
+                            formData.academiaWeeklyFrequency
+                                ? Number(formData.academiaWeeklyFrequency)
+                                : null
+                        }
                     />
 
                     <EventDaysManager

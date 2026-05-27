@@ -6,15 +6,19 @@ import { ShoppingBag } from "lucide-react"
 
 interface MerchSpinPreviewProps {
     imageUrl: string | null
+    backImageUrl?: string | null
     alt: string
     bgClass?: string
 }
 
-export function MerchSpinPreview({ imageUrl, alt, bgClass = "bg-gradient-to-br from-fdnda-light/50 via-white to-coral/10" }: MerchSpinPreviewProps) {
+export function MerchSpinPreview({ imageUrl, backImageUrl, alt, bgClass = "bg-gradient-to-br from-fdnda-light/50 via-white to-coral/10" }: MerchSpinPreviewProps) {
     const rotation = useMotionValue(-180)
-    const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null)
+    const [failedFront, setFailedFront] = useState<string | null>(null)
+    const [failedBack, setFailedBack] = useState<string | null>(null)
     const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const autoSpinControls = useRef<ReturnType<typeof animate> | null>(null)
+
+    const hasTwoSides = Boolean(imageUrl && backImageUrl && backImageUrl !== imageUrl)
 
     const transform = useTransform(rotation, (deg) => `rotateY(${deg}deg)`)
     const shadowOpacity = useTransform(rotation, (deg) => {
@@ -36,7 +40,8 @@ export function MerchSpinPreview({ imageUrl, alt, bgClass = "bg-gradient-to-br f
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    const imageFailed = Boolean(imageUrl && failedImageUrl === imageUrl)
+    const frontFailed = Boolean(imageUrl && failedFront === imageUrl)
+    const backFailed = Boolean(backImageUrl && failedBack === backImageUrl)
 
     const stopAutoSpin = () => {
         if (autoSpinControls.current) {
@@ -77,20 +82,54 @@ export function MerchSpinPreview({ imageUrl, alt, bgClass = "bg-gradient-to-br f
                     style={{
                         transform,
                         transformStyle: "preserve-3d",
-                        backfaceVisibility: "visible",
                     }}
                 >
-                    {imageUrl && !imageFailed ? (
-                        <div className="relative w-[85%] h-[85%]">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                                src={imageUrl}
-                                alt={alt}
-                                draggable={false}
-                                onError={() => setFailedImageUrl(imageUrl)}
-                                className="h-full w-full object-contain drop-shadow-2xl pointer-events-none"
-                            />
-                        </div>
+                    {imageUrl && !frontFailed ? (
+                        <>
+                            {/* Frente */}
+                            <div
+                                className="absolute inset-0 flex items-center justify-center"
+                                style={{
+                                    transform: "rotateY(0deg)",
+                                    backfaceVisibility: hasTwoSides ? "hidden" : "visible",
+                                    WebkitBackfaceVisibility: hasTwoSides ? "hidden" : "visible",
+                                }}
+                            >
+                                <div className="relative w-[85%] h-[85%]">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                        src={imageUrl}
+                                        alt={alt}
+                                        draggable={false}
+                                        onError={() => setFailedFront(imageUrl)}
+                                        className="h-full w-full object-contain drop-shadow-2xl pointer-events-none"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Espalda — solo cuando hay backImageUrl distinta */}
+                            {hasTwoSides && backImageUrl && !backFailed && (
+                                <div
+                                    className="absolute inset-0 flex items-center justify-center"
+                                    style={{
+                                        transform: "rotateY(180deg)",
+                                        backfaceVisibility: "hidden",
+                                        WebkitBackfaceVisibility: "hidden",
+                                    }}
+                                >
+                                    <div className="relative w-[85%] h-[85%]">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                            src={backImageUrl}
+                                            alt={`${alt} (espalda)`}
+                                            draggable={false}
+                                            onError={() => setFailedBack(backImageUrl)}
+                                            className="h-full w-full object-contain drop-shadow-2xl pointer-events-none"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     ) : (
                         <div className="flex flex-col items-center justify-center gap-3 text-fdnda-primary/60">
                             <ShoppingBag className="h-20 w-20" />

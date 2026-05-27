@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useCart } from "@/hooks/cart-context"
 import { useMerchCart } from "@/hooks/merch-cart-context"
 import { Confetti } from "@/components/checkout/Confetti"
-import { AlertCircle, CheckCircle, Loader2, Ticket, XCircle, ArrowRight, Calendar, ShoppingBag } from "lucide-react"
+import { AlertCircle, CheckCircle, Loader2, Ticket, XCircle, ArrowRight, Calendar, ShoppingBag, Package } from "lucide-react"
 
 type OrderStatus = "PENDING" | "PAID" | "CANCELLED" | "REFUNDED"
 type OrderType = "TICKET" | "MERCH"
@@ -206,16 +206,17 @@ export default function CheckoutSuccessClient() {
                                 </p>
 
                                 <div className="space-y-3">
-                                    <Link href={isMerchOrder ? "/merch" : "/mi-cuenta/entradas"}>
+                                    <Link href={isMerchOrder ? "/mi-cuenta/merch" : "/mi-cuenta/entradas"}>
                                         <Button variant="coral" className="w-full rounded-full" size="lg">
-                                            {isMerchOrder ? <ShoppingBag className="h-4 w-4" /> : <Ticket className="h-4 w-4" />}
-                                            {isMerchOrder ? "Seguir viendo merch" : "Ver mis entradas"}
+                                            {isMerchOrder ? <Package className="h-4 w-4" /> : <Ticket className="h-4 w-4" />}
+                                            {isMerchOrder ? "Ver mi merch" : "Ver mis entradas"}
                                             <ArrowRight className="h-4 w-4" />
                                         </Button>
                                     </Link>
-                                    <Link href={isMerchOrder ? "/" : "/eventos"}>
+                                    <Link href={isMerchOrder ? "/merch" : "/eventos"}>
                                         <Button variant="outline" className="w-full rounded-full">
-                                            {isMerchOrder ? "Volver al inicio" : "Explorar más eventos"}
+                                            {isMerchOrder ? <ShoppingBag className="h-4 w-4" /> : null}
+                                            {isMerchOrder ? "Seguir viendo merch" : "Explorar más eventos"}
                                         </Button>
                                     </Link>
                                 </div>

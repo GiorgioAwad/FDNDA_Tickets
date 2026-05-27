@@ -39,11 +39,17 @@ interface SeedProduct {
     hasSizes: boolean
     availableSizes: string[] | null
     initialStockPerVariant: number
-    imageFile: string  // nombre del archivo en R2 dentro de /merch/
+    imageFile: string             // nombre del archivo en R2 dentro de /merch/ (frente)
+    backImageFile?: string        // opcional — solo POLERA (espalda)
 }
 
 const POLERA_SIZES = ["S", "M", "L", "XL"]
 
+// Convención de archivos en el bucket assets.ticketingfdnda.pe/merch/:
+//   MERCH-OFICIAL_<Zona> hoodie-1.png   → espalda de la polera
+//   MERCH-OFICIAL_<Zona> hoodie-2.png   → frente de la polera
+//   MERCH-OFICIAL_<Zona> gorra.png
+//   MERCH-OFICIAL_<Zona> Pin.png
 const PRODUCTS: SeedProduct[] = [
     // ===== POLERAS (S/80) =====
     {
@@ -56,7 +62,8 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: true,
         availableSizes: POLERA_SIZES,
         initialStockPerVariant: 30,
-        imageFile: "polera_lima.png",
+        imageFile: "MERCH-OFICIAL_Lima hoodie-2.png",
+        backImageFile: "MERCH-OFICIAL_Lima hoodie-1.png",
     },
     {
         slug: "polera-oficial-norte",
@@ -68,7 +75,8 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: true,
         availableSizes: POLERA_SIZES,
         initialStockPerVariant: 30,
-        imageFile: "polera_norte.png",
+        imageFile: "MERCH-OFICIAL_Norte hoodie-2.png",
+        backImageFile: "MERCH-OFICIAL_Norte hoodie-1.png",
     },
     {
         slug: "polera-oficial-sur",
@@ -80,7 +88,8 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: true,
         availableSizes: POLERA_SIZES,
         initialStockPerVariant: 30,
-        imageFile: "polera_sur.png",
+        imageFile: "MERCH-OFICIAL_Sur hoodie-2.png",
+        backImageFile: "MERCH-OFICIAL_Sur hoodie-1.png",
     },
     {
         slug: "polera-oficial-oriente",
@@ -92,7 +101,8 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: true,
         availableSizes: POLERA_SIZES,
         initialStockPerVariant: 30,
-        imageFile: "polera_oriente.png",
+        imageFile: "MERCH-OFICIAL_Oriente hoodie-2.png",
+        backImageFile: "MERCH-OFICIAL_Oriente hoodie-1.png",
     },
 
     // ===== GORRAS (S/20) =====
@@ -106,7 +116,7 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: false,
         availableSizes: null,
         initialStockPerVariant: 50,
-        imageFile: "gorra_lima.png",
+        imageFile: "MERCH-OFICIAL_Lima gorra.png",
     },
     {
         slug: "gorra-oficial-norte",
@@ -118,7 +128,7 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: false,
         availableSizes: null,
         initialStockPerVariant: 50,
-        imageFile: "gorra_norte.png",
+        imageFile: "MERCH-OFICIAL_Norte gorra.png",
     },
     {
         slug: "gorra-oficial-sur",
@@ -130,7 +140,7 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: false,
         availableSizes: null,
         initialStockPerVariant: 50,
-        imageFile: "gorra_sur.png",
+        imageFile: "MERCH-OFICIAL_Sur gorra.png",
     },
     {
         slug: "gorra-oficial-oriente",
@@ -142,7 +152,7 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: false,
         availableSizes: null,
         initialStockPerVariant: 50,
-        imageFile: "gorra_oriente.png",
+        imageFile: "MERCH-OFICIAL_Oriente gorra.png",
     },
 
     // ===== PINES (S/10) =====
@@ -156,7 +166,7 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: false,
         availableSizes: null,
         initialStockPerVariant: 100,
-        imageFile: "pin_lima.png",
+        imageFile: "MERCH-OFICIAL_Lima Pin.png",
     },
     {
         slug: "pin-oficial-norte",
@@ -168,7 +178,7 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: false,
         availableSizes: null,
         initialStockPerVariant: 100,
-        imageFile: "pin_norte.png",
+        imageFile: "MERCH-OFICIAL_Norte Pin.png",
     },
     {
         slug: "pin-oficial-sur",
@@ -180,7 +190,7 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: false,
         availableSizes: null,
         initialStockPerVariant: 100,
-        imageFile: "pin_sur.png",
+        imageFile: "MERCH-OFICIAL_Sur Pin.png",
     },
     {
         slug: "pin-oficial-oriente",
@@ -192,7 +202,7 @@ const PRODUCTS: SeedProduct[] = [
         hasSizes: false,
         availableSizes: null,
         initialStockPerVariant: 100,
-        imageFile: "pin_oriente.png",
+        imageFile: "MERCH-OFICIAL_Oriente Pin.png",
     },
 ]
 
@@ -209,7 +219,11 @@ async function main() {
     let updated = 0
 
     for (const [index, product] of PRODUCTS.entries()) {
-        const imageUrl = `${PUBLIC_BASE}/merch/${product.imageFile}`
+        const imageUrl = `${PUBLIC_BASE}/merch/${encodeURIComponent(product.imageFile)}`
+        const backImageUrl = product.backImageFile
+            ? `${PUBLIC_BASE}/merch/${encodeURIComponent(product.backImageFile)}`
+            : null
+        const imageUrls = backImageUrl ? [backImageUrl] : []
         const sortOrder = (PRODUCTS.length - index) * 10  // poleras primero
 
         const existing = await prisma.merchProduct.findUnique({ where: { slug: product.slug } })
@@ -224,6 +238,7 @@ async function main() {
                     etapa: product.etapa,
                     price: product.price,
                     imageUrl,
+                    imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
                     hasSizes: product.hasSizes,
                     availableSizes: product.availableSizes ?? undefined,
                     isActive: true,
@@ -231,7 +246,7 @@ async function main() {
                 },
             })
             updated++
-            console.log(`[~] ${product.slug}: imageUrl actualizado`)
+            console.log(`[~] ${product.slug}: imágenes actualizadas (${imageUrls.length > 0 ? "frente + espalda" : "frente"})`)
             continue
         }
 
@@ -259,6 +274,7 @@ async function main() {
                 etapa: product.etapa,
                 price: product.price,
                 imageUrl,
+                imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
                 hasSizes: product.hasSizes,
                 availableSizes: product.availableSizes ?? undefined,
                 isActive: true,

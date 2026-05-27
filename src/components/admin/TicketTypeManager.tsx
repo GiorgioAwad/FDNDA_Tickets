@@ -58,6 +58,7 @@ interface TicketTypeManagerProps {
     eventStartDate?: string | Date
     eventEndDate?: string | Date
     eventSucursalCode?: string | null
+    eventAcademiaWeeklyFrequency?: number | null
 }
 
 interface ShiftEntry {
@@ -221,7 +222,13 @@ export function TicketTypeManager({
     eventStartDate,
     eventEndDate,
     eventSucursalCode,
+    eventAcademiaWeeklyFrequency,
 }: TicketTypeManagerProps) {
+    const isAcademia = eventCategory === "ACADEMIA"
+    const suggestedAcademiaClasses =
+        isAcademia && eventAcademiaWeeklyFrequency && eventAcademiaWeeklyFrequency > 0
+            ? eventAcademiaWeeklyFrequency * 4 // default a 4 semanas
+            : null
     const eventSucursal =
         getAbioEventSucursalByCode(eventSucursalCode) ||
         getAbioEventSucursalByCode(DEFAULT_ABIO_EVENT_SUCURSAL_CODE)!
@@ -536,7 +543,17 @@ export function TicketTypeManager({
 
     const startStandardTicket = () => {
         setEntryMode("standard")
-        setFormData(buildEmptyFormData(eventSucursal.code))
+        const empty = buildEmptyFormData(eventSucursal.code)
+        // Para ACADEMIA, una "entrada simple" siempre es un paquete de N clases.
+        // Pre-poblamos con la sugerencia (frecuencia * 4 semanas) si esta seteada.
+        const academiaDefaults =
+            isAcademia
+                ? {
+                    isPackage: true,
+                    packageDaysCount: suggestedAcademiaClasses ?? 0,
+                }
+                : {}
+        setFormData({ ...empty, ...academiaDefaults })
         setCapacityInput("100")
         setSelectedValidDays([])
         setShiftEntries([])
@@ -600,6 +617,14 @@ export function TicketTypeManager({
         if (shouldUseSpecificDays && requireShiftSelection && shifts.length === 0) {
             alert("Agrega al menos un turno para esta entrada")
             return
+        }
+
+        if (isAcademia && entryMode === "standard") {
+            const classes = Number(formData.packageDaysCount || 0)
+            if (!classes || classes < 1) {
+                alert("Debes indicar la cantidad de clases del paquete")
+                return
+            }
         }
 
         if (
@@ -1461,35 +1486,64 @@ export function TicketTypeManager({
                                     }}
                                 />
                             </div>
-                            <div className="space-y-2 flex items-center gap-2 pt-6">
-                                <input
-                                    type="checkbox"
-                                    id="isPackage"
-                                    checked={formData.isPackage}
-                                    onChange={(e) => setFormData({ ...formData, isPackage: e.target.checked })}
-                                    className="h-4 w-4 rounded border-gray-300"
-                                />
-                                <label htmlFor="isPackage" className="text-sm">
-                                    {scheduleMode === "full_day" ? "Paquete de varios dias" : "Paquete de selecciones dia + turno"}
-                                </label>
-
-                                {formData.isPackage && (
+                            {isAcademia && entryMode === "standard" ? (
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium">
+                                        Cantidad de clases del paquete
+                                    </label>
                                     <Input
                                         type="number"
-                                        placeholder="N° días"
-                                        className="w-20 h-8"
-                                        value={formData.packageDaysCount || ""}
                                         min={1}
-                                        onChange={(e) => setFormData({ ...formData, packageDaysCount: Number(e.target.value) })}
+                                        placeholder={suggestedAcademiaClasses ? String(suggestedAcademiaClasses) : "Ej: 12"}
+                                        value={formData.packageDaysCount || ""}
+                                        onChange={(e) => {
+                                            const n = Number(e.target.value)
+                                            setFormData({
+                                                ...formData,
+                                                isPackage: n > 0,
+                                                packageDaysCount: n > 0 ? n : 0,
+                                            })
+                                        }}
                                     />
-                                )}
-                            </div>
+                                    <p className="text-[11px] text-gray-500">
+                                        {suggestedAcademiaClasses
+                                            ? `Sugerido: ${suggestedAcademiaClasses} clases (${eventAcademiaWeeklyFrequency}/sem x 4 semanas)`
+                                            : "Definir cuantas clases entrega esta entrada (ej: 12 para 3/sem x 4 semanas)"}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2 flex items-center gap-2 pt-6">
+                                    <input
+                                        type="checkbox"
+                                        id="isPackage"
+                                        checked={formData.isPackage}
+                                        onChange={(e) => setFormData({ ...formData, isPackage: e.target.checked })}
+                                        className="h-4 w-4 rounded border-gray-300"
+                                    />
+                                    <label htmlFor="isPackage" className="text-sm">
+                                        {scheduleMode === "full_day" ? "Paquete de varios dias" : "Paquete de selecciones dia + turno"}
+                                    </label>
+
+                                    {formData.isPackage && (
+                                        <Input
+                                            type="number"
+                                            placeholder="N° días"
+                                            className="w-20 h-8"
+                                            value={formData.packageDaysCount || ""}
+                                            min={1}
+                                            onChange={(e) => setFormData({ ...formData, packageDaysCount: Number(e.target.value) })}
+                                        />
+                                    )}
+                                </div>
+                            )}
                         </div>
                         {formData.isPackage && (
                             <div className="text-xs text-gray-600">
-                                {scheduleMode === "full_day"
-                                    ? `Este ticket permitira registrar hasta ${formData.packageDaysCount || 0} dia(s) distintos del calendario que definas.`
-                                    : `Este ticket permitira registrar hasta ${formData.packageDaysCount || 0} seleccion(es) de dia + turno.`}
+                                {isAcademia && entryMode === "standard"
+                                    ? `Este ticket otorga ${formData.packageDaysCount || 0} clase(s) en total.`
+                                    : scheduleMode === "full_day"
+                                        ? `Este ticket permitira registrar hasta ${formData.packageDaysCount || 0} dia(s) distintos del calendario que definas.`
+                                        : `Este ticket permitira registrar hasta ${formData.packageDaysCount || 0} seleccion(es) de dia + turno.`}
                             </div>
                         )}
 

@@ -27,6 +27,10 @@ export default async function AdminMerchEditPage({ params }: AdminMerchEditPageP
         ? (product.availableSizes as unknown[]).filter((s): s is string => typeof s === "string")
         : []
 
+    const imageUrls = Array.isArray(product.imageUrls)
+        ? (product.imageUrls as unknown[]).filter((u): u is string => typeof u === "string")
+        : []
+
     const variantRows: MerchVariantRow[] = product.variants.map((v) => ({
         id: v.id,
         size: v.size,
@@ -63,6 +67,8 @@ export default async function AdminMerchEditPage({ params }: AdminMerchEditPageP
                     etapa: product.etapa ?? "",
                     price: Number(product.price),
                     imageUrl: product.imageUrl ?? "",
+                    imageUrls,
+                    backImageUrl: imageUrls[0] ?? "",
                     hasSizes: product.hasSizes,
                     availableSizes,
                     isActive: product.isActive,

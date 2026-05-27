@@ -2,6 +2,9 @@ import { allowInMemoryFallback, redis, shouldUseInMemoryFallback } from "@/lib/r
 
 const memoryCache = new Map<string, { data: unknown; expiresAt: number }>()
 const memoryNamespaceIndex = new Map<string, Set<string>>()
+const isStagingDeployment =
+    process.env.NEXT_PUBLIC_APP_URL?.includes("staging.") ||
+    process.env.NEXTAUTH_URL?.includes("staging.")
 
 const CACHE_NAMESPACE_PREFIX = "cache:ns:"
 
@@ -257,30 +260,43 @@ export async function cacheDecrement(key: string, amount: number = 1): Promise<n
 
 export type LockAcquireStatus = "acquired" | "busy" | "unavailable"
 
+function canUseMemoryLock(): boolean {
+    return shouldUseInMemoryFallback("cache.lock") || Boolean(isStagingDeployment)
+}
+
+function acquireMemoryLock(lockKey: string, ttlSeconds: number): LockAcquireStatus {
+    const entry = memoryCache.get(lockKey)
+    if (entry && entry.expiresAt > Date.now()) {
+        return "busy"
+    }
+
+    memoryCache.set(lockKey, {
+        data: "1",
+        expiresAt: Date.now() + ttlSeconds * 1000,
+    })
+    return "acquired"
+}
+
 export async function acquireLockWithStatus(
     lockKey: string,
     ttlSeconds: number = 10
 ): Promise<LockAcquireStatus> {
     try {
         if (redis) {
-            const result = await redis.set(lockKey, "1", { ex: ttlSeconds, nx: true })
-            return result === "OK" ? "acquired" : "busy"
+            try {
+                const result = await redis.set(lockKey, "1", { ex: ttlSeconds, nx: true })
+                return result === "OK" ? "acquired" : "busy"
+            } catch (error) {
+                console.error("Acquire Redis lock error:", error)
+                return canUseMemoryLock() ? acquireMemoryLock(lockKey, ttlSeconds) : "unavailable"
+            }
         }
 
-        if (!shouldUseInMemoryFallback("cache.lock")) {
+        if (!canUseMemoryLock()) {
             return "unavailable"
         }
 
-        const entry = memoryCache.get(lockKey)
-        if (entry && entry.expiresAt > Date.now()) {
-            return "busy"
-        }
-
-        memoryCache.set(lockKey, {
-            data: "1",
-            expiresAt: Date.now() + ttlSeconds * 1000,
-        })
-        return "acquired"
+        return acquireMemoryLock(lockKey, ttlSeconds)
     } catch (error) {
         console.error("Acquire lock error:", error)
         return "unavailable"
@@ -292,6 +308,8 @@ export async function acquireLock(lockKey: string, ttlSeconds: number = 10): Pro
 }
 
 export async function releaseLock(lockKey: string): Promise<void> {
+    memoryCache.delete(lockKey)
+    unregisterMemoryKey(lockKey)
     await cacheDelete(lockKey)
 }
 

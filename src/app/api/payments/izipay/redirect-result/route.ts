@@ -29,7 +29,7 @@ function buildRedirectUrl(request: NextRequest, pathname: string, orderId?: stri
 // pagina de resumen hospedada (con countdown). El payload del pago llega por
 // POST/IPN, asi que aqui consultamos el estado real de la orden antes de
 // decidir el destino: PAID -> success, CANCELLED/EXPIRED -> cancel,
-// PENDING -> mensaje de procesamiento.
+// PENDING -> success/procesando para que la pantalla haga polling y reconcilie.
 export async function GET(request: NextRequest) {
     const params = request.nextUrl.searchParams
     const orderRef =
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(
             buildRedirectUrl(
                 request,
-                "/checkout/cancel",
+                "/checkout/success",
                 resolvedOrderId,
                 "Tu pago aun se esta procesando. Te avisaremos por correo cuando se confirme."
             ),
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
                     return NextResponse.redirect(
                         buildRedirectUrl(
                             request,
-                            "/checkout/cancel",
+                            "/checkout/success",
                             resolvedOrderId,
                             result.error || "No se pudo confirmar la orden"
                         ),
@@ -191,6 +191,18 @@ export async function POST(request: NextRequest) {
                 orderId: resolvedOrderId,
                 providerResponse,
             })
+        }
+
+        if (isIzipayPaymentApproved(parsed)) {
+            return NextResponse.redirect(
+                buildRedirectUrl(
+                    request,
+                    "/checkout/success",
+                    resolvedOrderId,
+                    "Tu pago esta siendo confirmado. No vuelvas a pagar."
+                ),
+                { status: 303 }
+            )
         }
 
         return NextResponse.redirect(

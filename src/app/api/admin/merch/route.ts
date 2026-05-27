@@ -7,6 +7,15 @@ import { MerchCategory, MerchZone, Prisma } from "@prisma/client"
 export const runtime = "nodejs"
 
 const SIZE_ORDER = ["XS", "S", "M", "L", "XL", "XXL", "XXXL", "UNI"]
+const MAX_IMAGE_URLS = 4
+
+function normalizeImageUrls(input: unknown): string[] {
+    if (!Array.isArray(input)) return []
+    return input
+        .map((v) => (typeof v === "string" ? v.trim() : ""))
+        .filter((v) => v.length > 0 && v.length <= 1000)
+        .slice(0, MAX_IMAGE_URLS)
+}
 
 function normalizeSizes(input: unknown): string[] {
     if (!Array.isArray(input)) return []
@@ -87,6 +96,7 @@ export async function POST(request: NextRequest) {
             etapa,
             price,
             imageUrl,
+            imageUrls,
             hasSizes = false,
             availableSizes,
             initialStock,
@@ -151,6 +161,10 @@ export async function POST(request: NextRequest) {
                 etapa: typeof etapa === "string" && etapa.trim() ? etapa.trim() : null,
                 price: priceNum,
                 imageUrl: typeof imageUrl === "string" && imageUrl ? imageUrl : null,
+                imageUrls:
+                    normalizeImageUrls(imageUrls).length > 0
+                        ? (normalizeImageUrls(imageUrls) as Prisma.InputJsonValue)
+                        : Prisma.JsonNull,
                 hasSizes,
                 availableSizes: hasSizes ? (sizesArray as Prisma.InputJsonValue) : Prisma.JsonNull,
                 isActive: Boolean(isActive),

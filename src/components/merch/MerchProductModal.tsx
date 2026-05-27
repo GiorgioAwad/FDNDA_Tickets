@@ -23,6 +23,7 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
     const [quantity, setQuantity] = useState(1)
     const [confirmation, setConfirmation] = useState(false)
     const displayImageUrl = product?.imageUrl || product?.imageUrls[0] || null
+    const backImageUrl = product && product.imageUrl ? product.imageUrls[0] ?? null : null
 
     // Resetear estado cuando se abre un producto distinto (sin useEffect — patrón React 19)
     if (product && product.id !== trackedProductId) {
@@ -108,6 +109,7 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
                         <div className="relative h-[38vh] min-h-[220px] max-h-[360px] lg:h-[92vh] lg:max-h-[700px]">
                             <MerchSpinPreview
                                 imageUrl={displayImageUrl}
+                                backImageUrl={backImageUrl}
                                 alt={product.name}
                                 bgClass={ZONE_THEME[product.zone].bg}
                             />

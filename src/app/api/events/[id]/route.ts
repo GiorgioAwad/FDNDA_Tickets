@@ -104,6 +104,7 @@ export async function PUT(
             mode,
             category,
             advanceAmount,
+            academiaWeeklyFrequency,
             isPublished,
             visibility,
             bannerUrl,
@@ -119,6 +120,7 @@ export async function PUT(
             mode?: string
             category?: EventCategory
             advanceAmount?: number | string
+            academiaWeeklyFrequency?: number | string | null
             isPublished?: boolean
             visibility?: EventVisibility
             bannerUrl?: string
@@ -164,6 +166,22 @@ export async function PUT(
             )
         }
 
+        let parsedAcademiaWeeklyFrequency: number | null | undefined = undefined
+        if (academiaWeeklyFrequency !== undefined) {
+            if (academiaWeeklyFrequency === null || academiaWeeklyFrequency === "") {
+                parsedAcademiaWeeklyFrequency = null
+            } else {
+                const n = Number(academiaWeeklyFrequency)
+                if (!Number.isFinite(n) || n < 1 || n > 7) {
+                    return NextResponse.json(
+                        { success: false, error: "Frecuencia semanal de academia invalida (1-7)" },
+                        { status: 400 }
+                    )
+                }
+                parsedAcademiaWeeklyFrequency = Math.floor(n)
+            }
+        }
+
         let tokenPatch: { accessToken?: string } = {}
         if (visibility === "PRIVATE") {
             const existing = await prisma.event.findUnique({
@@ -200,6 +218,7 @@ export async function PUT(
                 mode: mode as "RANGE" | "DAYS" | undefined,
                 category: category || undefined,
                 advanceAmount: parsedAdvanceAmount,
+                academiaWeeklyFrequency: parsedAcademiaWeeklyFrequency,
                 isPublished,
                 visibility,
                 bannerUrl,
