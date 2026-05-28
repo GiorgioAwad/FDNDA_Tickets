@@ -30,6 +30,18 @@ function normalizeIzipayText(value: string, maxLength: number) {
     return normalized.slice(0, maxLength).trim()
 }
 
+// Izipay rejects dots and other punctuation in firstName/lastName.
+function normalizeIzipayName(value: string, maxLength: number) {
+    const normalized = value
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z\s-]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+
+    return normalized.slice(0, maxLength).trim()
+}
+
 function normalizeIzipayPhone(value: string | null | undefined) {
     const digits = (value || "").replace(/\D/g, "").slice(0, 15)
     return digits.length >= 7 ? digits : "999999999"
@@ -45,13 +57,23 @@ function normalizeIzipayDocument(value: string | null | undefined) {
     return normalized.length >= 8 ? normalized : ""
 }
 
-function splitName(fullName: string): { firstName: string; lastName: string } {
-    const normalized = normalizeIzipayText(fullName, 80)
-    if (!normalized) {
+function splitName(
+    fullName: string,
+    documentType: "DNI" | "RUC"
+): { firstName: string; lastName: string } {
+    const cleaned = normalizeIzipayName(fullName, 80)
+    if (!cleaned) {
         return { firstName: "Cliente", lastName: "FDNDA" }
     }
 
-    const [firstName, ...rest] = normalized.split(" ")
+    if (documentType === "RUC") {
+        return {
+            firstName: cleaned.slice(0, 50),
+            lastName: "EMPRESA",
+        }
+    }
+
+    const [firstName, ...rest] = cleaned.split(" ")
     return {
         firstName: firstName.slice(0, 50),
         lastName: (rest.join(" ") || firstName).slice(0, 50),
@@ -110,12 +132,12 @@ function buildCheckoutConfig(input: {
     mode: "popup" | "redirect" | "embedded"
 }): IzipayWebCoreCheckoutConfig {
     const fullName = buildBuyerName(input.order)
-    const { firstName, lastName } = splitName(fullName)
+    const documentType = input.order.buyerDocType === "6" ? "RUC" : "DNI"
+    const { firstName, lastName } = splitName(fullName, documentType)
     const email = (input.order.buyerEmail || input.order.user.email || "").trim().slice(0, 50)
     const phoneNumber = normalizeIzipayPhone(input.order.buyerPhone || input.order.user.phone)
     const street = normalizeIzipayText(input.order.buyerAddress || "Lima", 40) || "Lima"
     const postalCode = normalizeIzipayPostalCode(input.order.buyerUbigeo)
-    const documentType = input.order.buyerDocType === "6" ? "RUC" : "DNI"
     const document = normalizeIzipayDocument(input.order.buyerDocNumber)
     const amount = Number(input.order.totalAmount).toFixed(2)
     const orderNumber = buildIzipayOrderNumber(input.order.id)
