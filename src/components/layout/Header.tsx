@@ -35,6 +35,7 @@ export function Header() {
     const [isVisible, setIsVisible] = useState(true)
     const [lastScrollY, setLastScrollY] = useState(0)
     const [searchFocused, setSearchFocused] = useState(false)
+    const [openViaSearch, setOpenViaSearch] = useState(false)
     const [openSection, setOpenSection] = useState<string | null>("account")
     const { clearCart } = useCart()
     const router = useRouter()
@@ -114,7 +115,7 @@ export function Header() {
                     <div className="flex h-16 items-center justify-between gap-3">
                         <button
                             className="md:hidden p-2 -ml-2 rounded-lg hover:bg-muted transition-colors"
-                            onClick={() => setMobileMenuOpen(true)}
+                            onClick={() => { setOpenViaSearch(false); setMobileMenuOpen(true) }}
                             aria-label="Abrir menú"
                         >
                             <Menu className="h-6 w-6" />
@@ -249,7 +250,7 @@ export function Header() {
 
                         <button
                             className="md:hidden p-2 -mr-2 rounded-lg hover:bg-muted transition-colors"
-                            onClick={() => setMobileMenuOpen(true)}
+                            onClick={() => { setOpenViaSearch(true); setMobileMenuOpen(true) }}
                             aria-label="Buscar"
                         >
                             <Search className="h-5 w-5 text-muted-foreground" />
@@ -311,7 +312,7 @@ export function Header() {
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
                                             className="pl-9 w-full rounded-lg"
-                                            autoFocus
+                                            autoFocus={openViaSearch}
                                         />
                                     </div>
                                 </form>
