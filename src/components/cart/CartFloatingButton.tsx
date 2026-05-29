@@ -35,7 +35,10 @@ export default function CartFloatingButton() {
         }, 200)
     }
 
-    const handleHoverChange = (isHovering: boolean) => {
+    const handleHoverChange = (isHovering: boolean, pointerType?: string) => {
+        // En táctil no hay hover real: el tap dispara pointerenter y luego click,
+        // lo que abriría y cerraría el panel al instante. Solo seguimos hover con mouse.
+        if (pointerType && pointerType !== "mouse") return
         if (clickedRef.current) return
         hoverRef.current = isHovering
         if (isHovering) {
@@ -85,8 +88,8 @@ export default function CartFloatingButton() {
                         ? "opacity-100 translate-y-0 pointer-events-auto"
                         : "opacity-0 translate-y-2 pointer-events-none"
                 }`}
-                onPointerEnter={() => handleHoverChange(true)}
-                onPointerLeave={() => handleHoverChange(false)}
+                onPointerEnter={(e) => handleHoverChange(true, e.pointerType)}
+                onPointerLeave={(e) => handleHoverChange(false, e.pointerType)}
             >
                 <div className="rounded-2xl border border-gray-200 bg-white shadow-xl">
                     <div className="p-4">
@@ -145,8 +148,8 @@ export default function CartFloatingButton() {
                     setOpen((prev) => !prev)
                     setTimeout(() => { clickedRef.current = false }, 300)
                 }}
-                onPointerEnter={() => handleHoverChange(true)}
-                onPointerLeave={() => handleHoverChange(false)}
+                onPointerEnter={(e) => handleHoverChange(true, e.pointerType)}
+                onPointerLeave={(e) => handleHoverChange(false, e.pointerType)}
             >
                 <ShoppingCart className="h-4 w-4" />
                 <span>Carrito</span>

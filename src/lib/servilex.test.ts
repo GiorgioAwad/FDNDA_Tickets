@@ -520,6 +520,41 @@ test("normaliza DN de Izipay a DINERS para ABIO", () => {
     assert.equal(payload.cobranza.tarjetaTipo, "DINERS")
 })
 
+test("normaliza VS de Izipay a VISA para ABIO", () => {
+    const payloadHttp = {
+        response: {
+            payMethod: "CARD",
+            card: {
+                brand: "VS",
+            },
+        },
+    }
+
+    const order = buildOrder({
+        totalAmount: 15,
+        providerResponse: {
+            source: "validate",
+            receivedAt: "2026-04-08T20:00:00Z",
+            data: {
+                payloadHttp: JSON.stringify(payloadHttp),
+            },
+        },
+        orderItems: [
+            {
+                quantity: 1,
+                unitPrice: 15,
+                attendeeData: [],
+                ticketType: buildTicketType("OS"),
+            },
+        ],
+    })
+
+    const [source] = buildServilexPreviewSources(order, "vs-preview")
+    const payload = buildServilexPayload(source, TEST_CONFIG)
+
+    assert.equal(payload.cobranza.tarjetaTipo, "VISA")
+})
+
 test("normaliza MC de Izipay a MASTERCARD para ABIO", () => {
     const payloadHttp = {
         response: {

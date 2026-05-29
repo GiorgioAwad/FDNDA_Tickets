@@ -115,6 +115,7 @@ function normalizeBrand(rawBrand: string | null): string | null {
             return "Diners"
         case "mc":
             return "Mastercard"
+        case "vs":
         case "visa":
             return "VISA"
         case "mastercard":
