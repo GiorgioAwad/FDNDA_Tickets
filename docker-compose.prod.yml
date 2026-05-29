@@ -29,8 +29,6 @@ services:
       - tools
     env_file:
       - .env.production
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-fdnda}:${DB_PASSWORD:-fdnda}@db:5432/${DB_NAME:-fdnda_tickets}?sslmode=disable}
     command: ["/bin/sh", "-lc", "./node_modules/.bin/prisma migrate deploy"]
     networks:
       - internal
@@ -47,7 +45,6 @@ services:
     environment:
       HOSTNAME: 0.0.0.0
       PORT: 3000
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-fdnda}:${DB_PASSWORD:-fdnda}@db:5432/${DB_NAME:-fdnda_tickets}?sslmode=disable}
       DB_POOL_MAX: ${DB_POOL_MAX:-20}
       DB_POOL_MIN: ${DB_POOL_MIN:-5}
     volumes:
@@ -65,7 +62,6 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-fdnda}:${DB_PASSWORD:-fdnda}@db:5432/${DB_NAME:-fdnda_tickets}?sslmode=disable}
       DB_POOL_MAX: ${DB_POOL_MAX:-20}
       DB_POOL_MIN: ${DB_POOL_MIN:-5}
     command: ["npm", "run", "worker"]
