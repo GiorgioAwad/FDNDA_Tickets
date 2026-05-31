@@ -60,8 +60,18 @@ export default auth(async (req) => {
     return NextResponse.next()
 })
 
+// Solo corremos el middleware en las rutas que realmente protege. Antes el
+// matcher cubria TODO (menos assets), lo que hacia que NextAuth `auth()` seteara
+// cookies CSRF en cada request — incluida la home publica — y eso impedia que
+// Cloudflare cacheara el HTML (cf-cache-status: BYPASS por el Set-Cookie). Las
+// rutas publicas (/, /eventos, ...) ya no pasan por aqui -> sin cookie, cacheables.
 export const config = {
     matcher: [
-        "/((?!api|_next/static|_next/image|favicon.ico|.*\\..*|public).*)",
+        "/mi-cuenta/:path*",
+        "/admin/:path*",
+        "/tesoreria/:path*",
+        "/scanner/:path*",
+        "/login/:path*",
+        "/register/:path*",
     ],
 }
