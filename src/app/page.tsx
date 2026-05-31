@@ -1,8 +1,8 @@
 import Link from "next/link"
+import { Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { prisma } from "@/lib/prisma"
-import { getCurrentUser } from "@/lib/auth"
 import HomeVerificationPopup from "@/components/home/HomeVerificationPopup"
 import { HeroSection } from "@/components/home/HeroSection"
 import { EventCard, type EventCardEvent } from "@/components/home/EventCard"
@@ -10,54 +10,59 @@ import { FeaturedEvent } from "@/components/home/FeaturedEvent"
 import { DisciplinesGrid } from "@/components/home/DisciplinesGrid"
 import { MerchTeaser } from "@/components/home/MerchTeaser"
 import { HowItWorks } from "@/components/home/HowItWorks"
+import { LoggedOutOnly } from "@/components/home/LoggedOutOnly"
 import { EmptyState } from "@/components/ui/empty-state"
 import { MotionSection, MotionStagger, MotionItem } from "@/components/ui/motion-section"
 import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react"
 
+// ISR: la home es 100% pública y se prerendea + revalida cada 60s. NO usar
+// force-dynamic ni leer la sesión en el servidor: eso emitiría Set-Cookie de
+// NextAuth y haría que Cloudflare nunca cachee el HTML. La sesión (CTA "Crear
+// cuenta") se resuelve en el cliente vía <LoggedOutOnly> / <HeroSection>.
+// Se consulta Prisma directo (no la query cacheada en Redis): el cliente REST
+// de Upstash hace fetch no-store, que forzaría render dinámico y rompería el
+// prerender estático. Aquí el caché es el propio ISR (cachea el HTML completo).
 export const revalidate = 60
-export const dynamic = "force-dynamic"
-
-type RawEvent = Awaited<ReturnType<typeof getUpcomingEvents>>[number]
 
 async function getUpcomingEvents() {
   try {
-    const events = await prisma.event.findMany({
+    return await prisma.event.findMany({
       where: {
         isPublished: true,
         visibility: "PUBLIC",
         endDate: { gte: new Date() },
       },
-      include: {
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        bannerUrl: true,
+        discipline: true,
+        startDate: true,
+        venue: true,
+        location: true,
+        description: true,
         ticketTypes: {
           where: { isActive: true },
+          select: { price: true },
           orderBy: { price: "asc" },
-        },
-        _count: {
-          select: { tickets: true },
+          take: 1,
         },
       },
       orderBy: { startDate: "asc" },
       take: 7,
     })
-    return events
   } catch (error) {
+    // No romper el prerender/ISR si la DB tiene un hipo: degradar a lista vacía
+    // (la home sigue siendo cacheable y se revalida en 60s).
     console.error("Failed to load upcoming events for home page", error)
     return []
   }
 }
 
-async function getSafeCurrentUser() {
-  try {
-    return await getCurrentUser()
-  } catch (error) {
-    console.error("Failed to resolve current user for home page", error)
-    return null
-  }
-}
+type UpcomingEvent = Awaited<ReturnType<typeof getUpcomingEvents>>[number]
 
-function toCardEvent(event: RawEvent): EventCardEvent & { description?: string | null } {
-  const minPrice = event.ticketTypes[0]?.price ? Number(event.ticketTypes[0].price) : undefined
-  const capacity = event.ticketTypes.reduce((sum, tt) => sum + (tt.capacity ?? 0), 0)
+function toCardEvent(event: UpcomingEvent): EventCardEvent & { description?: string | null } {
   return {
     id: event.id,
     slug: event.slug,
@@ -67,37 +72,25 @@ function toCardEvent(event: RawEvent): EventCardEvent & { description?: string |
     startDate: event.startDate,
     venue: event.venue,
     location: event.location,
-    minPrice,
-    soldCount: event._count.tickets,
-    capacity: capacity > 0 ? capacity : undefined,
+    minPrice: event.ticketTypes[0] ? Number(event.ticketTypes[0].price) : undefined,
     description: event.description ?? null,
   }
 }
 
-type HomePageProps = {
-  searchParams?: Promise<{
-    verified?: string
-  }>
-}
-
-export default async function HomePage({ searchParams }: HomePageProps) {
-  const [rawEvents, user] = await Promise.all([
-    getUpcomingEvents(),
-    getSafeCurrentUser(),
-  ])
+export default async function HomePage() {
+  const rawEvents = await getUpcomingEvents()
   const cardEvents = rawEvents.map(toCardEvent)
-  const showRegister = !user
-  const params = searchParams ? await searchParams : undefined
-  const showVerificationPopup = params?.verified === "1"
 
   const featured = cardEvents[0]
   const restEvents = cardEvents.slice(1, 7)
 
   return (
     <div className="flex flex-col">
-      <HomeVerificationPopup open={showVerificationPopup} />
+      <Suspense fallback={null}>
+        <HomeVerificationPopup />
+      </Suspense>
 
-      <HeroSection showRegister={showRegister} />
+      <HeroSection />
 
       {/* Featured + Upcoming */}
       <section className="py-14 sm:py-20 bg-gradient-to-b from-white to-gray-50">
@@ -188,7 +181,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       </section>
 
       {/* CTA */}
-      {showRegister && (
+      <LoggedOutOnly>
         <section className="relative overflow-hidden py-16 sm:py-20 bg-gradient-to-br from-fdnda-primary via-fdnda-secondary to-fdnda-primary text-white">
           <div className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-coral/30 blur-3xl" aria-hidden="true" />
           <div className="absolute -bottom-20 -left-20 h-72 w-72 rounded-full bg-fdnda-accent/20 blur-3xl" aria-hidden="true" />
@@ -207,7 +200,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </Link>
           </div>
         </section>
-      )}
+      </LoggedOutOnly>
     </div>
   )
 }

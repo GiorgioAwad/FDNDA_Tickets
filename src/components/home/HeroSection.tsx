@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
+import { useSession } from "next-auth/react"
 import { motion, useReducedMotion } from "framer-motion"
 import { ArrowRight, Waves, Calendar, Trophy, Timer, Shield, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -15,8 +16,11 @@ const stats = [
     { label: "Plataforma oficial", value: 1, icon: Shield },
 ]
 
-export function HeroSection({ showRegister }: { showRegister: boolean }) {
+export function HeroSection() {
     const prefersReducedMotion = useReducedMotion()
+    const { status } = useSession()
+    // Mostrar el CTA de registro salvo que la sesión esté confirmada como activa.
+    const showRegister = status !== "authenticated"
 
     return (
         <section className="relative isolate overflow-hidden">

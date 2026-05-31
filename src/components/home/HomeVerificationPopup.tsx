@@ -5,15 +5,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { CheckCircle2 } from "lucide-react"
 
-interface HomeVerificationPopupProps {
-    open: boolean
-}
-
-export default function HomeVerificationPopup({ open }: HomeVerificationPopupProps) {
+export default function HomeVerificationPopup() {
     const router = useRouter()
     const pathname = usePathname()
     const searchParams = useSearchParams()
-    const [visible, setVisible] = useState(open)
+    // Se deriva en el cliente para no forzar render dinámico de la home en el
+    // servidor (que romperia el caché ISR/Cloudflare). Va dentro de <Suspense>.
+    const [visible, setVisible] = useState(() => searchParams.get("verified") === "1")
 
     const nextUrl = useMemo(() => {
         const params = new URLSearchParams(searchParams.toString())

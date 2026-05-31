@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import { timingSafeEqual } from "crypto"
 import type { Metadata } from "next"
 import { prisma } from "@/lib/prisma"
+import { getCachedEventBySlug } from "@/lib/cached-queries"
 import { cn, formatDate } from "@/lib/utils"
 import { normalizeRichTextForDisplay } from "@/lib/sanitize-rich-text"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -49,19 +50,9 @@ function buildMetaDescription(text: string, max = 160): string {
 
 export async function generateMetadata({ params }: EventPageProps): Promise<Metadata> {
     const { slug } = await params
-    const event = await prisma.event.findUnique({
-        where: { slug },
-        select: {
-            visibility: true,
-            title: true,
-            description: true,
-            bannerUrl: true,
-            venue: true,
-            location: true,
-            startDate: true,
-            isPublished: true,
-        },
-    })
+    // Query de metadata cacheada (Redis): datos estáticos de SEO, sin stock.
+    // Reduce de 2→1 las queries a Neon por request del detalle.
+    const event = await getCachedEventBySlug(slug)
     if (!event) return {}
 
     if (event.visibility === "PRIVATE" || !event.isPublished) {
