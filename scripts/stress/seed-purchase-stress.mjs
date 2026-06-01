@@ -1,3 +1,4 @@
+
 /**
  * Seed para stress test de COMPRA MASIVA (on-sale spike).
  *
@@ -18,7 +19,23 @@
 import { PrismaClient } from "@prisma/client"
 import bcrypt from "bcryptjs"
 
-const prisma = new PrismaClient()
+// Prisma 7 exige driver adapter (igual que src/lib/prisma.ts). Lo replicamos.
+async function makePrisma() {
+    const url = process.env.DATABASE_URL
+    if (!url) throw new Error("DATABASE_URL no definido en el entorno")
+    if (process.env.PRISMA_DATABASE_ADAPTER === "neon") {
+        const { PrismaNeon } = await import("@prisma/adapter-neon")
+        const { neonConfig } = await import("@neondatabase/serverless")
+        const ws = (await import("ws")).default
+        neonConfig.webSocketConstructor = ws
+        return new PrismaClient({ adapter: new PrismaNeon({ connectionString: url }) })
+    }
+    const { PrismaPg } = await import("@prisma/adapter-pg")
+    const { Pool } = await import("pg")
+    return new PrismaClient({ adapter: new PrismaPg(new Pool({ connectionString: url })) })
+}
+
+const prisma = await makePrisma()
 
 const USER_COUNT = Number(process.env.STRESS_USERS || 300)
 const PASSWORD = process.env.STRESS_PASSWORD || "StressTest123!"
