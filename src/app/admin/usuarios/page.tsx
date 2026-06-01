@@ -18,6 +18,7 @@ import {
     X,
     KeyRound,
     Copy,
+    Download,
 } from "lucide-react"
 
 // Modal component that renders via portal
@@ -348,8 +349,8 @@ export default function UsuariosPage() {
                                 <UserPlus className="h-4 w-4" />
                                 Agregar Staff
                             </Button>
-                            <Button 
-                                size="sm" 
+                            <Button
+                                size="sm"
                                 className="gap-2 bg-emerald-600 hover:bg-emerald-700"
                                 onClick={() => {
                                     setNewInternalRole("TREASURY")
@@ -358,6 +359,30 @@ export default function UsuariosPage() {
                             >
                                 <UserPlus className="h-4 w-4" />
                                 Agregar Tesoreria
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-2"
+                                title="Descarga en Excel a todos los participantes (rol Usuario): nombre, DNI, edad, correo, distrito, etc."
+                                onClick={() => {
+                                    window.location.href = "/api/admin/users/export?role=USER"
+                                }}
+                            >
+                                <Download className="h-4 w-4" />
+                                Exportar participantes
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-2"
+                                title="Descarga en Excel a TODOS los usuarios, incluido staff/admin/tesorería"
+                                onClick={() => {
+                                    window.location.href = "/api/admin/users/export?role=all"
+                                }}
+                            >
+                                <Download className="h-4 w-4" />
+                                Exportar todos
                             </Button>
                         </div>
                     </div>
