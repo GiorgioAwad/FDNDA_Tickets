@@ -32,7 +32,9 @@ JARDIR="$(mktemp -d)"
 RESDIR="$(mktemp -d)"
 trap 'rm -rf "$JARDIR" "$RESDIR"' EXIT
 
-CURLB=(curl -s --resolve "$RESOLVE" --max-time 40)
+# Wrapper curl que bypassa CF (--resolve). Se exporta como funcion para que los
+# subshells de xargs lo vean (un array bash NO se exporta).
+cb() { curl -s --resolve "$RESOLVE" --max-time 40 "$@"; }
 
 order_body() {
   cat <<JSON
@@ -43,16 +45,16 @@ JSON
 login() {
   local i="$1"; local email="stress+${i}@loadtest.local"; local jar="$JARDIR/u$i.jar"
   local csrf
-  csrf=$("${CURLB[@]}" -c "$jar" "$BASE/api/auth/csrf" | sed -n 's/.*"csrfToken":"\([^"]*\)".*/\1/p')
+  csrf=$(cb -c "$jar" "$BASE/api/auth/csrf" | sed -n 's/.*"csrfToken":"\([^"]*\)".*/\1/p')
   [ -z "$csrf" ] && return 1
-  "${CURLB[@]}" -b "$jar" -c "$jar" -o /dev/null \
+  cb -b "$jar" -c "$jar" -o /dev/null \
     --data-urlencode "csrfToken=$csrf" --data-urlencode "email=$email" \
     --data-urlencode "password=$PASSWORD" --data-urlencode "callbackUrl=$BASE/" \
     "$BASE/api/auth/callback/credentials"
-  "${CURLB[@]}" -b "$jar" "$BASE/api/auth/session" | grep -q '"user"' || return 1
+  cb -b "$jar" "$BASE/api/auth/session" | grep -q '"user"' || return 1
   return 0
 }
-export -f login order_body
+export -f login order_body cb
 export JARDIR BASE RESOLVE PASSWORD EVENT_ID TICKET_TYPE_ID
 
 echo "=== FASE 1: login de $N_USERS usuarios (origin-directo, no medido) ==="
@@ -66,7 +68,7 @@ echo "cookie jars validos: $OKJARS / $N_USERS"
 oneorder() {
   local i="$1"; local jar="$JARDIR/u$((i % N_USERS)).jar"
   [ -f "$jar" ] || jar="$(ls "$JARDIR"/*.jar | head -1)"
-  order_body | "${CURLB[@]}" -b "$jar" -H "Content-Type: application/json" \
+  order_body | cb -b "$jar" -H "Content-Type: application/json" \
     -o /dev/null -w "%{http_code} %{time_total}\n" -d @- "$BASE/api/orders"
 }
 export -f oneorder
