@@ -260,9 +260,39 @@ export function TicketTypeManager({
     const [poolProgress, setPoolProgress] = useState({ current: 0, total: 0 })
     const [poolCatalogSchedules, setPoolCatalogSchedules] = useState<PoolCatalogSchedule[]>([])
     const [poolCatalogSchedulesLoading, setPoolCatalogSchedulesLoading] = useState(false)
+    const [poolServices, setPoolServices] = useState<
+        { id: string; servicioCodigo: string; servicioDescripcion: string }[]
+    >([])
+    const [poolServicesLoading, setPoolServicesLoading] = useState(false)
     const [dateToggleLoading, setDateToggleLoading] = useState<Record<string, boolean>>({})
     const [catalogRefreshKey, setCatalogRefreshKey] = useState(0)
     const [showInactive, setShowInactive] = useState(false)
+
+    // Servicios ABIO (activos) de la sucursal del evento, para el dropdown del
+    // generador de horarios de piscina libre.
+    useEffect(() => {
+        if (!showPoolGenerator || !eventSucursal.code) {
+            setPoolServices([])
+            return
+        }
+        let ignore = false
+        setPoolServicesLoading(true)
+        void fetch(
+            `/api/admin/abio-catalog/services?sucursal=${encodeURIComponent(eventSucursal.code)}`,
+            { cache: "no-store" }
+        )
+            .then((res) => res.json())
+            .then((payload) => {
+                if (!ignore) setPoolServices(Array.isArray(payload.data) ? payload.data : [])
+            })
+            .catch((error) => console.error("Error loading ABIO services (pool)", error))
+            .finally(() => {
+                if (!ignore) setPoolServicesLoading(false)
+            })
+        return () => {
+            ignore = true
+        }
+    }, [showPoolGenerator, eventSucursal.code, catalogRefreshKey])
 
     const inactiveCount = ticketTypes.filter((t) => t.isActive === false).length
     const currentShiftOptions = useMemo(() => serializeShifts(shiftEntries), [shiftEntries])
@@ -1292,8 +1322,8 @@ export function TicketTypeManager({
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-xs font-medium">Codigo servicio ABIO</label>
-                                            <Input
+                                            <label className="text-xs font-medium">Servicio ABIO</label>
+                                            <select
                                                 value={formData.servilexServiceCode || ""}
                                                 onChange={(e) =>
                                                     setFormData((prev) => ({
@@ -1301,9 +1331,29 @@ export function TicketTypeManager({
                                                         servilexServiceCode: e.target.value,
                                                     }))
                                                 }
-                                                placeholder="403"
+                                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                                                 disabled={poolGenerating}
-                                            />
+                                            >
+                                                <option value="">
+                                                    {poolServicesLoading
+                                                        ? "Cargando servicios..."
+                                                        : "Seleccionar servicio"}
+                                                </option>
+                                                {/* Conserva un codigo ya cargado aunque no este en la lista de activos */}
+                                                {formData.servilexServiceCode &&
+                                                    !poolServices.some(
+                                                        (s) => s.servicioCodigo === formData.servilexServiceCode
+                                                    ) && (
+                                                        <option value={formData.servilexServiceCode}>
+                                                            [{formData.servilexServiceCode}] (actual)
+                                                        </option>
+                                                    )}
+                                                {poolServices.map((s) => (
+                                                    <option key={s.id} value={s.servicioCodigo}>
+                                                        [{s.servicioCodigo}] {s.servicioDescripcion}
+                                                    </option>
+                                                ))}
+                                            </select>
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-xs font-medium">Codigo piscina</label>
