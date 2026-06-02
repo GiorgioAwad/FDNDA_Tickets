@@ -39,6 +39,11 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/",
   },
+  // Verificacion de Google Search Console por meta tag (sin tocar DNS).
+  // Setear GOOGLE_SITE_VERIFICATION en el entorno con el codigo que da GSC.
+  ...(process.env.GOOGLE_SITE_VERIFICATION
+    ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION } }
+    : {}),
   robots: {
     index: true,
     follow: true,

@@ -148,6 +148,16 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
     const lowestPrice = ticketPrices.length ? Math.min(...ticketPrices) : null
     const totalCapacity = event.ticketTypes.reduce((sum, tt) => sum + (tt.capacity ?? 0), 0)
     const eventUrl = `${SITE_URL}/eventos/${event.slug}`
+    // Disponibilidad para el Offer: capacity 0 = ilimitado. SoldOut solo si todos
+    // los tipos tienen cupo definido y están agotados.
+    const hasUnlimited = event.ticketTypes.some((tt) => (tt.capacity ?? 0) === 0)
+    const allSoldOut =
+        !hasUnlimited &&
+        event.ticketTypes.length > 0 &&
+        event.ticketTypes.every((tt) => tt.sold >= tt.capacity)
+    const availability = allSoldOut
+        ? "https://schema.org/SoldOut"
+        : "https://schema.org/InStock"
     const eventJsonLd = {
         "@context": "https://schema.org",
         "@type": "SportsEvent",
@@ -178,8 +188,9 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
             url: eventUrl,
             price: lowestPrice.toFixed(2),
             priceCurrency: "PEN",
-            availability: "https://schema.org/InStock",
-            validFrom: new Date().toISOString(),
+            availability,
+            validFrom: event.createdAt.toISOString(),
+            priceValidUntil: event.endDate.toISOString(),
         } : undefined,
     }
 

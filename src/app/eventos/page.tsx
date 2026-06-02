@@ -1,4 +1,5 @@
 import Link from "next/link"
+import type { Metadata } from "next"
 import { getCachedPublishedEvents } from "@/lib/cached-queries"
 import { richTextToPlainText } from "@/lib/sanitize-rich-text"
 import { Badge } from "@/components/ui/badge"
@@ -11,6 +12,24 @@ import { Search, Filter, ChevronLeft, ChevronRight, Sparkles, X } from "lucide-r
 export const revalidate = 60
 
 const PAGE_SIZE = 12
+
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://ticketingfdnda.pe"
+
+export const metadata: Metadata = {
+    title: "Eventos",
+    description:
+        "Todos los eventos oficiales de deportes acuáticos de la FDNDA en Perú: natación, waterpolo, clavados, nado artístico y piscina libre. Compra tus entradas oficiales.",
+    alternates: { canonical: "/eventos" },
+    openGraph: {
+        title: "Eventos | Ticketing FDNDA",
+        description:
+            "Explora los eventos oficiales de deportes acuáticos de la FDNDA y asegura tu lugar.",
+        url: `${SITE_URL}/eventos`,
+        type: "website",
+        locale: "es_PE",
+        siteName: "Ticketing FDNDA",
+    },
+}
 
 interface EventsPageProps {
     searchParams: Promise<{
@@ -94,6 +113,52 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
     const events = filteredEvents.slice(start, start + PAGE_SIZE)
     const hasFilters = Boolean(params.search || params.discipline || params.location || params.venue)
 
+    // JSON-LD ItemList: ayuda a Google a entender el catálogo de eventos y a
+    // mostrar el carrusel de "Eventos". Cada item referencia su página de detalle
+    // (que ya lleva su propio SportsEvent JSON-LD).
+    const itemListJsonLd = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        itemListElement: events.map((event, index) => {
+            const eventUrl = `${SITE_URL}/eventos/${event.slug}`
+            return {
+                "@type": "ListItem",
+                position: start + index + 1,
+                item: {
+                    "@type": "SportsEvent",
+                    name: event.title,
+                    url: eventUrl,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    eventStatus: "https://schema.org/EventScheduled",
+                    eventAttendanceMode:
+                        "https://schema.org/OfflineEventAttendanceMode",
+                    image: event.bannerUrl ? [event.bannerUrl] : undefined,
+                    location: {
+                        "@type": "Place",
+                        name: event.venue,
+                        address: {
+                            "@type": "PostalAddress",
+                            addressLocality: event.location,
+                            addressCountry: "PE",
+                        },
+                    },
+                    ...(typeof event.minTicketPrice === "number"
+                        ? {
+                              offers: {
+                                  "@type": "Offer",
+                                  url: eventUrl,
+                                  price: event.minTicketPrice.toFixed(2),
+                                  priceCurrency: "PEN",
+                                  availability: "https://schema.org/InStock",
+                              },
+                          }
+                        : {}),
+                },
+            }
+        }),
+    }
+
     const cardEvents: EventCardEvent[] = events.map((event) => ({
         id: event.id,
         slug: event.slug,
@@ -108,6 +173,13 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-fdnda-light/40 via-white to-white">
+            {events.length > 0 && (
+                <script
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+                />
+            )}
+
             {/* Compact hero */}
             <section className="relative overflow-hidden bg-gradient-to-br from-fdnda-primary via-fdnda-secondary to-fdnda-primary text-white">
                 <div className="absolute -top-32 right-1/4 h-72 w-72 rounded-full bg-fdnda-accent/30 blur-3xl" aria-hidden="true" />
