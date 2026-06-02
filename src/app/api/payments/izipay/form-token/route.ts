@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { createIzipayFormToken, getIzipayMode } from "@/lib/izipay"
 import { fulfillPaidOrder } from "@/lib/order-fulfillment"
+import { storeIzipayOrderCorrelation } from "@/lib/izipay-payment"
 
 export const runtime = "nodejs"
 
@@ -144,6 +145,24 @@ export async function POST(request: NextRequest) {
                 { success: false, error: result.error || "No se pudo generar el formToken" },
                 { status: 502 }
             )
+        }
+
+        // Guardar la correlación con Izipay al crear el pago (espejo del flujo web-core
+        // en session/route.ts). Así el reconciliador del worker puede consultar el estado
+        // en Izipay y auto-confirmar la orden aunque la IPN nunca llegue. El número de
+        // orden es `order.id` porque es la referencia que el formulario embebido envía a
+        // Izipay (createIzipayFormToken: orderId = order.id). El transactionId es de traza
+        // hasta que la confirmación real lo sobrescriba.
+        const traceTransactionId = `${Date.now()}${order.id.replace(/[^a-zA-Z0-9]/g, "").slice(-24)}`.slice(0, 40)
+        try {
+            await storeIzipayOrderCorrelation({
+                orderId: order.id,
+                providerOrderNumber: order.id,
+                providerTransactionId: traceTransactionId,
+            })
+        } catch (correlationError) {
+            // No bloquear el pago si esto falla: el peor caso es el comportamiento actual.
+            console.error("No se pudo guardar correlación Izipay (form-token):", correlationError)
         }
 
         return NextResponse.json({
