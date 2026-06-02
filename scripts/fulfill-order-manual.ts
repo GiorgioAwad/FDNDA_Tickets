@@ -98,9 +98,22 @@ async function main() {
     }
     console.log("──────────────────────────────────────────")
 
+    // Si pasás --txid (o --retry-invoice), permitimos continuar aunque la orden
+    // ya esté pagada: la rama "alreadyPaid" de fulfillPaidOrder solo re-sincroniza
+    // metadata (nº de operación) y reintenta la boleta, SIN crear entradas nuevas.
+    const wantsInvoiceRetry =
+        typeof flags.txid === "string" || Boolean(flags["retry-invoice"])
     if (order.status === "PAID" && order.tickets.length > 0) {
-        console.log("La orden YA está pagada y con tickets emitidos. Nada que hacer.")
-        return
+        if (!wantsInvoiceRetry) {
+            console.log("La orden YA está pagada y con tickets emitidos. Nada que hacer.")
+            console.log(
+                "Para actualizar el nº de operación y reintentar la boleta, agregá --txid=<numero> --confirm"
+            )
+            return
+        }
+        console.log(
+            "Orden ya pagada: se actualizará el nº de operación y se reintentará la boleta (no se duplican entradas)."
+        )
     }
     if (order.status === "CANCELLED" || order.status === "REFUNDED") {
         console.log(`La orden está ${order.status}; no es pagable. Abortando.`)
