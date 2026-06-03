@@ -21,7 +21,8 @@ import {
     WifiOff,
     Volume2,
     VolumeX,
-    Loader2
+    Loader2,
+    BarChart3
 } from "lucide-react"
 import type { Html5Qrcode, Html5QrcodeCameraScanConfig } from "html5-qrcode"
 
@@ -57,6 +58,15 @@ interface ScanHistoryItem {
     attendeeName: string | null
     valid: boolean
     reason?: string
+}
+
+interface SalesSummary {
+    eventTitle: string
+    isPoolFree: boolean
+    date: string | null
+    totalSold: number
+    totalCapacity: number
+    slots: Array<{ ticketTypeId: string; name: string; sold: number; capacity: number }>
 }
 
 // ==================== CONSTANTS ====================
@@ -301,6 +311,17 @@ export default function EventScannerPage() {
     const [availableShifts, setAvailableShifts] = useState<string[]>([])
     const [currentShift, setCurrentShift] = useState("")
     const [scanCount, setScanCount] = useState({ today: 0, valid: 0 })
+    const [showSales, setShowSales] = useState(false)
+    const [salesLoading, setSalesLoading] = useState(false)
+    const [salesData, setSalesData] = useState<SalesSummary | null>(null)
+    const [salesDate, setSalesDate] = useState<string>(() =>
+        new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/Lima",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(new Date())
+    )
 
     const scannerId = useMemo(() => `qr-reader-${eventId}`, [eventId])
 
@@ -522,6 +543,26 @@ export default function EventScannerPage() {
 
         setScanHistory((prev) => [historyItem, ...prev].slice(0, MAX_HISTORY_ITEMS))
     }, [])
+
+    const loadSales = useCallback(async () => {
+        setSalesLoading(true)
+        try {
+            const qs = new URLSearchParams({ eventId })
+            if (salesDate) qs.set("date", salesDate)
+            const res = await fetch(`/api/scans/sales-summary?${qs.toString()}`, { cache: "no-store" })
+            const json = (await res.json()) as { data?: SalesSummary }
+            setSalesData(json.data ?? null)
+        } catch {
+            setSalesData(null)
+        } finally {
+            setSalesLoading(false)
+        }
+    }, [eventId, salesDate])
+
+    // Cargar/recargar el resumen cuando se abre el panel o cambia la fecha.
+    useEffect(() => {
+        if (showSales) void loadSales()
+    }, [showSales, salesDate, loadSales])
 
     // ==================== CAMERA FUNCTIONS ====================
 
@@ -899,6 +940,17 @@ export default function EventScannerPage() {
                             </span>
                         )}
                     </Button>
+
+                    {/* Vendidas por horario */}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowSales(true)}
+                        className="text-white hover:bg-white/10 p-1.5"
+                        aria-label="Vendidas por horario"
+                    >
+                        <BarChart3 className="h-4 w-4" />
+                    </Button>
                 </div>
             </div>
 
@@ -980,6 +1032,87 @@ export default function EventScannerPage() {
                             <Camera className="h-5 w-5 mr-2" />
                             Volver a Escanear
                         </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* Sales-by-slot Panel */}
+            {showSales && (
+                <div className="absolute inset-0 z-30 bg-gray-900 overflow-auto">
+                    <div className="sticky top-0 bg-gray-900 p-4 border-b border-gray-800 flex items-center justify-between">
+                        <h2 className="font-bold text-lg">Vendidas por horario</h2>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowSales(false)}
+                            className="text-white hover:bg-white/10"
+                        >
+                            <ArrowLeft className="h-5 w-5 mr-1" />
+                            Volver
+                        </Button>
+                    </div>
+                    <div className="p-4 space-y-3" style={{ maxHeight: "calc(100vh - 72px)" }}>
+                        <div className="flex items-center gap-2">
+                            {salesData?.isPoolFree && (
+                                <input
+                                    type="date"
+                                    value={salesDate}
+                                    onChange={(e) => setSalesDate(e.target.value)}
+                                    className="h-9 rounded-md border border-gray-700 bg-gray-800 px-2 text-sm text-white"
+                                />
+                            )}
+                            <Button variant="secondary" size="sm" onClick={() => loadSales()} disabled={salesLoading}>
+                                {salesLoading ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <RefreshCw className="h-4 w-4" />
+                                )}
+                                <span className="ml-1">Actualizar</span>
+                            </Button>
+                        </div>
+
+                        {salesData && (
+                            <div className="text-sm text-gray-300">
+                                Total vendidas: <span className="font-bold text-white">{salesData.totalSold}</span>
+                                {salesData.totalCapacity > 0 && (
+                                    <span className="text-gray-500"> / {salesData.totalCapacity} cupos</span>
+                                )}
+                                {salesData.isPoolFree && salesData.date && (
+                                    <span className="text-gray-500"> · {salesData.date}</span>
+                                )}
+                            </div>
+                        )}
+
+                        {salesLoading && !salesData ? (
+                            <p className="text-gray-500 text-center py-8">Cargando...</p>
+                        ) : !salesData || salesData.slots.length === 0 ? (
+                            <p className="text-gray-500 text-center py-8">Sin horarios para mostrar.</p>
+                        ) : (
+                            <div className="space-y-2">
+                                {salesData.slots.map((s) => {
+                                    const pct = s.capacity > 0 ? Math.min((s.sold / s.capacity) * 100, 100) : 0
+                                    const full = s.capacity > 0 && s.sold >= s.capacity
+                                    return (
+                                        <div key={s.ticketTypeId} className="rounded-lg border border-gray-700 bg-gray-800 p-3">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="font-medium">{s.name}</span>
+                                                <span className={`font-bold ${full ? "text-red-400" : "text-green-400"}`}>
+                                                    {s.sold}{s.capacity > 0 ? ` / ${s.capacity}` : ""}
+                                                </span>
+                                            </div>
+                                            {s.capacity > 0 && (
+                                                <div className="bg-gray-700 rounded-full h-2">
+                                                    <div
+                                                        className={`rounded-full h-2 ${full ? "bg-red-500" : "bg-green-500"}`}
+                                                        style={{ width: `${pct}%` }}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
