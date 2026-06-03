@@ -8,6 +8,7 @@ import {
     getTicketScheduleSelectionsForAttendee,
     shiftsMatch,
 } from "@/lib/ticket-shift"
+import { canReassignToScanDate, ticketUsesPurchasedDates } from "@/lib/ticket-date-policy"
 import { rateLimit } from "@/lib/rate-limit"
 import {
     type ScanResultType,
@@ -155,6 +156,10 @@ export async function POST(request: NextRequest) {
             attendeeName: ticket.attendeeName,
             attendeeDni: ticket.attendeeDni,
         })
+        const usesPurchasedDates = ticketUsesPurchasedDates({
+            eventCategory: ticket.event?.category,
+            scheduleSelections,
+        })
         const expectedShift = getExpectedShiftForDate(scheduleSelections, today)
         const qrShift = normalizeShiftLabel(payload.shift)
 
@@ -282,10 +287,13 @@ export async function POST(request: NextRequest) {
         // Buscar entitlement para hoy
         let entitlement = ticket.entitlements.find((e) => matchesToday(e.date, today))
 
-        // Reasignacion automatica: para paquetes siempre se permite reasignar
-        // un entitlement AVAILABLE al dia de hoy; para tickets sin calendario
-        // estricto tambien se permite.
-        const canReassign = !strictDateSchedule || isPackageLike
+        // Reasignacion automatica: se permite en tickets flexibles, pero nunca
+        // cuando el comprador eligio una fecha especifica.
+        const canReassign = canReassignToScanDate({
+            strictDateSchedule,
+            isPackageLike,
+            usesPurchasedDates,
+        })
         if (!entitlement && canReassign) {
             const availableEntitlement = ticket.entitlements.find((e) => e.status === "AVAILABLE")
 
@@ -319,7 +327,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (!entitlement && isPackageLike && !strictDateSchedule) {
+        if (!entitlement && isPackageLike && !strictDateSchedule && !usesPurchasedDates) {
             const attendance = computeAttendance()
             if (packageLimit && attendance.remaining <= 0) {
                 await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Sin ${clasesLabel} disponibles`)

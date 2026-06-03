@@ -8,6 +8,7 @@ import {
     getTicketScheduleSelectionsForAttendee,
     shiftsMatch,
 } from "@/lib/ticket-shift"
+import { ticketUsesPurchasedDates } from "@/lib/ticket-date-policy"
 import {
     type ScanResultType,
     type ScanTicket,
@@ -286,6 +287,10 @@ export async function POST(request: NextRequest) {
             attendeeName: ticket.attendeeName,
             attendeeDni: ticket.attendeeDni,
         })
+        const usesPurchasedDates = ticketUsesPurchasedDates({
+            eventCategory: ticket.event?.category,
+            scheduleSelections,
+        })
         const expectedShift = getExpectedShiftForDate(scheduleSelections, today)
 
         // Para tickets por turno, el turno esperado viene de la compra.
@@ -403,7 +408,7 @@ export async function POST(request: NextRequest) {
 
         let entitlement = ticket.entitlements.find((item) => matchesToday(item.date, today))
 
-        if (!entitlement && !strictDateSchedule) {
+        if (!entitlement && !strictDateSchedule && !usesPurchasedDates) {
             const availableEntitlement = ticket.entitlements.find((item) => item.status === "AVAILABLE")
             if (availableEntitlement) {
                 const reassignedDate = todayDate
@@ -433,7 +438,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (!entitlement && isPackageLike && !strictDateSchedule) {
+        if (!entitlement && isPackageLike && !strictDateSchedule && !usesPurchasedDates) {
             const attendance = computeAttendance()
             if (packageLimit && attendance.remaining <= 0) {
                 await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Sin ${clasesLabel} disponibles`)

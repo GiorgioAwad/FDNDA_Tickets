@@ -201,6 +201,7 @@ export default function TicketDetailPage() {
     const scans = ticket.scans || []
     const scheduleSelections = (ticket.scheduleSelections || []).filter((sel) => sel.date)
     const hasShiftSelections = scheduleSelections.some((sel) => sel.shift)
+    const usesPurchasedDate = isPiscina || scheduleSelections.length > 0
 
     // Match a scan's shift against a configured shift (flexible matching)
     const shiftMatchesConfig = (scanShift: string | null, configuredShift: string): boolean => {
@@ -400,8 +401,14 @@ export default function TicketDetailPage() {
                                     </p>
                                 )}
                                 <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
-                                    <RefreshCw className="h-3 w-3" />
-                                    El codigo QR se actualiza diariamente
+                                    {usesPurchasedDate ? (
+                                        <Calendar className="h-3 w-3" />
+                                    ) : (
+                                        <RefreshCw className="h-3 w-3" />
+                                    )}
+                                    {usesPurchasedDate
+                                        ? "Codigo QR emitido para la fecha comprada"
+                                        : "El codigo QR se actualiza diariamente"}
                                 </div>
                             </>
                         ) : (

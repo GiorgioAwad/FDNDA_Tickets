@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 import { createQRPayload, generateQRDataURL, formatDateLocal, formatDateUTC } from "@/lib/qr"
-import { getDaysBetween } from "@/lib/utils"
+import { getDaysBetween, parseDateOnly } from "@/lib/utils"
 import { extractTicketValidDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { getExpectedShiftForDate, getTicketScheduleSelectionsForAttendee } from "@/lib/ticket-shift"
 import { logTicketIssuance } from "@/lib/ticket-issuance-log"
+import {
+    getPurchasedDateKeys,
+    pickQrDateForTicket,
+    ticketUsesPurchasedDates,
+} from "@/lib/ticket-date-policy"
 export const runtime = "nodejs"
 
 type TicketEntitlement = {
@@ -215,37 +220,55 @@ export async function GET(
             entitlementDates = fallbackDates.map((date) => date.toISOString().split("T")[0])
         }
 
-        // Generate QR for the specified date (or today)
-        let qrDate = dateParam ? new Date(`${dateParam}T00:00:00Z`) : new Date()
-        qrDate = new Date(Date.UTC(qrDate.getUTCFullYear(), qrDate.getUTCMonth(), qrDate.getUTCDate()))
-
-        // Check if this date is valid for the ticket
-        let dateStr = formatDateLocal(qrDate)
-        const usedCount = entitlements.filter((item) => item.status === "USED").length
-        const isPackage = isPackageLike && packageDaysCount
-        const eventStart = ticket.event?.startDate ? formatDateLocal(ticket.event.startDate) : null
-        const eventEnd = ticket.event?.endDate ? formatDateLocal(ticket.event.endDate) : null
-        const isWithinEventRange = eventStart && eventEnd ? dateStr >= eventStart && dateStr <= eventEnd : true
-        let hasEntitlement = isPackage
-            ? usedCount < packageDaysCount!
-            : (isWithinEventRange && entitlementDates.includes(dateStr))
-
-        if (!isPackage && !hasEntitlement && !dateParam && entitlementDates.length > 0) {
-            const nextEntitlement =
-                entitlementDates.find((entitlement) => entitlement >= dateStr) ??
-                entitlementDates[0]
-            qrDate = new Date(`${nextEntitlement}T00:00:00Z`)
-            qrDate = new Date(Date.UTC(qrDate.getUTCFullYear(), qrDate.getUTCMonth(), qrDate.getUTCDate()))
-            dateStr = nextEntitlement
-            hasEntitlement = true
-        }
-
         const scheduleSelections = await getTicketScheduleSelectionsForAttendee({
             orderId: ticket.orderId,
             ticketTypeId: ticket.ticketTypeId,
             attendeeName: ticket.attendeeName,
             attendeeDni: ticket.attendeeDni,
         })
+
+        const todayStr = formatDateLocal(new Date())
+        const usesPurchasedDates = ticketUsesPurchasedDates({
+            eventCategory: ticket.event?.category,
+            scheduleSelections,
+        })
+        const selectedQrDate = pickQrDateForTicket({
+            dateParam,
+            today: todayStr,
+            scheduleSelections,
+            entitlements,
+            usePurchasedDates: usesPurchasedDates,
+        })
+
+        // Generate QR for the requested date, purchased date, or today.
+        let qrDate = parseDateOnly(selectedQrDate ?? todayStr)
+
+        // Check if this date is valid for the ticket
+        let dateStr = formatDateUTC(qrDate)
+        const usedCount = entitlements.filter((item) => item.status === "USED").length
+        const isPackage = isPackageLike && packageDaysCount
+        const eventStart = ticket.event?.startDate ? formatDateLocal(ticket.event.startDate) : null
+        const eventEnd = ticket.event?.endDate ? formatDateLocal(ticket.event.endDate) : null
+        const isWithinEventRange = eventStart && eventEnd ? dateStr >= eventStart && dateStr <= eventEnd : true
+        const purchasedDateKeys = getPurchasedDateKeys(scheduleSelections)
+        const dateBoundDates = new Set([
+            ...entitlementDates,
+            ...purchasedDateKeys,
+        ])
+        const isAllowedPurchasedDate =
+            !usesPurchasedDates || (isWithinEventRange && dateBoundDates.has(dateStr))
+        let hasEntitlement = isPackage
+            ? usedCount < packageDaysCount! && isAllowedPurchasedDate
+            : (isWithinEventRange && entitlementDates.includes(dateStr))
+
+        if (!isPackage && !hasEntitlement && !dateParam && entitlementDates.length > 0) {
+            const nextEntitlement =
+                entitlementDates.find((entitlement) => entitlement >= dateStr) ??
+                entitlementDates[0]
+            qrDate = parseDateOnly(nextEntitlement)
+            dateStr = nextEntitlement
+            hasEntitlement = true
+        }
 
         let qrDataUrl: string | null = null
         let qrShift: string | null = null
