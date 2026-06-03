@@ -4,6 +4,14 @@ import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/p
 import { releaseTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 
 const ORDER_EXPIRATION_MINUTES = 30
+// Izipay con pago iniciado (tiene correlacion) se excluye de la ventana corta para
+// no cancelar un pago en curso. Pero pasada esta ventana larga, la sesion de Izipay
+// ya murio (abandono) y la orden tambien se cancela liberando el cupo. Antes estas
+// quedaban PENDING para siempre (parqueadas en needs-review) reteniendo inventario.
+const IZIPAY_STALE_MINUTES = (() => {
+    const v = Number(process.env.ORDER_IZIPAY_EXPIRATION_MINUTES)
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 180
+})()
 const MAX_ORDERS_PER_RUN = 200
 
 export interface ExpirePendingOrdersResult {
@@ -18,21 +26,36 @@ export interface ExpirePendingOrdersResult {
 export async function expirePendingOrders(
     options?: {
         expirationMinutes?: number
+        izipayMinutes?: number
         maxOrders?: number
     }
 ): Promise<ExpirePendingOrdersResult> {
     const expirationMinutes = options?.expirationMinutes ?? ORDER_EXPIRATION_MINUTES
+    const izipayMinutes = options?.izipayMinutes ?? IZIPAY_STALE_MINUTES
     const maxOrders = options?.maxOrders ?? MAX_ORDERS_PER_RUN
     const cutoffDate = new Date(Date.now() - expirationMinutes * 60 * 1000)
+    const izipayCutoffDate = new Date(Date.now() - izipayMinutes * 60 * 1000)
 
     const pendingOrders = await prisma.order.findMany({
         where: {
             status: "PENDING",
-            createdAt: { lte: cutoffDate },
             OR: [
-                { provider: { not: "IZIPAY" } },
-                { providerOrderNumber: null },
-                { providerTransactionId: null },
+                // Orden normal (no-Izipay, o Izipay sin correlacion) mas vieja que
+                // la ventana corta -> expira como siempre.
+                {
+                    createdAt: { lte: cutoffDate },
+                    OR: [
+                        { provider: { not: "IZIPAY" } },
+                        { providerOrderNumber: null },
+                        { providerTransactionId: null },
+                    ],
+                },
+                // Izipay con pago iniciado pero abandonado: pasada la ventana larga
+                // la sesion ya murio -> cancelar y liberar cupo (incluye needs-review).
+                {
+                    provider: "IZIPAY",
+                    createdAt: { lte: izipayCutoffDate },
+                },
             ],
         },
         select: {
