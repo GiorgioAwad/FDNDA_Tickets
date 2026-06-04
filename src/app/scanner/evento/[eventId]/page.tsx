@@ -896,21 +896,21 @@ export default function EventScannerPage() {
                 <Button 
                     variant="ghost" 
                     size="sm" 
-                    onClick={() => router.push("/scanner")} 
-                    className="text-white hover:bg-white/10"
+                    onClick={() => router.push("/scanner")}
+                    className="text-white hover:bg-white/10 shrink-0"
                 >
                     <ArrowLeft className="h-5 w-5 mr-1" />
                     Salir
                 </Button>
                 
-                <div className="text-center flex-1 mx-2">
+                <div className="text-center flex-1 min-w-0 mx-2">
                     <div className="font-bold text-sm truncate">{eventName || "Scanner"}</div>
                     <div className="text-xs text-gray-400">
                         Hoy: {scanCount.valid}/{scanCount.today} válidos
                     </div>
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                     {/* Network status */}
                     <div className={`p-1.5 rounded ${isOnline ? "text-green-400" : "text-red-400"}`}>
                         {isOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
