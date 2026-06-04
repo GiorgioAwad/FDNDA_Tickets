@@ -1114,6 +1114,17 @@ export default function EventScannerPage() {
                             </div>
                         )}
                     </div>
+
+                    {/* Volver al escaner */}
+                    <div className="p-4 border-t border-gray-800">
+                        <Button
+                            onClick={() => setShowSales(false)}
+                            className="w-full bg-blue-600 hover:bg-blue-700"
+                        >
+                            <Camera className="h-5 w-5 mr-2" />
+                            Volver a Escanear
+                        </Button>
+                    </div>
                 </div>
             )}
 
