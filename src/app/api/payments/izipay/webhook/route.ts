@@ -36,28 +36,25 @@ export async function GET() {
 // 500, and Izipay marks the notification as "Fallido" (pago cobrado pero la
 // orden nunca se confirma). Parse defensively based on content-type, mirroring
 // the redirect-result route which already uses request.formData().
-async function parseWebhookBody(request: NextRequest): Promise<Record<string, unknown>> {
-    const contentType = (request.headers.get("content-type") || "").toLowerCase()
-
-    if (
-        contentType.includes("application/x-www-form-urlencoded") ||
-        contentType.includes("multipart/form-data")
-    ) {
-        const formData = await request.formData()
-        return Object.fromEntries(formData.entries())
-    }
-
-    if (contentType.includes("application/json")) {
-        return (await request.json()) as Record<string, unknown>
-    }
-
-    // Unknown/missing content-type: Izipay does not always set a reliable one on
-    // its server-to-server IPN, so read raw and try JSON then form-encoded.
-    const raw = await request.text()
+function parseWebhookBody(raw: string, contentType: string): Record<string, unknown> {
     if (!raw.trim()) {
         return {}
     }
 
+    if (contentType.includes("application/json")) {
+        try {
+            return JSON.parse(raw) as Record<string, unknown>
+        } catch {
+            return {}
+        }
+    }
+
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+        return Object.fromEntries(new URLSearchParams(raw).entries())
+    }
+
+    // Unknown/missing content-type: Izipay does not always set a reliable one on
+    // its server-to-server IPN, so try JSON then form-encoded.
     try {
         return JSON.parse(raw) as Record<string, unknown>
     } catch {
@@ -339,8 +336,22 @@ async function handleRedirectWebhook(body: IzipayWebhookPayload): Promise<NextRe
 }
 
 export async function POST(request: NextRequest) {
+    let rawBody = ""
     try {
-        const body = await parseWebhookBody(request)
+        rawBody = await request.text()
+        const contentType = (request.headers.get("content-type") || "").toLowerCase()
+
+        // TEMP DIAGNOSTIC: Izipay marca las notificaciones como "Fallido" y aun no
+        // sabemos la forma real del payload del IPN. Logueamos content-type + body
+        // crudo para ajustar el parseo/firma con certeza. QUITAR tras diagnosticar.
+        console.error("[izipay-webhook] incoming", {
+            contentType,
+            signatureHeader: request.headers.get("signature") || null,
+            transactionIdHeader: request.headers.get("transactionId") || null,
+            rawBody: rawBody.slice(0, 4000),
+        })
+
+        const body = parseWebhookBody(rawBody, contentType)
 
         if (isEmbeddedIpn(body)) {
             return await handleEmbeddedIpn(body)
@@ -350,9 +361,10 @@ export async function POST(request: NextRequest) {
             return await handleWebCoreNotification(body)
         }
 
+        console.error("[izipay-webhook] no handler matched", { keys: Object.keys(body) })
         return await handleRedirectWebhook(body as unknown as IzipayWebhookPayload)
     } catch (error) {
-        console.error("Webhook error:", error)
+        console.error("Webhook error:", error, "rawBody:", rawBody.slice(0, 2000))
         return NextResponse.json(
             { success: false, error: "Webhook processing failed" },
             { status: 500 }
