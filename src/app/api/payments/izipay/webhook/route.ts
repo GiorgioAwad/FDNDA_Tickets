@@ -66,12 +66,16 @@ function isEmbeddedIpn(body: Record<string, unknown>): boolean {
     return typeof body["kr-answer"] === "string" && typeof body["kr-hash"] === "string"
 }
 
-// The Web Core notification (popup/redirect/embedded checkout) arrives with the
-// payment result inside `payloadHttp` (a JSON string), exactly like the browser
-// return handled in redirect-result. It does NOT carry a top-level `code`, so the
-// only reliable marker is the presence of `payloadHttp`.
-function isWebCoreNotification(body: Record<string, unknown>): boolean {
-    return typeof body.payloadHttp === "string" || typeof body.payloadhttp === "string"
+// The legacy redirect webhook (IzipayWebhookPayload) is the only shape that uses
+// handleRedirectWebhook: it carries `orderStatus` + an `orderDetails` object. The
+// Web Core IPN instead sends the payment result either flat (`code` + `response.order`)
+// or wrapped in `payloadHttp` — both handled by handleWebCoreNotification.
+function isLegacyRedirectWebhook(body: Record<string, unknown>): boolean {
+    return (
+        typeof body.orderStatus === "string" &&
+        typeof body.orderDetails === "object" &&
+        body.orderDetails !== null
+    )
 }
 
 async function handleEmbeddedIpn(body: Record<string, unknown>): Promise<NextResponse> {
@@ -357,12 +361,14 @@ export async function POST(request: NextRequest) {
             return await handleEmbeddedIpn(body)
         }
 
-        if (isWebCoreNotification(body)) {
-            return await handleWebCoreNotification(body)
+        if (isLegacyRedirectWebhook(body)) {
+            return await handleRedirectWebhook(body as unknown as IzipayWebhookPayload)
         }
 
-        console.error("[izipay-webhook] no handler matched", { keys: Object.keys(body) })
-        return await handleRedirectWebhook(body as unknown as IzipayWebhookPayload)
+        // Default: Web Core / SDK notification. parseIzipaySdkPaymentResponse handles
+        // both the flat (code + response.order) and payloadHttp-wrapped shapes, and
+        // returns a clean 400 (not a crash) when the body isn't a payment result.
+        return await handleWebCoreNotification(body)
     } catch (error) {
         console.error("Webhook error:", error, "rawBody:", rawBody.slice(0, 2000))
         return NextResponse.json(
