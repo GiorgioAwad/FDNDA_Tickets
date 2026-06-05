@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import {
+    isIzipayCommunicationError,
+    isIzipayPaymentApproved,
     parseEmbeddedAnswer,
-    parseIzipayWebCoreResponse,
+    parseIzipaySdkPaymentResponse,
     verifyEmbeddedIpnHash,
+    verifyIzipaySdkSignature,
     verifyIzipayWebhookSignature,
-    verifyIzipayWebCoreSignature,
     type IzipayWebhookPayload,
-    type IzipayWebCorePaymentResponse,
 } from "@/lib/izipay"
 import { acquireLockWithStatus, releaseLock } from "@/lib/cache"
 import {
@@ -29,16 +30,51 @@ export async function GET() {
     })
 }
 
+// Izipay's embedded IPN (kr-answer/kr-hash) and the redirect/web-core form
+// notification arrive as application/x-www-form-urlencoded, NOT JSON. Reading
+// the body with request.json() throws on those bodies, the POST handler returns
+// 500, and Izipay marks the notification as "Fallido" (pago cobrado pero la
+// orden nunca se confirma). Parse defensively based on content-type, mirroring
+// the redirect-result route which already uses request.formData().
+async function parseWebhookBody(request: NextRequest): Promise<Record<string, unknown>> {
+    const contentType = (request.headers.get("content-type") || "").toLowerCase()
+
+    if (
+        contentType.includes("application/x-www-form-urlencoded") ||
+        contentType.includes("multipart/form-data")
+    ) {
+        const formData = await request.formData()
+        return Object.fromEntries(formData.entries())
+    }
+
+    if (contentType.includes("application/json")) {
+        return (await request.json()) as Record<string, unknown>
+    }
+
+    // Unknown/missing content-type: Izipay does not always set a reliable one on
+    // its server-to-server IPN, so read raw and try JSON then form-encoded.
+    const raw = await request.text()
+    if (!raw.trim()) {
+        return {}
+    }
+
+    try {
+        return JSON.parse(raw) as Record<string, unknown>
+    } catch {
+        return Object.fromEntries(new URLSearchParams(raw).entries())
+    }
+}
+
 function isEmbeddedIpn(body: Record<string, unknown>): boolean {
     return typeof body["kr-answer"] === "string" && typeof body["kr-hash"] === "string"
 }
 
+// The Web Core notification (popup/redirect/embedded checkout) arrives with the
+// payment result inside `payloadHttp` (a JSON string), exactly like the browser
+// return handled in redirect-result. It does NOT carry a top-level `code`, so the
+// only reliable marker is the presence of `payloadHttp`.
 function isWebCoreNotification(body: Record<string, unknown>): boolean {
-    return (
-        typeof body.code === "string" &&
-        typeof body.payloadHttp === "string" &&
-        typeof body.signature === "string"
-    )
+    return typeof body.payloadHttp === "string" || typeof body.payloadhttp === "string"
 }
 
 async function handleEmbeddedIpn(body: Record<string, unknown>): Promise<NextResponse> {
@@ -126,26 +162,41 @@ async function handleEmbeddedIpn(body: Record<string, unknown>): Promise<NextRes
     }
 }
 
-async function handleWebCoreNotification(
-    paymentResponse: IzipayWebCorePaymentResponse
-): Promise<NextResponse> {
-    const isValid = verifyIzipayWebCoreSignature(paymentResponse)
-    if (!isValid) {
-        return NextResponse.json(
-            { success: false, error: "Invalid signature" },
-            { status: 401 }
-        )
-    }
+async function handleWebCoreNotification(body: Record<string, unknown>): Promise<NextResponse> {
+    const payloadHttp =
+        typeof body.payloadHttp === "string"
+            ? body.payloadHttp
+            : typeof body.payloadhttp === "string"
+                ? body.payloadhttp
+                : ""
+    const signature = typeof body.signature === "string" ? body.signature : ""
+    const transactionId = typeof body.transactionId === "string" ? body.transactionId : ""
 
-    const paymentResult = parseIzipayWebCoreResponse(paymentResponse)
-    if (!paymentResult || !paymentResult.orderId) {
+    // parseIzipaySdkPaymentResponse unwraps the payment result from payloadHttp
+    // (and falls back to a flat response when payloadHttp is absent), mirroring
+    // the proven redirect-result handler.
+    const parsed = parseIzipaySdkPaymentResponse({
+        ...body,
+        payloadHttp,
+        signature,
+        transactionId,
+    })
+
+    if (!parsed || !parsed.orderId) {
         return NextResponse.json(
             { success: false, error: "Invalid notification data" },
             { status: 400 }
         )
     }
 
-    const resolvedOrderId = await resolveIzipayOrderId(paymentResult.orderId)
+    if (signature && !verifyIzipaySdkSignature(parsed.payloadHttp, signature)) {
+        return NextResponse.json(
+            { success: false, error: "Invalid signature" },
+            { status: 401 }
+        )
+    }
+
+    const resolvedOrderId = await resolveIzipayOrderId(parsed.orderId)
     if (!resolvedOrderId) {
         return NextResponse.json(
             { success: false, error: "Order not found" },
@@ -172,16 +223,18 @@ async function handleWebCoreNotification(
 
         lockAcquired = true
 
-        if (paymentResult.status === "PAID") {
+        const providerResponse = buildIzipayProviderResponse(
+            "webhook",
+            parsed.payload as unknown as Prisma.InputJsonValue
+        )
+
+        if (isIzipayPaymentApproved(parsed)) {
             const result = await fulfillIzipayOrder({
                 orderId: resolvedOrderId,
-                providerRef: paymentResult.transactionId,
-                providerOrderNumber: paymentResult.orderId,
-                providerTransactionId: paymentResult.transactionId,
-                providerResponse: buildIzipayProviderResponse(
-                    "webhook",
-                    paymentResponse as unknown as Prisma.InputJsonValue
-                ),
+                providerRef: parsed.transactionId,
+                providerOrderNumber: parsed.orderId,
+                providerTransactionId: parsed.transactionId,
+                providerResponse,
             })
 
             if (!result.success) {
@@ -190,15 +243,14 @@ async function handleWebCoreNotification(
                     { status: 500 }
                 )
             }
-        } else if (paymentResult.status === "ERROR") {
+        } else if (!isIzipayCommunicationError(parsed.code)) {
+            // Definite refusal -> cancel and release inventory. A communication
+            // error (code 021) is transient/pending, so leave the order PENDING.
             await cancelIzipayOrder({
                 orderId: resolvedOrderId,
-                providerOrderNumber: paymentResult.orderId,
-                providerTransactionId: paymentResult.transactionId,
-                providerResponse: buildIzipayProviderResponse(
-                    "webhook",
-                    paymentResponse as unknown as Prisma.InputJsonValue
-                ),
+                providerOrderNumber: parsed.orderId,
+                providerTransactionId: parsed.transactionId,
+                providerResponse,
             })
         }
 
@@ -288,14 +340,14 @@ async function handleRedirectWebhook(body: IzipayWebhookPayload): Promise<NextRe
 
 export async function POST(request: NextRequest) {
     try {
-        const body = (await request.json()) as Record<string, unknown>
+        const body = await parseWebhookBody(request)
 
         if (isEmbeddedIpn(body)) {
             return await handleEmbeddedIpn(body)
         }
 
         if (isWebCoreNotification(body)) {
-            return await handleWebCoreNotification(body as IzipayWebCorePaymentResponse)
+            return await handleWebCoreNotification(body)
         }
 
         return await handleRedirectWebhook(body as unknown as IzipayWebhookPayload)
