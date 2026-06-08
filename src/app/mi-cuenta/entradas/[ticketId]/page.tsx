@@ -202,6 +202,12 @@ export default function TicketDetailPage() {
     const scheduleSelections = (ticket.scheduleSelections || []).filter((sel) => sel.date)
     const hasShiftSelections = scheduleSelections.some((sel) => sel.shift)
     const usesPurchasedDate = isPiscina || scheduleSelections.length > 0
+    // Días concretos que el comprador eligió (entrada full-day / fecha comprada).
+    // Cuando existen, el carnet debe limitarse a esos días en vez del rango completo
+    // del evento, incluso si la selección no trae turno (full-day = todos los turnos del día).
+    const purchasedDateKeys = !isPiscina && scheduleSelections.length > 0
+        ? Array.from(new Set(scheduleSelections.map((sel) => sel.date))).sort((a, b) => a.localeCompare(b))
+        : []
 
     // Match a scan's shift against a configured shift (flexible matching)
     const shiftMatchesConfig = (scanShift: string | null, configuredShift: string): boolean => {
@@ -284,8 +290,12 @@ export default function TicketDetailPage() {
         }))
         usedDisplayCount = displayEntitlements.filter((item) => item.status === "USED").length
     } else if (hasMultipleShifts && !isPackageLike) {
-        // Multi-shift event-based (non-package with explicit days)
-        const days = scheduleDays.length > 0 ? scheduleDays : entitlements.map((e) => new Date(e.date))
+        // Multi-shift event-based (non-package with explicit days).
+        // Si el comprador eligió días concretos (full-day: se elige el día e incluye
+        // todos los turnos), pintar solo esos días en vez de todo el rango del evento.
+        const days = purchasedDateKeys.length > 0
+            ? purchasedDateKeys.map((key) => toUtcDate(key))
+            : scheduleDays.length > 0 ? scheduleDays : entitlements.map((e) => new Date(e.date))
         totalCount = days.length * shifts.length
         displayEntitlements = []
         for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
@@ -316,10 +326,14 @@ export default function TicketDetailPage() {
         }))
         usedDisplayCount = effectiveUsedCount
     } else {
-        // Single-shift or no-shift event (original behavior)
-        totalCount = scheduleDays.length > 0 ? scheduleDays.length : entitlements.length
-        displayEntitlements = scheduleDays.length > 0
-            ? scheduleDays.map((date) => {
+        // Single-shift or no-shift event (original behavior).
+        // Si el comprador eligió días concretos, limitar a esos días.
+        const baseDays = purchasedDateKeys.length > 0
+            ? purchasedDateKeys.map((key) => toUtcDate(key))
+            : scheduleDays
+        totalCount = baseDays.length > 0 ? baseDays.length : entitlements.length
+        displayEntitlements = baseDays.length > 0
+            ? baseDays.map((date) => {
                 const key = formatDateKey(date)
                 const existing = entitlementMap.get(key)
                 return {
