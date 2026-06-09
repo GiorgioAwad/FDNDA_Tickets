@@ -1,15 +1,17 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { PaginationControls } from "@/components/ui/pagination-controls"
 import { formatPrice } from "@/lib/utils"
 import * as XLSX from "xlsx"
-import { 
-    Loader2, 
-    DollarSign, 
-    TrendingUp, 
+import {
+    Loader2,
+    DollarSign,
+    TrendingUp,
     Percent,
     Download,
     CreditCard,
@@ -23,6 +25,8 @@ import {
     Ticket,
     FileText,
     QrCode,
+    Search,
+    CalendarDays,
 } from "lucide-react"
 
 import {
@@ -33,12 +37,46 @@ import {
     calculateIzipayCommission,
 } from "@/lib/commission-rates"
 
+interface ScheduleSelection {
+    date: string | null
+    shift: string | null
+}
+
+interface EventDay {
+    date: string | null
+    openTime: string
+    closeTime: string
+}
+
+interface Entitlement {
+    date: string | null
+    status: string
+}
+
 interface OrderTicket {
     id: string
     attendeeName: string | null
     attendeeDni: string | null
     status: string
     ticketCode: string
+    entitlements?: Entitlement[]
+}
+
+interface OrderItem {
+    id: string
+    quantity: number
+    subtotal: number
+    schedule?: ScheduleSelection[]
+    ticketType: {
+        name: string
+        price: number
+        event: {
+            title: string
+            category?: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA"
+        }
+    }
+    eventDays?: EventDay[]
+    tickets: OrderTicket[]
 }
 
 interface Order {
@@ -67,19 +105,14 @@ interface Order {
         name: string
         email: string
     }
-    items: {
-        id: string
-        quantity: number
-        subtotal: number
-        ticketType: {
-            name: string
-            price: number
-            event: {
-                title: string
-            }
-        }
-        tickets: OrderTicket[]
-    }[]
+    items: OrderItem[]
+}
+
+interface Pagination {
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
 }
 
 interface IncomeData {
@@ -87,7 +120,31 @@ interface IncomeData {
     totalPaid: number
     totalPending: number
     totalCancelled: number
+    paidOrdersCount?: number
+    pagination?: Pagination
 }
+
+const CATEGORY_LABELS: Record<string, string> = {
+    EVENTO: "Evento",
+    PISCINA_LIBRE: "Piscina libre",
+    ACADEMIA: "Academia",
+}
+
+// Formatea una fecha calendario "YYYY-MM-DD" sin desfase de zona horaria.
+function formatCalendarDate(ymd: string | null | undefined): string {
+    if (!ymd) return ""
+    const date = new Date(`${ymd}T00:00:00Z`)
+    if (Number.isNaN(date.getTime())) return ymd
+    return date.toLocaleDateString("es-PE", {
+        weekday: "short",
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+    })
+}
+
+const PAGE_SIZE = 25
 
 export default function IncomePage() {
     const [data, setData] = useState<IncomeData | null>(null)
@@ -96,18 +153,42 @@ export default function IncomePage() {
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
     const [usdRate, setUsdRate] = useState<number>(USD_TO_PEN_FALLBACK)
     const [usdRateSource, setUsdRateSource] = useState<"BCRP" | "SUNAT" | "fallback">("fallback")
+    const [page, setPage] = useState(1)
+    const [searchInput, setSearchInput] = useState("")
+    const [debouncedSearch, setDebouncedSearch] = useState("")
+    const [exporting, setExporting] = useState(false)
 
+    const buildIncomeQuery = useCallback(
+        (overrides?: { page?: number; pageSize?: number }) => {
+            const params = new URLSearchParams()
+            params.set("page", String(overrides?.page ?? page))
+            params.set("pageSize", String(overrides?.pageSize ?? PAGE_SIZE))
+            if (filter !== "all") params.set("status", filter)
+            if (debouncedSearch) params.set("search", debouncedSearch)
+            return params.toString()
+        },
+        [page, filter, debouncedSearch]
+    )
+
+    // Debounce de la búsqueda (reinicia a la primera página).
     useEffect(() => {
-        const fetchIncome = async () => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchInput.trim())
+            setPage(1)
+        }, 350)
+        return () => clearTimeout(timer)
+    }, [searchInput])
+
+    // Reiniciar a la primera página al cambiar el filtro de estado.
+    useEffect(() => {
+        setPage(1)
+    }, [filter])
+
+    // Cargar el tipo de cambio una sola vez.
+    useEffect(() => {
+        const fetchRate = async () => {
             try {
-                const [incomeRes, rateRes] = await Promise.all([
-                    fetch("/api/admin/reports/income"),
-                    fetch("/api/exchange-rate"),
-                ])
-                const incomeResult = await incomeRes.json()
-                if (incomeResult.success) {
-                    setData(incomeResult.data)
-                }
+                const rateRes = await fetch("/api/exchange-rate")
                 if (rateRes.ok) {
                     const rateResult = await rateRes.json()
                     if (rateResult.success && Number.isFinite(rateResult.data.rate)) {
@@ -116,16 +197,36 @@ export default function IncomePage() {
                     }
                 }
             } catch (error) {
-                console.error("Error loading income:", error)
-            } finally {
-                setLoading(false)
+                console.error("Error loading exchange rate:", error)
             }
         }
-
-        fetchIncome()
+        fetchRate()
     }, [])
 
-    if (loading) {
+    // Cargar órdenes en cada cambio de página/filtro/búsqueda.
+    useEffect(() => {
+        let cancelled = false
+        const fetchIncome = async () => {
+            setLoading(true)
+            try {
+                const incomeRes = await fetch(`/api/admin/reports/income?${buildIncomeQuery()}`)
+                const incomeResult = await incomeRes.json()
+                if (!cancelled && incomeResult.success) {
+                    setData(incomeResult.data)
+                }
+            } catch (error) {
+                console.error("Error loading income:", error)
+            } finally {
+                if (!cancelled) setLoading(false)
+            }
+        }
+        fetchIncome()
+        return () => {
+            cancelled = true
+        }
+    }, [buildIncomeQuery])
+
+    if (loading && !data) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
                 <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
@@ -142,8 +243,12 @@ export default function IncomePage() {
     }
 
     const incomeData = data || mockData
+    const orders = incomeData.orders
+    const pagination = incomeData.pagination
 
-    const paidOrdersCount = incomeData.orders.filter((order) => order.status === "PAID").length
+    // Conteo global de órdenes pagadas (de la API), no solo la página actual,
+    // para que la comisión fija por transacción se calcule sobre el total real.
+    const paidOrdersCount = incomeData.paidOrdersCount ?? orders.filter((order) => order.status === "PAID").length
     const commissionBreakdown = calculateIzipayCommission(incomeData.totalPaid, paidOrdersCount, usdRate)
     const commissionAmount = commissionBreakdown.total
     const fixedFeePerTx = commissionBreakdown.fixedFeePerTx
@@ -151,10 +256,6 @@ export default function IncomePage() {
     const effectiveRate = incomeData.totalPaid > 0
         ? (commissionAmount / incomeData.totalPaid) * 100
         : TOTAL_COMMISSION_RATE * 100
-
-    const filteredOrders = incomeData.orders.filter(order => 
-        filter === "all" || order.status === filter
-    )
 
     const getStatusBadge = (status: Order["status"]) => {
         switch (status) {
@@ -184,7 +285,42 @@ export default function IncomePage() {
         )
     }
 
-    const exportToExcel = () => {
+    // Día y horario comprado por item: prioriza la selección del comprador
+    // (día + turno/horario), luego los días con derecho (entitlements) + horario
+    // del día del evento, y por último los días configurados del evento.
+    const getItemScheduleRows = (
+        item: OrderItem
+    ): { key: string; date: string | null; detail: string | null }[] => {
+        if (item.schedule && item.schedule.length > 0) {
+            return item.schedule.map((selection, idx) => ({
+                key: `sel-${idx}`,
+                date: selection.date,
+                detail: selection.shift,
+            }))
+        }
+
+        const dayMap = new Map<string, string | null>()
+        for (const ticket of item.tickets) {
+            for (const entitlement of ticket.entitlements ?? []) {
+                if (!entitlement.date || dayMap.has(entitlement.date)) continue
+                const day = item.eventDays?.find((d) => d.date === entitlement.date)
+                dayMap.set(entitlement.date, day ? `${day.openTime} - ${day.closeTime}` : null)
+            }
+        }
+        if (dayMap.size > 0) {
+            return Array.from(dayMap.entries())
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([date, detail]) => ({ key: `ent-${date}`, date, detail }))
+        }
+
+        return (item.eventDays ?? []).map((day, idx) => ({
+            key: `day-${idx}`,
+            date: day.date,
+            detail: `${day.openTime} - ${day.closeTime}`,
+        }))
+    }
+
+    const exportToExcel = async () => {
         const statusMap: Record<string, string> = {
             PAID: "Pagado",
             PENDING: "Pendiente",
@@ -192,10 +328,27 @@ export default function IncomePage() {
             REFUNDED: "Reembolsado"
         }
 
+        // Traer TODOS los registros que matchean el filtro/búsqueda (no solo la página).
+        setExporting(true)
+        let exportOrders: Order[] = orders
+        try {
+            const res = await fetch(
+                `/api/admin/reports/income?${buildIncomeQuery({ page: 1, pageSize: 100000 })}`
+            )
+            const result = await res.json()
+            if (result.success) {
+                exportOrders = result.data.orders as Order[]
+            }
+        } catch (error) {
+            console.error("Error exporting income:", error)
+        } finally {
+            setExporting(false)
+        }
+
         // Build data rows
         const excelData: Record<string, string | number>[] = []
-        
-        filteredOrders.forEach(order => {
+
+        exportOrders.forEach(order => {
             order.items.forEach((item, idx) => {
                 excelData.push({
                     "Orden": idx === 0 ? `#${order.id.slice(-8).toUpperCase()}` : "",
@@ -341,9 +494,18 @@ export default function IncomePage() {
             {/* Orders Table */}
             <Card>
                 <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                         <CardTitle>Historial de Órdenes</CardTitle>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <Input
+                                    placeholder="Buscar cliente, email u orden..."
+                                    className="pl-9 w-64"
+                                    value={searchInput}
+                                    onChange={(e) => setSearchInput(e.target.value)}
+                                />
+                            </div>
                             <Button
                                 variant={filter === "all" ? "default" : "outline"}
                                 size="sm"
@@ -365,26 +527,32 @@ export default function IncomePage() {
                             >
                                 Pendientes
                             </Button>
-                            <Button 
-                                variant="outline" 
-                                size="sm" 
+                            <Button
+                                variant="outline"
+                                size="sm"
                                 className="gap-2"
                                 onClick={exportToExcel}
-                                disabled={filteredOrders.length === 0}
+                                disabled={exporting || orders.length === 0}
                             >
-                                <Download className="h-4 w-4" />
+                                {exporting ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Download className="h-4 w-4" />
+                                )}
                                 Exportar Excel
                             </Button>
                         </div>
                     </div>
                 </CardHeader>
                 <CardContent>
-                    {filteredOrders.length === 0 ? (
+                    {orders.length === 0 ? (
                         <div className="text-center py-12 text-gray-500">
                             <DollarSign className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                             <p className="font-medium">No hay órdenes para mostrar</p>
                             <p className="text-sm text-gray-400 mt-1">
-                                Las órdenes de compra aparecerán aquí
+                                {debouncedSearch
+                                    ? "Ningún resultado para tu búsqueda"
+                                    : "Las órdenes de compra aparecerán aquí"}
                             </p>
                         </div>
                     ) : (
@@ -403,7 +571,7 @@ export default function IncomePage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
-                                    {filteredOrders.map((order) => (
+                                    {orders.map((order) => (
                                         <tr key={order.id} className="text-sm">
                                             <td className="py-3">
                                                 <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
@@ -455,6 +623,16 @@ export default function IncomePage() {
                                 </tbody>
                             </table>
                         </div>
+                    )}
+                    {pagination && pagination.total > 0 && (
+                        <PaginationControls
+                            page={pagination.page}
+                            totalPages={pagination.totalPages}
+                            total={pagination.total}
+                            onPageChange={setPage}
+                            label="órdenes"
+                            disabled={loading}
+                        />
                     )}
                 </CardContent>
             </Card>
@@ -531,7 +709,49 @@ export default function IncomePage() {
                                                     </p>
                                                 </div>
                                             </div>
-                                            
+
+                                            {/* Día y horario comprado */}
+                                            {(() => {
+                                                const rows = getItemScheduleRows(item)
+                                                const categoryLabel =
+                                                    CATEGORY_LABELS[item.ticketType.event.category ?? "EVENTO"]
+                                                return (
+                                                    <div className="border-t pt-3 mt-3">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <CalendarDays className="h-3.5 w-3.5 text-gray-400" />
+                                                            <p className="text-xs font-medium text-gray-500">
+                                                                Día y horario
+                                                                {categoryLabel ? ` · ${categoryLabel}` : ""}
+                                                            </p>
+                                                        </div>
+                                                        {rows.length > 0 ? (
+                                                            <div className="space-y-1.5">
+                                                                {rows.map((row) => (
+                                                                    <div
+                                                                        key={row.key}
+                                                                        className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm"
+                                                                    >
+                                                                        <span className="font-medium capitalize">
+                                                                            {formatCalendarDate(row.date) || "Fecha no definida"}
+                                                                        </span>
+                                                                        {row.detail && (
+                                                                            <span className="text-gray-600 inline-flex items-center gap-1">
+                                                                                <Clock className="h-3 w-3 text-gray-400" />
+                                                                                {row.detail}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-sm text-gray-400">
+                                                                Sin horario específico
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                )
+                                            })()}
+
                                             {/* Tickets individuales */}
                                             {item.tickets && item.tickets.length > 0 && (
                                                 <div className="border-t pt-3 mt-3">

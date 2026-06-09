@@ -44,6 +44,10 @@ export async function POST(request: NextRequest) {
         const body = await request.json()
         const { qrData, eventId } = body
         const currentShift = normalizeShiftLabel(body.currentShift)
+        // Forzado de ingreso de emergencia: omite la validación estricta de
+        // día/turno para piscina libre (ej. el usuario no vino el día que compró).
+        // Lo pueden activar Staff y Admin (la ruta ya exige STAFF+) y queda registrado.
+        const override = body.override === true
 
         if (!qrData || !eventId) {
             return NextResponse.json(
@@ -142,12 +146,13 @@ export async function POST(request: NextRequest) {
         //   Esto cubre el fallback "compró su entrada para un día pero asiste otro día".
         const withinEventRange = isWithinEventRange(ticket, today)
         if (isPiscina) {
-            if (payload.date !== today) {
+            if (payload.date !== today && !override) {
                 await logScan(ticket.id, user.id, eventId, "INVALID", "QR fuera de fecha")
                 return NextResponse.json({
                     success: false,
                     valid: false,
                     reason: "QR_EXPIRED",
+                    isPiscina: true,
                     message: "El QR no corresponde al dia de hoy. Abre tu ticket para actualizarlo.",
                 })
             }
@@ -182,6 +187,8 @@ export async function POST(request: NextRequest) {
 
         // Para tickets por turno, el turno esperado viene de la compra.
         // Para full day, el turno es opcional, pero si se envia debe existir para el dia.
+        // override (emergencia): se omite toda la validación de turno/hora.
+        if (!override) {
         if (requiresShiftSelection) {
             if (qrShift && expectedShift && !shiftsMatch(qrShift, expectedShift)) {
                 await logScan(ticket.id, user.id, eventId, "INVALID", "Turno del QR no coincide")
@@ -264,9 +271,11 @@ export async function POST(request: NextRequest) {
                     success: false,
                     valid: false,
                     reason: "WRONG_SHIFT",
+                    isPiscina,
                     message: `Este ticket es valido para el turno "${expectedShift}".`,
                 })
             }
+        }
         }
 
         const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
@@ -319,7 +328,7 @@ export async function POST(request: NextRequest) {
                 strictDateSchedule,
                 isPackageLike,
                 usesPurchasedDates,
-            }) || (!isPiscina && withinEventRange)
+            }) || (!isPiscina && withinEventRange) || override
         if (!entitlement && canReassign) {
             const availableEntitlement = ticket.entitlements.find((e) => e.status === "AVAILABLE")
 
@@ -353,7 +362,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (!entitlement && isPackageLike && !strictDateSchedule && !usesPurchasedDates) {
+        if (!entitlement && isPackageLike && (override || (!strictDateSchedule && !usesPurchasedDates))) {
             const attendance = computeAttendance()
             if (packageLimit && attendance.remaining <= 0) {
                 await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Sin ${clasesLabel} disponibles`)
@@ -510,13 +519,22 @@ export async function POST(request: NextRequest) {
         entitlement.status = "USED"
         entitlement.usedAt = usedAt
 
-        await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift, entitlement.date)
+        await logScan(
+            ticket.id,
+            user.id,
+            eventId,
+            "VALID",
+            override ? "OVERRIDE emergencia (fuera de dia/turno)" : undefined,
+            currentShift,
+            entitlement.date
+        )
 
         return NextResponse.json({
             success: true,
             valid: true,
             reason: "VALID",
-            message: "Asistencia registrada",
+            overridden: override,
+            message: override ? "Asistencia registrada (ingreso forzado)" : "Asistencia registrada",
             ticket: {
                 id: ticket.id,
                 ticketCode: ticket.ticketCode,
