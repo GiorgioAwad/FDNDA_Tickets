@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
-import { createQRPayload, generateQRDataURL, formatDateLocal, formatDateUTC } from "@/lib/qr"
+import { createQRPayload, generateQRDataURL, formatDateLocal, formatDateUTC, getTodayDateString } from "@/lib/qr"
 import { getDaysBetween, parseDateOnly } from "@/lib/utils"
 import { extractTicketValidDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { getExpectedShiftForDate, getTicketScheduleSelectionsForAttendee } from "@/lib/ticket-shift"
@@ -227,7 +227,7 @@ export async function GET(
             attendeeDni: ticket.attendeeDni,
         })
 
-        const todayStr = formatDateLocal(new Date())
+        const todayStr = getTodayDateString()
         const usesPurchasedDates = ticketUsesPurchasedDates({
             eventCategory: ticket.event?.category,
             scheduleSelections,

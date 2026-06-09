@@ -16,6 +16,7 @@ import {
     matchesToday,
     buildAttendanceSummary,
     generateEntitlements,
+    isWithinEventRange,
 } from "@/lib/scan-helpers"
 
 export const runtime = "nodejs"
@@ -75,16 +76,6 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        if (payload.date !== today) {
-            await logScan(payload.ticketId, user.id, eventId, "INVALID", "QR fuera de fecha")
-            return NextResponse.json({
-                success: false,
-                valid: false,
-                reason: "QR_EXPIRED",
-                message: "El QR no corresponde al dia de hoy. Abre tu ticket para actualizarlo.",
-            })
-        }
-
         const ticket = await prisma.ticket.findUnique({
             where: { id: payload.ticketId },
             include: {
@@ -141,6 +132,32 @@ export async function POST(request: NextRequest) {
                 valid: false,
                 reason: "WRONG_EVENT",
                 message: "Este ticket es para otro evento",
+            })
+        }
+
+        // Validación de fecha:
+        // - Piscina libre conserva la validación estricta por fecha comprada (los cupos
+        //   se controlan por día, no se puede ingresar otro día con el mismo ticket).
+        // - El resto de eventos permite ingresar cualquier día dentro del rango del evento.
+        //   Esto cubre el fallback "compró su entrada para un día pero asiste otro día".
+        const withinEventRange = isWithinEventRange(ticket, today)
+        if (isPiscina) {
+            if (payload.date !== today) {
+                await logScan(ticket.id, user.id, eventId, "INVALID", "QR fuera de fecha")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "QR_EXPIRED",
+                    message: "El QR no corresponde al dia de hoy. Abre tu ticket para actualizarlo.",
+                })
+            }
+        } else if (!withinEventRange) {
+            await logScan(ticket.id, user.id, eventId, "EXPIRED", "Fecha fuera del rango del evento")
+            return NextResponse.json({
+                success: false,
+                valid: false,
+                reason: "QR_EXPIRED",
+                message: "El evento no esta activo en esta fecha.",
             })
         }
 
@@ -287,13 +304,16 @@ export async function POST(request: NextRequest) {
         // Buscar entitlement para hoy
         let entitlement = ticket.entitlements.find((e) => matchesToday(e.date, today))
 
-        // Reasignacion automatica: se permite en tickets flexibles, pero nunca
-        // cuando el comprador eligio una fecha especifica.
-        const canReassign = canReassignToScanDate({
-            strictDateSchedule,
-            isPackageLike,
-            usesPurchasedDates,
-        })
+        // Reasignacion automatica: se permite en tickets flexibles y, como fallback,
+        // en cualquier ticket (salvo piscina libre) que se escanee dentro del rango del
+        // evento. Asi, si el comprador eligio un dia pero asiste otro, su entrada
+        // disponible se mueve al dia del escaneo y se contabiliza alli.
+        const canReassign =
+            canReassignToScanDate({
+                strictDateSchedule,
+                isPackageLike,
+                usesPurchasedDates,
+            }) || (!isPiscina && withinEventRange)
         if (!entitlement && canReassign) {
             const availableEntitlement = ticket.entitlements.find((e) => e.status === "AVAILABLE")
 
