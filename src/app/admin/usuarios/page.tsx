@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { PaginationControls } from "@/components/ui/pagination-controls"
 import { 
     Loader2, 
     Users, 
@@ -59,6 +60,13 @@ interface UserData {
     }
 }
 
+interface Pagination {
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
+}
+
 interface UsersPageData {
     users: UserData[]
     totalUsers: number
@@ -66,13 +74,18 @@ interface UsersPageData {
     scanners: number
     treasury: number
     verified: number
+    pagination?: Pagination
 }
+
+const PAGE_SIZE = 25
 
 export default function UsuariosPage() {
     const [data, setData] = useState<UsersPageData | null>(null)
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState("")
+    const [debouncedSearch, setDebouncedSearch] = useState("")
     const [filter, setFilter] = useState<"all" | "ADMIN" | "STAFF" | "TREASURY" | "USER">("all")
+    const [page, setPage] = useState(1)
     
     // Modal states
     const [showRoleModal, setShowRoleModal] = useState(false)
@@ -90,9 +103,16 @@ export default function UsuariosPage() {
     const [resettingPassword, setResettingPassword] = useState(false)
     const [newTempPassword, setNewTempPassword] = useState("")
 
-    const fetchUsers = async () => {
+    const fetchUsers = useCallback(async () => {
+        setLoading(true)
         try {
-            const response = await fetch("/api/admin/users")
+            const params = new URLSearchParams()
+            params.set("page", String(page))
+            params.set("pageSize", String(PAGE_SIZE))
+            if (filter !== "all") params.set("role", filter)
+            if (debouncedSearch) params.set("search", debouncedSearch)
+
+            const response = await fetch(`/api/admin/users?${params.toString()}`)
             const result = await response.json()
             if (result.success) {
                 setData(result.data)
@@ -102,11 +122,25 @@ export default function UsuariosPage() {
         } finally {
             setLoading(false)
         }
-    }
+    }, [page, filter, debouncedSearch])
+
+    // Debounce de la búsqueda (reinicia a la primera página).
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchTerm.trim())
+            setPage(1)
+        }, 350)
+        return () => clearTimeout(timer)
+    }, [searchTerm])
+
+    // Reiniciar a la primera página al cambiar el filtro de rol.
+    useEffect(() => {
+        setPage(1)
+    }, [filter])
 
     useEffect(() => {
         fetchUsers()
-    }, [])
+    }, [fetchUsers])
 
     const handleRoleChange = async (userId: string, newRole: "ADMIN" | "STAFF" | "TREASURY" | "USER") => {
         setUpdatingRole(true)
@@ -190,7 +224,7 @@ export default function UsuariosPage() {
         alert("Copiado al portapapeles")
     }
 
-    if (loading) {
+    if (loading && !data) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
                 <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
@@ -199,15 +233,8 @@ export default function UsuariosPage() {
     }
 
     const usersData = data || { users: [], totalUsers: 0, admins: 0, scanners: 0, treasury: 0, verified: 0 }
-
-    // Filter users
-    const filteredUsers = usersData.users.filter(user => {
-        const matchesFilter = filter === "all" || user.role === filter
-        const matchesSearch = searchTerm === "" || 
-            user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            user.email.toLowerCase().includes(searchTerm.toLowerCase())
-        return matchesFilter && matchesSearch
-    })
+    const filteredUsers = usersData.users // filtrado/búsqueda ahora en el servidor
+    const pagination = usersData.pagination
 
     const getRoleBadge = (role: UserData["role"]) => {
         switch (role) {
@@ -477,6 +504,16 @@ export default function UsuariosPage() {
                                 </tbody>
                             </table>
                         </div>
+                    )}
+                    {pagination && pagination.total > 0 && (
+                        <PaginationControls
+                            page={pagination.page}
+                            totalPages={pagination.totalPages}
+                            total={pagination.total}
+                            onPageChange={setPage}
+                            label="usuarios"
+                            disabled={loading}
+                        />
                     )}
                 </CardContent>
             </Card>

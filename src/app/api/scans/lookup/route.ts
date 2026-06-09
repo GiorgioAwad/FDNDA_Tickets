@@ -190,6 +190,9 @@ export async function POST(request: NextRequest) {
         const rawInput = typeof body.rawInput === "string" ? body.rawInput : undefined
         const eventId = body.eventId as string | undefined
         const currentShift = normalizeShiftLabel(body.currentShift)
+        // Forzado de ingreso de emergencia (Staff/Admin): omite la validación
+        // estricta de día/turno para piscina libre. Queda registrado en el scan.
+        const override = body.override === true
 
         if (!eventId) {
             return NextResponse.json(
@@ -295,6 +298,8 @@ export async function POST(request: NextRequest) {
 
         // Para tickets por turno, el turno esperado viene de la compra.
         // Para full day, el turno es opcional, pero si se envia debe existir para el dia.
+        // override (emergencia): se omite toda la validación de turno/hora.
+        if (!override) {
         if (requiresShiftSelection) {
             if (!currentShift) {
                 return NextResponse.json({
@@ -373,6 +378,7 @@ export async function POST(request: NextRequest) {
                 })
             }
         }
+        }
 
         const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
         let isPackageLike = Boolean(
@@ -408,7 +414,8 @@ export async function POST(request: NextRequest) {
 
         let entitlement = ticket.entitlements.find((item) => matchesToday(item.date, today))
 
-        if (!entitlement && !strictDateSchedule && !usesPurchasedDates) {
+        // override (emergencia) permite reasignar el día comprado a hoy aun en piscina.
+        if (!entitlement && (override || (!strictDateSchedule && !usesPurchasedDates))) {
             const availableEntitlement = ticket.entitlements.find((item) => item.status === "AVAILABLE")
             if (availableEntitlement) {
                 const reassignedDate = todayDate
@@ -438,7 +445,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (!entitlement && isPackageLike && !strictDateSchedule && !usesPurchasedDates) {
+        if (!entitlement && isPackageLike && (override || (!strictDateSchedule && !usesPurchasedDates))) {
             const attendance = computeAttendance()
             if (packageLimit && attendance.remaining <= 0) {
                 await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Sin ${clasesLabel} disponibles`)
@@ -595,13 +602,21 @@ export async function POST(request: NextRequest) {
         entitlement.status = "USED"
         entitlement.usedAt = usedAt
 
-        await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift)
+        await logScan(
+            ticket.id,
+            user.id,
+            eventId,
+            "VALID",
+            override ? "OVERRIDE emergencia (fuera de dia/turno)" : undefined,
+            currentShift
+        )
 
         return NextResponse.json({
             success: true,
             valid: true,
             reason: "VALID",
-            message: "Asistencia registrada",
+            overridden: override,
+            message: override ? "Asistencia registrada (ingreso forzado)" : "Asistencia registrada",
             ticket: {
                 id: ticket.id,
                 ticketCode: ticket.ticketCode,

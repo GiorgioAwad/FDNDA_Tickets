@@ -22,7 +22,8 @@ import {
     Volume2,
     VolumeX,
     Loader2,
-    BarChart3
+    BarChart3,
+    ShieldAlert
 } from "lucide-react"
 import type { Html5Qrcode, Html5QrcodeCameraScanConfig } from "html5-qrcode"
 
@@ -34,6 +35,8 @@ interface ScanResult {
     reason?: string
     message?: string
     scannedAt?: string
+    isPiscina?: boolean
+    overridden?: boolean
     ticket?: {
         id: string
         ticketCode: string
@@ -70,6 +73,16 @@ interface SalesSummary {
 }
 
 // ==================== CONSTANTS ====================
+
+// Motivos de rechazo (día/turno) que el forzado de emergencia de piscina puede sobrepasar.
+const FORCEABLE_REASONS = new Set([
+    "QR_EXPIRED",
+    "WRONG_DAY",
+    "WRONG_SHIFT",
+    "INVALID_SHIFT",
+    "NO_CLASSES",
+    "SHIFT_REQUIRED",
+])
 
 const SCAN_DEBOUNCE_MS = 300 // Ultra-fast response between scans
 const MAX_HISTORY_ITEMS = 50
@@ -288,6 +301,8 @@ export default function EventScannerPage() {
     const scanLockedRef = useRef(false)
     const lastScanTimeRef = useRef<number>(0)
     const lastScannedCodeRef = useRef<string | null>(null)
+    // Último input crudo (QR o código) para poder reintentar con forzado de ingreso.
+    const lastScannedRawRef = useRef<string | null>(null)
     const currentShiftRef = useRef("")
     const audioRef = useRef<HTMLAudioElement | null>(null)
     const audioSuccessRef = useRef<HTMLAudioElement | null>(null)
@@ -308,6 +323,7 @@ export default function EventScannerPage() {
     const [showHistory, setShowHistory] = useState(false)
     const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([])
     const [eventName, setEventName] = useState<string>("")
+    const [isPiscina, setIsPiscina] = useState(false)
     const [availableShifts, setAvailableShifts] = useState<string[]>([])
     const [currentShift, setCurrentShift] = useState("")
     const [scanCount, setScanCount] = useState({ today: 0, valid: 0 })
@@ -405,12 +421,14 @@ export default function EventScannerPage() {
                     const payload = await response.json() as {
                         data?: {
                             title?: string
+                            category?: string
                             ticketTypes?: Array<{ validDays?: unknown }>
                         }
                     }
                     const eventData = payload?.data
 
                     setEventName(eventData?.title || "Evento")
+                    setIsPiscina(eventData?.category === "PISCINA_LIBRE")
 
                     const shiftSet = new Set<string>()
                     for (const ticketType of eventData?.ticketTypes ?? []) {
@@ -749,9 +767,11 @@ export default function EventScannerPage() {
 
     // ==================== SCAN HANDLERS ====================
 
-    const handleScan = useCallback(async (qrData: string) => {
-        // Prevent duplicate processing
-        if (scanLockedRef.current || isProcessing) {
+    const handleScan = useCallback(async (qrData: string, opts?: { override?: boolean }) => {
+        const override = opts?.override === true
+
+        // Prevent duplicate processing (el forzado de emergencia sí puede reintentar).
+        if (!override && (scanLockedRef.current || isProcessing)) {
             return
         }
 
@@ -761,6 +781,7 @@ export default function EventScannerPage() {
         }
 
         lastScannedCodeRef.current = parsedPayload.displayCode
+        lastScannedRawRef.current = qrData
         setScanning(false)
         scanLockedRef.current = true
         setIsProcessing(true)
@@ -774,13 +795,14 @@ export default function EventScannerPage() {
             const selectedShift = currentShiftRef.current || null
             const body =
                 parsedPayload.kind === "signed-qr"
-                    ? { qrData: parsedPayload.qrData, eventId, currentShift: selectedShift }
+                    ? { qrData: parsedPayload.qrData, eventId, currentShift: selectedShift, override }
                     : {
                           ticketCode: parsedPayload.ticketCode,
                           ticketId: parsedPayload.ticketId,
                           rawInput: qrData,
                           eventId,
                           currentShift: selectedShift,
+                          override,
                       }
 
             const response = await fetch(endpoint, {
@@ -816,6 +838,19 @@ export default function EventScannerPage() {
         }
     }, [eventId, playSound, vibrate, addToHistory])
 
+    // Forzado de ingreso (emergencia) para piscina libre: reintenta el último
+    // escaneo omitiendo la validación de día/turno. Confirmación previa.
+    const forceLastScan = useCallback(() => {
+        const raw = lastScannedRawRef.current
+        if (!raw || isProcessing) return
+        const confirmed = window.confirm(
+            "¿Forzar el ingreso de este ticket fuera de su día/horario comprado? Se registrará como ingreso de emergencia."
+        )
+        if (!confirmed) return
+        scanLockedRef.current = false
+        handleScan(raw, { override: true })
+    }, [handleScan, isProcessing])
+
     const handleManualSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault()
         const parsedManual = parseLookupPayload(manualCode)
@@ -830,6 +865,7 @@ export default function EventScannerPage() {
 
         setScanning(false)
         lastScannedCodeRef.current = parsedManual.displayCode
+        lastScannedRawRef.current = manualCode
         scanLockedRef.current = true
         setIsProcessing(true)
 
@@ -1310,6 +1346,24 @@ export default function EventScannerPage() {
                                         )}
                                     </div>
                                 )}
+
+                                {/* Forzar ingreso (emergencia) — solo piscina y rechazos de día/turno */}
+                                {!scanResult.valid &&
+                                    (isPiscina || scanResult.isPiscina) &&
+                                    FORCEABLE_REASONS.has(scanResult.reason ?? "") && (
+                                        <Button
+                                            onClick={forceLastScan}
+                                            disabled={isProcessing}
+                                            className="w-full bg-amber-500 text-white hover:bg-amber-600 font-bold h-12 text-base shadow-lg mb-3"
+                                        >
+                                            {isProcessing ? (
+                                                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                                            ) : (
+                                                <ShieldAlert className="h-5 w-5 mr-2" />
+                                            )}
+                                            Forzar ingreso (emergencia)
+                                        </Button>
+                                    )}
 
                                 {/* Action button */}
                                 <Button
