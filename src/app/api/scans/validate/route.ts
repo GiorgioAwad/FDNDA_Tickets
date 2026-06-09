@@ -16,6 +16,7 @@ import {
     matchesToday,
     buildAttendanceSummary,
     generateEntitlements,
+    isWithinEventRange,
 } from "@/lib/scan-helpers"
 
 export const runtime = "nodejs"
@@ -75,16 +76,6 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        if (payload.date !== today) {
-            await logScan(payload.ticketId, user.id, eventId, "INVALID", "QR fuera de fecha")
-            return NextResponse.json({
-                success: false,
-                valid: false,
-                reason: "QR_EXPIRED",
-                message: "El QR no corresponde al dia de hoy. Abre tu ticket para actualizarlo.",
-            })
-        }
-
         const ticket = await prisma.ticket.findUnique({
             where: { id: payload.ticketId },
             include: {
@@ -141,6 +132,32 @@ export async function POST(request: NextRequest) {
                 valid: false,
                 reason: "WRONG_EVENT",
                 message: "Este ticket es para otro evento",
+            })
+        }
+
+        // Validación de fecha:
+        // - Piscina libre conserva la validación estricta por fecha comprada (los cupos
+        //   se controlan por día, no se puede ingresar otro día con el mismo ticket).
+        // - El resto de eventos permite ingresar cualquier día dentro del rango del evento.
+        //   Esto cubre el fallback "compró su entrada para un día pero asiste otro día".
+        const withinEventRange = isWithinEventRange(ticket, today)
+        if (isPiscina) {
+            if (payload.date !== today) {
+                await logScan(ticket.id, user.id, eventId, "INVALID", "QR fuera de fecha")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "QR_EXPIRED",
+                    message: "El QR no corresponde al dia de hoy. Abre tu ticket para actualizarlo.",
+                })
+            }
+        } else if (!withinEventRange) {
+            await logScan(ticket.id, user.id, eventId, "EXPIRED", "Fecha fuera del rango del evento")
+            return NextResponse.json({
+                success: false,
+                valid: false,
+                reason: "QR_EXPIRED",
+                message: "El evento no esta activo en esta fecha.",
             })
         }
 
@@ -266,34 +283,43 @@ export async function POST(request: NextRequest) {
             packageLimit = 1
         }
 
-        let scanCount = 0
-        if (isPackageLike) {
-            scanCount = await prisma.scan.count({
-                where: { ticketId: ticket.id, result: "VALID" },
-            })
-        }
+        // Scans validos previos del ticket. En tickets full-day (varios turnos por dia)
+        // cada turno escaneado es una entrada independiente, asi que contamos por scans,
+        // no por dias/entitlements.
+        const multiShiftAttendance = !requiresShiftSelection && hasMultipleShifts
+        let scanCount = await prisma.scan.count({
+            where: { ticketId: ticket.id, result: "VALID" },
+        })
 
         const computeAttendance = () => {
+            const shiftMultiplier = multiShiftAttendance ? configuredShifts.length : 1
             if (isPackageLike && packageLimit) {
-                const shiftMultiplier = !requiresShiftSelection && hasMultipleShifts ? configuredShifts.length : 1
                 const adjustedTotal = packageLimit * shiftMultiplier
                 const usedEntitlements = ticket.entitlements.filter((item) => item.status === "USED").length
                 const used = Math.max(usedEntitlements, scanCount)
                 return { total: adjustedTotal, used, remaining: Math.max(adjustedTotal - used, 0) }
             }
-            return buildAttendanceSummary(ticket)
+            const summary = buildAttendanceSummary(ticket)
+            if (multiShiftAttendance) {
+                const used = Math.max(summary.used, scanCount)
+                return { total: summary.total, used, remaining: Math.max(summary.total - used, 0) }
+            }
+            return summary
         }
 
         // Buscar entitlement para hoy
         let entitlement = ticket.entitlements.find((e) => matchesToday(e.date, today))
 
-        // Reasignacion automatica: se permite en tickets flexibles, pero nunca
-        // cuando el comprador eligio una fecha especifica.
-        const canReassign = canReassignToScanDate({
-            strictDateSchedule,
-            isPackageLike,
-            usesPurchasedDates,
-        })
+        // Reasignacion automatica: se permite en tickets flexibles y, como fallback,
+        // en cualquier ticket (salvo piscina libre) que se escanee dentro del rango del
+        // evento. Asi, si el comprador eligio un dia pero asiste otro, su entrada
+        // disponible se mueve al dia del escaneo y se contabiliza alli.
+        const canReassign =
+            canReassignToScanDate({
+                strictDateSchedule,
+                isPackageLike,
+                usesPurchasedDates,
+            }) || (!isPiscina && withinEventRange)
         if (!entitlement && canReassign) {
             const availableEntitlement = ticket.entitlements.find((e) => e.status === "AVAILABLE")
 
@@ -386,7 +412,7 @@ export async function POST(request: NextRequest) {
                     where: {
                         ticketId: ticket.id,
                         result: "VALID",
-                        date: todayDate,
+                        date: entitlement.date,
                     },
                     select: { shift: true },
                 })
@@ -398,10 +424,8 @@ export async function POST(request: NextRequest) {
                 if (!alreadyScannedThisShift) {
                     // Turno diferente, permitir scan
                     const usedAt = new Date()
-                    await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift)
-                    if (isPackageLike) {
-                        scanCount += 1
-                    }
+                    await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift, entitlement.date)
+                    scanCount += 1
 
                     return NextResponse.json({
                         success: true,
@@ -486,7 +510,7 @@ export async function POST(request: NextRequest) {
         entitlement.status = "USED"
         entitlement.usedAt = usedAt
 
-        await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift)
+        await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift, entitlement.date)
 
         return NextResponse.json({
             success: true,
@@ -520,7 +544,8 @@ async function logScan(
     eventId: string,
     result: ScanResultType,
     notes?: string,
-    shift?: string | null
+    shift?: string | null,
+    scanDate?: Date | null
 ) {
     if (!ticketId) return
 
@@ -530,7 +555,11 @@ async function logScan(
                 ticketId,
                 staffId,
                 eventId,
-                date: new Date(),
+                // `date` es el DÍA de la entrada consumida (no el timestamp del escaneo,
+                // que vive en `scannedAt`). Guardar el día del entitlement evita el
+                // desfase de zona horaria que dejaba los cuadros del carnet en 0 e
+                // inflaba el total con entitlements fantasma.
+                date: scanDate ?? new Date(),
                 result,
                 shift: shift || null,
                 notes,

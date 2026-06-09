@@ -165,8 +165,20 @@ export function parseQRPayload(qrData: string): SignedQRPayload | null {
 }
 
 /**
- * Get today's date in YYYY-MM-DD format
+ * Get today's date in YYYY-MM-DD format, computed in Lima time.
+ *
+ * En producción el contenedor corre en UTC, por lo que de noche (Lima = UTC-5)
+ * `formatDateLocal(new Date())` saltaba al día siguiente y los QR emitidos para
+ * "hoy" eran rechazados con "no corresponde al día de hoy". Calculamos el día
+ * civil en America/Lima para evitar ese off-by-one.
  */
 export function getTodayDateString(): string {
-    return formatDateLocal(new Date())
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Lima",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(new Date())
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ""
+    return `${get("year")}-${get("month")}-${get("day")}`
 }
