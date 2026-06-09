@@ -283,22 +283,28 @@ export async function POST(request: NextRequest) {
             packageLimit = 1
         }
 
-        let scanCount = 0
-        if (isPackageLike) {
-            scanCount = await prisma.scan.count({
-                where: { ticketId: ticket.id, result: "VALID" },
-            })
-        }
+        // Scans validos previos del ticket. En tickets full-day (varios turnos por dia)
+        // cada turno escaneado es una entrada independiente, asi que contamos por scans,
+        // no por dias/entitlements.
+        const multiShiftAttendance = !requiresShiftSelection && hasMultipleShifts
+        let scanCount = await prisma.scan.count({
+            where: { ticketId: ticket.id, result: "VALID" },
+        })
 
         const computeAttendance = () => {
+            const shiftMultiplier = multiShiftAttendance ? configuredShifts.length : 1
             if (isPackageLike && packageLimit) {
-                const shiftMultiplier = !requiresShiftSelection && hasMultipleShifts ? configuredShifts.length : 1
                 const adjustedTotal = packageLimit * shiftMultiplier
                 const usedEntitlements = ticket.entitlements.filter((item) => item.status === "USED").length
                 const used = Math.max(usedEntitlements, scanCount)
                 return { total: adjustedTotal, used, remaining: Math.max(adjustedTotal - used, 0) }
             }
-            return buildAttendanceSummary(ticket)
+            const summary = buildAttendanceSummary(ticket)
+            if (multiShiftAttendance) {
+                const used = Math.max(summary.used, scanCount)
+                return { total: summary.total, used, remaining: Math.max(summary.total - used, 0) }
+            }
+            return summary
         }
 
         // Buscar entitlement para hoy
@@ -406,7 +412,7 @@ export async function POST(request: NextRequest) {
                     where: {
                         ticketId: ticket.id,
                         result: "VALID",
-                        date: todayDate,
+                        date: entitlement.date,
                     },
                     select: { shift: true },
                 })
@@ -418,10 +424,8 @@ export async function POST(request: NextRequest) {
                 if (!alreadyScannedThisShift) {
                     // Turno diferente, permitir scan
                     const usedAt = new Date()
-                    await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift)
-                    if (isPackageLike) {
-                        scanCount += 1
-                    }
+                    await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift, entitlement.date)
+                    scanCount += 1
 
                     return NextResponse.json({
                         success: true,
@@ -506,7 +510,7 @@ export async function POST(request: NextRequest) {
         entitlement.status = "USED"
         entitlement.usedAt = usedAt
 
-        await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift)
+        await logScan(ticket.id, user.id, eventId, "VALID", undefined, currentShift, entitlement.date)
 
         return NextResponse.json({
             success: true,
@@ -540,7 +544,8 @@ async function logScan(
     eventId: string,
     result: ScanResultType,
     notes?: string,
-    shift?: string | null
+    shift?: string | null,
+    scanDate?: Date | null
 ) {
     if (!ticketId) return
 
@@ -550,7 +555,11 @@ async function logScan(
                 ticketId,
                 staffId,
                 eventId,
-                date: new Date(),
+                // `date` es el DÍA de la entrada consumida (no el timestamp del escaneo,
+                // que vive en `scannedAt`). Guardar el día del entitlement evita el
+                // desfase de zona horaria que dejaba los cuadros del carnet en 0 e
+                // inflaba el total con entitlements fantasma.
+                date: scanDate ?? new Date(),
                 result,
                 shift: shift || null,
                 notes,
