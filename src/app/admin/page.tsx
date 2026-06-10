@@ -315,7 +315,7 @@ export default async function AdminDashboardPage() {
                                                 +{formatPrice(Number(order.totalAmount))}
                                             </p>
                                             <p className="text-[11px] text-muted-foreground">
-                                                {formatDate(order.createdAt)}
+                                                {formatDate(order.createdAt, { timeZone: "America/Lima" })}
                                             </p>
                                         </div>
                                     </div>
