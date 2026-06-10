@@ -162,8 +162,34 @@ model User {
   discountCodes    DiscountCode[]   @relation("DiscountCreator")
   complaintBookEntries ComplaintBookEntry[]
   uploadedAssets   UploadedAsset[]
+  billingProfile   UserBillingProfile?
 
   @@map("users")
+}
+
+// Datos de comprobante guardados por el usuario (opt-in "recordar mis datos")
+// para autorrellenar el checkout en su próxima compra. Guarda los valores tal
+// cual los ingresa en el formulario (dirección sin componer, nombre desglosado).
+model UserBillingProfile {
+  id                    String       @id @default(cuid())
+  userId                String       @unique
+  documentType          DocumentType @default(BOLETA)
+  buyerDocNumber        String
+  buyerName             String?
+  buyerAddress          String?
+  buyerEmail            String?
+  buyerPhone            String?
+  buyerUbigeo           String?
+  buyerFirstName        String?
+  buyerSecondName       String?
+  buyerLastNamePaternal String?
+  buyerLastNameMaternal String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_billing_profiles")
 }
 
 model ComplaintBookEntry {

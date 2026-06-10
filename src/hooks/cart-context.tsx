@@ -81,6 +81,7 @@ interface CartContextType {
     ) => void
     billingData: BillingData
     updateBillingData: (field: keyof BillingData, value: string) => void
+    prefillBillingData: (data: Partial<BillingData>) => void
     clearCart: () => void
     total: number
     itemCount: number
@@ -663,6 +664,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         emitCartChange()
     }
 
+    // Rellena varios campos de una sola escritura (p. ej. autorrelleno desde el
+    // perfil guardado). No aplica el reseteo de documentType de updateBillingData.
+    const prefillBillingData = (data: Partial<BillingData>) => {
+        if (typeof window === "undefined") return
+        if (!billingKey) return
+        const current = JSON.parse(
+            window.localStorage.getItem(billingKey) ?? JSON.stringify(DEFAULT_BILLING_DATA)
+        )
+        const updated = { ...current, ...data }
+        window.localStorage.setItem(billingKey, JSON.stringify(updated))
+        emitCartChange()
+    }
+
     const clearCart = () => {
         if (typeof window === "undefined") return
         if (!cartKey) return
@@ -687,6 +701,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 updateAttendeeScheduleSelection,
                 billingData,
                 updateBillingData,
+                prefillBillingData,
                 clearCart,
                 total,
                 itemCount,
@@ -709,6 +724,7 @@ export function useCart() {
             updateAttendeeScheduleSelection: () => {},
             billingData: DEFAULT_BILLING_DATA,
             updateBillingData: () => {},
+            prefillBillingData: () => {},
             clearCart: () => {},
             total: 0,
             itemCount: 0,

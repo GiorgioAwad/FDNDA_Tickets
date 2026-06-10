@@ -40,6 +40,7 @@ export default function CheckoutPage() {
         updateAttendeeScheduleSelection,
         billingData,
         updateBillingData,
+        prefillBillingData,
         total,
         clearCart,
     } = useCart()
@@ -59,6 +60,8 @@ export default function CheckoutPage() {
     } | null>(null)
 
     const [showAuthModal, setShowAuthModal] = useState(false)
+    const [rememberBilling, setRememberBilling] = useState(false)
+    const [billingPrefilled, setBillingPrefilled] = useState(false)
     const [discountCode, setDiscountCode] = useState("")
     const [discountLoading, setDiscountLoading] = useState(false)
     const [discountError, setDiscountError] = useState("")
@@ -109,6 +112,57 @@ export default function CheckoutPage() {
         emailAutofilledRef.current = true
         updateBillingData("buyerEmail", session.user.email)
     }, [status, session?.user?.email, billingData.buyerEmail, updateBillingData])
+
+    // Autorrelleno opt-in: si el usuario guardó sus datos en una compra previa,
+    // los traemos y prerellenamos el formulario (editable). No pisamos lo que ya
+    // haya escrito en esta sesión.
+    const billingPrefillRef = useRef(false)
+    useEffect(() => {
+        if (billingPrefillRef.current) return
+        if (status !== "authenticated") return
+        billingPrefillRef.current = true
+
+        const alreadyTyped = Boolean(
+            billingData.buyerDocNumber ||
+            billingData.buyerFirstName ||
+            billingData.buyerName ||
+            billingData.buyerPhone
+        )
+
+        const run = async () => {
+            try {
+                const res = await fetch("/api/me/billing-profile")
+                if (!res.ok) return
+                const json = await res.json()
+                const profile = json?.data
+                if (!profile) return
+
+                // Tiene perfil guardado -> la casilla queda marcada por defecto.
+                setRememberBilling(true)
+                if (alreadyTyped) return
+
+                prefillBillingData({
+                    documentType: profile.documentType === "FACTURA" ? "FACTURA" : "BOLETA",
+                    buyerDocNumber: profile.buyerDocNumber ?? "",
+                    buyerName: profile.buyerName ?? "",
+                    buyerAddress: profile.buyerAddress ?? "",
+                    buyerEmail: profile.buyerEmail || session?.user?.email || "",
+                    buyerPhone: profile.buyerPhone ?? "",
+                    buyerUbigeo: profile.buyerUbigeo ?? "",
+                    buyerFirstName: profile.buyerFirstName ?? "",
+                    buyerSecondName: profile.buyerSecondName ?? "",
+                    buyerLastNamePaternal: profile.buyerLastNamePaternal ?? "",
+                    buyerLastNameMaternal: profile.buyerLastNameMaternal ?? "",
+                })
+                setBillingPrefilled(true)
+            } catch {
+                // best-effort: si falla, el usuario llena el formulario normalmente
+            }
+        }
+
+        void run()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [status])
 
     const hasMissingAttendeeData = useMemo(
         () =>
@@ -257,6 +311,7 @@ export default function CheckoutPage() {
                         buyerLastNameMaternal: billingData.buyerLastNameMaternal,
                     },
                     discountCodeId: appliedDiscount?.id || null,
+                    rememberBilling,
                 }),
             })
 
@@ -406,6 +461,15 @@ export default function CheckoutPage() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-4">
+                                {billingPrefilled && (
+                                    <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                                        <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                                        <span>
+                                            Rellenamos tus datos con los de tu última compra. Revísalos
+                                            antes de pagar; puedes editar cualquier campo.
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
@@ -584,6 +648,22 @@ export default function CheckoutPage() {
                                         )}
                                     </>
                                 )}
+
+                                <label className="flex items-start gap-2 cursor-pointer border-t pt-4 mt-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={rememberBilling}
+                                        onChange={(e) => setRememberBilling(e.target.checked)}
+                                        className="mt-0.5 accent-black"
+                                    />
+                                    <span className="text-sm text-gray-700">
+                                        Recordar mis datos de comprobante para mi próxima compra
+                                        <span className="block text-xs text-gray-500">
+                                            Guardamos estos datos en tu cuenta para autocompletar el checkout.
+                                            Puedes editarlos o quitar la opción cuando quieras.
+                                        </span>
+                                    </span>
+                                </label>
                             </CardContent>
                         </Card>
 

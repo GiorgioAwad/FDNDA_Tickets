@@ -20,6 +20,7 @@ export const runtime = "nodejs"
 
 const orderRequestSchema = createOrderSchema.extend({
     discountCodeId: z.string().optional().nullable(),
+    rememberBilling: z.boolean().optional().default(false),
 })
 
 const normalizeServilexIndicator = (value: unknown): "AC" | "OS" | "PN" | "PA" => {
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        const { eventId, items, billing, discountCodeId } = parsedBody.data
+        const { eventId, items, billing, discountCodeId, rememberBilling } = parsedBody.data
         const billingSnapshot = buildBillingSnapshot(billing, user.email)
         const cacheInvalidations = new Set<string>()
         const orderSeedTimestamp = Date.now()
@@ -585,6 +586,38 @@ export async function POST(request: NextRequest) {
                 return onTicketSold(cacheEventId, cacheTicketTypeId)
             })
         )
+
+        // Opt-in "recordar mis datos de comprobante": guardamos los valores TAL
+        // CUAL los ingresó (dirección sin componer con ubigeo, nombre desglosado)
+        // para poder autorrellenar el formulario sin duplicar el ubigeo. Si destildó
+        // la casilla, olvidamos cualquier perfil previo. Best-effort: nunca rompe la
+        // orden ya creada. Fuera de la transacción de stock para no alargar el lock.
+        try {
+            if (rememberBilling) {
+                const profileData = {
+                    documentType: billing.documentType,
+                    buyerDocNumber: billing.buyerDocNumber,
+                    buyerName: billing.buyerName ?? null,
+                    buyerAddress: billing.buyerAddress ?? null,
+                    buyerEmail: billing.buyerEmail ?? null,
+                    buyerPhone: billing.buyerPhone ?? null,
+                    buyerUbigeo: billing.buyerUbigeo ?? null,
+                    buyerFirstName: billing.buyerFirstName ?? null,
+                    buyerSecondName: billing.buyerSecondName ?? null,
+                    buyerLastNamePaternal: billing.buyerLastNamePaternal ?? null,
+                    buyerLastNameMaternal: billing.buyerLastNameMaternal ?? null,
+                }
+                await prisma.userBillingProfile.upsert({
+                    where: { userId: user.id },
+                    create: { userId: user.id, ...profileData },
+                    update: profileData,
+                })
+            } else {
+                await prisma.userBillingProfile.deleteMany({ where: { userId: user.id } })
+            }
+        } catch (billingProfileError) {
+            console.error("No se pudo guardar el perfil de comprobante:", billingProfileError)
+        }
 
         return NextResponse.json({
             success: true,
