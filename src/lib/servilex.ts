@@ -452,7 +452,15 @@ function sanitizeUtf8Text(value: string): string {
 }
 
 function toDateOnly(value: Date): string {
-    return value.toISOString().slice(0, 10)
+    // Fecha calendario en hora de Perú (UTC-5), no UTC. El servidor corre en UTC,
+    // así que un slice de toISOString() corría las ventas nocturnas Lima al día
+    // siguiente (y cruzaba periodo tributario a fin de mes). Ver fechaEmision.
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Lima",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(value)
 }
 
 function toAmountNumber(value: unknown): number {
