@@ -268,6 +268,16 @@ export function getIzipaySearchTransactionUrl(): string {
     return `${IZIPAY_ENDPOINT.replace(/\/$/, "")}/orderinfo/v1/Transaction/Search`
 }
 
+export function getIzipayTokenGenerateUrl(): string {
+    const override = process.env.IZIPAY_TOKEN_GENERATE_URL?.trim()
+
+    if (override) {
+        return override
+    }
+
+    return `${IZIPAY_ENDPOINT.replace(/\/$/, "")}/security/v1/Token/Generate`
+}
+
 export function getIzipayQueryLanguage(): "ESP" | "ENG" {
     const language = (process.env.IZIPAY_QUERY_LANGUAGE || "ESP").trim().toUpperCase()
     return language === "ENG" ? "ENG" : "ESP"
@@ -481,7 +491,12 @@ export async function createIzipaySession(
 export interface IzipaySearchTransactionInput {
     merchantCode: string
     orderNumber: string
-    transactionId: string
+    /**
+     * transactionId de la compra original. Ya no se usa para autenticar la
+     * consulta (el header transactionId debe coincidir con el del token de
+     * sesión generado para la consulta), se mantiene por compatibilidad.
+     */
+    transactionId?: string
     language?: "ESP" | "ENG"
 }
 
@@ -500,9 +515,123 @@ function isRetryableQueryStatus(status: number): boolean {
     return status === 408 || status === 425 || status === 429 || status >= 500
 }
 
+// La API de consultas se autentica con el token de sesión crudo en Authorization
+// (error P02 de Izipay: "El token no puede ser portador/Bearer"). Se deja un
+// override por si Izipay cambia el esquema a Bearer.
+function buildIzipayQueryAuthorization(token: string): string {
+    const scheme = (process.env.IZIPAY_QUERY_AUTH_SCHEME || "").trim().toLowerCase()
+    return scheme === "bearer" ? `Bearer ${token}` : token
+}
+
+interface IzipayQuerySessionTokenResult {
+    success: boolean
+    token?: string
+    error?: string
+    retryable?: boolean
+}
+
+/**
+ * Genera el token de sesión que exige Izipay antes de llamar a la API de
+ * consultas (Transaction/Search). El mismo `transactionId` enviado aquí debe
+ * reutilizarse como header en la consulta. El token dura 15 minutos y es de un
+ * solo uso.
+ */
+async function generateIzipayQuerySessionToken(input: {
+    merchantCode: string
+    orderNumber: string
+    transactionId: string
+    amount?: string
+}): Promise<IzipayQuerySessionTokenResult> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10_000)
+
+    try {
+        const response = await fetch(getIzipayTokenGenerateUrl(), {
+            method: "POST",
+            headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+                transactionId: input.transactionId,
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+                requestSource: "ECOMMERCE",
+                merchantCode: input.merchantCode,
+                orderNumber: input.orderNumber,
+                publicKey: IZIPAY_API_KEY,
+                // Izipay pide "0.00" para operaciones que no son de pago (consultas).
+                amount: input.amount || "0.00",
+            }),
+        })
+
+        const rawText = await response.text().catch(() => "")
+        let data: Record<string, unknown> = {}
+        try {
+            data = JSON.parse(rawText) as Record<string, unknown>
+        } catch {
+            // respuesta no JSON: se reporta abajo con el texto crudo
+        }
+
+        if (!response.ok) {
+            const message = String(
+                data.message || data.error || data.code || rawText || `HTTP ${response.status}`
+            )
+            return {
+                success: false,
+                error: `Izipay Token/Generate HTTP ${response.status}: ${message}`,
+                retryable: isRetryableQueryStatus(response.status),
+            }
+        }
+
+        const responseData = (data.response as Record<string, unknown> | undefined) || undefined
+        const token =
+            (responseData?.token as string | undefined) ||
+            (data.token as string | undefined)
+
+        if (!token) {
+            return {
+                success: false,
+                error: `Izipay Token/Generate sin token (code=${String(data.code ?? "?")}: ${String(data.message ?? "")})`,
+                retryable: false,
+            }
+        }
+
+        return { success: true, token }
+    } catch (error) {
+        return {
+            success: false,
+            error:
+                error instanceof Error && error.name === "AbortError"
+                    ? "Izipay Token/Generate timeout"
+                    : (error as Error).message,
+            retryable: true,
+        }
+    } finally {
+        clearTimeout(timeoutId)
+    }
+}
+
 export async function searchIzipayTransaction(
     input: IzipaySearchTransactionInput
 ): Promise<IzipaySearchTransactionResult> {
+    // Izipay exige generar un token de sesión y usar el MISMO transactionId
+    // en el header del Token/Generate y del Transaction/Search. Se genera uno
+    // nuevo por consulta (el de la compra original no sirve para autenticar).
+    const queryTransactionId = formatIzipayDateTime()
+    const session = await generateIzipayQuerySessionToken({
+        merchantCode: input.merchantCode,
+        orderNumber: input.orderNumber,
+        transactionId: queryTransactionId,
+    })
+
+    if (!session.success || !session.token) {
+        return {
+            success: false,
+            error: session.error || "No se pudo generar token de sesión Izipay",
+            retryable: session.retryable ?? true,
+        }
+    }
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 10_000)
 
@@ -511,9 +640,9 @@ export async function searchIzipayTransaction(
             method: "POST",
             headers: {
                 Accept: "application/json",
-                Authorization: IZIPAY_API_KEY,
+                Authorization: buildIzipayQueryAuthorization(session.token),
                 "Content-Type": "application/json",
-                transactionId: input.transactionId,
+                transactionId: queryTransactionId,
             },
             signal: controller.signal,
             body: JSON.stringify({
