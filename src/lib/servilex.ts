@@ -566,13 +566,52 @@ function normalizeReferenceCode(raw: unknown, fallbackSeed: string): string {
     return buildFallbackDocumentNumber(fallbackSeed).slice(-SERVILEX_REFERENCE_MAX_LENGTH)
 }
 
+type ServilexQuoteEscapeMode = "backslash" | "strip" | "double" | "off"
+
+function getServilexQuoteEscapeMode(): ServilexQuoteEscapeMode {
+    const raw = (process.env.SERVILEX_QUOTE_ESCAPE_MODE || "backslash").trim().toLowerCase()
+    if (raw === "strip" || raw === "double" || raw === "off") {
+        return raw
+    }
+    return "backslash"
+}
+
+// ABIO no tolera el apostrofo crudo en los textos del payload: rompe su
+// procesamiento del JSON (reportado 2026-06-10 con "Dall' Orso") y pidieron
+// enviar ese caracter escapado. Por defecto se envia \' (y \ como \\).
+// SERVILEX_QUOTE_ESCAPE_MODE permite cambiar a "strip" (eliminarlo),
+// "double" ('' estilo SQL) u "off" sin redeploy si ABIO espera otra cosa.
+function escapeServilexQuotes(value: string): string {
+    const normalized = value.replace(/[‘’ʼ´`]/g, "'")
+
+    if (!normalized.includes("'") && !normalized.includes("\\")) {
+        return normalized
+    }
+
+    const mode = getServilexQuoteEscapeMode()
+
+    if (mode === "off") {
+        return normalized
+    }
+
+    if (mode === "strip") {
+        return normalized.replace(/'/g, "")
+    }
+
+    if (mode === "double") {
+        return normalized.replace(/'/g, "''")
+    }
+
+    return normalized.replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+}
+
 function normalizeServilexJsonValue(value: unknown): unknown {
     if (value instanceof Date) {
         return value.toJSON()
     }
 
     if (typeof value === "string") {
-        return sanitizeUtf8Text(value)
+        return escapeServilexQuotes(sanitizeUtf8Text(value))
     }
 
     if (Array.isArray(value)) {

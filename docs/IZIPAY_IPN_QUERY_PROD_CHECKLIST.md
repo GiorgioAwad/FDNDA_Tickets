@@ -75,8 +75,74 @@ La consulta `search_transaction` usa:
 - `IZIPAY_API_KEY`
 - `IZIPAY_HASH_KEY`
 - `IZIPAY_MERCHANT_CODE`
-- `IZIPAY_ENDPOINT` o `IZIPAY_SEARCH_TRANSACTION_URL`
+- `IZIPAY_ENDPOINT` o `IZIPAY_SEARCH_TRANSACTION_URL` / `IZIPAY_TOKEN_GENERATE_URL`
 - `IZIPAY_QUERY_LANGUAGE` opcional
+- `IZIPAY_QUERY_AUTH_SCHEME` opcional (vacio = token crudo en `Authorization`; `bearer` = prefijo `Bearer `)
+
+### 4.1 Flujo de autenticacion (corregido 2026-06-10)
+
+La API de consultas NO acepta el API key directo en `Authorization` (eso devolvia
+HTTP 500). El flujo correcto, confirmado contra la spec oficial
+(`https://developers.izipay.pe/yaml/api-v1-esp.yaml`):
+
+1. `POST {IZIPAY_ENDPOINT}/security/v1/Token/Generate`
+   - Header `transactionId`: id unico por consulta (5-40 chars). El MISMO id se
+     reutiliza en el paso 2.
+   - Body: `requestSource: "ECOMMERCE"`, `merchantCode`, `orderNumber`
+     (= providerOrderNumber de la orden), `publicKey` (= `IZIPAY_API_KEY`,
+     "Clave API Nuevo Boton de Pagos"), `amount: "0.00"` (valor que indica
+     Izipay para operaciones que no son de pago).
+   - Respuesta: `response.token` (vigencia 15 min, un solo uso).
+2. `POST {IZIPAY_ENDPOINT}/orderinfo/v1/Transaction/Search`
+   - Headers: `Authorization: <token crudo>` (sin `Bearer`, segun codigo de
+     error P02 de Izipay; configurable con `IZIPAY_QUERY_AUTH_SCHEME=bearer`),
+     `transactionId: <el mismo del paso 1>`.
+   - Body: `{ "merchantCode": "...", "numberOrden": "<orderNumber>", "language": "ESP" }`.
+
+cURL de referencia (los que pidio soporte Izipay):
+
+```bash
+TXN="$(date +%s%6N)"   # id unico de la consulta
+
+TOKEN=$(curl -s -X POST "https://api-pw.izipay.pe/security/v1/Token/Generate" \
+  -H "Content-Type: application/json" \
+  -H "transactionId: ${TXN}" \
+  -d '{
+    "requestSource": "ECOMMERCE",
+    "merchantCode": "4081197",
+    "orderNumber": "00001k228pz1eb8",
+    "publicKey": "<IZIPAY_API_KEY>",
+    "amount": "0.00"
+  }' | jq -r '.response.token')
+
+curl -s -X POST "https://api-pw.izipay.pe/orderinfo/v1/Transaction/Search" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: ${TOKEN}" \
+  -H "transactionId: ${TXN}" \
+  -d '{
+    "merchantCode": "4081197",
+    "numberOrden": "00001k228pz1eb8",
+    "language": "ESP"
+  }'
+```
+
+### 4.2 Estado al 2026-06-10
+
+Con el token de sesion la autenticacion ya pasa (no mas HTTP 500), pero la
+consulta devuelve `403` con `code: "MC"` / "Transaccion No Existe" incluso para
+ordenes aprobadas (probado con `00001k228pz1eb8`, aprobada el 2026-06-10,
+codeAuth 533258, uniqueId 0610165428770653, y con una orden del 2026-06-07).
+Reportado a Izipay: falta que habiliten/expliquen la visibilidad de las
+transacciones Web Core en `orderinfo` para el comercio 4081197. El
+reconciliador reintenta y marca `paymentNeedsReview` tras 6 intentos, igual
+que antes; en cuanto Izipay habilite la consulta, el auto-heal queda operativo
+sin mas cambios.
+
+Prueba de solo lectura (dentro del contenedor o local con env de prod):
+
+```bash
+npx tsx --tsconfig tsconfig.json scripts/izipay-query-check.ts <ORDEN|CODIGO>
+```
 
 ## 5. Flujo de fallback ya implementado
 
