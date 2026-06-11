@@ -1060,7 +1060,12 @@ export default function CheckoutPage() {
                                         config={izipayCheckoutData.config}
                                         orderId={izipayCheckoutData.orderId}
                                         onSuccess={() => clearCart()}
-                                        onError={(msg) => setError(msg)}
+                                        onError={(msg) => {
+                                            setError(msg)
+                                            // Volver a mostrar el boton Pagar para que el
+                                            // comprador pueda reintentar sin recargar.
+                                            setIzipayCheckoutData(null)
+                                        }}
                                     />
                                 ) : (
                                     <>

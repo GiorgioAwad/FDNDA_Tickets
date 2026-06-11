@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import {
@@ -47,6 +47,42 @@ declare global {
 
 const SDK_LOAD_ERROR_MESSAGE =
     "No pudimos cargar el método de pago. Suele deberse a un bloqueador de anuncios, una extensión del navegador o tu red. Prueba: desactivar extensiones, usar modo incógnito o cambiar de navegador, y vuelve a intentar."
+
+const GENERIC_PAYMENT_ERROR_MESSAGE =
+    "Izipay no pudo procesar el pago en este momento. Vuelve a intentarlo; si persiste, prueba con otro navegador o tarjeta."
+
+const REDIRECT_TIMEOUT_MESSAGE =
+    "No pudimos redirigirte a la pasarela de Izipay. Vuelve a intentarlo; si persiste, desactiva extensiones del navegador o prueba en modo incógnito."
+
+// Tiempo máximo esperando que el SDK nos lleve a la página de pago de Izipay.
+// Si no navegó en este lapso, el SDK rechazó el config silenciosamente (en modo
+// redirect no reporta errores) y sin esto el usuario queda en un spinner eterno.
+const REDIRECT_WATCHDOG_MS = 20_000
+
+// El SDK de Izipay a veces devuelve como "mensaje" un payload técnico (JSON,
+// HTML o un blob firmado). Eso nunca debe llegar a la pantalla del comprador.
+function sanitizeIzipayUserMessage(raw: string | undefined | null): string {
+    const message = (raw || "").trim()
+
+    if (!message) {
+        return GENERIC_PAYMENT_ERROR_MESSAGE
+    }
+
+    const looksTechnical =
+        message.length > 160 ||
+        /^[{[<]/.test(message) ||
+        message.includes("payloadHttp") ||
+        message.includes("<html") ||
+        /[A-Za-z0-9+/=_-]{40,}/.test(message) ||
+        /[\u0000-\u001F\uFFFD]/.test(message)
+
+    if (looksTechnical) {
+        console.error("Izipay devolvió un mensaje no legible para el usuario:", message)
+        return GENERIC_PAYMENT_ERROR_MESSAGE
+    }
+
+    return message
+}
 
 function loadIzipayScript(src: string): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -102,6 +138,7 @@ export default function IzipayCheckout({
     const mountedRef = useRef(true)
     const startedRef = useRef(false)
     const handledRef = useRef(false)
+    const redirectWatchdogRef = useRef<number | null>(null)
     const mode =
         config.render?.typeForm === "embedded"
             ? "embedded"
@@ -109,12 +146,22 @@ export default function IzipayCheckout({
                 ? "redirect"
                 : "popup"
 
-    useEffect(() => {
-        mountedRef.current = true
-        return () => {
-            mountedRef.current = false
+    const clearRedirectWatchdog = useCallback(() => {
+        if (redirectWatchdogRef.current !== null) {
+            window.clearTimeout(redirectWatchdogRef.current)
+            redirectWatchdogRef.current = null
         }
     }, [])
+
+    useEffect(() => {
+        mountedRef.current = true
+        window.addEventListener("pagehide", clearRedirectWatchdog)
+        return () => {
+            mountedRef.current = false
+            window.removeEventListener("pagehide", clearRedirectWatchdog)
+            clearRedirectWatchdog()
+        }
+    }, [clearRedirectWatchdog])
 
     useEffect(() => {
         if (startedRef.current) {
@@ -126,24 +173,26 @@ export default function IzipayCheckout({
                 return
             }
 
+            clearRedirectWatchdog()
             handledRef.current = true
-            const sdkMessage =
+            const rawSdkMessage = (
                 paymentResult.messageUser ||
                 paymentResult.message ||
-                "El pago fue cancelado o rechazado por Izipay"
+                ""
+            ).trim()
             const hasSignedResponse = Boolean(paymentResult.payloadHttp && paymentResult.signature)
 
             try {
                 if (!hasSignedResponse) {
                     handledRef.current = false
-                    const normalizedMessage = sdkMessage.trim()
                     const shouldShowSdkError =
-                        normalizedMessage.length > 0 &&
-                        normalizedMessage.toUpperCase() !== "OK"
+                        rawSdkMessage.length > 0 &&
+                        rawSdkMessage.toUpperCase() !== "OK"
 
                     if (shouldShowSdkError) {
-                        setError(normalizedMessage)
-                        onError?.(normalizedMessage)
+                        const message = sanitizeIzipayUserMessage(rawSdkMessage)
+                        setError(message)
+                        onError?.(message)
                     }
                     return
                 }
@@ -184,16 +233,21 @@ export default function IzipayCheckout({
                     return
                 }
 
-                const message = data.data?.message || sdkMessage
+                const message = sanitizeIzipayUserMessage(
+                    data.data?.message ||
+                    rawSdkMessage ||
+                    "El pago fue cancelado o rechazado por Izipay"
+                )
 
                 setError(message)
                 onError?.(message)
                 router.push(`/checkout/cancel?orderId=${data.data?.orderId || orderId}`)
             } catch (validationError) {
                 handledRef.current = false
-                const message =
+                const message = sanitizeIzipayUserMessage(
                     (validationError as Error).message ||
                     "Error validando el pago con Izipay"
+                )
                 setError(message)
                 onError?.(message)
                 // Redirect to success so reconciliation polling can resolve the payment
@@ -216,10 +270,28 @@ export default function IzipayCheckout({
 
                 const checkout = new window.Izipay({ config })
                 if (mode === "redirect") {
+                    // La doc dice que callbackResponse "no aplica" en redirect,
+                    // pero si el SDK rechaza el config ANTES de navegar es la
+                    // unica via para enterarnos del motivo; el watchdog cubre el
+                    // caso en que ni siquiera invoque el callback (spinner eterno).
                     checkout.LoadForm({
                         authorization,
                         keyRSA,
+                        callbackResponse: async (paymentResult) => validatePayment(paymentResult),
                     })
+                    redirectWatchdogRef.current = window.setTimeout(() => {
+                        if (!mountedRef.current || handledRef.current) {
+                            return
+                        }
+                        console.error(
+                            "Izipay redirect no navego tras",
+                            REDIRECT_WATCHDOG_MS,
+                            "ms; config rechazado o red bloqueada"
+                        )
+                        setError(REDIRECT_TIMEOUT_MESSAGE)
+                        setLoading(false)
+                        onError?.(REDIRECT_TIMEOUT_MESSAGE)
+                    }, REDIRECT_WATCHDOG_MS)
                 } else {
                     checkout.LoadForm({
                         authorization,
@@ -228,13 +300,19 @@ export default function IzipayCheckout({
                     })
                 }
 
-                if (mountedRef.current) {
+                // En redirect el spinner se mantiene hasta que el navegador
+                // navegue a Izipay (o el watchdog reporte el fallo).
+                if (mountedRef.current && mode !== "redirect") {
                     setLoading(false)
                 }
             } catch (sdkError) {
+                const rawMessage = (sdkError as Error).message
                 const message =
-                    (sdkError as Error).message ||
-                    "No se pudo iniciar el checkout de Izipay"
+                    rawMessage === SDK_LOAD_ERROR_MESSAGE
+                        ? rawMessage
+                        : sanitizeIzipayUserMessage(
+                            rawMessage || "No se pudo iniciar el checkout de Izipay"
+                        )
                 if (mountedRef.current) {
                     setError(message)
                     setLoading(false)
@@ -244,7 +322,7 @@ export default function IzipayCheckout({
         }
 
         void initCheckout()
-    }, [authorization, config, keyRSA, mode, onError, onSuccess, orderId, router, scriptUrl])
+    }, [authorization, clearRedirectWatchdog, config, keyRSA, mode, onError, onSuccess, orderId, router, scriptUrl])
 
     return (
         <div className="space-y-4">

@@ -402,6 +402,11 @@ export function verifyIzipayWebhookSignature(
 export async function createIzipaySession(
     orderData: IzipayOrderData
 ): Promise<IzipaySessionResponse> {
+    // Sin timeout, un endpoint degradado de Izipay deja al comprador esperando
+    // indefinidamente en "Pagar" (fetch de Node espera ~5 min por defecto).
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15_000)
+
     try {
         const response = await fetch(`${IZIPAY_ENDPOINT}/security/v1/Token/Generate`, {
             method: "POST",
@@ -409,6 +414,7 @@ export async function createIzipaySession(
                 "Content-Type": "application/json",
                 transactionId: orderData.transactionId,
             },
+            signal: controller.signal,
             body: JSON.stringify({
                 requestSource: "ECOMMERCE",
                 publicKey: IZIPAY_API_KEY,
@@ -446,9 +452,16 @@ export async function createIzipaySession(
                 }
             }
 
+            console.error("IZIPAY Token/Generate error", {
+                status: response.status,
+                transactionId: orderData.transactionId,
+                orderNumber: orderData.order.orderNumber,
+                body: errorText.slice(0, 2000),
+            })
+
             return {
                 success: false,
-                error: errorMessage,
+                error: `HTTP ${response.status}: ${errorMessage.slice(0, 300)}`,
             }
         }
 
@@ -483,8 +496,13 @@ export async function createIzipaySession(
         console.error("IZIPAY session creation error:", error)
         return {
             success: false,
-            error: (error as Error).message,
+            error:
+                error instanceof Error && error.name === "AbortError"
+                    ? "Izipay no respondio a tiempo (timeout de 15s)"
+                    : (error as Error).message,
         }
+    } finally {
+        clearTimeout(timeoutId)
     }
 }
 

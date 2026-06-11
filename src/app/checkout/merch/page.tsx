@@ -337,7 +337,12 @@ export default function MerchCheckoutPage() {
                             clearCart()
                             router.push(`/checkout/success?orderId=${izipayCheckoutData.orderId}`)
                         }}
-                        onError={(err) => setError(err)}
+                        onError={(err) => {
+                            setError(err)
+                            // Sin esto el error queda invisible: esta vista no
+                            // renderiza el banner y el comprador no puede reintentar.
+                            setIzipayCheckoutData(null)
+                        }}
                     />
                 </div>
             </div>
