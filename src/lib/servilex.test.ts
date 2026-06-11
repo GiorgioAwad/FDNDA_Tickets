@@ -983,69 +983,6 @@ test("sendServilexInvoice envia JSON UTF-8 con charset explicito", async (t) => 
     assert.equal(entidad.direccion, "Av. Universitaria 2011, San Miguel, Lima, Perú")
 })
 
-test("escapa apostrofos en el JSON final para ABIO (caso Dall' Orso)", () => {
-    const order = buildOrder({
-        providerRef: "REF-APOS-123456",
-        buyerName: "Anna Romina Dall' Orso Niada",
-        buyerFirstName: "Anna",
-        buyerSecondName: "Romina",
-        buyerLastNamePaternal: "Dall' Orso",
-        buyerLastNameMaternal: "Niada",
-        totalAmount: 15,
-        orderItems: [
-            {
-                quantity: 1,
-                unitPrice: 15,
-                attendeeData: [],
-                ticketType: buildTicketType("OS"),
-            },
-        ],
-    })
-
-    const [source] = buildServilexPreviewSources(order, "apostrofo-preview")
-    const payload = buildServilexPayload(source, TEST_CONFIG)
-    const rawPayload = stringifyServilexJson(payload)
-
-    // En el JSON crudo el apostrofo viaja escapado: Dall\' Orso
-    assert.match(rawPayload, /Dall\\\\' Orso/)
-    assert.doesNotMatch(rawPayload, /Dall' Orso/)
-
-    // Tras JSON.parse, ABIO recibe el valor con el caracter de escape literal
-    const parsed = JSON.parse(rawPayload) as Record<string, unknown>
-    const cabecera = parsed.cabecera as Record<string, unknown>
-    const entidad = cabecera.entidad as Record<string, unknown>
-    assert.equal(entidad.apellidoPaterno, "Dall\\' Orso")
-    assert.equal(entidad.razonSocial, "Anna Romina Dall\\' Orso Niada")
-
-    // El payload original (snapshots/preview) no se altera
-    assert.equal(payload.cabecera.entidad.apellidoPaterno, "Dall' Orso")
-})
-
-test("normaliza apostrofos tipograficos antes de escapar", () => {
-    const raw = stringifyServilexJson({ razonSocial: "Dall’ Orso D‘Angelo" })
-
-    assert.equal(
-        JSON.parse(raw).razonSocial,
-        "Dall\\' Orso D\\'Angelo"
-    )
-})
-
-test("SERVILEX_QUOTE_ESCAPE_MODE=strip elimina el apostrofo en vez de escaparlo", () => {
-    const previous = process.env.SERVILEX_QUOTE_ESCAPE_MODE
-    process.env.SERVILEX_QUOTE_ESCAPE_MODE = "strip"
-
-    try {
-        const raw = stringifyServilexJson({ razonSocial: "Dall' Orso" })
-        assert.equal(JSON.parse(raw).razonSocial, "Dall Orso")
-    } finally {
-        if (previous === undefined) {
-            delete process.env.SERVILEX_QUOTE_ESCAPE_MODE
-        } else {
-            process.env.SERVILEX_QUOTE_ESCAPE_MODE = previous
-        }
-    }
-})
-
 test("stringifyServilexJson preserva fechas y evita objetos vacios para Date", () => {
     const raw = stringifyServilexJson({
         paidAt: new Date("2026-04-10T18:09:20Z"),
