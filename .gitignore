@@ -30,6 +30,10 @@ Guía para validar pagos Plin - PW v2.0.pdf
 /certs/
 /public/uploads/
 
+# diagnostic exports (pueden contener PII de compradores)
+/scripts/out/
+/scripts/tmp-*
+
 # debug
 npm-debug.log*
 yarn-debug.log*
