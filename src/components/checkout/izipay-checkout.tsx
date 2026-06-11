@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
+import * as Sentry from "@sentry/nextjs"
 import {
     IZIPAY_EMBEDDED_CONTAINER_ID,
     type IzipayCheckoutConfig,
@@ -82,6 +83,60 @@ function sanitizeIzipayUserMessage(raw: string | undefined | null): string {
     }
 
     return message
+}
+
+// Sonda de conectividad desde el navegador del comprador. no-cors: solo nos
+// interesa si el dispositivo ALCANZA el servidor (DNS/TCP/TLS), no el contenido.
+async function probeUrl(url: string, timeoutMs = 6000): Promise<string> {
+    const start = Date.now()
+    try {
+        const controller = new AbortController()
+        const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+        await fetch(url, { mode: "no-cors", cache: "no-store", signal: controller.signal })
+        window.clearTimeout(timer)
+        return `ok/${Date.now() - start}ms`
+    } catch (error) {
+        return `FAIL/${Date.now() - start}ms/${(error as Error).name || "Error"}`
+    }
+}
+
+// El SDK redirect de Izipay falla sin callback ni excepcion, asi que cada fallo
+// se reporta al backend (docker logs) y a Sentry con sondas que dicen si el
+// dispositivo del comprador llega a checkout.izipay.pe y api-pw.izipay.pe.
+async function reportCheckoutFailure(input: {
+    orderId: string
+    stage: string
+    mode: string
+    message: string
+    scriptUrl: string
+}) {
+    try {
+        const [sdkProbe, apiProbe] = await Promise.all([
+            probeUrl(input.scriptUrl),
+            probeUrl("https://api-pw.izipay.pe/"),
+        ])
+        const payload = {
+            orderId: input.orderId,
+            stage: input.stage,
+            mode: input.mode,
+            message: input.message,
+            probes: { sdk: sdkProbe, api: apiProbe },
+        }
+
+        Sentry.captureMessage("izipay-checkout-failure", {
+            level: "error",
+            extra: payload,
+        })
+
+        void fetch("/api/payments/izipay/client-log", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            keepalive: true,
+            body: JSON.stringify(payload),
+        }).catch(() => {})
+    } catch {
+        // La telemetria nunca debe romper el checkout.
+    }
 }
 
 function loadIzipayScript(src: string): Promise<void> {
@@ -193,6 +248,13 @@ export default function IzipayCheckout({
                         const message = sanitizeIzipayUserMessage(rawSdkMessage)
                         setError(message)
                         onError?.(message)
+                        void reportCheckoutFailure({
+                            orderId,
+                            stage: "sdk-callback-error",
+                            mode,
+                            message: rawSdkMessage.slice(0, 300),
+                            scriptUrl,
+                        })
                     }
                     return
                 }
@@ -250,6 +312,13 @@ export default function IzipayCheckout({
                 )
                 setError(message)
                 onError?.(message)
+                void reportCheckoutFailure({
+                    orderId,
+                    stage: "validate-error",
+                    mode,
+                    message: ((validationError as Error).message || "").slice(0, 300),
+                    scriptUrl,
+                })
                 // Redirect to success so reconciliation polling can resolve the payment
                 router.push(`/checkout/success?orderId=${orderId}`)
             } finally {
@@ -291,6 +360,13 @@ export default function IzipayCheckout({
                         setError(REDIRECT_TIMEOUT_MESSAGE)
                         setLoading(false)
                         onError?.(REDIRECT_TIMEOUT_MESSAGE)
+                        void reportCheckoutFailure({
+                            orderId,
+                            stage: "redirect-timeout",
+                            mode,
+                            message: `sin navegacion tras ${REDIRECT_WATCHDOG_MS}ms`,
+                            scriptUrl,
+                        })
                     }, REDIRECT_WATCHDOG_MS)
                 } else {
                     checkout.LoadForm({
@@ -318,6 +394,16 @@ export default function IzipayCheckout({
                     setLoading(false)
                 }
                 onError?.(message)
+                void reportCheckoutFailure({
+                    orderId,
+                    stage:
+                        rawMessage === SDK_LOAD_ERROR_MESSAGE
+                            ? "sdk-script-load"
+                            : "sdk-init",
+                    mode,
+                    message: (rawMessage || "").slice(0, 300),
+                    scriptUrl,
+                })
             }
         }
 
