@@ -4,6 +4,10 @@ import { getCurrentUser } from "@/lib/auth"
 import { formatDateTimeForExport } from "@/lib/utils"
 import { extractOrderPaymentDetails } from "@/lib/payment-details"
 import {
+    allocateAmountsProportionally,
+    roundCurrency,
+} from "@/lib/order-revenue"
+import {
     TOTAL_COMMISSION_RATE,
     calculateIzipayCommission,
 } from "@/lib/commission-rates"
@@ -86,24 +90,39 @@ export async function GET(
             ? ticketTypes.filter((ticketType) => ticketType.id === ticketTypeId)
             : ticketTypes
 
-        const items = await prisma.orderItem.findMany({
+        const paidOrders = await prisma.order.findMany({
             where: {
-                ticketType: { eventId },
-                order: { status: "PAID" },
-                ...(ticketTypeId ? { ticketTypeId } : {}),
+                status: "PAID",
+                orderItems: {
+                    some: {
+                        ticketType: { eventId },
+                        ...(ticketTypeId ? { ticketTypeId } : {}),
+                    },
+                },
             },
             select: {
-                orderId: true,
-                ticketTypeId: true,
-                quantity: true,
-                subtotal: true,
+                id: true,
+                provider: true,
+                totalAmount: true,
+                orderItems: {
+                    select: {
+                        ticketTypeId: true,
+                        quantity: true,
+                        subtotal: true,
+                        ticketType: {
+                            select: { eventId: true },
+                        },
+                    },
+                },
             },
         })
 
         const totals = {
             totalRevenue: 0,
+            izipayRevenue: 0,
             ticketsSold: 0,
             orderIds: new Set<string>(),
+            izipayOrderIds: new Set<string>(),
         }
 
         const ticketTypeMap = new Map<string, { sold: number; revenue: number; orderIds: Set<string> }>()
@@ -112,20 +131,47 @@ export async function GET(
             ticketTypeMap.set(ticketType.id, { sold: 0, revenue: 0, orderIds: new Set() })
         })
 
-        items.forEach((item) => {
-            if (!item.ticketTypeId) return
-            totals.totalRevenue += Number(item.subtotal)
-            totals.ticketsSold += item.quantity
-            totals.orderIds.add(item.orderId)
+        paidOrders.forEach((order) => {
+            const allocatedAmounts = allocateAmountsProportionally(
+                order.orderItems.map((item) => Number(item.subtotal)),
+                Number(order.totalAmount)
+            )
 
-            if (!ticketTypeMap.has(item.ticketTypeId)) {
-                ticketTypeMap.set(item.ticketTypeId, { sold: 0, revenue: 0, orderIds: new Set() })
-            }
-            const entry = ticketTypeMap.get(item.ticketTypeId)!
-            entry.sold += item.quantity
-            entry.revenue += Number(item.subtotal)
-            entry.orderIds.add(item.orderId)
+            order.orderItems.forEach((item, index) => {
+                if (
+                    !item.ticketTypeId ||
+                    item.ticketType?.eventId !== eventId ||
+                    (ticketTypeId && item.ticketTypeId !== ticketTypeId)
+                ) {
+                    return
+                }
+
+                const collectedAmount = allocatedAmounts[index] || 0
+                totals.totalRevenue += collectedAmount
+                totals.ticketsSold += item.quantity
+                totals.orderIds.add(order.id)
+
+                if (order.provider === "IZIPAY") {
+                    totals.izipayRevenue += collectedAmount
+                    totals.izipayOrderIds.add(order.id)
+                }
+
+                if (!ticketTypeMap.has(item.ticketTypeId)) {
+                    ticketTypeMap.set(item.ticketTypeId, {
+                        sold: 0,
+                        revenue: 0,
+                        orderIds: new Set(),
+                    })
+                }
+                const entry = ticketTypeMap.get(item.ticketTypeId)!
+                entry.sold += item.quantity
+                entry.revenue += collectedAmount
+                entry.orderIds.add(order.id)
+            })
         })
+
+        totals.totalRevenue = roundCurrency(totals.totalRevenue)
+        totals.izipayRevenue = roundCurrency(totals.izipayRevenue)
 
         const byTicketType: TicketTypeSummary[] = filteredTicketTypes.map((ticketType) => {
             const stats = ticketTypeMap.get(ticketType.id) || {
@@ -141,7 +187,7 @@ export async function GET(
                 capacity: ticketType.capacity,
                 isActive: ticketType.isActive,
                 sold: stats.sold,
-                revenue: stats.revenue,
+                revenue: roundCurrency(stats.revenue),
                 ordersCount: stats.orderIds.size,
             }
         })
@@ -195,8 +241,8 @@ export async function GET(
         const orderCount = totals.orderIds.size
         const exchangeRate = await getUsdToPenRate()
         const commissionBreakdown = calculateIzipayCommission(
-            totals.totalRevenue,
-            orderCount,
+            totals.izipayRevenue,
+            totals.izipayOrderIds.size,
             exchangeRate.rate
         )
         const commissionAmount = commissionBreakdown.total

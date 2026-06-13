@@ -134,7 +134,7 @@ export function EventDashboard({ eventId, ticketTypes }: EventDashboardProps) {
                         <a href={attendeeExportUrl}>Exportar asistentes</a>
                     </Button>
                     <Button variant="outline" asChild>
-                        <a href={exportUrl}>Exportar Excel</a>
+                        <a href={exportUrl}>Exportar finanzas</a>
                     </Button>
                 </div>
             </div>
@@ -160,7 +160,7 @@ export function EventDashboard({ eventId, ticketTypes }: EventDashboardProps) {
                                     <DollarSign className="h-6 w-6" />
                                 </div>
                                 <div>
-                                    <div className="text-sm text-gray-500">Ingresos brutos</div>
+                                    <div className="text-sm text-gray-500">Monto cobrado</div>
                                     <div className="text-2xl font-bold">
                                         {formatPrice(data.totalRevenue, totalsCurrency)}
                                     </div>
@@ -234,7 +234,7 @@ export function EventDashboard({ eventId, ticketTypes }: EventDashboardProps) {
                                         <th className="py-2 pr-4 font-medium">Tipo</th>
                                         <th className="py-2 pr-4 font-medium">Precio</th>
                                         <th className="py-2 pr-4 font-medium">Vendidas</th>
-                                        <th className="py-2 pr-4 font-medium">Ingresos</th>
+                                        <th className="py-2 pr-4 font-medium">Cobrado</th>
                                         <th className="py-2 pr-4 font-medium">{"\u00d3rdenes"}</th>
                                         <th className="py-2 pr-4 font-medium">Capacidad</th>
                                         <th className="py-2 pr-4 font-medium">Disponible</th>

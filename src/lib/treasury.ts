@@ -6,6 +6,10 @@ import {
     IGV_RATE,
     TOTAL_COMMISSION_RATE,
 } from "@/lib/commission-rates"
+import {
+    allocateAmountsProportionally,
+    roundCurrency,
+} from "@/lib/order-revenue"
 
 export { IZIPAY_COMMISSION_RATE, IGV_RATE, TOTAL_COMMISSION_RATE }
 
@@ -73,34 +77,50 @@ export async function getTreasuryEventSummaries(): Promise<TreasuryEventSummary[
         }
     }
 
-    const items = await prisma.orderItem.findMany({
+    const paidOrders = await prisma.order.findMany({
         where: {
-            order: { status: "PAID" },
-            ticketType: {
-                eventId: {
-                    in: events.map((event) => event.id),
+            status: "PAID",
+            orderItems: {
+                some: {
+                    ticketType: {
+                        eventId: {
+                            in: events.map((event) => event.id),
+                        },
+                    },
                 },
             },
         },
         select: {
-            orderId: true,
-            ticketTypeId: true,
-            quantity: true,
-            subtotal: true,
+            id: true,
+            totalAmount: true,
+            orderItems: {
+                select: {
+                    ticketTypeId: true,
+                    quantity: true,
+                    subtotal: true,
+                },
+            },
         },
     })
 
-    for (const item of items) {
-        if (!item.ticketTypeId) continue
-        const eventId = ticketTypeToEvent.get(item.ticketTypeId)
-        if (!eventId) continue
+    for (const order of paidOrders) {
+        const allocatedAmounts = allocateAmountsProportionally(
+            order.orderItems.map((item) => Number(item.subtotal)),
+            Number(order.totalAmount)
+        )
 
-        const stats = statsByEvent.get(eventId)
-        if (!stats) continue
+        order.orderItems.forEach((item, index) => {
+            if (!item.ticketTypeId) return
+            const eventId = ticketTypeToEvent.get(item.ticketTypeId)
+            if (!eventId) return
 
-        stats.grossRevenue += Number(item.subtotal)
-        stats.ticketsSold += item.quantity
-        stats.orderIds.add(item.orderId)
+            const stats = statsByEvent.get(eventId)
+            if (!stats) return
+
+            stats.grossRevenue += allocatedAmounts[index] || 0
+            stats.ticketsSold += item.quantity
+            stats.orderIds.add(order.id)
+        })
     }
 
     return events.map((event) => {
@@ -109,7 +129,7 @@ export async function getTreasuryEventSummaries(): Promise<TreasuryEventSummary[
             ticketsSold: 0,
             orderIds: new Set<string>(),
         }
-        const grossRevenue = stats.grossRevenue
+        const grossRevenue = roundCurrency(stats.grossRevenue)
         const commissionAmount = grossRevenue * TOTAL_COMMISSION_RATE
         const advanceAmount = Number(event.advanceAmount || 0)
         const netRevenue = grossRevenue - commissionAmount
