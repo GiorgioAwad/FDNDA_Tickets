@@ -127,11 +127,11 @@ export const billingDataSchema = z.discriminatedUnion("documentType", [
 
 const orderAttendeeSchema = z
     .object({
-        firstName: z.string().min(2, "Nombre requerido"),
+        firstName: z.string().trim().max(100, "Nombre muy largo").optional().default(""),
         secondName: z.string().trim().max(100, "Segundo nombre muy largo").optional().default(""),
-        lastNamePaternal: z.string().min(2, "Apellido paterno requerido"),
-        lastNameMaternal: z.string().min(2, "Apellido materno requerido"),
-        dni: z.string().min(8, "DNI requerido").max(12),
+        lastNamePaternal: z.string().trim().max(100, "Apellido paterno muy largo").optional().default(""),
+        lastNameMaternal: z.string().trim().max(100, "Apellido materno muy largo").optional().default(""),
+        dni: z.string().trim().max(12).optional().default(""),
         matricula: z.string().max(50).optional(),
         scheduleSelections: z
             .array(

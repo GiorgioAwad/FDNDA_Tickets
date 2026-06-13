@@ -9,7 +9,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { buildNaturalPersonFullName } from "@/lib/billing"
-import { getShiftOptionsForDate } from "@/lib/ticket-schedule"
+import {
+    getCurrentOrFutureScheduleDates,
+    getLimaDateKey,
+    getShiftOptionsForDate,
+} from "@/lib/ticket-schedule"
 import { formatDate, formatPrice } from "@/lib/utils"
 import type { IzipayCheckoutConfig } from "@/lib/izipay"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
@@ -28,6 +32,8 @@ type AppliedDiscount = {
     value: number
     description: string | null
 }
+
+type EventCategory = "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA"
 
 export default function CheckoutPage() {
     const router = useRouter()
@@ -67,6 +73,66 @@ export default function CheckoutPage() {
     const [discountError, setDiscountError] = useState("")
     const [appliedDiscount, setAppliedDiscount] = useState<AppliedDiscount | null>(null)
     const [discountAmount, setDiscountAmount] = useState(0)
+    const [todayDateKey, setTodayDateKey] = useState("")
+    const [eventCategoriesById, setEventCategoriesById] = useState<Record<string, EventCategory>>({})
+    const categoryRequestsRef = useRef(new Set<string>())
+
+    useEffect(() => {
+        const updateToday = () => setTodayDateKey(getLimaDateKey())
+        updateToday()
+        const interval = window.setInterval(updateToday, 60_000)
+        return () => window.clearInterval(interval)
+    }, [])
+
+    useEffect(() => {
+        const eventIds = Array.from(
+            new Set(
+                items
+                    .filter(
+                        (item) =>
+                            !item.eventCategory &&
+                            !eventCategoriesById[item.eventId] &&
+                            !categoryRequestsRef.current.has(item.eventId)
+                    )
+                    .map((item) => item.eventId)
+                    .filter(Boolean)
+            )
+        )
+        if (eventIds.length === 0) return
+        eventIds.forEach((eventId) => categoryRequestsRef.current.add(eventId))
+
+        const resolveCategories = async () => {
+            const entries = await Promise.all(
+                eventIds.map(async (eventId) => {
+                    try {
+                        const response = await fetch(`/api/events/${encodeURIComponent(eventId)}`)
+                        if (!response.ok) return null
+                        const payload = await response.json()
+                        const category = payload?.data?.category
+                        if (
+                            category !== "EVENTO" &&
+                            category !== "PISCINA_LIBRE" &&
+                            category !== "ACADEMIA"
+                        ) {
+                            return null
+                        }
+                        return [eventId, category] as const
+                    } catch {
+                        return null
+                    }
+                })
+            )
+
+            const validEntries = entries.filter((entry) => entry !== null)
+            if (validEntries.length === 0) return
+            setEventCategoriesById((current) => ({
+                ...current,
+                ...Object.fromEntries(validEntries),
+            }))
+        }
+
+        void resolveCategories()
+    }, [eventCategoriesById, items])
 
     const getRequiredSelections = useCallback((item: (typeof items)[number]) => {
         if (!item.scheduleConfig) return 0
@@ -82,6 +148,28 @@ export default function CheckoutPage() {
     const getCartLineKey = useCallback(
         (item: (typeof items)[number]) => item.lineKey || item.ticketTypeId,
         []
+    )
+
+    const getSelectableDates = useCallback(
+        (item: (typeof items)[number]) =>
+            item.scheduleConfig
+                ? getCurrentOrFutureScheduleDates(
+                      item.scheduleConfig.dates,
+                      todayDateKey || getLimaDateKey()
+                  )
+                : [],
+        [todayDateKey]
+    )
+
+    const getEventCategory = useCallback(
+        (item: (typeof items)[number]) =>
+            item.eventCategory ?? eventCategoriesById[item.eventId],
+        [eventCategoriesById]
+    )
+
+    const hasItemsRequiringAttendees = useMemo(
+        () => items.some((item) => getEventCategory(item) !== "EVENTO"),
+        [getEventCategory, items]
     )
 
     const boletaFullName = useMemo(
@@ -167,6 +255,7 @@ export default function CheckoutPage() {
     const hasMissingAttendeeData = useMemo(
         () =>
             items.some((item) =>
+                getEventCategory(item) !== "EVENTO" &&
                 item.attendees.some((attendee) =>
                     !attendee.firstName?.trim() ||
                     !attendee.lastNamePaternal?.trim() ||
@@ -174,7 +263,7 @@ export default function CheckoutPage() {
                     !attendee.dni
                 )
             ),
-        [items]
+        [getEventCategory, items]
     )
 
     const hasMissingBillingData = useMemo(() => {
@@ -204,6 +293,9 @@ export default function CheckoutPage() {
             const requiresShift =
                 (item.scheduleConfig?.shifts.length || 0) > 0 &&
                 (item.scheduleConfig?.requireShiftSelection ?? true)
+            const selectableDates = new Set(getSelectableDates(item))
+            if (selectableDates.size === 0) return true
+
             return item.attendees.some((attendee) => {
                 const selections = attendee.scheduleSelections ?? []
                 if (selections.length < requiredSelections) return true
@@ -211,7 +303,7 @@ export default function CheckoutPage() {
                 const selectedDates = new Set<string>()
                 for (let i = 0; i < requiredSelections; i++) {
                     const selection = selections[i]
-                    if (!selection?.date) return true
+                    if (!selection?.date || !selectableDates.has(selection.date)) return true
                     if (selectedDates.has(selection.date)) return true
                     selectedDates.add(selection.date)
                     if (requiresShift && !selection?.shift) return true
@@ -225,7 +317,7 @@ export default function CheckoutPage() {
                 return false
             })
         })
-    }, [getRequiredSelections, items])
+    }, [getRequiredSelections, getSelectableDates, items])
 
     const handleApplyDiscount = async () => {
         if (!discountCode.trim()) return
@@ -278,11 +370,6 @@ export default function CheckoutPage() {
             return
         }
 
-        if (!session.user.emailVerified) {
-            setError("Debes verificar tu email antes de comprar")
-            return
-        }
-
         setLoading(true)
         setError("")
 
@@ -295,7 +382,12 @@ export default function CheckoutPage() {
                     items: items.map((item) => ({
                         ticketTypeId: item.ticketTypeId,
                         quantity: item.quantity,
-                        attendees: item.attendees,
+                        attendees:
+                            getEventCategory(item) === "EVENTO"
+                                ? item.attendees.map((attendee) => ({
+                                      scheduleSelections: attendee.scheduleSelections,
+                                  }))
+                                : item.attendees,
                     })),
                     billing: {
                         documentType: billingData.documentType,
@@ -446,7 +538,9 @@ export default function CheckoutPage() {
                             Finaliza tu <span className="text-gradient-coral">compra</span>
                         </h1>
                         <p className="text-muted-foreground mt-1.5 text-sm sm:text-base">
-                            Completa tus datos y asistentes para emitir tus entradas oficiales.
+                            {hasItemsRequiringAttendees
+                                ? "Completa tus datos y asistentes para emitir tus entradas oficiales."
+                                : "Completa tus datos para emitir tus entradas oficiales."}
                         </p>
                     </div>
                 </div>
@@ -714,18 +808,24 @@ export default function CheckoutPage() {
                                             </Button>
                                         </div>
 
+                                        {(getEventCategory(item) !== "EVENTO" || getRequiredSelections(item) > 0) && (
                                         <div className="bg-gray-50 p-3 sm:p-4 rounded-lg space-y-4">
                                             <h4 className="text-sm font-semibold flex items-center gap-2">
                                                 <User className="h-4 w-4" />
-                                                Datos de los asistentes
+                                                {getEventCategory(item) === "EVENTO"
+                                                    ? "Fecha y turno por entrada"
+                                                    : "Datos de los asistentes"}
                                             </h4>
 
                                             {item.attendees.map((attendee, attendeeIndex) => {
                                                 const requiredSelections = getRequiredSelections(item)
                                                 const scheduleConfig = item.scheduleConfig
+                                                const selectableDates = getSelectableDates(item)
                                                 const itemKey = getCartLineKey(item)
                                                 const hasLockedSingleDate =
-                                                    scheduleConfig?.dates.length === 1 && scheduleConfig.shifts.length === 0
+                                                    scheduleConfig?.dates.length === 1 &&
+                                                    selectableDates.length === 1 &&
+                                                    scheduleConfig.shifts.length === 0
                                                 const attendeeFullName = buildNaturalPersonFullName({
                                                     firstName: attendee.firstName,
                                                     secondName: attendee.secondName,
@@ -735,6 +835,8 @@ export default function CheckoutPage() {
 
                                                 return (
                                                     <div key={attendeeIndex} className="space-y-3">
+                                                    {getEventCategory(item) !== "EVENTO" && (
+                                                    <>
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                         <div>
                                                             <label className="text-xs text-gray-500 mb-1 block">
@@ -836,6 +938,8 @@ export default function CheckoutPage() {
                                                             La referencia interna ABIO del alumno se genera automaticamente al procesar la compra. Para ABIO se enviaran nombre, segundo nombre, apellido paterno y apellido materno por separado.
                                                         </div>
                                                     )}
+                                                    </>
+                                                    )}
 
                                                         {requiredSelections > 0 && scheduleConfig && !hasLockedSingleDate && (
                                                         <div className="rounded-md border border-dashed border-gray-300 p-3 bg-white">
@@ -853,9 +957,12 @@ export default function CheckoutPage() {
                                                                 {Array.from({ length: requiredSelections }).map((_, selectionIndex) => {
                                                                     const selection =
                                                                         attendee.scheduleSelections?.[selectionIndex] ?? { date: "", shift: "" }
+                                                                    const selectedDate = selectableDates.includes(selection.date)
+                                                                        ? selection.date
+                                                                        : ""
                                                                     const shiftOptionsForDate = getShiftOptionsForDate(
                                                                         scheduleConfig,
-                                                                        selection.date
+                                                                        selectedDate
                                                                     )
                                                                     return (
                                                                         <div key={selectionIndex} className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -866,7 +973,7 @@ export default function CheckoutPage() {
                                                                                         : `Dia ${selectionIndex + 1}`}
                                                                                 </label>
                                                                                 <select
-                                                                                    value={selection.date}
+                                                                                    value={selectedDate}
                                                                                     onChange={(e) => {
                                                                                         const nextDate = e.target.value
                                                                                         const nextShiftOptions = getShiftOptionsForDate(
@@ -896,7 +1003,7 @@ export default function CheckoutPage() {
                                                                                     className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                                                                                 >
                                                                                     <option value="">Seleccionar dia</option>
-                                                                                    {scheduleConfig.dates.map((date) => (
+                                                                                    {selectableDates.map((date) => (
                                                                                         <option key={date} value={date}>
                                                                                             {formatDate(date, { dateStyle: "full" })}
                                                                                         </option>
@@ -919,11 +1026,11 @@ export default function CheckoutPage() {
                                                                                                 e.target.value
                                                                                             )
                                                                                         }
-                                                                                        disabled={!selection.date || shiftOptionsForDate.length === 0}
+                                                                                        disabled={!selectedDate || shiftOptionsForDate.length === 0}
                                                                                         className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                                                                                     >
                                                                                         <option value="">
-                                                                                            {selection.date
+                                                                                            {selectedDate
                                                                                                 ? "Seleccionar turno"
                                                                                                 : "Selecciona un dia primero"}
                                                                                         </option>
@@ -959,9 +1066,12 @@ export default function CheckoutPage() {
                                             })}
 
                                             <div className="text-xs text-gray-500">
-                                                * Importante: El DNI debe coincidir con el documento de identidad al ingresar.
+                                                {getEventCategory(item) === "EVENTO"
+                                                    ? "Selecciona una fecha y turno vigente para cada entrada cuando corresponda."
+                                                    : "* Importante: El DNI debe coincidir con el documento de identidad al ingresar."}
                                             </div>
                                         </div>
+                                        )}
                                     </div>
                                 ))}
                             </CardContent>
@@ -1092,7 +1202,7 @@ export default function CheckoutPage() {
                                         )}
                                         {!hasMissingBillingData && !hasMissingAttendeeData && hasMissingScheduleSelections && (
                                             <p className="text-xs text-amber-600 text-center">
-                                                Completa los dias y turnos (si aplica) para todos los asistentes
+                                                Completa los dias y turnos (si aplica) para cada entrada
                                             </p>
                                         )}
 

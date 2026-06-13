@@ -39,6 +39,7 @@ export interface CartItem {
     ticketTypeName: string
     eventId: string
     eventTitle: string
+    eventCategory?: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA"
     price: number
     quantity: number
     attendees: CartAttendee[]
@@ -338,6 +339,12 @@ const normalizeCartItem = (input: unknown): CartItem | null => {
             : typeof record.price === "string"
               ? Number(record.price)
               : 0
+    const eventCategory =
+        record.eventCategory === "EVENTO" ||
+        record.eventCategory === "PISCINA_LIBRE" ||
+        record.eventCategory === "ACADEMIA"
+            ? record.eventCategory
+            : undefined
 
     return {
         lineKey,
@@ -345,6 +352,7 @@ const normalizeCartItem = (input: unknown): CartItem | null => {
         ticketTypeName: typeof record.ticketTypeName === "string" ? record.ticketTypeName : "",
         eventId: typeof record.eventId === "string" ? record.eventId : "",
         eventTitle: typeof record.eventTitle === "string" ? record.eventTitle : "",
+        eventCategory,
         price: Number.isFinite(priceRaw) ? priceRaw : 0,
         quantity,
         attendees,

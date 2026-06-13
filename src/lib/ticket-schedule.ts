@@ -17,6 +17,24 @@ export interface ScheduleSelection {
     shift: string | null
 }
 
+export function getLimaDateKey(date: Date = new Date()): string {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Lima",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(date)
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+    return `${values.year}-${values.month}-${values.day}`
+}
+
+export function getCurrentOrFutureScheduleDates(
+    dates: string[],
+    today: string = getLimaDateKey()
+): string[] {
+    return normalizeDateArray(dates).filter((date) => date >= today)
+}
+
 function normalizeDate(value: unknown): string | null {
     if (typeof value !== "string") return null
     const trimmed = value.trim()
