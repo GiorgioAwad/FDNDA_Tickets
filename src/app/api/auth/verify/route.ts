@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
     try {
@@ -39,14 +40,16 @@ export async function GET(request: NextRequest) {
             where: { id: user.id },
             data: {
                 emailVerifiedAt: new Date(),
-                verifyToken: null,
             },
         })
 
-        return NextResponse.json({
-            success: true,
-            message: "Email verificado exitosamente",
-        })
+        return NextResponse.json(
+            {
+                success: true,
+                message: "Email verificado exitosamente",
+            },
+            { headers: { "Cache-Control": "no-store" } }
+        )
     } catch (error) {
         console.error("Verification error:", error)
         return NextResponse.json(

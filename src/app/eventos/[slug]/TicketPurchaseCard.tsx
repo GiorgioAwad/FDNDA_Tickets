@@ -233,14 +233,12 @@ export default function TicketPurchaseCard({
     }, [])
 
     useEffect(() => {
-        if (!isPoolFreeEventCategory(eventCategory)) return
-
         const updateClock = () => setLimaClock(getCurrentLimaClock())
         updateClock()
 
         const interval = window.setInterval(updateClock, 60_000)
         return () => window.clearInterval(interval)
-    }, [eventCategory])
+    }, [])
 
     useEffect(() => {
         let cancelled = false
@@ -327,6 +325,9 @@ export default function TicketPurchaseCard({
                     eventEndDate: new Date(eventEndDate),
                 })
             }
+            if (limaClock) {
+                normalizedDates = normalizedDates.filter((date) => date >= limaClock.dateKey)
+            }
 
             const inventoryByDate = new Map(
                 (ticket.dateInventories ?? [])
@@ -340,9 +341,11 @@ export default function TicketPurchaseCard({
                 ? (ticket.capacity === 0 ? null : ticket.capacity)
                 : (ticket.capacity === 0 ? null : ticket.capacity - ticket.sold)
             const maxQty = available === null ? MAX_UNLIMITED_QTY : Math.max(0, available)
+            const hasNoUpcomingDates =
+                schedule.dates.length > 0 && normalizedDates.length === 0
             const soldOut = usesDailyCapacity
-                ? ticket.isActive === false
-                : ticket.isActive === false || (available !== null && available <= 0)
+                ? ticket.isActive === false || hasNoUpcomingDates
+                : ticket.isActive === false || hasNoUpcomingDates || (available !== null && available <= 0)
             const dateStates = normalizedDates.map((date) => {
                 const inventory = inventoryByDate.get(date)
                 const capacity = inventory?.capacity ?? ticket.capacity
@@ -372,7 +375,7 @@ export default function TicketPurchaseCard({
                 },
             }
         })
-    }, [ticketTypesWithLiveStock, eventCategory, eventStartDate, eventEndDate])
+    }, [ticketTypesWithLiveStock, eventCategory, eventStartDate, eventEndDate, limaClock])
 
     const poolSlotOptions = useMemo<PoolSlotOption[]>(() => {
         if (!isPoolFreeEventCategory(eventCategory)) return []
@@ -498,6 +501,10 @@ export default function TicketPurchaseCard({
                 ticketTypeName: ticket.name,
                 eventId,
                 eventTitle,
+                eventCategory:
+                    eventCategory === "PISCINA_LIBRE" || eventCategory === "ACADEMIA"
+                        ? eventCategory
+                        : "EVENTO",
                 price: ticket.price,
                 quantity: 1,
                 scheduleConfig: {

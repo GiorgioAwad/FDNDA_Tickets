@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { motion } from "framer-motion"
@@ -20,14 +20,20 @@ export default function VerifyEmailClient() {
         token ? "" : "Token de verificación no proporcionado"
     )
 
+    const verificationStartedRef = useRef(false)
+
     useEffect(() => {
-        if (!token) return
+        if (!token || verificationStartedRef.current) return
+        verificationStartedRef.current = true
 
         const verifyEmail = async () => {
             try {
                 setStatus("loading")
                 setMessage("")
-                const response = await fetch(`/api/auth/verify?token=${token}`)
+                const response = await fetch(
+                    `/api/auth/verify?token=${encodeURIComponent(token)}`,
+                    { cache: "no-store" }
+                )
                 const data = await response.json()
 
                 if (response.ok) {

@@ -9,6 +9,7 @@ import { onTicketSold } from "@/lib/cached-queries"
 import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 import {
+    getCurrentOrFutureScheduleDates,
     getShiftOptionsForDate,
     normalizeScheduleSelections,
     normalizeShiftLabel,
@@ -60,6 +61,18 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 { success: false, error: "No autorizado" },
                 { status: 401 }
+            )
+        }
+
+        const currentUser = await prisma.user.findUnique({
+            where: { id: user.id },
+            select: { emailVerifiedAt: true },
+        })
+
+        if (!currentUser?.emailVerifiedAt) {
+            return NextResponse.json(
+                { success: false, error: "Debes verificar tu correo antes de comprar" },
+                { status: 403 }
             )
         }
 
@@ -324,23 +337,51 @@ export async function POST(request: NextRequest) {
                 }
 
                 const scheduleConfig = parseTicketScheduleConfig(reservedTicketType.validDays)
+                const selectableScheduleDates = getCurrentOrFutureScheduleDates(scheduleConfig.dates)
                 const requiredScheduleSelections =
                     scheduleConfig.dates.length > 0
                         ? reservedTicketType.isPackage && reservedTicketType.packageDaysCount
                             ? reservedTicketType.packageDaysCount
                             : 1
                         : 0
+                const requiresAttendeeDetails = eventConfig.category !== "EVENTO"
 
-                if (requiredScheduleSelections > 0) {
-                    const availableDates = new Set(scheduleConfig.dates)
-                    const requiresShift =
-                        scheduleConfig.requireShiftSelection && scheduleConfig.shifts.length > 0
-
+                if (requiresAttendeeDetails) {
                     if (attendeeData.length < item.quantity) {
                         throw new Error(`Debes completar todos los asistentes para "${reservedTicketType.name}"`)
                     }
 
-                    attendeeData = attendeeData.map((attendee) => {
+                    attendeeData = attendeeData.slice(0, item.quantity).map((attendee) => {
+                        const hasCompleteName =
+                            attendee.firstName.trim().length >= 2 &&
+                            attendee.lastNamePaternal.trim().length >= 2 &&
+                            attendee.lastNameMaternal.trim().length >= 2
+                        const hasValidDocument =
+                            attendee.dni.trim().length >= 8 &&
+                            attendee.dni.trim().length <= 12
+
+                        if (!hasCompleteName || !hasValidDocument) {
+                            throw new Error(`Debes completar todos los asistentes para "${reservedTicketType.name}"`)
+                        }
+
+                        return attendee
+                    })
+                }
+
+                if (requiredScheduleSelections > 0) {
+                    const availableDates = new Set(selectableScheduleDates)
+                    const requiresShift =
+                        scheduleConfig.requireShiftSelection && scheduleConfig.shifts.length > 0
+
+                    if (availableDates.size === 0) {
+                        throw new Error(`No hay fechas futuras disponibles para "${reservedTicketType.name}"`)
+                    }
+
+                    if (attendeeData.length < item.quantity) {
+                        throw new Error(`Selecciona dia${requiresShift ? " y turno" : ""} para cada entrada de "${reservedTicketType.name}"`)
+                    }
+
+                    attendeeData = attendeeData.slice(0, item.quantity).map((attendee) => {
                         const selections = normalizeScheduleSelections(attendee.scheduleSelections)
                         if (selections.length < requiredScheduleSelections) {
                             throw new Error(`Selecciona dia${requiresShift ? " y turno" : ""} para "${reservedTicketType.name}"`)
@@ -380,6 +421,23 @@ export async function POST(request: NextRequest) {
                             scheduleSelections,
                         }
                     })
+                }
+
+                if (eventConfig.category === "EVENTO") {
+                    attendeeData =
+                        requiredScheduleSelections > 0
+                            ? attendeeData.map((attendee) => ({
+                                  ...attendee,
+                                  name: "",
+                                  firstName: "",
+                                  secondName: "",
+                                  lastNamePaternal: "",
+                                  lastNameMaternal: "",
+                                  dni: "",
+                                  matricula: undefined,
+                                  scheduleSelections: attendee.scheduleSelections,
+                              }))
+                            : []
                 }
 
                 const subtotal = Number(reservedTicketType.price) * item.quantity
@@ -647,6 +705,7 @@ export async function POST(request: NextRequest) {
             message.includes("Ubigeo") ||
             message.includes("matricula") ||
             message.includes("asistentes") ||
+            message.includes("fecha") ||
             message.includes("dia") ||
             message.includes("turno") ||
             message.includes("Servilex")
