@@ -6,11 +6,15 @@ import {
     type EmailJob,
 } from "./email-queue"
 import { sendTransactionalEmail } from "./email-provider"
+import {
+    canonicalizeQueuedEmailUrl,
+    resolveEmailBaseUrl,
+} from "./email-url"
 
 // ==================== EMAIL CLIENT ====================
 
 const FROM_EMAIL = process.env.EMAIL_FROM || "Ticketing FDNDA <ticketing@fdnda.org>"
-const BASE_URL = process.env.NEXTAUTH_URL || "http://localhost:3000"
+const BASE_URL = resolveEmailBaseUrl()
 const RAW_APP_NAME = (process.env.NEXT_PUBLIC_APP_NAME || "Ticketing FDNDA").trim()
 const APP_NAME = RAW_APP_NAME.toLowerCase() === "fdnda tickets" ? "Ticketing FDNDA" : RAW_APP_NAME
 const BRAND_TAGLINE = "Federaci&oacute;n Deportiva Nacional de Deportes Acu&aacute;ticos"
@@ -82,7 +86,8 @@ function getPurchaseConfirmationTemplate(data: Record<string, unknown>): { subje
 }
 
 function getWelcomeTemplate(data: Record<string, unknown>): { subject: string; html: string } {
-    const { userName, verifyUrl } = data
+    const { userName } = data
+    const verifyUrl = canonicalizeQueuedEmailUrl(data.verifyUrl, "/verify-email")
     
     return {
         subject: `Verifica tu cuenta en ${APP_NAME}`,
@@ -139,7 +144,8 @@ function getWelcomeTemplate(data: Record<string, unknown>): { subject: string; h
 }
 
 function getPasswordResetTemplate(data: Record<string, unknown>): { subject: string; html: string } {
-    const { userName, resetUrl } = data
+    const { userName } = data
+    const resetUrl = canonicalizeQueuedEmailUrl(data.resetUrl, "/reset-password")
     
     return {
         subject: `Restablecer contraseña - ${APP_NAME}`,

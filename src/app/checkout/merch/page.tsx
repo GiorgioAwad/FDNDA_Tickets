@@ -84,6 +84,10 @@ export default function MerchCheckoutPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState("")
     const [showAuthModal, setShowAuthModal] = useState(false)
+    const [retryableOrder, setRetryableOrder] = useState<{
+        id: string
+        fingerprint: string
+    } | null>(null)
 
     const [billing, setBilling] = useState<BillingState>(DEFAULT_BILLING)
     const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("PICKUP_OFFICE")
@@ -222,18 +226,28 @@ export default function MerchCheckoutPage() {
                             }
                         : { method: "PICKUP_OFFICE" as const },
             }
+            const orderFingerprint = JSON.stringify(orderPayload)
+            const canReuseOrder =
+                paymentsMode === "izipay" &&
+                retryableOrder?.fingerprint === orderFingerprint
 
-            const orderResponse = await fetch("/api/merch/orders", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(orderPayload),
-            })
-            const orderData = await orderResponse.json()
-            if (!orderResponse.ok || !orderData.success) {
-                throw new Error(orderData.error || "Error al crear la orden")
+            const createOrder = async () => {
+                const orderResponse = await fetch("/api/merch/orders", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: orderFingerprint,
+                })
+                const orderData = await orderResponse.json()
+                if (!orderResponse.ok || !orderData.success) {
+                    throw new Error(orderData.error || "Error al crear la orden")
+                }
+
+                const orderId = orderData.data.orderId as string
+                setRetryableOrder({ id: orderId, fingerprint: orderFingerprint })
+                return orderId
             }
 
-            const orderId = orderData.data.orderId
+            let orderId = canReuseOrder ? retryableOrder.id : await createOrder()
 
             // Mock payment for dev
             if (paymentsMode === "mock") {
@@ -247,6 +261,7 @@ export default function MerchCheckoutPage() {
                     throw new Error(mockData.error || "Error en pago mock")
                 }
                 clearCart()
+                setRetryableOrder(null)
                 router.push(`/checkout/success?orderId=${orderId}`)
                 return
             }
@@ -264,26 +279,43 @@ export default function MerchCheckoutPage() {
                 }
                 if (openpayData.data?.alreadyPaid) {
                     clearCart()
+                    setRetryableOrder(null)
                     router.push(`/checkout/success?orderId=${orderId}`)
                     return
                 }
                 clearCart()
+                setRetryableOrder(null)
                 window.location.assign(openpayData.data.paymentUrl)
                 return
             }
 
             // Izipay
-            const sessionResponse = await fetch("/api/payments/izipay/session", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ orderId }),
-            })
-            const sessionData = await sessionResponse.json()
+            const createSession = async (targetOrderId: string) => {
+                const response = await fetch("/api/payments/izipay/session", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ orderId: targetOrderId }),
+                })
+                return { response, data: await response.json() }
+            }
+
+            let sessionResult = await createSession(orderId)
+            if (
+                canReuseOrder &&
+                sessionResult.response.status === 400 &&
+                sessionResult.data.code === "ORDER_NOT_PAYABLE"
+            ) {
+                orderId = await createOrder()
+                sessionResult = await createSession(orderId)
+            }
+
+            const { response: sessionResponse, data: sessionData } = sessionResult
             if (!sessionResponse.ok || !sessionData.success) {
                 throw new Error(sessionData.error || "No se pudo iniciar IZIPAY")
             }
             if (sessionData.data?.alreadyPaid) {
                 clearCart()
+                setRetryableOrder(null)
                 router.push(`/checkout/success?orderId=${orderId}`)
                 return
             }
@@ -334,6 +366,7 @@ export default function MerchCheckoutPage() {
                         config={izipayCheckoutData.config}
                         orderId={izipayCheckoutData.orderId}
                         onSuccess={() => {
+                            setRetryableOrder(null)
                             clearCart()
                             router.push(`/checkout/success?orderId=${izipayCheckoutData.orderId}`)
                         }}

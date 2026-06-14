@@ -59,6 +59,8 @@ const REDIRECT_TIMEOUT_MESSAGE =
 // Si no navegó en este lapso, el SDK rechazó el config silenciosamente (en modo
 // redirect no reporta errores) y sin esto el usuario queda en un spinner eterno.
 const REDIRECT_WATCHDOG_MS = 20_000
+const SDK_LOAD_TIMEOUT_MS = 8_000
+const FIRST_PARTY_SDK_PATH = "/api/checkout/runtime"
 
 // El SDK de Izipay a veces devuelve como "mensaje" un payload técnico (JSON,
 // HTML o un blob firmado). Eso nunca debe llegar a la pantalla del comprador.
@@ -109,6 +111,7 @@ async function reportCheckoutFailure(input: {
     mode: string
     message: string
     scriptUrl: string
+    severity?: "error" | "warning"
 }) {
     try {
         const [sdkProbe, apiProbe] = await Promise.all([
@@ -121,10 +124,11 @@ async function reportCheckoutFailure(input: {
             mode: input.mode,
             message: input.message,
             probes: { sdk: sdkProbe, api: apiProbe },
+            severity: input.severity || "error",
         }
 
         Sentry.captureMessage("izipay-checkout-failure", {
-            level: "error",
+            level: input.severity || "error",
             extra: payload,
         })
 
@@ -145,37 +149,69 @@ function loadIzipayScript(src: string): Promise<void> {
             `script[data-izipay-sdk="true"][src="${src}"]`
         )
 
-        if (existing?.dataset.loaded === "true") {
+        if (existing?.dataset.loaded === "true" && typeof window.Izipay === "function") {
             resolve()
             return
         }
 
         if (existing) {
-            existing.addEventListener("load", () => resolve(), { once: true })
-            existing.addEventListener(
-                "error",
-                () => reject(new Error(SDK_LOAD_ERROR_MESSAGE)),
-                { once: true }
-            )
-            return
+            existing.remove()
         }
 
         const script = document.createElement("script")
+        const timeoutId = window.setTimeout(() => {
+            script.remove()
+            reject(new Error(`Timeout cargando SDK desde ${new URL(src, window.location.href).host}`))
+        }, SDK_LOAD_TIMEOUT_MS)
+
         script.src = src
         script.async = true
         script.defer = true
         script.dataset.izipaySdk = "true"
         script.onload = () => {
+            window.clearTimeout(timeoutId)
             script.dataset.loaded = "true"
-            resolve()
+
+            if (typeof window.Izipay === "function") {
+                resolve()
+                return
+            }
+
+            script.remove()
+            reject(new Error("El SDK cargo sin exponer window.Izipay"))
         }
         script.onerror = () => {
+            window.clearTimeout(timeoutId)
             script.remove()
-            reject(new Error(SDK_LOAD_ERROR_MESSAGE))
+            reject(new Error(`No se pudo descargar el SDK desde ${new URL(src, window.location.href).host}`))
         }
 
         document.head.appendChild(script)
     })
+}
+
+async function loadIzipayScriptWithFallback(
+    primarySrc: string,
+    mode: "embedded" | "redirect" | "popup"
+): Promise<string[]> {
+    if (typeof window.Izipay === "function") {
+        return []
+    }
+
+    const firstPartySrc = `${FIRST_PARTY_SDK_PATH}?mode=${encodeURIComponent(mode)}`
+    const sources = Array.from(new Set([firstPartySrc, primarySrc]))
+    const failures: string[] = []
+
+    for (const source of sources) {
+        try {
+            await loadIzipayScript(source)
+            return failures
+        } catch (error) {
+            failures.push(`${source}: ${(error as Error).message}`)
+        }
+    }
+
+    throw new Error(`${SDK_LOAD_ERROR_MESSAGE} Intentos: ${failures.join(" | ")}`)
 }
 
 export default function IzipayCheckout({
@@ -331,7 +367,18 @@ export default function IzipayCheckout({
         const initCheckout = async () => {
             try {
                 startedRef.current = true
-                await loadIzipayScript(scriptUrl)
+                const failedSources = await loadIzipayScriptWithFallback(scriptUrl, mode)
+
+                if (failedSources.length > 0) {
+                    void reportCheckoutFailure({
+                        orderId,
+                        stage: "sdk-fallback-recovered",
+                        mode,
+                        message: failedSources.join(" | ").slice(0, 300),
+                        scriptUrl,
+                        severity: "warning",
+                    })
+                }
 
                 if (typeof window.Izipay !== "function") {
                     throw new Error("El SDK de Izipay no se inicializo correctamente")
@@ -384,8 +431,8 @@ export default function IzipayCheckout({
             } catch (sdkError) {
                 const rawMessage = (sdkError as Error).message
                 const message =
-                    rawMessage === SDK_LOAD_ERROR_MESSAGE
-                        ? rawMessage
+                    rawMessage.startsWith(SDK_LOAD_ERROR_MESSAGE)
+                        ? SDK_LOAD_ERROR_MESSAGE
                         : sanitizeIzipayUserMessage(
                             rawMessage || "No se pudo iniciar el checkout de Izipay"
                         )
@@ -397,7 +444,7 @@ export default function IzipayCheckout({
                 void reportCheckoutFailure({
                     orderId,
                     stage:
-                        rawMessage === SDK_LOAD_ERROR_MESSAGE
+                        rawMessage.startsWith(SDK_LOAD_ERROR_MESSAGE)
                             ? "sdk-script-load"
                             : "sdk-init",
                     mode,

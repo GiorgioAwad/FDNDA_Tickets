@@ -15,11 +15,13 @@ export async function POST(request: NextRequest) {
         const message = typeof body.message === "string" ? body.message.slice(0, 500) : ""
         const probes = body.probes && typeof body.probes === "object" ? body.probes : undefined
         const mode = typeof body.mode === "string" ? body.mode.slice(0, 20) : ""
+        const severity = body.severity === "warning" ? "warning" : "error"
 
-        console.error("[izipay/client-log]", {
+        const details = {
             orderId,
             stage,
             mode,
+            severity,
             message,
             probes,
             userAgent: request.headers.get("user-agent")?.slice(0, 200),
@@ -29,7 +31,13 @@ export async function POST(request: NextRequest) {
                 request.headers.get("x-forwarded-for")?.split(",")[0] ||
                 null,
             country: request.headers.get("cf-ipcountry") || null,
-        })
+        }
+
+        if (severity === "warning") {
+            console.warn("[izipay/client-log]", details)
+        } else {
+            console.error("[izipay/client-log]", details)
+        }
 
         return NextResponse.json({ ok: true })
     } catch {

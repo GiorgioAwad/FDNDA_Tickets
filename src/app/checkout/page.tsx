@@ -56,6 +56,10 @@ export default function CheckoutPage() {
 
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState("")
+    const [retryableOrder, setRetryableOrder] = useState<{
+        id: string
+        fingerprint: string
+    } | null>(null)
 
     const [izipayCheckoutData, setIzipayCheckoutData] = useState<{
         authorization: string
@@ -374,50 +378,63 @@ export default function CheckoutPage() {
         setError("")
 
         try {
-            const orderResponse = await fetch("/api/orders", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    eventId: items[0]?.eventId,
-                    items: items.map((item) => ({
-                        ticketTypeId: item.ticketTypeId,
-                        quantity: item.quantity,
-                        attendees:
-                            getEventCategory(item) === "EVENTO"
-                                ? item.attendees.map((attendee) => ({
-                                      scheduleSelections: attendee.scheduleSelections,
-                                  }))
-                                : item.attendees,
-                    })),
-                    billing: {
-                        documentType: billingData.documentType,
-                        buyerDocNumber: billingData.buyerDocNumber,
-                        buyerName: billingData.documentType === "FACTURA" ? billingData.buyerName : boletaFullName,
-                        buyerAddress: billingData.buyerAddress,
-                        buyerEmail: billingData.buyerEmail,
-                        buyerPhone: billingData.buyerPhone,
-                        buyerUbigeo: billingData.buyerUbigeo,
-                        buyerFirstName: billingData.buyerFirstName,
-                        buyerSecondName: billingData.buyerSecondName,
-                        buyerLastNamePaternal: billingData.buyerLastNamePaternal,
-                        buyerLastNameMaternal: billingData.buyerLastNameMaternal,
-                    },
-                    discountCodeId: appliedDiscount?.id || null,
-                    rememberBilling,
-                }),
-            })
-
-            const orderData = await orderResponse.json()
-
-            if (!orderResponse.ok) {
-                throw new Error(orderData.error || "Error al crear la orden")
+            const orderPayload = {
+                eventId: items[0]?.eventId,
+                items: items.map((item) => ({
+                    ticketTypeId: item.ticketTypeId,
+                    quantity: item.quantity,
+                    attendees:
+                        getEventCategory(item) === "EVENTO"
+                            ? item.attendees.map((attendee) => ({
+                                  scheduleSelections: attendee.scheduleSelections,
+                              }))
+                            : item.attendees,
+                })),
+                billing: {
+                    documentType: billingData.documentType,
+                    buyerDocNumber: billingData.buyerDocNumber,
+                    buyerName: billingData.documentType === "FACTURA" ? billingData.buyerName : boletaFullName,
+                    buyerAddress: billingData.buyerAddress,
+                    buyerEmail: billingData.buyerEmail,
+                    buyerPhone: billingData.buyerPhone,
+                    buyerUbigeo: billingData.buyerUbigeo,
+                    buyerFirstName: billingData.buyerFirstName,
+                    buyerSecondName: billingData.buyerSecondName,
+                    buyerLastNamePaternal: billingData.buyerLastNamePaternal,
+                    buyerLastNameMaternal: billingData.buyerLastNameMaternal,
+                },
+                discountCodeId: appliedDiscount?.id || null,
+                rememberBilling,
             }
+            const orderFingerprint = JSON.stringify(orderPayload)
+            const canReuseOrder =
+                paymentsMode === "izipay" &&
+                retryableOrder?.fingerprint === orderFingerprint
+
+            const createOrder = async () => {
+                const orderResponse = await fetch("/api/orders", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: orderFingerprint,
+                })
+                const orderData = await orderResponse.json()
+
+                if (!orderResponse.ok) {
+                    throw new Error(orderData.error || "Error al crear la orden")
+                }
+
+                const orderId = orderData.data.orderId as string
+                setRetryableOrder({ id: orderId, fingerprint: orderFingerprint })
+                return orderId
+            }
+
+            let orderId = canReuseOrder ? retryableOrder.id : await createOrder()
 
             if (paymentsMode === "mock") {
                 const paymentResponse = await fetch("/api/payments/mock", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ orderId: orderData.data.orderId }),
+                    body: JSON.stringify({ orderId }),
                 })
 
                 const paymentData = await paymentResponse.json()
@@ -427,7 +444,8 @@ export default function CheckoutPage() {
                 }
 
                 clearCart()
-                router.push(`/checkout/success?orderId=${orderData.data.orderId}`)
+                setRetryableOrder(null)
+                router.push(`/checkout/success?orderId=${orderId}`)
                 return
             }
 
@@ -436,7 +454,7 @@ export default function CheckoutPage() {
                 const openpayResponse = await fetch("/api/payments/openpay/charge", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ orderId: orderData.data.orderId }),
+                    body: JSON.stringify({ orderId }),
                 })
 
                 const openpayData = await openpayResponse.json()
@@ -447,30 +465,45 @@ export default function CheckoutPage() {
 
                 if (openpayData.data?.alreadyPaid) {
                     clearCart()
-                    router.push(`/checkout/success?orderId=${orderData.data.orderId}`)
+                    setRetryableOrder(null)
+                    router.push(`/checkout/success?orderId=${orderId}`)
                     return
                 }
 
                 clearCart()
+                setRetryableOrder(null)
                 window.location.assign(openpayData.data.paymentUrl)
                 return
             }
 
-            const sessionResponse = await fetch("/api/payments/izipay/session", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ orderId: orderData.data.orderId }),
-            })
+            const createSession = async (targetOrderId: string) => {
+                const response = await fetch("/api/payments/izipay/session", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ orderId: targetOrderId }),
+                })
+                return { response, data: await response.json() }
+            }
 
-            const sessionData = await sessionResponse.json()
+            let sessionResult = await createSession(orderId)
+            if (
+                canReuseOrder &&
+                sessionResult.response.status === 400 &&
+                sessionResult.data.code === "ORDER_NOT_PAYABLE"
+            ) {
+                orderId = await createOrder()
+                sessionResult = await createSession(orderId)
+            }
 
+            const { response: sessionResponse, data: sessionData } = sessionResult
             if (!sessionResponse.ok || !sessionData.success) {
                 throw new Error(sessionData.error || "No se pudo iniciar el pago con IZIPAY")
             }
 
             if (sessionData.data?.alreadyPaid) {
                 clearCart()
-                router.push(`/checkout/success?orderId=${orderData.data.orderId}`)
+                setRetryableOrder(null)
+                router.push(`/checkout/success?orderId=${orderId}`)
                 return
             }
 
@@ -485,7 +518,7 @@ export default function CheckoutPage() {
                     keyRSA: sessionData.data.keyRSA,
                     scriptUrl: sessionData.data.scriptUrl,
                     config: sessionData.data.config,
-                    orderId: orderData.data.orderId,
+                    orderId,
                 })
                 return
             }
@@ -1169,7 +1202,10 @@ export default function CheckoutPage() {
                                         scriptUrl={izipayCheckoutData.scriptUrl}
                                         config={izipayCheckoutData.config}
                                         orderId={izipayCheckoutData.orderId}
-                                        onSuccess={() => clearCart()}
+                                        onSuccess={() => {
+                                            setRetryableOrder(null)
+                                            clearCart()
+                                        }}
                                         onError={(msg) => {
                                             setError(msg)
                                             // Volver a mostrar el boton Pagar para que el

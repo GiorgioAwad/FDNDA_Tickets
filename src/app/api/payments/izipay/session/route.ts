@@ -135,7 +135,11 @@ export async function POST(request: NextRequest) {
 
         if (order.status !== "PENDING") {
             return NextResponse.json(
-                { success: false, error: "La orden no esta disponible para pago" },
+                {
+                    success: false,
+                    code: "ORDER_NOT_PAYABLE",
+                    error: "La orden no esta disponible para pago",
+                },
                 { status: 400 }
             )
         }

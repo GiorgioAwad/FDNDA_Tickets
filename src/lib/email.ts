@@ -5,9 +5,10 @@ import {
     queueCourtesyClaimedEmail 
 } from "./email-queue"
 import { sendTransactionalEmail } from "./email-provider"
+import { buildEmailUrl, resolveEmailBaseUrl } from "./email-url"
 
 const FROM_EMAIL = process.env.EMAIL_FROM || "Ticketing FDNDA <ticketing@fdnda.org>"
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+const APP_URL = resolveEmailBaseUrl()
 const RAW_APP_NAME = (process.env.NEXT_PUBLIC_APP_NAME || "Ticketing FDNDA").trim()
 const APP_NAME = RAW_APP_NAME.toLowerCase() === "fdnda tickets" ? "Ticketing FDNDA" : RAW_APP_NAME
 const BRAND_TAGLINE = "Federaci&oacute;n Deportiva Nacional de Deportes Acu&aacute;ticos"
@@ -29,7 +30,7 @@ export async function sendVerificationEmail(
     name: string,
     token: string
 ): Promise<EmailResult> {
-    const verifyUrl = `${APP_URL}/verify-email?token=${token}`
+    const verifyUrl = `${buildEmailUrl("/verify-email")}?token=${encodeURIComponent(token)}`
 
     try {
         const result = await sendTransactionalEmail({
@@ -105,7 +106,7 @@ export async function sendPasswordResetEmail(
     name: string,
     token: string
 ): Promise<EmailResult> {
-    const resetUrl = `${APP_URL}/reset-password?token=${token}`
+    const resetUrl = `${buildEmailUrl("/reset-password")}?token=${encodeURIComponent(token)}`
 
     try {
         const result = await sendTransactionalEmail({
@@ -292,7 +293,7 @@ export async function sendVerificationEmailQueued(
     name: string,
     token: string
 ): Promise<EmailResult> {
-    const verifyUrl = `${APP_URL}/verify-email?token=${token}`
+    const verifyUrl = `${buildEmailUrl("/verify-email")}?token=${encodeURIComponent(token)}`
     
     if (USE_EMAIL_QUEUE) {
         try {
@@ -314,7 +315,7 @@ export async function sendPasswordResetEmailQueued(
     name: string,
     token: string
 ): Promise<EmailResult> {
-    const resetUrl = `${APP_URL}/reset-password?token=${token}`
+    const resetUrl = `${buildEmailUrl("/reset-password")}?token=${encodeURIComponent(token)}`
     
     if (USE_EMAIL_QUEUE) {
         try {
