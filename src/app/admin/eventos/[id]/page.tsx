@@ -3,7 +3,9 @@ import { getCurrentUser } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { EventForm } from "@/components/admin/EventForm"
 import { EventDashboard } from "@/components/admin/EventDashboard"
+import { PoolDayCupos } from "@/components/admin/PoolDayCupos"
 import { DuplicateEventButton } from "@/components/admin/DuplicateEventButton"
+import { isPoolFreeEventCategory } from "@/lib/pool-free"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
@@ -94,6 +96,25 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                 />
             </div>
             <EventDashboard eventId={event.id} ticketTypes={ticketTypeOptions} />
+            {isPoolFreeEventCategory(event.category) && (
+                <PoolDayCupos
+                    eventId={event.id}
+                    startDate={serializedEvent.startDate}
+                    endDate={serializedEvent.endDate}
+                    ticketTypes={serializedEvent.ticketTypes.map((ticketType) => ({
+                        id: ticketType.id,
+                        name: ticketType.name,
+                        isActive: ticketType.isActive,
+                        capacity: ticketType.capacity,
+                        dateInventories: ticketType.dateInventories.map((inventory) => ({
+                            date: inventory.date,
+                            capacity: inventory.capacity,
+                            sold: inventory.sold,
+                            isEnabled: inventory.isEnabled,
+                        })),
+                    }))}
+                />
+            )}
             <EventForm initialData={serializedEvent} isEditing showBack={false} />
         </div>
     )

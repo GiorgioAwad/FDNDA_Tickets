@@ -18,7 +18,7 @@ import {
     Eye,
     Users,
 } from "lucide-react"
-import type { Prisma } from "@prisma/client"
+import { Prisma } from "@prisma/client"
 
 export const dynamic = "force-dynamic"
 
@@ -60,7 +60,7 @@ function getCategoryLabel(category: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA") {
 }
 
 export default async function AdminEventsPage() {
-    const [events, financeSummaries] = await Promise.all([
+    const [events, financeSummaries, poolOccupancyRows] = await Promise.all([
         prisma.event.findMany({
             include: {
                 _count: {
@@ -82,7 +82,30 @@ export default async function AdminEventsPage() {
             orderBy: { startDate: "desc" },
         }) as Promise<EventWithStats[]>,
         getTreasuryEventSummaries(),
+        // Ocupacion real de piscina libre: por (horario, fecha), no el template base.
+        prisma.$queryRaw<Array<{ eventId: string; cap: number | bigint; sold: number | bigint }>>(Prisma.sql`
+            SELECT tt."eventId" AS "eventId",
+                   COALESCE(SUM(inv."capacity"), 0) AS cap,
+                   COALESCE(SUM(inv."sold"), 0) AS sold
+            FROM "ticket_type_date_inventories" inv
+            JOIN "ticket_types" tt ON tt."id" = inv."ticketTypeId"
+            JOIN "events" e ON e."id" = tt."eventId"
+            WHERE e."category" = 'PISCINA_LIBRE'
+              AND inv."isEnabled" = true
+              AND inv."capacity" > 0
+            GROUP BY tt."eventId"
+        `),
     ])
+
+    // eventId -> ocupacion % real (null si no hay cupos configurados/limitados)
+    const poolOccupancyByEvent = new Map<string, number>()
+    for (const row of poolOccupancyRows) {
+        const cap = Number(row.cap)
+        const sold = Number(row.sold)
+        if (cap > 0) {
+            poolOccupancyByEvent.set(row.eventId, Math.round((sold / cap) * 100))
+        }
+    }
 
     const totalEvents = events.length
     const publishedEvents = events.filter((event) => event.isPublished).length
@@ -195,7 +218,7 @@ export default async function AdminEventsPage() {
                     </h2>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                         {ongoingEvents.map((event) => (
-                            <EventCard key={event.id} event={event} status="ongoing" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} />
+                            <EventCard key={event.id} event={event} status="ongoing" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} poolOccupancy={poolOccupancyByEvent.get(event.id) ?? null} />
                         ))}
                     </div>
                 </div>
@@ -206,7 +229,7 @@ export default async function AdminEventsPage() {
                     <h2 className="mb-3 text-lg font-semibold">Proximos ({upcomingEvents.length})</h2>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                         {upcomingEvents.map((event) => (
-                            <EventCard key={event.id} event={event} status="upcoming" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} />
+                            <EventCard key={event.id} event={event} status="upcoming" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} poolOccupancy={poolOccupancyByEvent.get(event.id) ?? null} />
                         ))}
                     </div>
                 </div>
@@ -217,7 +240,7 @@ export default async function AdminEventsPage() {
                     <h2 className="mb-3 text-lg font-semibold text-gray-500">Pasados ({pastEvents.length})</h2>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                         {pastEvents.slice(0, 6).map((event) => (
-                            <EventCard key={event.id} event={event} status="past" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} />
+                            <EventCard key={event.id} event={event} status="past" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} poolOccupancy={poolOccupancyByEvent.get(event.id) ?? null} />
                         ))}
                     </div>
                 </div>
@@ -298,18 +321,29 @@ function EventCard({
     event,
     status,
     paidRevenue,
+    poolOccupancy,
 }: {
     event: EventWithStats
     status: "ongoing" | "upcoming" | "past"
     paidRevenue: number
+    poolOccupancy?: number | null
 }) {
     const totalRevenue = paidRevenue
+    const isPoolFree = event.category === "PISCINA_LIBRE"
     const totalCapacity = event.ticketTypes.reduce(
         (acc, ticketType) => acc + (ticketType.capacity || 0),
         0
     )
     const totalSold = event.ticketTypes.reduce((acc, ticketType) => acc + ticketType.sold, 0)
-    const soldPercentage = totalCapacity > 0 ? Math.round((totalSold / totalCapacity) * 100) : 0
+    // Piscina libre: la capacidad real es por (horario, fecha), no el template base.
+    // Usamos la ocupacion calculada desde los inventarios por fecha y, si no hay
+    // cupos configurados/limitados, no mostramos la barra (evita el % fantasma).
+    const showOccupancy = isPoolFree ? poolOccupancy != null : totalCapacity > 0
+    const soldPercentage = isPoolFree
+        ? poolOccupancy ?? 0
+        : totalCapacity > 0
+          ? Math.round((totalSold / totalCapacity) * 100)
+          : 0
 
     return (
         <Link href={`/admin/eventos/${event.id}`}>
@@ -367,7 +401,7 @@ function EventCard({
                         </div>
                     </div>
 
-                    {totalCapacity > 0 && (
+                    {showOccupancy && (
                         <div className="mt-3">
                             <div className="mb-1 flex justify-between text-xs text-gray-500">
                                 <span>Ocupacion</span>
