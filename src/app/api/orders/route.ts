@@ -344,7 +344,12 @@ export async function POST(request: NextRequest) {
                             ? reservedTicketType.packageDaysCount
                             : 1
                         : 0
-                const requiresAttendeeDetails = eventConfig.category !== "EVENTO"
+                // EVENTO y PISCINA_LIBRE no piden identidad del asistente (las
+                // entradas usan el nombre del comprador). Solo ACADEMIA exige
+                // nombre/DNI por asistente (ABIO/SUNAT).
+                const requiresAttendeeDetails =
+                    eventConfig.category !== "EVENTO" &&
+                    eventConfig.category !== "PISCINA_LIBRE"
 
                 if (requiresAttendeeDetails) {
                     if (attendeeData.length < item.quantity) {
@@ -423,21 +428,29 @@ export async function POST(request: NextRequest) {
                     })
                 }
 
-                if (eventConfig.category === "EVENTO") {
-                    attendeeData =
-                        requiredScheduleSelections > 0
-                            ? attendeeData.map((attendee) => ({
-                                  ...attendee,
-                                  name: "",
-                                  firstName: "",
-                                  secondName: "",
-                                  lastNamePaternal: "",
-                                  lastNameMaternal: "",
-                                  dni: "",
-                                  matricula: undefined,
-                                  scheduleSelections: attendee.scheduleSelections,
-                              }))
-                            : []
+                // Igual que EVENTO, piscina libre no guarda identidad del
+                // asistente. Se conserva siempre scheduleSelections porque el dia
+                // elegido define la capacidad y el entitlement por fecha.
+                if (
+                    eventConfig.category === "EVENTO" ||
+                    eventConfig.category === "PISCINA_LIBRE"
+                ) {
+                    const keepScheduleSelections =
+                        requiredScheduleSelections > 0 ||
+                        eventConfig.category === "PISCINA_LIBRE"
+                    attendeeData = keepScheduleSelections
+                        ? attendeeData.slice(0, item.quantity).map((attendee) => ({
+                              ...attendee,
+                              name: "",
+                              firstName: "",
+                              secondName: "",
+                              lastNamePaternal: "",
+                              lastNameMaternal: "",
+                              dni: "",
+                              matricula: undefined,
+                              scheduleSelections: attendee.scheduleSelections,
+                          }))
+                        : []
                 }
 
                 const subtotal = Number(reservedTicketType.price) * item.quantity

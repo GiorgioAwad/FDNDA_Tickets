@@ -171,9 +171,20 @@ export default function CheckoutPage() {
         [eventCategoriesById]
     )
 
+    // Solo ACADEMIA pide identidad del asistente (nombre/DNI para ABIO/SUNAT).
+    // EVENTO y PISCINA_LIBRE no: las entradas usan el nombre del comprador y solo
+    // se selecciona fecha/turno por entrada.
+    const collectsAttendeeIdentity = useCallback(
+        (item: (typeof items)[number]) => {
+            const category = getEventCategory(item)
+            return category !== "EVENTO" && category !== "PISCINA_LIBRE"
+        },
+        [getEventCategory]
+    )
+
     const hasItemsRequiringAttendees = useMemo(
-        () => items.some((item) => getEventCategory(item) !== "EVENTO"),
-        [getEventCategory, items]
+        () => items.some((item) => collectsAttendeeIdentity(item)),
+        [collectsAttendeeIdentity, items]
     )
 
     const boletaFullName = useMemo(
@@ -259,7 +270,7 @@ export default function CheckoutPage() {
     const hasMissingAttendeeData = useMemo(
         () =>
             items.some((item) =>
-                getEventCategory(item) !== "EVENTO" &&
+                collectsAttendeeIdentity(item) &&
                 item.attendees.some((attendee) =>
                     !attendee.firstName?.trim() ||
                     !attendee.lastNamePaternal?.trim() ||
@@ -267,7 +278,7 @@ export default function CheckoutPage() {
                     !attendee.dni
                 )
             ),
-        [getEventCategory, items]
+        [collectsAttendeeIdentity, items]
     )
 
     const hasMissingBillingData = useMemo(() => {
@@ -383,12 +394,11 @@ export default function CheckoutPage() {
                 items: items.map((item) => ({
                     ticketTypeId: item.ticketTypeId,
                     quantity: item.quantity,
-                    attendees:
-                        getEventCategory(item) === "EVENTO"
-                            ? item.attendees.map((attendee) => ({
-                                  scheduleSelections: attendee.scheduleSelections,
-                              }))
-                            : item.attendees,
+                    attendees: !collectsAttendeeIdentity(item)
+                        ? item.attendees.map((attendee) => ({
+                              scheduleSelections: attendee.scheduleSelections,
+                          }))
+                        : item.attendees,
                 })),
                 billing: {
                     documentType: billingData.documentType,
@@ -841,13 +851,13 @@ export default function CheckoutPage() {
                                             </Button>
                                         </div>
 
-                                        {(getEventCategory(item) !== "EVENTO" || getRequiredSelections(item) > 0) && (
+                                        {(collectsAttendeeIdentity(item) || getRequiredSelections(item) > 0) && (
                                         <div className="bg-gray-50 p-3 sm:p-4 rounded-lg space-y-4">
                                             <h4 className="text-sm font-semibold flex items-center gap-2">
                                                 <User className="h-4 w-4" />
-                                                {getEventCategory(item) === "EVENTO"
-                                                    ? "Fecha y turno por entrada"
-                                                    : "Datos de los asistentes"}
+                                                {collectsAttendeeIdentity(item)
+                                                    ? "Datos de los asistentes"
+                                                    : "Fecha y turno por entrada"}
                                             </h4>
 
                                             {item.attendees.map((attendee, attendeeIndex) => {
@@ -868,7 +878,7 @@ export default function CheckoutPage() {
 
                                                 return (
                                                     <div key={attendeeIndex} className="space-y-3">
-                                                    {getEventCategory(item) !== "EVENTO" && (
+                                                    {collectsAttendeeIdentity(item) && (
                                                     <>
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                         <div>
@@ -1099,9 +1109,9 @@ export default function CheckoutPage() {
                                             })}
 
                                             <div className="text-xs text-gray-500">
-                                                {getEventCategory(item) === "EVENTO"
-                                                    ? "Selecciona una fecha y turno vigente para cada entrada cuando corresponda."
-                                                    : "* Importante: El DNI debe coincidir con el documento de identidad al ingresar."}
+                                                {collectsAttendeeIdentity(item)
+                                                    ? "* Importante: El DNI debe coincidir con el documento de identidad al ingresar."
+                                                    : "Selecciona una fecha y turno vigente para cada entrada cuando corresponda."}
                                             </div>
                                         </div>
                                         )}
