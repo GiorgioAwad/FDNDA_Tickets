@@ -3,6 +3,7 @@ import { Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { prisma } from "@/lib/prisma"
+import { getEventActiveThreshold } from "@/lib/utils"
 import HomeVerificationPopup from "@/components/home/HomeVerificationPopup"
 import { HeroSection } from "@/components/home/HeroSection"
 import { EventCard, type EventCardEvent } from "@/components/home/EventCard"
@@ -30,7 +31,7 @@ async function getUpcomingEvents() {
       where: {
         isPublished: true,
         visibility: "PUBLIC",
-        endDate: { gte: new Date() },
+        endDate: { gte: getEventActiveThreshold() },
       },
       select: {
         id: true,

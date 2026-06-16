@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { TicketCardItem } from "@/components/tickets/TicketCardItem"
-import { formatDate } from "@/lib/utils"
+import { formatDate, getEventActiveThreshold } from "@/lib/utils"
 import {
     normalizeScheduleSelections,
     type ScheduleSelection,
@@ -108,7 +108,9 @@ export default async function MyTicketsPage() {
         ],
     })
 
-    const now = new Date().getTime()
+    // Una entrada pasa a "pasadas" recién cuando termina todo el último día del
+    // evento (11:59pm hora Lima), no a las 7am como hacía new Date().
+    const now = getEventActiveThreshold().getTime()
 
     type EnrichedTicket = (typeof tickets)[number] & {
         scheduleKey: string

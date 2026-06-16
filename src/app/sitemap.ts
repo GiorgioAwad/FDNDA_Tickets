@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next"
 import { prisma } from "@/lib/prisma"
+import { getEventActiveThreshold } from "@/lib/utils"
 
 const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ticketingfdnda.pe"
 
@@ -51,7 +52,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             where: {
                 isPublished: true,
                 visibility: "PUBLIC",
-                endDate: { gte: new Date() },
+                endDate: { gte: getEventActiveThreshold() },
             },
             select: {
                 slug: true,

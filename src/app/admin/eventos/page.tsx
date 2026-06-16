@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { prisma } from "@/lib/prisma"
 import { getTreasuryEventSummaries } from "@/lib/treasury"
-import { formatDate, formatPrice } from "@/lib/utils"
+import { formatDate, formatPrice, getEventActiveThreshold } from "@/lib/utils"
 import { EventBannerMedia } from "@/components/events/EventBannerMedia"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -109,14 +109,15 @@ export default async function AdminEventsPage() {
 
     const totalEvents = events.length
     const publishedEvents = events.filter((event) => event.isPublished).length
-    const activeEvents = events.filter((event) => new Date(event.endDate) >= new Date() && event.isPublished).length
+    const activeThreshold = getEventActiveThreshold()
+    const activeEvents = events.filter((event) => new Date(event.endDate) >= activeThreshold && event.isPublished).length
 
     const upcomingEvents = events.filter((event) => new Date(event.startDate) > new Date())
     const ongoingEvents = events.filter((event) => {
         const now = new Date()
         return new Date(event.startDate) <= now && new Date(event.endDate) >= now
     })
-    const pastEvents = events.filter((event) => new Date(event.endDate) < new Date())
+    const pastEvents = events.filter((event) => new Date(event.endDate) < activeThreshold)
 
     const financeByEvent = new Map(
         financeSummaries.map((summary) => [summary.id, summary])

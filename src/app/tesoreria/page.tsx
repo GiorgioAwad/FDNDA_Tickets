@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { prisma } from "@/lib/prisma"
-import { formatDateTimeForExport, formatPrice } from "@/lib/utils"
+import { formatDateTimeForExport, formatPrice, getEventActiveThreshold } from "@/lib/utils"
 import { extractOrderPaymentDetails } from "@/lib/payment-details"
 import { TOTAL_COMMISSION_RATE, getTreasuryEventSummaries } from "@/lib/treasury"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -118,7 +118,7 @@ export default async function TreasuryDashboardPage() {
             ? ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
             : 0
 
-    const activeEvents = events.filter((event) => event.isPublished && event.endDate >= new Date())
+    const activeEvents = events.filter((event) => event.isPublished && new Date(event.endDate) >= getEventActiveThreshold())
     const topEvents = [...events]
         .sort((a, b) => b.grossRevenue - a.grossRevenue)
         .slice(0, 5)

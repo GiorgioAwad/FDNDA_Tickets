@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { prisma } from "@/lib/prisma"
-import { formatPrice, formatDate } from "@/lib/utils"
+import { formatPrice, formatDate, getEventActiveThreshold } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -97,7 +97,7 @@ export default async function AdminDashboardPage() {
             prisma.user.count({ where: { role: "USER" } }),
             prisma.event.count(),
             prisma.event.count({
-                where: { endDate: { gte: new Date() }, isPublished: true }
+                where: { endDate: { gte: getEventActiveThreshold() }, isPublished: true }
             }),
             prisma.ticket.count({ where: { status: "ACTIVE" } }),
             prisma.order.aggregate({
@@ -130,7 +130,7 @@ export default async function AdminDashboardPage() {
             }) as Promise<RecentOrder[]>,
             prisma.event.findMany({
                 where: {
-                    endDate: { gte: new Date() },
+                    endDate: { gte: getEventActiveThreshold() },
                     isPublished: true
                 },
                 take: 5,

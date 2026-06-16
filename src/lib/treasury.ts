@@ -1,6 +1,7 @@
 import "server-only"
 
 import { prisma } from "@/lib/prisma"
+import { getEventActiveThreshold } from "@/lib/utils"
 import {
     IZIPAY_COMMISSION_RATE,
     IGV_RATE,
@@ -146,7 +147,7 @@ export async function getTreasuryEventSummaries(): Promise<TreasuryEventSummary[
             category: event.category,
             advanceAmount,
             isPublished: event.isPublished,
-            isCompleted: event.endDate < new Date(),
+            isCompleted: event.endDate < getEventActiveThreshold(),
             grossRevenue,
             commissionAmount,
             totalOrders: stats.orderIds.size,

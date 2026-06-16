@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { getEventActiveThreshold } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { KpiCard } from "@/components/ui/kpi-card"
@@ -27,7 +28,7 @@ export default async function MyAccountPage() {
         prisma.ticket.count({
             where: {
                 userId: user.id,
-                event: { endDate: { lt: new Date() } },
+                event: { endDate: { lt: getEventActiveThreshold() } },
             },
         }),
         prisma.order

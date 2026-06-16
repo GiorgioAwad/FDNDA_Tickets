@@ -40,6 +40,33 @@ export function parseDateOnly(date: Date | string): Date {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0))
 }
 
+/**
+ * Umbral para decidir si un evento sigue activo "hoy".
+ *
+ * Los startDate/endDate se guardan a mediodía UTC del día civil (ver
+ * parseDateOnly). Comparar el endDate contra `new Date()` (instante actual UTC)
+ * hacía que un evento se considerara terminado a las 12:00 UTC = 7:00am hora
+ * Lima de su último día: el escáner se deshabilitaba y el evento desaparecía de
+ * los listados a media mañana del día final.
+ *
+ * Devolviendo el mediodía UTC del día civil de Lima, la comparación es
+ * día-vs-día (mismo encoding que parseDateOnly): el evento permanece activo
+ * durante TODO su último día, hasta las 11:59pm hora Lima, y recién deja de
+ * estarlo a la medianoche de Lima. Úsese en lugar de `new Date()` en cualquier
+ * comparación `endDate >= ...` / `endDate < ...` que determine si un evento
+ * (incluida piscina libre) sigue abierto.
+ */
+export function getEventActiveThreshold(): Date {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Lima",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(new Date())
+    const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? "0")
+    return new Date(Date.UTC(get("year"), get("month") - 1, get("day"), 12, 0, 0))
+}
+
 export function formatDateInput(date: Date | string): string {
     const d = parseDateInput(date)
     // Use UTC values to format, avoiding timezone shifts

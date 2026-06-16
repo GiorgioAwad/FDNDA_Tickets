@@ -7,6 +7,7 @@ import {
     invalidateEventCache,
     invalidateTicketTypeCache
 } from "./cache"
+import { getEventActiveThreshold } from "./utils"
 
 // ==================== TYPES ====================
 
@@ -173,7 +174,7 @@ export async function getCachedPublishedEvents(): Promise<CachedEvent[]> {
                 where: {
                     isPublished: true,
                     visibility: "PUBLIC",
-                    endDate: { gte: new Date() },
+                    endDate: { gte: getEventActiveThreshold() },
                 },
                 include: {
                     ticketTypes: {
