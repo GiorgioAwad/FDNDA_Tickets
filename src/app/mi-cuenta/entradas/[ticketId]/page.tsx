@@ -182,6 +182,10 @@ export default function TicketDetailPage() {
     const entitlements = ticket.entitlements || []
     const classCount = extractClassCount(ticket.ticketType.name)
     const isMembership = Boolean(ticket.isMembership)
+    // Antes de la fecha de inicio de la cohorte, la API no devuelve período
+    // (periodStart = null): la membresía aún no arranca.
+    const membershipNotStarted =
+        isMembership && ticket.membershipAttendance != null && ticket.membershipAttendance.periodStart == null
     let isPackageLike = Boolean(
         ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || classCount
     )
@@ -411,7 +415,21 @@ export default function TicketDetailPage() {
                         <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-gray-50 rounded-full" />
                         <div className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-gray-50 rounded-full" />
 
-                        {ticket.status === "ACTIVE" ? (
+                        {ticket.status === "ACTIVE" && membershipNotStarted ? (
+                            <div className="flex w-full flex-col items-center justify-center gap-3 py-6 text-center">
+                                <div className="flex h-44 w-44 sm:h-56 sm:w-56 flex-col items-center justify-center gap-2 rounded-xl bg-blue-50 px-4">
+                                    <Calendar className="h-10 w-10 text-fdnda-secondary" />
+                                    <span className="text-sm font-semibold text-fdnda-secondary">Tu membresía aún no inicia</span>
+                                </div>
+                                <p className="text-sm text-gray-600">
+                                    Válido a partir del{" "}
+                                    <span className="font-bold text-gray-900">{formatDate(ticket.event.startDate)}</span>
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                    El carnet con tu código QR estará disponible desde esa fecha.
+                                </p>
+                            </div>
+                        ) : ticket.status === "ACTIVE" ? (
                             <>
                                 <div className="bg-white p-2 rounded-xl shadow-inner mb-4">
                                     {ticket.qrDataUrl ? (
