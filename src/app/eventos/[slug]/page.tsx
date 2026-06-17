@@ -15,6 +15,7 @@ import {
     MapPin,
     Clock,
     FileText,
+    Ticket,
 } from "lucide-react"
 
 export const revalidate = 30
@@ -204,10 +205,18 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
         isActive: ticket.isActive,
         isPackage: ticket.isPackage,
         packageDaysCount: ticket.packageDaysCount,
+        monthlyClassLimit: ticket.monthlyClassLimit,
         validDays: ticket.validDays,
         servilexEnabled: ticket.servilexEnabled,
         servilexIndicator: ticket.servilexIndicator,
         servilexExtraConfig: ticket.servilexExtraConfig,
+        originalPrice: ticket.originalPrice !== null ? Number(ticket.originalPrice) : null,
+        benefits: Array.isArray(ticket.benefits)
+            ? (ticket.benefits as { text: string; footnote?: boolean }[])
+            : null,
+        isFeatured: ticket.isFeatured,
+        highlightLabel: ticket.highlightLabel,
+        accentColor: ticket.accentColor,
         dateInventories: ticket.dateInventories.map((inventory) => ({
             date: inventory.date.toISOString(),
             sold: inventory.sold,
@@ -215,6 +224,11 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
             isEnabled: inventory.isEnabled,
         })),
     }))
+
+    // Layout de "planes" (BRONCE/PLATA/ORO): se muestra a ancho completo, igual
+    // que piscina libre, en vez de la barra lateral de entradas.
+    const usePlansLayout = event.ticketLayout === "PLANS" && !isPoolFreeEvent
+    const fullWidthTickets = isPoolFreeEvent || usePlansLayout
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-fdnda-light/30 via-white to-white">
@@ -232,9 +246,9 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
             />
 
             <div className="container mx-auto px-4 py-6 sm:py-10">
-                <div className={cn("grid grid-cols-1 gap-6 sm:gap-8", isPoolFreeEvent ? "" : "lg:grid-cols-3")}>
+                <div className={cn("grid grid-cols-1 gap-6 sm:gap-8", fullWidthTickets ? "" : "lg:grid-cols-3")}>
                     {/* Main Content */}
-                    <div className={cn("space-y-6", isPoolFreeEvent ? "" : "lg:col-span-2")}>
+                    <div className={cn("space-y-6", fullWidthTickets ? "" : "lg:col-span-2")}>
                         {/* Pills */}
                         <div className="flex flex-wrap gap-2">
                             <InfoPill icon={Calendar} label={formatDate(event.startDate, { dateStyle: "long" })} />
@@ -307,6 +321,28 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
                             </CardContent>
                         </Card>
 
+                        {usePlansLayout && (
+                            <Card className="overflow-hidden">
+                                <CardHeader className="bg-gradient-to-r from-fdnda-light/40 to-transparent border-b border-border">
+                                    <CardTitle className="flex items-center gap-2 font-display text-xl">
+                                        <Ticket className="h-5 w-5 text-fdnda-secondary" />
+                                        Elige tu plan
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="p-5 sm:p-7">
+                                    <TicketPurchaseCard
+                                        eventId={event.id}
+                                        eventTitle={event.title}
+                                        eventCategory={event.category}
+                                        ticketTypes={ticketTypes}
+                                        eventStartDate={event.startDate}
+                                        eventEndDate={event.endDate}
+                                        ticketLayout={event.ticketLayout}
+                                    />
+                                </CardContent>
+                            </Card>
+                        )}
+
                         {isPoolFreeEvent && (
                             <TicketPurchaseCard
                                 eventId={event.id}
@@ -315,12 +351,13 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
                                 ticketTypes={ticketTypes}
                                 eventStartDate={event.startDate}
                                 eventEndDate={event.endDate}
+                                ticketLayout={event.ticketLayout}
                             />
                         )}
                     </div>
 
                     {/* Sidebar - Tickets */}
-                    {!isPoolFreeEvent && (
+                    {!fullWidthTickets && (
                         <div className="lg:sticky lg:top-20 self-start space-y-6">
                             <TicketPurchaseCard
                                 eventId={event.id}
@@ -329,6 +366,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
                                 ticketTypes={ticketTypes}
                                 eventStartDate={event.startDate}
                                 eventEndDate={event.endDate}
+                                ticketLayout={event.ticketLayout}
                             />
                         </div>
                     )}

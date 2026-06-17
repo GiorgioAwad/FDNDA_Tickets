@@ -11,6 +11,7 @@ import {
     pickQrDateForTicket,
     ticketUsesPurchasedDates,
 } from "@/lib/ticket-date-policy"
+import { getMembershipPeriod } from "@/lib/scan-helpers"
 export const runtime = "nodejs"
 
 type TicketEntitlement = {
@@ -128,6 +129,8 @@ export async function GET(
         let entitlements = ticket.entitlements
         const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
         const isPiscina = ticket.event?.category === "PISCINA_LIBRE"
+        const isMembership =
+            ticket.ticketType.monthlyClassLimit != null && ticket.ticketType.monthlyClassLimit > 0
         let isPackageLike = Boolean(
             ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || nameMatch
         )
@@ -137,6 +140,13 @@ export async function GET(
         if (isPiscina) {
             isPackageLike = true
             packageDaysCount = 1
+        }
+
+        // Membresía: el cupo es el mensual y NO se pre-generan entitlements (se
+        // crean al vuelo en el escaneo). El "usado" se cuenta dentro del mes en curso.
+        if (isMembership) {
+            isPackageLike = true
+            packageDaysCount = ticket.ticketType.monthlyClassLimit ?? null
         }
 
         if (!isPackageLike && entitlements.length === 0 && ticket.event?.startDate && ticket.event?.endDate) {
@@ -245,7 +255,17 @@ export async function GET(
 
         // Check if this date is valid for the ticket
         let dateStr = formatDateUTC(qrDate)
-        const usedCount = entitlements.filter((item) => item.status === "USED").length
+        // Membresía: solo cuentan las clases usadas dentro del mes en curso
+        // (reinicio sin acumular). El resto del cómputo de paquete sigue igual.
+        const membershipPeriod = isMembership ? getMembershipPeriod(todayStr, ticket.event.startDate) : null
+        const usedCount =
+            isMembership && membershipPeriod
+                ? entitlements.filter((item) => {
+                      if (item.status !== "USED") return false
+                      const d = formatDateUTC(item.date)
+                      return d >= membershipPeriod.startStr && d < membershipPeriod.endStr
+                  }).length
+                : entitlements.filter((item) => item.status === "USED").length
         const isPackage = isPackageLike && packageDaysCount
         const eventStart = ticket.event?.startDate ? formatDateLocal(ticket.event.startDate) : null
         const eventEnd = ticket.event?.endDate ? formatDateLocal(ticket.event.endDate) : null
@@ -362,6 +382,16 @@ export async function GET(
                 qrDataUrl,
                 qrDate: dateStr,
                 qrShift,
+                isMembership,
+                // Cupo del mes en curso para membresías (reinicio sin acumular)
+                membershipAttendance: isMembership
+                    ? {
+                          total: packageDaysCount ?? 0,
+                          used: usedCount,
+                          remaining: Math.max((packageDaysCount ?? 0) - usedCount, 0),
+                          periodStart: membershipPeriod?.startStr ?? null,
+                      }
+                    : null,
             },
         })
     } catch (error) {

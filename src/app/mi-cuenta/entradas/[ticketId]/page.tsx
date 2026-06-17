@@ -27,8 +27,16 @@ interface TicketDetail {
         name: string
         isPackage?: boolean
         packageDaysCount?: number | null
+        monthlyClassLimit?: number | null
         validDays?: unknown
     }
+    isMembership?: boolean
+    membershipAttendance?: {
+        total: number
+        used: number
+        remaining: number
+        periodStart?: string | null
+    } | null
     order?: {
         user?: {
             name?: string
@@ -173,12 +181,18 @@ export default function TicketDetailPage() {
 
     const entitlements = ticket.entitlements || []
     const classCount = extractClassCount(ticket.ticketType.name)
+    const isMembership = Boolean(ticket.isMembership)
     let isPackageLike = Boolean(
         ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || classCount
     )
 
     // Piscina libre: tratar como paquete de 1 asistencia
     if (isPiscina) {
+        isPackageLike = true
+    }
+
+    // Membresía: se muestra como paquete, pero el cupo es el del mes en curso
+    if (isMembership) {
         isPackageLike = true
     }
     const label = extractDaysLabel(ticket.ticketType.name)
@@ -316,6 +330,15 @@ export default function TicketDetailPage() {
             }
         }
         usedDisplayCount = displayEntitlements.filter((item) => item.status === "USED").length
+    } else if (isMembership && ticket.membershipAttendance) {
+        // Membresía: cupo del mes en curso (reinicio sin acumular)
+        totalCount = ticket.membershipAttendance.total
+        usedDisplayCount = ticket.membershipAttendance.used
+        displayEntitlements = Array.from({ length: totalCount }, (_, index) => ({
+            date: `slot-${index + 1}`,
+            status: index < usedDisplayCount ? ("USED" as const) : ("AVAILABLE" as const),
+            usedAt: null,
+        }))
     } else if (isPackageLike) {
         // Single-shift or no-shift package (original behavior)
         totalCount = ticket.ticketType.packageDaysCount ?? classCount ?? (isPiscina ? 1 : 0)
@@ -486,6 +509,7 @@ export default function TicketDetailPage() {
                                 </h3>
                                 <p className="text-sm text-gray-500">
                                     {usedDisplayCount}/{totalCount} {clasesLabel} usadas - {remainingCount} restantes
+                                    {isMembership ? " este mes" : ""}
                                 </p>
                             </div>
                             <Badge variant="secondary" className="text-xs">

@@ -13,6 +13,7 @@ import { getPoolFreeSelectableDates, isPoolFreeEventCategory } from "@/lib/pool-
 import { formatPrice } from "@/lib/utils"
 import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { Info, ShoppingCart, Minus, Plus, Gift, CheckCircle, AlertCircle, Ticket, Calendar, Clock, ChevronRight } from "lucide-react"
+import PlanTierCard from "./PlanTierCard"
 
 type DateInventoryClient = {
     date: string | Date
@@ -20,6 +21,8 @@ type DateInventoryClient = {
     sold: number
     isEnabled: boolean
 }
+
+export type PlanBenefit = { text: string; footnote?: boolean }
 
 export type TicketTypeClient = {
     id: string
@@ -31,11 +34,18 @@ export type TicketTypeClient = {
     isActive?: boolean
     isPackage?: boolean | null
     packageDaysCount?: number | null
+    monthlyClassLimit?: number | null
     validDays?: unknown
     servilexEnabled?: boolean
     servilexIndicator?: string | null
     servilexExtraConfig?: unknown
     dateInventories?: DateInventoryClient[]
+    // Presentación tipo "plan" (layout PLANS)
+    originalPrice?: number | null
+    benefits?: PlanBenefit[] | null
+    isFeatured?: boolean
+    highlightLabel?: string | null
+    accentColor?: string | null
 }
 
 type TicketPurchaseCardProps = {
@@ -45,6 +55,7 @@ type TicketPurchaseCardProps = {
     ticketTypes: TicketTypeClient[]
     eventStartDate?: string | Date
     eventEndDate?: string | Date
+    ticketLayout?: "LIST" | "PLANS"
 }
 
 type PoolSlotOption = {
@@ -200,6 +211,7 @@ export default function TicketPurchaseCard({
     ticketTypes,
     eventStartDate,
     eventEndDate,
+    ticketLayout = "LIST",
 }: TicketPurchaseCardProps) {
     const { addItem, updateQuantity, removeItem, items, itemCount } = useCart()
     const { status } = useSession()
@@ -614,6 +626,35 @@ export default function TicketPurchaseCard({
     }
 
     const isPoolFreeView = isPoolFreeEventCategory(eventCategory)
+    const isPlansLayout = ticketLayout === "PLANS" && !isPoolFreeView
+
+    const plansPanel = (
+        <div className="space-y-6">
+            <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {visibleTicketMeta.map(({ ticket, maxQty, soldOut }) => (
+                    <PlanTierCard
+                        key={ticket.id}
+                        ticket={ticket}
+                        quantity={getCartQuantity(ticket.id)}
+                        soldOut={soldOut}
+                        maxQty={maxQty}
+                        onIncrement={() => handleIncrement(ticket.id, maxQty)}
+                        onDecrement={() => handleDecrement(ticket.id)}
+                    />
+                ))}
+            </div>
+
+            <div className="flex flex-col items-center gap-3">
+                <Button asChild size="lg" className="w-full sm:w-auto sm:px-12" disabled={safeItemCount === 0}>
+                    <Link href="/checkout">Ir a pagar</Link>
+                </Button>
+                <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
+                    <Info className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <span>Podrás crear tu cuenta o iniciar sesión al momento de pagar.</span>
+                </div>
+            </div>
+        </div>
+    )
 
     const purchasePanel = (
         <>
@@ -745,6 +786,22 @@ export default function TicketPurchaseCard({
             </div>
         </>
     )
+
+    if (isPlansLayout) {
+        return (
+            <div>
+                {ticketTypes.length > 0 ? (
+                    plansPanel
+                ) : (
+                    <Card>
+                        <CardContent className="py-10 text-center text-gray-500">
+                            No hay planes disponibles por el momento.
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
+        )
+    }
 
     return (
         <Card className={isPoolFreeView ? "overflow-hidden" : "sticky top-24"}>

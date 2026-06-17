@@ -1,4 +1,4 @@
-import { formatDateUTC, formatDateLocal } from "@/lib/qr"
+import { formatDateUTC, formatDateLocal, getTodayDateString } from "@/lib/qr"
 import { getDaysBetween } from "@/lib/utils"
 import { extractTicketValidDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 
@@ -23,11 +23,12 @@ export type ScanTicket = {
     status: "ACTIVE" | "CANCELLED" | "EXPIRED"
     eventId: string
     event: { title: string; startDate: Date; endDate: Date; category?: string }
-    ticketType: { 
+    ticketType: {
         name: string
         isPackage: boolean
         packageDaysCount: number | null
-        validDays: unknown | null 
+        monthlyClassLimit?: number | null
+        validDays: unknown | null
     }
     entitlements: TicketEntitlement[]
 }
@@ -99,10 +100,92 @@ export const buildValidDaysFromLabel = (
     return results
 }
 
+// ==================== MEMBRESÍAS (cupo mensual) ====================
+
+export interface MembershipPeriod {
+    index: number // mes 0-based desde el inicio del evento
+    startStr: string // YYYY-MM-DD inclusivo
+    endStr: string // YYYY-MM-DD exclusivo
+}
+
+const pad2 = (value: number): string => String(value).padStart(2, "0")
+
+/**
+ * Suma `k` meses a un día (Y-M-D), manteniendo el día ancla (clamp al último
+ * día del mes destino). Devuelve "YYYY-MM-DD".
+ */
+const addMonthsToParts = (year: number, month: number, day: number, k: number): string => {
+    const total = year * 12 + (month - 1) + k
+    const ny = Math.floor(total / 12)
+    const nm = (total % 12) + 1
+    const lastDay = new Date(Date.UTC(ny, nm, 0)).getUTCDate()
+    const nd = Math.min(day, lastDay)
+    return `${ny}-${pad2(nm)}-${pad2(nd)}`
+}
+
+/**
+ * Membresías: ¿el ticket usa cupo mensual con reinicio?
+ */
+export const isMembershipTicket = (ticket: ScanTicket): boolean => {
+    const limit = ticket.ticketType.monthlyClassLimit
+    return typeof limit === "number" && limit > 0
+}
+
+/**
+ * Período (mes) de la membresía que contiene `today`, anclado al inicio del
+ * evento (cohorte de fechas fijas). Los cortes caen en el día del mes del
+ * `startDate`. Devuelve null si `today` es anterior al inicio.
+ */
+export const getMembershipPeriod = (today: string, eventStart: Date): MembershipPeriod | null => {
+    const startStr = formatDateUTC(eventStart)
+    const [sy, sm, sd] = startStr.split("-").map(Number)
+    const [ty, tm, td] = today.split("-").map(Number)
+    if (!sy || !sm || !sd || !ty || !tm || !td) return null
+    if (today < startStr) return null
+
+    let months = (ty - sy) * 12 + (tm - sm)
+    if (td < sd) months -= 1
+    if (months < 0) months = 0
+
+    return {
+        index: months,
+        startStr: addMonthsToParts(sy, sm, sd, months),
+        endStr: addMonthsToParts(sy, sm, sd, months + 1),
+    }
+}
+
+/**
+ * Resumen de asistencia para membresías: cupo total = límite mensual, usadas =
+ * clases consumidas dentro del mes en curso. Lo no usado en meses previos no
+ * cuenta (reinicio sin acumular).
+ */
+export const buildMembershipMonthlySummary = (
+    ticket: ScanTicket,
+    today: string
+): AttendanceSummary => {
+    const limit = ticket.ticketType.monthlyClassLimit ?? 0
+    const period = getMembershipPeriod(today, ticket.event.startDate)
+    if (!period) {
+        return { total: limit, used: 0, remaining: limit }
+    }
+    const used = ticket.entitlements.filter((item) => {
+        if (item.status !== "USED") return false
+        const dateStr = formatDateUTC(item.date)
+        return dateStr >= period.startStr && dateStr < period.endStr
+    }).length
+    return { total: limit, used, remaining: Math.max(limit - used, 0) }
+}
+
 /**
  * Build attendance summary from ticket data
  */
-export const buildAttendanceSummary = (ticket: ScanTicket): AttendanceSummary => {
+export const buildAttendanceSummary = (
+    ticket: ScanTicket,
+    today: string = getTodayDateString()
+): AttendanceSummary => {
+    if (isMembershipTicket(ticket)) {
+        return buildMembershipMonthlySummary(ticket, today)
+    }
     const used = ticket.entitlements.filter((item) => item.status === "USED").length
     let total = ticket.entitlements.length
     const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
@@ -153,6 +236,11 @@ export const isPackageLike = (ticket: ScanTicket): boolean => {
  * Generate entitlements for a ticket if missing
  */
 export const generateEntitlements = (ticket: ScanTicket): Date[] => {
+    // Membresías: el entitlement del día se crea al vuelo en el escaneo; nunca
+    // se pre-genera el rango completo del evento.
+    if (isMembershipTicket(ticket)) {
+        return []
+    }
     if (isPackageLike(ticket) || ticket.entitlements.length > 0) {
         return []
     }
@@ -175,7 +263,13 @@ export const generateEntitlements = (ticket: ScanTicket): Date[] => {
 /**
  * Check if package limit has been reached
  */
-export const isPackageLimitReached = (ticket: ScanTicket): boolean => {
+export const isPackageLimitReached = (
+    ticket: ScanTicket,
+    today: string = getTodayDateString()
+): boolean => {
+    if (isMembershipTicket(ticket)) {
+        return buildMembershipMonthlySummary(ticket, today).remaining <= 0
+    }
     const nameMatch = ticket.ticketType.name.match(/(\d+)\s*clases?/i)
     const packageLimit = ticket.ticketType.packageDaysCount ?? (nameMatch ? Number(nameMatch[1]) : null)
     if (!isPackageLike(ticket) || !packageLimit) {

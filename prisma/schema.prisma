@@ -34,6 +34,11 @@ enum EventVisibility {
   PRIVATE
 }
 
+enum EventTicketLayout {
+  LIST  // Lista simple de entradas (default)
+  PLANS // Cards tipo "planes" (BRONCE/PLATA/ORO) con beneficios y precio tachado
+}
+
 enum OrderStatus {
   PENDING
   PAID
@@ -266,6 +271,8 @@ model Event {
   visibility  EventVisibility @default(PUBLIC)
   accessToken String?   @unique
   discipline  String?   // e.g., "Natación", "Waterpolo", etc.
+  // Cómo se muestran las entradas en la página pública del evento.
+  ticketLayout EventTicketLayout @default(LIST)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -310,7 +317,17 @@ model TicketType {
   sold             Int      @default(0)
   isPackage        Boolean  @default(false)
   packageDaysCount Int?     // Number of days for package tickets
+  // Membresías: cupo de clases por mes. Si está presente, el control de
+  // asistencia se reinicia cada mes (use-it-or-lose-it) en vez de usar una
+  // bolsa total. Ver scan-helpers.buildMembershipMonthlySummary.
+  monthlyClassLimit Int?
   validDays        Json?    // Array of dates ["2024-03-15", "2024-03-16"]
+  // Presentación tipo "plan" (layout PLANS del evento)
+  originalPrice    Decimal? @db.Decimal(10, 2) // Precio regular para mostrar tachado
+  benefits         Json?    // [{ text: string, footnote?: boolean }]
+  isFeatured       Boolean  @default(false)    // Destaca el plan (ring + badge)
+  highlightLabel   String?  // Badge destacado, ej. "MÁS POPULAR"
+  accentColor      String?  // Token de color: "bronze" | "silver" | "gold" | custom
   servilexEnabled        Boolean  @default(false)
   servilexIndicator      String?  @default("AC")
   servilexSucursalCode   String?

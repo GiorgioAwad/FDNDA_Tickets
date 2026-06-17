@@ -69,6 +69,45 @@ const asExtraConfigRecord = (value: unknown): Record<string, unknown> => {
     return value as Record<string, unknown>
 }
 
+// Membresías: cupo de clases por mes (independiente de isPackage).
+const normalizeMonthlyLimit = (value: unknown): number | null => {
+    if (value === undefined || value === null || value === "") return null
+    const num = typeof value === "number" ? value : Number(value)
+    if (!Number.isFinite(num) || num <= 0) return null
+    return Math.floor(num)
+}
+
+// Precio regular (tachado) para layout de planes. Devuelve null si no aplica.
+const normalizeOptionalPrice = (value: unknown): number | null => {
+    if (value === undefined || value === null || value === "") return null
+    const num = typeof value === "number" ? value : Number(value)
+    if (!Number.isFinite(num) || num < 0) return null
+    return num
+}
+
+// Lista de beneficios del plan: [{ text, footnote? }]
+const normalizeBenefits = (value: unknown): Prisma.InputJsonValue | null => {
+    if (!Array.isArray(value)) return null
+    const items: Array<{ text: string; footnote?: boolean }> = []
+    for (const entry of value) {
+        if (!entry) continue
+        if (typeof entry === "string") {
+            const text = entry.trim()
+            if (text) items.push({ text })
+            continue
+        }
+        if (typeof entry === "object") {
+            const obj = entry as Record<string, unknown>
+            const text = typeof obj.text === "string" ? obj.text.trim() : ""
+            if (!text) continue
+            const item: { text: string; footnote?: boolean } = { text }
+            if (obj.footnote === true) item.footnote = true
+            items.push(item)
+        }
+    }
+    return items.length > 0 ? (items as unknown as Prisma.InputJsonValue) : null
+}
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -89,9 +128,15 @@ export async function POST(request: NextRequest) {
             capacity,
             isPackage,
             packageDaysCount,
+            monthlyClassLimit,
             validDays,
             sortOrder,
             isActive,
+            originalPrice,
+            benefits,
+            isFeatured,
+            highlightLabel,
+            accentColor,
             servilexEnabled,
             servilexIndicator,
             servilexServiceCode,
@@ -244,9 +289,15 @@ export async function POST(request: NextRequest) {
                 capacity: Number(capacity),
                 isPackage: Boolean(isPackage),
                 packageDaysCount: Boolean(isPackage) ? packageDays : null,
+                monthlyClassLimit: normalizeMonthlyLimit(monthlyClassLimit),
                 validDays: normalizeValidDays(validDays),
                 sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
                 isActive: isActive === undefined ? true : Boolean(isActive),
+                originalPrice: normalizeOptionalPrice(originalPrice),
+                benefits: normalizeBenefits(benefits) ?? Prisma.JsonNull,
+                isFeatured: Boolean(isFeatured),
+                highlightLabel: normalizeDescription(highlightLabel),
+                accentColor: normalizeOptionalCode(accentColor),
                 servilexEnabled: Boolean(servilexEnabled),
                 servilexIndicator: resolvedIndicator,
                 servilexSucursalCode: resolvedSucursalCode,
@@ -295,9 +346,15 @@ export async function PUT(request: NextRequest) {
             capacity,
             isPackage,
             packageDaysCount,
+            monthlyClassLimit,
             validDays,
             sortOrder,
             isActive,
+            originalPrice,
+            benefits,
+            isFeatured,
+            highlightLabel,
+            accentColor,
             servilexEnabled,
             servilexIndicator,
             servilexSucursalCode,
@@ -407,9 +464,15 @@ export async function PUT(request: NextRequest) {
             capacity?: number
             isPackage?: boolean
             packageDaysCount?: number | null
+            monthlyClassLimit?: number | null
             validDays?: Prisma.InputJsonValue
             sortOrder?: number
             isActive?: boolean
+            originalPrice?: number | null
+            benefits?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput
+            isFeatured?: boolean
+            highlightLabel?: string | null
+            accentColor?: string | null
             servilexEnabled?: boolean
             servilexIndicator?: string | null
             servilexSucursalCode?: string | null
@@ -431,6 +494,12 @@ export async function PUT(request: NextRequest) {
         if (isPackage !== undefined) data.isPackage = Boolean(isPackage)
         if (sortOrder !== undefined) data.sortOrder = Number(sortOrder)
         if (isActive !== undefined) data.isActive = Boolean(isActive)
+        if (monthlyClassLimit !== undefined) data.monthlyClassLimit = normalizeMonthlyLimit(monthlyClassLimit)
+        if (originalPrice !== undefined) data.originalPrice = normalizeOptionalPrice(originalPrice)
+        if (benefits !== undefined) data.benefits = normalizeBenefits(benefits) ?? Prisma.JsonNull
+        if (isFeatured !== undefined) data.isFeatured = Boolean(isFeatured)
+        if (highlightLabel !== undefined) data.highlightLabel = normalizeDescription(highlightLabel) ?? null
+        if (accentColor !== undefined) data.accentColor = normalizeOptionalCode(accentColor)
         if (validDays !== undefined) data.validDays = normalizeValidDays(validDays)
         if (servilexEnabled !== undefined) data.servilexEnabled = Boolean(servilexEnabled)
         if (servilexSucursalCode !== undefined) data.servilexSucursalCode = eventSucursalCode

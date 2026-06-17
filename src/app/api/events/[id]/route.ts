@@ -109,6 +109,7 @@ export async function PUT(
             visibility,
             bannerUrl,
             discipline,
+            ticketLayout,
         } = body as {
             title?: string
             description?: string
@@ -125,7 +126,10 @@ export async function PUT(
             visibility?: EventVisibility
             bannerUrl?: string
             discipline?: string
+            ticketLayout?: "LIST" | "PLANS"
         }
+        const resolvedTicketLayout =
+            ticketLayout === undefined ? undefined : ticketLayout === "PLANS" ? "PLANS" : "LIST"
 
         const parsedStartDate = startDate ? parseDateOnly(startDate) : undefined
         const parsedEndDate = endDate ? parseDateOnly(endDate) : undefined
@@ -223,6 +227,7 @@ export async function PUT(
                 visibility,
                 bannerUrl,
                 discipline,
+                ticketLayout: resolvedTicketLayout,
                 ...tokenPatch,
             },
         })

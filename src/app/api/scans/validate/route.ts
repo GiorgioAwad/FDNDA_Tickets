@@ -15,7 +15,9 @@ import {
     type ScanTicket,
     matchesToday,
     buildAttendanceSummary,
+    buildMembershipMonthlySummary,
     generateEntitlements,
+    isMembershipTicket,
     isWithinEventRange,
 } from "@/lib/scan-helpers"
 
@@ -292,6 +294,18 @@ export async function POST(request: NextRequest) {
             packageLimit = 1
         }
 
+        // Membresías: el cupo es por mes (reinicio sin acumular). Se comporta como
+        // paquete, pero el "límite" y las clases usadas se cuentan dentro del mes
+        // en curso (ver computeAttendance + buildMembershipMonthlySummary).
+        const isMembership = isMembershipTicket(ticket)
+        if (isMembership) {
+            isPackageLike = true
+            packageLimit = ticket.ticketType.monthlyClassLimit ?? null
+        }
+        const noClassesMessage = isMembership
+            ? "Cupo mensual de clases agotado"
+            : `No tiene ${clasesLabel} disponibles`
+
         // Scans validos previos del ticket. En tickets full-day (varios turnos por dia)
         // cada turno escaneado es una entrada independiente, asi que contamos por scans,
         // no por dias/entitlements.
@@ -301,6 +315,11 @@ export async function POST(request: NextRequest) {
         })
 
         const computeAttendance = () => {
+            // Membresía: cupo del mes en curso (las clases de meses anteriores no
+            // descuentan del mes actual).
+            if (isMembership) {
+                return buildMembershipMonthlySummary(ticket, today)
+            }
             const shiftMultiplier = multiShiftAttendance ? configuredShifts.length : 1
             if (isPackageLike && packageLimit) {
                 const adjustedTotal = packageLimit * shiftMultiplier
@@ -370,7 +389,7 @@ export async function POST(request: NextRequest) {
                     success: false,
                     valid: false,
                     reason: "NO_CLASSES",
-                    message: `No tiene ${clasesLabel} disponibles`,
+                    message: noClassesMessage,
                     scannedAt: new Date().toISOString(),
                     attendance,
                 })
@@ -402,7 +421,7 @@ export async function POST(request: NextRequest) {
 
             const wrongDayMessage = strictDateSchedule
                 ? "Este ticket no es valido para hoy"
-                : `No tiene ${clasesLabel} disponibles`
+                : noClassesMessage
             await logScan(ticket.id, user.id, eventId, "WRONG_DAY", wrongDayMessage)
             return NextResponse.json({
                 success: false,
@@ -534,6 +553,7 @@ export async function POST(request: NextRequest) {
             valid: true,
             reason: "VALID",
             overridden: override,
+            isMembership,
             message: override ? "Asistencia registrada (ingreso forzado)" : "Asistencia registrada",
             ticket: {
                 id: ticket.id,

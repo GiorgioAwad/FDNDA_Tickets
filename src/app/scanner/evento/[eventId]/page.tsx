@@ -52,6 +52,7 @@ interface ScanResult {
         used: number
         remaining: number
     }
+    isMembership?: boolean
 }
 
 interface ScanHistoryItem {
@@ -1318,7 +1319,7 @@ export default function EventScannerPage() {
                                         
                                         {scanResult.attendance && (
                                             <div className="pt-2 border-t border-white/20">
-                                                <span className="text-white/60 text-xs uppercase tracking-wide">Asistencias</span>
+                                                <span className="text-white/60 text-xs uppercase tracking-wide">{scanResult.isMembership ? "Clases (este mes)" : "Asistencias"}</span>
                                                 <div className="flex items-center gap-2 mt-1">
                                                     <div className="flex-1 bg-white/20 rounded-full h-2">
                                                         <div 

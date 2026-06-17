@@ -42,6 +42,7 @@ interface EventFormData {
     isPublished: boolean
     visibility: "PUBLIC" | "PRIVATE"
     bannerUrl: string
+    ticketLayout: "LIST" | "PLANS"
 }
 
 export function EventForm({ initialData, isEditing = false, showBack = true }: EventFormProps) {
@@ -70,6 +71,7 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
         isPublished: initialData?.isPublished || false,
         visibility: initialData?.visibility || "PUBLIC",
         bannerUrl: initialData?.bannerUrl || "",
+        ticketLayout: initialData?.ticketLayout || "LIST",
     })
     const [accessToken, setAccessToken] = useState<string | null>(initialData?.accessToken ?? null)
     const [regenerating, setRegenerating] = useState(false)
@@ -117,6 +119,10 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
         ...ticket,
         price: Number(ticket.price),
         packageDaysCount: ticket.packageDaysCount ?? undefined,
+        originalPrice: ticket.originalPrice != null ? Number(ticket.originalPrice) : null,
+        benefits: Array.isArray(ticket.benefits)
+            ? (ticket.benefits as Array<{ text: string; footnote?: boolean }>)
+            : null,
     })) || []
 
     const [sucursalOptions, setSucursalOptions] = useState<AbioEventSucursal[]>(() => {
@@ -317,6 +323,22 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                                         <option value="PISCINA_LIBRE">Piscina libre</option>
                                         <option value="ACADEMIA">Academia</option>
                                     </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Presentación de entradas</label>
+                                    <select
+                                        name="ticketLayout"
+                                        value={formData.ticketLayout}
+                                        onChange={handleChange}
+                                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                    >
+                                        <option value="LIST">Lista simple</option>
+                                        <option value="PLANS">Planes (BRONCE/PLATA/ORO)</option>
+                                    </select>
+                                    <p className="text-xs text-gray-500">
+                                        &quot;Planes&quot; muestra las entradas como cards con beneficios, precio regular
+                                        tachado y plan destacado.
+                                    </p>
                                 </div>
                             </div>
 

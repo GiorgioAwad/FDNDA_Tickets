@@ -7,7 +7,7 @@ import { getCachedPublishedEvents } from "@/lib/cached-queries"
 import { getAbioEventSucursalByCode, getDefaultAbioEventSucursal } from "@/lib/abio-sucursales"
 import { normalizeRichTextForDb } from "@/lib/sanitize-rich-text"
 import slugify from "slugify"
-import { EventCategory, EventVisibility, Prisma } from "@prisma/client"
+import { EventCategory, EventVisibility, EventTicketLayout, Prisma } from "@prisma/client"
 
 function generateAccessToken(): string {
     return randomBytes(24).toString("base64url")
@@ -56,6 +56,7 @@ type EventPayload = {
     visibility?: EventVisibility
     bannerUrl?: string
     discipline?: string
+    ticketLayout?: EventTicketLayout
     ticketTypes?: TicketTypePayload[]
     eventDays?: EventDayPayload[]
 }
@@ -141,9 +142,11 @@ export async function POST(request: NextRequest) {
             visibility,
             bannerUrl,
             discipline,
+            ticketLayout,
             ticketTypes, // Optional array of ticket types to create
             eventDays,   // Optional array of days to create
         } = body
+        const resolvedTicketLayout: EventTicketLayout = ticketLayout === "PLANS" ? "PLANS" : "LIST"
         const parsedAdvanceAmount = Number(advanceAmount || 0)
         const parsedAcademiaWeeklyFrequency = (() => {
             if (academiaWeeklyFrequency === undefined || academiaWeeklyFrequency === null || academiaWeeklyFrequency === "") {
@@ -201,6 +204,7 @@ export async function POST(request: NextRequest) {
                 accessToken,
                 bannerUrl,
                 discipline,
+                ticketLayout: resolvedTicketLayout,
                 createdBy: user.id,
                 ticketTypes: ticketTypes
                     ? {

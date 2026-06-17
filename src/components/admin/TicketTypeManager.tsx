@@ -30,8 +30,14 @@ interface TicketType {
     isActive?: boolean
     isPackage?: boolean
     packageDaysCount?: number
+    monthlyClassLimit?: number | null
     validDays?: unknown
     sortOrder?: number
+    originalPrice?: number | null
+    benefits?: Array<{ text: string; footnote?: boolean }> | null
+    isFeatured?: boolean
+    highlightLabel?: string | null
+    accentColor?: string | null
     servilexEnabled?: boolean
     servilexIndicator?: string | null
     servilexSucursalCode?: string | null
@@ -82,7 +88,13 @@ const buildEmptyFormData = (sucursalCode = DEFAULT_ABIO_EVENT_SUCURSAL_CODE): Pa
     capacity: 100,
     isPackage: false,
     packageDaysCount: 0,
+    monthlyClassLimit: null,
     sortOrder: 0,
+    originalPrice: null,
+    benefits: null,
+    isFeatured: false,
+    highlightLabel: "",
+    accentColor: "",
     servilexEnabled: false,
     servilexIndicator: "AC",
     servilexSucursalCode: sucursalCode,
@@ -1602,6 +1614,135 @@ export function TicketTypeManager({
                                 Para piscina libre, cada tipo de entrada representa un horario. La capacidad se aplica por cada dia del rango del evento y el comprador elegira la fecha en checkout.
                             </div>
                         )}
+
+                        {/* Presentación tipo "plan" (BRONCE/PLATA/ORO) + cupo mensual de membresía */}
+                        <details className="rounded-lg border bg-white p-3">
+                            <summary className="cursor-pointer text-sm font-semibold text-gray-700">
+                                Plan / Membresía (opcional)
+                            </summary>
+                            <p className="mt-1 text-[11px] text-gray-500">
+                                Estos campos se usan cuando el evento tiene el layout de &quot;Planes&quot;. El cupo mensual
+                                activa el reinicio de clases cada mes (use-it-or-lose-it).
+                            </p>
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium">Cupo de clases por mes (membresía)</label>
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        placeholder="Ej: 20 (vacío = sin cupo mensual)"
+                                        value={formData.monthlyClassLimit ?? ""}
+                                        onChange={(e) => {
+                                            const n = Number(e.target.value)
+                                            setFormData({ ...formData, monthlyClassLimit: n > 0 ? n : null })
+                                        }}
+                                    />
+                                    <p className="text-[11px] text-gray-500">
+                                        Si se define, la asistencia se reinicia cada mes y no se acumula.
+                                    </p>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium">Precio regular (tachado)</label>
+                                    <Input
+                                        type="number"
+                                        min={0}
+                                        placeholder="Ej: 2400 (vacío = sin precio tachado)"
+                                        value={formData.originalPrice ?? ""}
+                                        onChange={(e) => {
+                                            const n = Number(e.target.value)
+                                            setFormData({ ...formData, originalPrice: n > 0 ? n : null })
+                                        }}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium">Etiqueta destacada</label>
+                                    <Input
+                                        value={formData.highlightLabel || ""}
+                                        onChange={(e) => setFormData({ ...formData, highlightLabel: e.target.value })}
+                                        placeholder="Ej: MÁS POPULAR"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium">Color del plan</label>
+                                    <select
+                                        className="w-full rounded-md border px-3 py-2 text-sm"
+                                        value={formData.accentColor || ""}
+                                        onChange={(e) => setFormData({ ...formData, accentColor: e.target.value })}
+                                    >
+                                        <option value="">Por defecto (azul FDNDA)</option>
+                                        <option value="bronze">Bronce</option>
+                                        <option value="silver">Plata</option>
+                                        <option value="gold">Oro</option>
+                                    </select>
+                                </div>
+                                <div className="flex items-center gap-2 pt-1">
+                                    <input
+                                        type="checkbox"
+                                        id="isFeatured"
+                                        checked={Boolean(formData.isFeatured)}
+                                        onChange={(e) => setFormData({ ...formData, isFeatured: e.target.checked })}
+                                        className="h-4 w-4 rounded border-gray-300"
+                                    />
+                                    <label htmlFor="isFeatured" className="text-sm">
+                                        Destacar este plan (resaltado + etiqueta)
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-medium">Beneficios (lista con ✓)</label>
+                                    <button
+                                        type="button"
+                                        className="text-xs font-semibold text-fdnda-secondary hover:underline"
+                                        onClick={() =>
+                                            setFormData({
+                                                ...formData,
+                                                benefits: [...(formData.benefits ?? []), { text: "" }],
+                                            })
+                                        }
+                                    >
+                                        + Agregar beneficio
+                                    </button>
+                                </div>
+                                {(formData.benefits ?? []).map((benefit, index) => (
+                                    <div key={index} className="flex items-center gap-2">
+                                        <Input
+                                            value={benefit.text}
+                                            placeholder="Ej: Hasta 20 clases mensuales"
+                                            onChange={(e) => {
+                                                const next = [...(formData.benefits ?? [])]
+                                                next[index] = { ...next[index], text: e.target.value }
+                                                setFormData({ ...formData, benefits: next })
+                                            }}
+                                        />
+                                        <label className="flex items-center gap-1 whitespace-nowrap text-[11px] text-gray-600">
+                                            <input
+                                                type="checkbox"
+                                                checked={benefit.footnote === true}
+                                                onChange={(e) => {
+                                                    const next = [...(formData.benefits ?? [])]
+                                                    next[index] = { ...next[index], footnote: e.target.checked }
+                                                    setFormData({ ...formData, benefits: next })
+                                                }}
+                                                className="h-3.5 w-3.5"
+                                            />
+                                            (*)
+                                        </label>
+                                        <button
+                                            type="button"
+                                            className="text-xs text-red-500 hover:underline"
+                                            onClick={() => {
+                                                const next = (formData.benefits ?? []).filter((_, i) => i !== index)
+                                                setFormData({ ...formData, benefits: next.length > 0 ? next : null })
+                                            }}
+                                        >
+                                            Quitar
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </details>
 
                         <div className="rounded-lg border bg-white p-3 space-y-3">
                             <div className="flex items-center gap-2">

@@ -5,6 +5,8 @@ import { onTicketSold } from "@/lib/cached-queries"
 import { extractTicketValidDates, normalizeScheduleSelections } from "@/lib/ticket-schedule"
 import { buildNaturalPersonFullName } from "@/lib/billing"
 import { buildServilexInvoiceSnapshots } from "@/lib/servilex"
+import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
+import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 import { Prisma } from "@prisma/client"
 
 export interface FulfillOrderResult {
@@ -19,6 +21,7 @@ interface FulfillOrderInput {
     providerResponse?: Prisma.InputJsonValue
     providerOrderNumber?: string
     providerTransactionId?: string
+    allowCancelledRecovery?: boolean
 }
 
 function buildOrderPaymentMetadata(input: {
@@ -54,10 +57,9 @@ function buildOrderPaymentMetadata(input: {
 }
 
 async function syncPaidOrderMetadata(orderId: string, input: FulfillOrderInput) {
-    const data = buildOrderPaymentMetadata(input)
-
-    if (Object.keys(data).length === 0) {
-        return
+    const data = {
+        ...buildOrderPaymentMetadata(input),
+        paymentNeedsReview: false,
     }
 
     await prisma.order.update({
@@ -357,6 +359,7 @@ const buildEntitlementDates = (input: {
     ticketType: {
         isPackage: boolean
         packageDaysCount: number | null
+        monthlyClassLimit?: number | null
         validDays: Prisma.JsonValue | null
     }
     event: {
@@ -366,6 +369,13 @@ const buildEntitlementDates = (input: {
     attendee: StoredAttendeeData | null
     eventCategory?: string
 }): Date[] => {
+    // Membresías con cupo mensual: NO se pre-generan entitlements. Cada clase
+    // crea el entitlement del día al vuelo durante el escaneo, y el control de
+    // asistencia cuenta lo usado dentro del mes en curso (use-it-or-lose-it).
+    if (input.ticketType.monthlyClassLimit) {
+        return []
+    }
+
     const configuredDates = extractTicketValidDates(input.ticketType.validDays)
     const allEventDates = getDaysBetween(input.event.startDate, input.event.endDate)
         .map((date) => date.toISOString().split("T")[0])
@@ -430,6 +440,7 @@ export async function fulfillPaidOrder({
     providerResponse,
     providerOrderNumber,
     providerTransactionId,
+    allowCancelledRecovery = false,
 }: FulfillOrderInput): Promise<FulfillOrderResult> {
     const order = await prisma.order.findUnique({
         where: { id: orderId },
@@ -498,12 +509,18 @@ export async function fulfillPaidOrder({
         return { success: true, alreadyPaid: true }
     }
 
-    if (order.status === "CANCELLED" || order.status === "REFUNDED") {
+    if (
+        order.status === "REFUNDED" ||
+        (order.status === "CANCELLED" && !allowCancelledRecovery)
+    ) {
         return { success: false, error: "Order not payable" }
     }
 
+    const recoveringCancelledOrder =
+        order.status === "CANCELLED" && allowCancelledRecovery
     const updateData: Prisma.OrderUpdateManyMutationInput = {
         status: "PAID",
+        paymentNeedsReview: false,
         ...buildOrderPaymentMetadata({
             providerRef,
             providerResponse,
@@ -521,7 +538,7 @@ export async function fulfillPaidOrder({
         const transition = await tx.order.updateMany({
             where: {
                 id: order.id,
-                status: "PENDING",
+                status: recoveringCancelledOrder ? "CANCELLED" : "PENDING",
             },
             data: updateData,
         })
@@ -548,6 +565,8 @@ export async function fulfillPaidOrder({
             if (currentOrder.status === "CANCELLED" || currentOrder.status === "REFUNDED") {
                 throw new Error("Order not payable")
             }
+
+            throw new Error(`Order status changed to ${currentOrder.status}`)
         }
 
         const existingTickets = await tx.ticket.count({
@@ -557,6 +576,53 @@ export async function fulfillPaidOrder({
         if (existingTickets > 0) {
             await syncServilexInvoices(tx, orderForInvoicing)
             return { alreadyPaid: true }
+        }
+
+        if (recoveringCancelledOrder && transition.count === 1) {
+            for (const item of ticketOrderItems) {
+                const ticketType = item.ticketType
+                const ticketTypeId = item.ticketTypeId
+
+                if (isPoolFreeEventCategory(ticketType.event.category)) {
+                    const reservationCounts = buildPoolFreeReservationCounts({
+                        attendees: Array.isArray(item.attendeeData) ? item.attendeeData : [],
+                        quantity: item.quantity,
+                        validDays: ticketType.validDays,
+                        eventStartDate: ticketType.event.startDate,
+                        eventEndDate: ticketType.event.endDate,
+                        ticketLabel: ticketType.name,
+                    })
+
+                    await reserveTicketTypeDateInventory(tx, {
+                        ticketTypeId,
+                        templateCapacity: ticketType.capacity,
+                        reservations: reservationCounts,
+                        ticketLabel: ticketType.name,
+                    })
+
+                    await tx.ticketType.update({
+                        where: { id: ticketTypeId },
+                        data: { sold: { increment: item.quantity } },
+                    })
+                    continue
+                }
+
+                const reserved = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+                    UPDATE "ticket_types"
+                    SET "sold" = "sold" + ${item.quantity}
+                    WHERE "id" = ${ticketTypeId}
+                      AND "eventId" = ${ticketType.eventId}
+                      AND "isActive" = true
+                      AND ("capacity" = 0 OR "sold" + ${item.quantity} <= "capacity")
+                    RETURNING "id"
+                `)
+
+                if (!reserved[0]) {
+                    throw new Error(
+                        `No hay cupos disponibles para recuperar "${ticketType.name}"`
+                    )
+                }
+            }
         }
 
         for (const item of ticketOrderItems) {
@@ -580,6 +646,7 @@ export async function fulfillPaidOrder({
                     ticketType: {
                         isPackage: ticketType.isPackage,
                         packageDaysCount: ticketType.packageDaysCount,
+                        monthlyClassLimit: ticketType.monthlyClassLimit,
                         validDays: ticketType.validDays,
                     },
                     event: {
