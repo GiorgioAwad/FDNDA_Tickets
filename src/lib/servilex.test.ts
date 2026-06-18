@@ -756,7 +756,7 @@ test("usa series BW y FW para piscina libre con la sucursal", () => {
     assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "FW04")
 })
 
-test("usa series BA y FA para eventos con la sucursal", () => {
+test("usa series BW y FW para eventos con la sucursal", () => {
     const ticketType = buildTicketType("OS", {
         event: {
             id: "evento-sucursal-5",
@@ -788,8 +788,8 @@ test("usa series BA y FA para eventos con la sucursal", () => {
         "evento-factura-preview"
     )
 
-    assert.equal(buildServilexPayload(boletaSource, TEST_CONFIG).cabecera.comprobante.serie, "BA05")
-    assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "FA05")
+    assert.equal(buildServilexPayload(boletaSource, TEST_CONFIG).cabecera.comprobante.serie, "BW05")
+    assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "FW05")
 })
 
 test("getServilexConfig usa ejecutivo 0020 por defecto", () => {
@@ -1143,7 +1143,7 @@ test("merch: usa servilexSucursalCode del producto si esta definido", () => {
     assert.equal(payload.cabecera.indicador, "OS")
 })
 
-test("merch: usa series BA y FA con la sucursal del producto", () => {
+test("merch: usa series BW y FW con la sucursal del producto", () => {
     const baseOrder = {
         totalAmount: 80,
         orderItems: [
@@ -1169,6 +1169,6 @@ test("merch: usa series BA y FA con la sucursal del producto", () => {
         "merch-fa-preview"
     )
 
-    assert.equal(buildServilexPayload(boletaSource, TEST_CONFIG).cabecera.comprobante.serie, "BA04")
-    assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "FA04")
+    assert.equal(buildServilexPayload(boletaSource, TEST_CONFIG).cabecera.comprobante.serie, "BW04")
+    assert.equal(buildServilexPayload(facturaSource, TEST_CONFIG).cabecera.comprobante.serie, "FW04")
 })

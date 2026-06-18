@@ -901,7 +901,7 @@ function resolveServilexSerie(input: {
     }
 
     if (eventCategory === "EVENTO" || isMerchOrder(order)) {
-        return buildSucursalSerie(buyerIsFactura ? "FA" : "BA", snapshot.sucursal, config)
+        return buildSucursalSerie(buyerIsFactura ? "FW" : "BW", snapshot.sucursal, config)
     }
 
     return buyerIsFactura ? config.serieFactura : config.serieBoleta
