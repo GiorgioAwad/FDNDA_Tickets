@@ -77,6 +77,15 @@ function buildScheduleKey(selections: ScheduleSelection[]): string {
         .join(";")
 }
 
+// Las fechas @db.Date se guardan a mediodía UTC del día civil; leer en UTC evita
+// el desfase de zona horaria al construir la clave "YYYY-MM-DD".
+function entitlementDateKey(date: Date): string {
+    const year = date.getUTCFullYear()
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0")
+    const day = String(date.getUTCDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+}
+
 export default async function MyTicketsPage() {
     const user = await getCurrentUser()
 
@@ -89,6 +98,10 @@ export default async function MyTicketsPage() {
         include: {
             event: true,
             ticketType: true,
+            entitlements: {
+                select: { date: true },
+                orderBy: { date: "asc" },
+            },
             order: {
                 select: {
                     orderItems: {
@@ -119,14 +132,29 @@ export default async function MyTicketsPage() {
     }
 
     const enriched: EnrichedTicket[] = tickets.map((ticket) => {
-        const matchingItem = ticket.order.orderItems.find(
-            (item) => item.ticketTypeId === ticket.ticketTypeId
-        )
-        const selections = findAttendeeSelections(
-            matchingItem?.attendeeData,
-            ticket.attendeeName,
-            ticket.attendeeDni
-        )
+        // Piscina libre: la fecha de cada entrada vive en su propio entitlement.
+        // Cada horario es un ticketType distinto, así que comprar el mismo horario
+        // en varias fechas crea varios orderItems con el mismo ticketTypeId; el match
+        // por attendeeData (asistente sin nombre/DNI) era ambiguo y agrupaba todas las
+        // entradas bajo la fecha del primer orderItem. Agrupar por el entitlement real
+        // del ticket muestra cada entrada en su día correcto.
+        const isPoolFree = ticket.event.category === "PISCINA_LIBRE"
+        let selections: ScheduleSelection[]
+        if (isPoolFree && ticket.entitlements.length > 0) {
+            selections = ticket.entitlements.map((entitlement) => ({
+                date: entitlementDateKey(entitlement.date),
+                shift: "",
+            }))
+        } else {
+            const matchingItem = ticket.order.orderItems.find(
+                (item) => item.ticketTypeId === ticket.ticketTypeId
+            )
+            selections = findAttendeeSelections(
+                matchingItem?.attendeeData,
+                ticket.attendeeName,
+                ticket.attendeeDni
+            )
+        }
         return {
             ...ticket,
             scheduleKey: buildScheduleKey(selections),

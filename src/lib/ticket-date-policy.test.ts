@@ -17,6 +17,21 @@ test("pickQrDateForTicket uses the purchased future date by default", () => {
     assert.equal(qrDate, "2026-06-04")
 })
 
+test("pickQrDateForTicket follows the ticket's own entitlement over an ambiguous purchased date", () => {
+    // Piscina libre: el mismo horario comprado en varias fechas crea varios
+    // orderItems con el mismo ticketTypeId. La re-derivación por attendeeData
+    // devolvía la fecha del primer orderItem (06-23) para TODOS los tickets, pero
+    // el entitlement propio de este ticket es 06-25. El QR debe seguir al entitlement.
+    const qrDate = pickQrDateForTicket({
+        today: "2026-06-20",
+        scheduleSelections: [{ date: "2026-06-23", shift: null }],
+        entitlements: [{ date: new Date("2026-06-25T12:00:00Z"), status: "AVAILABLE" }],
+        usePurchasedDates: true,
+    })
+
+    assert.equal(qrDate, "2026-06-25")
+})
+
 test("pickQrDateForTicket honors an explicit requested date", () => {
     const qrDate = pickQrDateForTicket({
         dateParam: "2026-06-05",

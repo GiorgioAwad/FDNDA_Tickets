@@ -55,7 +55,14 @@ export function pickQrDateForTicket(input: {
     const entitlementDates = uniqueSorted(
         (input.entitlements ?? []).map((entitlement) => toDateKey(entitlement.date))
     )
-    const candidateDates = purchasedDates.length > 0 ? purchasedDates : entitlementDates
+    // Los entitlements propios del ticket son la fuente de verdad de SU fecha.
+    // Las purchasedDates se re-derivan de OrderItem.attendeeData por match de
+    // nombre/DNI, que en piscina libre (asistente sin identidad) es ambiguo cuando
+    // el mismo horario/ticketType se compró para varias fechas: devolvía la fecha
+    // del primer orderItem para todos los tickets. Priorizar el entitlement evita
+    // generar el QR con la fecha equivocada. Solo se cae a purchasedDates cuando el
+    // ticket aún no tiene entitlements pre-generados.
+    const candidateDates = entitlementDates.length > 0 ? entitlementDates : purchasedDates
 
     if (candidateDates.length === 0) return null
 
