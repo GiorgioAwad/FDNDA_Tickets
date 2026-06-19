@@ -11,10 +11,11 @@
  * y descuadra el inventario.
  *
  * Uso (dentro del contenedor con env de producción):
- *   tsx scripts/fulfill-order-manual.ts <ORDEN> [--confirm] [--txid=...] [--ordernum=...]
+ *   tsx scripts/fulfill-order-manual.ts <ORDEN> [--confirm] [--recover-cancelled] [--txid=...] [--ordernum=...]
  *
  *   <ORDEN>     id completo (cuid) o el código corto del panel, p.ej. Z0YG0KL2
  *   --confirm   ejecuta de verdad. Sin esta flag es un DRY-RUN (no escribe nada).
+ *   --recover-cancelled  recupera una orden cancelada y vuelve a reservar inventario.
  *   --txid      (opcional) id de transacción Izipay del comprobante
  *   --ordernum  (opcional) número de orden Izipay del comprobante
  */
@@ -115,9 +116,27 @@ async function main() {
             "Orden ya pagada: se actualizará el nº de operación y se reintentará la boleta (no se duplican entradas)."
         )
     }
-    if (order.status === "CANCELLED" || order.status === "REFUNDED") {
-        console.log(`La orden está ${order.status}; no es pagable. Abortando.`)
+    const recoverCancelled = Boolean(flags["recover-cancelled"])
+    if (order.status === "REFUNDED") {
+        console.log("La orden está REFUNDED; no es pagable. Abortando.")
         return
+    }
+    if (order.status === "CANCELLED" && !recoverCancelled) {
+        console.log(
+            "La orden está CANCELLED. Agrega --recover-cancelled para volver a reservar inventario."
+        )
+        return
+    }
+    if (order.status === "CANCELLED") {
+        if (typeof flags.txid !== "string" || typeof flags.ordernum !== "string") {
+            console.log(
+                "Para recuperar una cancelación debes indicar --txid y --ordernum de Izipay."
+            )
+            return
+        }
+        console.log(
+            "RECUPERACIÓN: se volverá a reservar inventario antes de emitir las entradas."
+        )
     }
 
     if (!confirm) {
@@ -128,7 +147,7 @@ async function main() {
 
     const providerResponse = {
         source: "manual-admin-fulfill",
-        reason: "IPN de Izipay en estado Fallido; pago confirmado por comprobante del cliente",
+        reason: "Pago confirmado manualmente en el panel de Izipay",
         fulfilledBy: "script:fulfill-order-manual",
         fulfilledAt: new Date().toISOString(),
     }
@@ -140,6 +159,7 @@ async function main() {
         providerOrderNumber: typeof flags.ordernum === "string" ? flags.ordernum : undefined,
         providerTransactionId: typeof flags.txid === "string" ? flags.txid : undefined,
         providerResponse,
+        allowCancelledRecovery: recoverCancelled,
     })
 
     console.log("Resultado:", JSON.stringify(result, null, 2))
@@ -158,4 +178,5 @@ main()
     })
     .finally(async () => {
         await prisma.$disconnect()
+        process.exit(process.exitCode ?? 0)
     })
