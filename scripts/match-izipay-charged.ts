@@ -134,12 +134,13 @@ async function main() {
             console.log(`  #${code}  ${order.user.name} <${order.user.email}>`)
             console.log(`  CSV: ${row.estado} S/${row.monto}   BD: ${order.status} tickets=${order._count.tickets} S/${montoBD}${mismatch}`)
             console.log(`  Evento: ${order.orderItems[0]?.ticketType?.event?.title ?? "-"} [${cat}]   pedido=${row.orderNumber}  tx=${row.txId}`)
-            // Comando sugerido: piscina con cupo posiblemente cerrado -> cortesía
-            // (no toca inventario ni boleta). Otros -> recuperación normal.
+            // Recuperación PROPER: marca la orden PAID (cuenta la venta), emite la
+            // boleta y NO duplica entradas (guard de tickets existentes). Usamos el
+            // nº de pedido como nroOperacion (<=20, referencia válida); si tenés el
+            // nº de operación real de Izipay del panel, reemplazá el --txid.
+            console.log(`  → docker exec -it fdnda_worker ./node_modules/.bin/tsx --tsconfig tsconfig.json scripts/fulfill-order-manual.ts ${row.orderNumber} --confirm --recover-cancelled --ordernum=${row.orderNumber} --txid=${row.orderNumber}`)
             if (cat === "PISCINA_LIBRE") {
-                console.log(`  → docker exec -it fdnda_worker ./node_modules/.bin/tsx --tsconfig tsconfig.json scripts/grant-courtesy-ticket.ts ${row.orderNumber} --confirm`)
-            } else {
-                console.log(`  → docker exec -it fdnda_worker ./node_modules/.bin/tsx --tsconfig tsconfig.json scripts/fulfill-order-manual.ts ${row.orderNumber} --confirm --recover-cancelled --ordernum=${row.orderNumber} --txid=${row.txId}`)
+                console.log(`     (si falla por cupo cerrado del slot pasado → fallback: grant-courtesy-ticket ${row.orderNumber} --confirm, y registrar la venta/boleta aparte)`)
             }
         }
     }
