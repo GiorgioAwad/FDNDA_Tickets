@@ -1,24 +1,28 @@
 /**
- * Emite una entrada de CORTESÍA para el comprador de una orden, sin tocar
- * inventario ni facturación (a diferencia de fulfill-order-manual). Útil cuando
- * una orden quedó cobrada-sin-entrada pero su cupo por fecha ya está cerrado y la
- * recuperación normal fallaría al re-reservar inventario.
+ * Emite una entrada de CORTESÍA para el comprador de una orden. Por defecto NO
+ * toca inventario ni facturación (a diferencia de fulfill-order-manual): útil
+ * cuando una orden quedó cobrada-sin-entrada pero su cupo por fecha ya está
+ * cerrado y la recuperación normal fallaría al re-reservar inventario.
  *
  * Crea, bajo el MISMO usuario y orden, un Ticket ACTIVE por cada entrada con su
  * TicketDayEntitlement en la fecha comprada (de attendeeData.scheduleSelections),
  * o en --date / fecha de inicio del evento como fallback. NO cambia el estado de
- * la orden, NO descuenta stock, NO emite boleta.
+ * la orden, NO emite boleta.
  *
  * Idempotente: si la orden ya tiene tickets, no hace nada (salvo --force).
  *
  * Uso (dentro del contenedor con env de producción):
- *   tsx scripts/grant-courtesy-ticket.ts <ORDEN|CODIGO> [--confirm] [--date=YYYY-MM-DD] [--force]
+ *   tsx scripts/grant-courtesy-ticket.ts <ORDEN|CODIGO> [--confirm] [--date=YYYY-MM-DD] [--force] [--reserve-inventory]
  *
- *   <ORDEN>     id completo (cuid) o código corto / nº de pedido Izipay.
- *   --confirm   ejecuta de verdad. Sin esta flag es DRY-RUN.
- *   --date      fuerza la fecha del entitlement (si la orden no trae selección).
- *   --force     emite aunque la orden ya tenga tickets (úsese con cuidado).
+ *   <ORDEN>             id completo (cuid) o código corto / nº de pedido Izipay.
+ *   --confirm           ejecuta de verdad. Sin esta flag es DRY-RUN.
+ *   --date              fuerza la fecha del entitlement (si la orden no trae selección).
+ *   --force             emite aunque la orden ya tenga tickets (cortesía adicional).
+ *   --reserve-inventory descuenta cupo del slot+fecha (ticket_type_date_inventories.sold
+ *                       y ticket_types.sold), FORZADO (aunque esté lleno/cerrado).
  */
+import { Prisma } from "@prisma/client"
+import crypto from "node:crypto"
 import { prisma } from "@/lib/prisma"
 import { generateTicketCode, parseDateOnly } from "@/lib/utils"
 import { normalizeScheduleSelections } from "@/lib/ticket-schedule"
@@ -56,10 +60,11 @@ async function main() {
     const ref = positional[0]
     const confirm = Boolean(flags.confirm)
     const force = Boolean(flags.force)
+    const reserveInventory = Boolean(flags["reserve-inventory"])
     const dateOverride = typeof flags.date === "string" && DATE_RE.test(flags.date) ? flags.date : null
 
     if (!ref) {
-        console.error("Uso: tsx scripts/grant-courtesy-ticket.ts <ORDEN|CODIGO> [--confirm] [--date=YYYY-MM-DD] [--force]")
+        console.error("Uso: tsx scripts/grant-courtesy-ticket.ts <ORDEN|CODIGO> [--confirm] [--date=YYYY-MM-DD] [--force] [--reserve-inventory]")
         process.exit(1)
     }
 
@@ -108,7 +113,7 @@ async function main() {
     }
 
     // Planificar: una entrada por unidad, con su fecha (de la selección comprada).
-    type Plan = { ticketTypeId: string; eventId: string; date: Date; dateKey: string; label: string }
+    type Plan = { ticketTypeId: string; eventId: string; date: Date; dateKey: string; label: string; templateCapacity: number }
     const plan: Plan[] = []
     for (const item of ticketItems) {
         const tt = item.ticketType!
@@ -126,11 +131,12 @@ async function main() {
                 date: parseDateOnly(dateKey),
                 dateKey,
                 label: tt.name,
+                templateCapacity: tt.capacity,
             })
         }
     }
 
-    console.log("Entradas de cortesía a emitir:")
+    console.log(`Entradas de cortesía a emitir${reserveInventory ? " (CON descuento de inventario)" : " (sin tocar inventario)"}:`)
     for (const p of plan) {
         console.log(`  · ${p.label} — fecha ${p.dateKey}`)
     }
@@ -159,10 +165,30 @@ async function main() {
                 },
             })
             created.push(`${ticket.ticketCode} (${p.dateKey})`)
+
+            if (reserveInventory) {
+                // Descuento FORZADO del cupo del día/turno (sin chequear capacity ni
+                // isEnabled, porque es una cortesía intencional). Upsert por (slot, fecha).
+                const updated = await tx.$executeRaw(Prisma.sql`
+                    UPDATE "ticket_type_date_inventories"
+                    SET "sold" = "sold" + 1, "updatedAt" = NOW()
+                    WHERE "ticketTypeId" = ${p.ticketTypeId} AND "date" = ${p.date}
+                `)
+                if (updated === 0) {
+                    await tx.$executeRaw(Prisma.sql`
+                        INSERT INTO "ticket_type_date_inventories"
+                            ("id", "ticketTypeId", "date", "capacity", "sold", "isEnabled", "createdAt", "updatedAt")
+                        VALUES (${crypto.randomUUID()}, ${p.ticketTypeId}, ${p.date}, ${p.templateCapacity}, 1, true, NOW(), NOW())
+                    `)
+                }
+                await tx.$executeRaw(Prisma.sql`
+                    UPDATE "ticket_types" SET "sold" = "sold" + 1, "updatedAt" = NOW() WHERE "id" = ${p.ticketTypeId}
+                `)
+            }
         }
     })
 
-    console.log(`✅ Emitidas ${created.length} entrada(s) de cortesía:`)
+    console.log(`✅ Emitidas ${created.length} entrada(s) de cortesía${reserveInventory ? " (cupo descontado)" : ""}:`)
     for (const c of created) console.log(`   - ${c}`)
     console.log("El cliente ya debería verlas en 'Mis entradas'.")
 }
