@@ -16,7 +16,7 @@
  *
  *   <ORDEN>             id completo (cuid) o código corto / nº de pedido Izipay.
  *   --confirm           ejecuta de verdad. Sin esta flag es DRY-RUN.
- *   --date              fuerza la fecha del entitlement (si la orden no trae selección).
+ *   --date              OVERRIDE de la fecha del entitlement (manda sobre la selección de la orden).
  *   --force             emite aunque la orden ya tenga tickets (cortesía adicional).
  *   --reserve-inventory descuenta cupo del slot+fecha (ticket_type_date_inventories.sold
  *                       y ticket_types.sold), FORZADO (aunque esté lleno/cerrado).
@@ -120,11 +120,11 @@ async function main() {
         const attendees = Array.isArray(item.attendeeData) ? (item.attendeeData as StoredAttendee[]) : []
         for (let i = 0; i < item.quantity; i++) {
             const sel = normalizeScheduleSelections(attendees[i]?.scheduleSelections)
-            const dateKey =
-                sel[0]?.date && DATE_RE.test(sel[0].date)
-                    ? sel[0].date
-                    : dateOverride ??
-                      `${tt.event.startDate.getUTCFullYear()}-${String(tt.event.startDate.getUTCMonth() + 1).padStart(2, "0")}-${String(tt.event.startDate.getUTCDate()).padStart(2, "0")}`
+            const selectedDate = sel[0]?.date && DATE_RE.test(sel[0].date) ? sel[0].date : null
+            const eventStartKey = `${tt.event.startDate.getUTCFullYear()}-${String(tt.event.startDate.getUTCMonth() + 1).padStart(2, "0")}-${String(tt.event.startDate.getUTCDate()).padStart(2, "0")}`
+            // --date es OVERRIDE explícito (manda sobre la selección de la orden);
+            // sin --date, usa la fecha comprada y, si no hay, el inicio del evento.
+            const dateKey = dateOverride ?? selectedDate ?? eventStartKey
             plan.push({
                 ticketTypeId: item.ticketTypeId!,
                 eventId: tt.eventId,
