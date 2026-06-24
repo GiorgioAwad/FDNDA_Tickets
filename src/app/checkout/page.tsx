@@ -242,7 +242,8 @@ export default function CheckoutPage() {
             await Promise.all(
                 pending.map(async (eventId) => {
                     try {
-                        const response = await fetch(`/api/events/${encodeURIComponent(eventId)}`)
+                        // fresh=true evita el cache de 60s para reflejar la config recién guardada.
+                        const response = await fetch(`/api/events/${encodeURIComponent(eventId)}?fresh=true`)
                         if (!response.ok) return
                         const payload = await response.json()
                         const data = payload?.data

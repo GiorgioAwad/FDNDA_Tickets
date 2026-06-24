@@ -65,13 +65,18 @@ export const resolveMembershipStartSetup = (
     config: MembershipStartConfig | null | undefined,
     todayStr: string
 ): MembershipStartSetup => {
+    const defaultMax = addMonthsToDateStr(todayStr, MEMBERSHIP_START_MAX_MONTHS_AHEAD)
     if (config?.fixed) return { mode: "fixed", fixed: config.fixed }
-    if (config?.min && config?.max) return { mode: "window", min: config.min, max: config.max }
-    return {
-        mode: "default",
-        min: todayStr,
-        max: addMonthsToDateStr(todayStr, MEMBERSHIP_START_MAX_MONTHS_AHEAD),
+    // Basta con UNO de los dos límites para entrar en modo rango: el faltante cae
+    // a hoy (min) o a hoy + N meses (max).
+    if (config?.min || config?.max) {
+        return {
+            mode: "window",
+            min: config.min || todayStr,
+            max: config.max || defaultMax,
+        }
     }
+    return { mode: "default", min: todayStr, max: defaultMax }
 }
 
 /**
