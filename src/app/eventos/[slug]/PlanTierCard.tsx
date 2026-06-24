@@ -54,6 +54,7 @@ type PlanTierCardProps = {
     ticket: TicketTypeClient
     quantity: number
     soldOut: boolean
+    saleClosed?: boolean
     maxQty: number
     onIncrement: () => void
     onDecrement: () => void
@@ -63,6 +64,7 @@ export default function PlanTierCard({
     ticket,
     quantity,
     soldOut,
+    saleClosed = false,
     maxQty,
     onIncrement,
     onDecrement,
@@ -141,7 +143,12 @@ export default function PlanTierCard({
 
                 {/* Acción */}
                 <div className="mt-6">
-                    {soldOut ? (
+                    {saleClosed ? (
+                        <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-500">
+                            <AlertCircle className="h-4 w-4" />
+                            Venta cerrada
+                        </div>
+                    ) : soldOut ? (
                         <div className="flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-600">
                             <AlertCircle className="h-4 w-4" />
                             Agotado

@@ -36,6 +36,9 @@ interface TicketDetail {
         used: number
         remaining: number
         periodStart?: string | null
+        membershipStart?: string | null
+        membershipExpiry?: string | null
+        durationMonths?: number | null
     } | null
     order?: {
         user?: {
@@ -529,6 +532,21 @@ export default function TicketDetailPage() {
                                     {usedDisplayCount}/{totalCount} {clasesLabel} usadas - {remainingCount} restantes
                                     {isMembership ? " este mes" : ""}
                                 </p>
+                                {isMembership && ticket.membershipAttendance?.membershipExpiry && (
+                                    <div className="mt-1 space-y-0.5 text-xs text-gray-500">
+                                        <p>
+                                            Vigencia:{" "}
+                                            {ticket.membershipAttendance.membershipStart
+                                                ? formatDate(ticket.membershipAttendance.membershipStart, { dateStyle: "medium" })
+                                                : "-"}{" "}
+                                            al{" "}
+                                            {formatDate(ticket.membershipAttendance.membershipExpiry, { dateStyle: "medium" })}
+                                        </p>
+                                        <p className="text-amber-600">
+                                            No aplica en enero ni febrero; la vigencia se extiende esos meses.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                             <Badge variant="secondary" className="text-xs">
                                 {remainingCount} restantes

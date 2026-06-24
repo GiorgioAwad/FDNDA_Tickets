@@ -8,6 +8,8 @@ import { createOrderSchema } from "@/lib/validations"
 import { onTicketSold } from "@/lib/cached-queries"
 import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
+import { validateMembershipStartDate } from "@/lib/membership-config"
+import { getTodayDateString, formatDateUTC } from "@/lib/qr"
 import {
     getCurrentOrFutureScheduleDates,
     getShiftOptionsForDate,
@@ -120,6 +122,19 @@ export async function POST(request: NextRequest) {
                 throw new Error("Evento no encontrado")
             }
 
+            // Ventana de venta = rango del evento, SOLO para ACADEMIA (membresías):
+            // el rango define cuándo se puede comprar, no la duración. Para EVENTO y
+            // PISCINA_LIBRE la venta anticipada sigue siendo válida (se controla por
+            // isActive/stock). El día se compara en hora Lima (no UTC del contenedor).
+            if (eventConfig.category === "ACADEMIA" && eventConfig.startDate && eventConfig.endDate) {
+                const todayStr = getTodayDateString()
+                const saleStart = formatDateUTC(eventConfig.startDate)
+                const saleEnd = formatDateUTC(eventConfig.endDate)
+                if (todayStr < saleStart || todayStr > saleEnd) {
+                    throw new Error("La venta de este plan no está disponible en esta fecha")
+                }
+            }
+
             let totalAmount = 0
             let discountAmount = 0
             let hasServilexItems = false
@@ -194,6 +209,20 @@ export async function POST(request: NextRequest) {
                 let attendeeData = Array.isArray(item.attendees)
                     ? item.attendees.map((attendee) => ({ ...attendee }))
                     : []
+
+                // Membresías a término fijo: si el asistente envió fecha de inicio,
+                // validarla server-side (formato, no blackout, no pasada, ventana
+                // forward). El día se calcula en hora Lima (no UTC del contenedor).
+                const todayLima = getTodayDateString()
+                for (const attendee of attendeeData) {
+                    if (attendee.membershipStartDate) {
+                        const result = validateMembershipStartDate(attendee.membershipStartDate, todayLima)
+                        if (!result.ok) {
+                            throw new Error(result.error)
+                        }
+                    }
+                }
+
                 const usesDailyCapacity = isPoolFreeEventCategory(eventConfig.category)
 
                 let reservedTicketType:

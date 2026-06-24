@@ -321,6 +321,11 @@ model TicketType {
   // asistencia se reinicia cada mes (use-it-or-lose-it) en vez de usar una
   // bolsa total. Ver scan-helpers.buildMembershipMonthlySummary.
   monthlyClassLimit Int?
+  // Membresías a término fijo: duración en meses ACTIVOS (6 = semestral, 12 = anual).
+  // Si está presente (junto con Ticket.membershipStartDate elegido en checkout) la
+  // vigencia se desacopla del rango del evento y aplica el blackout enero/febrero
+  // (freeze + extend). null = legacy: vigencia ligada al rango del evento.
+  membershipDurationMonths Int?
   validDays        Json?    // Array of dates ["2024-03-15", "2024-03-16"]
   // Presentación tipo "plan" (layout PLANS del evento)
   originalPrice    Decimal? @db.Decimal(10, 2) // Precio regular para mostrar tachado
@@ -462,6 +467,10 @@ model Ticket {
   ticketCode   String       @unique // Unique code for QR
   attendeeName String?
   attendeeDni  String?
+  // Membresías a término fijo: fecha de inicio elegida por el comprador en el
+  // checkout. Ancla los ciclos mensuales y la vigencia (ver scan-helpers).
+  // null = legacy → se usa event.startDate como ancla.
+  membershipStartDate DateTime? @db.Date
   status       TicketStatus @default(ACTIVE)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt

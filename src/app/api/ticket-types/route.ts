@@ -77,6 +77,15 @@ const normalizeMonthlyLimit = (value: unknown): number | null => {
     return Math.floor(num)
 }
 
+// Duración de membresía a término fijo (6 = semestral, 12 = anual). null = sin
+// duración fija (vigencia ligada al evento).
+const normalizeDurationMonths = (value: unknown): number | null => {
+    if (value === undefined || value === null || value === "") return null
+    const num = typeof value === "number" ? value : Number(value)
+    if (!Number.isFinite(num) || num <= 0) return null
+    return Math.floor(num)
+}
+
 // Precio regular (tachado) para layout de planes. Devuelve null si no aplica.
 const normalizeOptionalPrice = (value: unknown): number | null => {
     if (value === undefined || value === null || value === "") return null
@@ -129,6 +138,7 @@ export async function POST(request: NextRequest) {
             isPackage,
             packageDaysCount,
             monthlyClassLimit,
+            membershipDurationMonths,
             validDays,
             sortOrder,
             isActive,
@@ -290,6 +300,7 @@ export async function POST(request: NextRequest) {
                 isPackage: Boolean(isPackage),
                 packageDaysCount: Boolean(isPackage) ? packageDays : null,
                 monthlyClassLimit: normalizeMonthlyLimit(monthlyClassLimit),
+                membershipDurationMonths: normalizeDurationMonths(membershipDurationMonths),
                 validDays: normalizeValidDays(validDays),
                 sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
                 isActive: isActive === undefined ? true : Boolean(isActive),
@@ -347,6 +358,7 @@ export async function PUT(request: NextRequest) {
             isPackage,
             packageDaysCount,
             monthlyClassLimit,
+            membershipDurationMonths,
             validDays,
             sortOrder,
             isActive,
@@ -465,6 +477,7 @@ export async function PUT(request: NextRequest) {
             isPackage?: boolean
             packageDaysCount?: number | null
             monthlyClassLimit?: number | null
+            membershipDurationMonths?: number | null
             validDays?: Prisma.InputJsonValue
             sortOrder?: number
             isActive?: boolean
@@ -495,6 +508,7 @@ export async function PUT(request: NextRequest) {
         if (sortOrder !== undefined) data.sortOrder = Number(sortOrder)
         if (isActive !== undefined) data.isActive = Boolean(isActive)
         if (monthlyClassLimit !== undefined) data.monthlyClassLimit = normalizeMonthlyLimit(monthlyClassLimit)
+        if (membershipDurationMonths !== undefined) data.membershipDurationMonths = normalizeDurationMonths(membershipDurationMonths)
         if (originalPrice !== undefined) data.originalPrice = normalizeOptionalPrice(originalPrice)
         if (benefits !== undefined) data.benefits = normalizeBenefits(benefits) ?? Prisma.JsonNull
         if (isFeatured !== undefined) data.isFeatured = Boolean(isFeatured)

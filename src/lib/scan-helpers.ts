@@ -1,6 +1,7 @@
 import { formatDateUTC, formatDateLocal, getTodayDateString } from "@/lib/qr"
 import { getDaysBetween } from "@/lib/utils"
 import { extractTicketValidDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
+import { MEMBERSHIP_BLACKOUT_MONTHS, isBlackoutMonth } from "@/lib/membership-config"
 
 // ==================== TYPES ====================
 
@@ -22,12 +23,17 @@ export type ScanTicket = {
     attendeeDni: string | null
     status: "ACTIVE" | "CANCELLED" | "EXPIRED"
     eventId: string
+    // Fecha de inicio elegida por el comprador (membresías a término fijo).
+    // null = legacy → se ancla a event.startDate.
+    membershipStartDate?: Date | null
     event: { title: string; startDate: Date; endDate: Date; category?: string }
     ticketType: {
         name: string
         isPackage: boolean
         packageDaysCount: number | null
         monthlyClassLimit?: number | null
+        // 6 = semestral, 12 = anual. null = vigencia ligada al evento (legacy).
+        membershipDurationMonths?: number | null
         validDays: unknown | null
     }
     entitlements: TicketEntitlement[]
@@ -132,12 +138,38 @@ export const isMembershipTicket = (ticket: ScanTicket): boolean => {
 }
 
 /**
- * Período (mes) de la membresía que contiene `today`, anclado al inicio del
- * evento (cohorte de fechas fijas). Los cortes caen en el día del mes del
- * `startDate`. Devuelve null si `today` es anterior al inicio.
+ * Membresía a término fijo (anual/semestral): el comprador eligió fecha de
+ * inicio y el ticket type define una duración en meses. Solo en este caso aplican
+ * la ventana de vigencia desacoplada del evento + el blackout enero/febrero.
+ * Las membresías legacy (sin estos campos) caen al comportamiento anclado al
+ * evento, sin blackout.
  */
-export const getMembershipPeriod = (today: string, eventStart: Date): MembershipPeriod | null => {
-    const startStr = formatDateUTC(eventStart)
+export const isFixedTermMembership = (ticket: ScanTicket): boolean => {
+    const duration = ticket.ticketType.membershipDurationMonths
+    return (
+        isMembershipTicket(ticket) &&
+        ticket.membershipStartDate != null &&
+        typeof duration === "number" &&
+        duration > 0
+    )
+}
+
+/**
+ * Ancla de la membresía: la fecha de inicio elegida por el comprador o, en
+ * tickets legacy, el inicio del evento. Todos los cortes mensuales y la vigencia
+ * se calculan a partir de aquí.
+ */
+export const getMembershipAnchor = (ticket: ScanTicket): Date | null =>
+    ticket.membershipStartDate ?? ticket.event?.startDate ?? null
+
+/**
+ * Período (mes) de la membresía que contiene `today`, anclado a `anchor`.
+ * Los cortes caen en el día del mes del ancla. Devuelve null si `today` es
+ * anterior al inicio. El blackout no afecta este conteo: en ene/feb el QR ya
+ * está bloqueado aguas arriba, así que el cupo simplemente no se consume.
+ */
+export const getMembershipPeriod = (today: string, anchor: Date): MembershipPeriod | null => {
+    const startStr = formatDateUTC(anchor)
     const [sy, sm, sd] = startStr.split("-").map(Number)
     const [ty, tm, td] = today.split("-").map(Number)
     if (!sy || !sm || !sd || !ty || !tm || !td) return null
@@ -155,6 +187,74 @@ export const getMembershipPeriod = (today: string, eventStart: Date): Membership
 }
 
 /**
+ * Fecha de expiración (exclusiva, "YYYY-MM-DD") de una membresía a término fijo.
+ * Cuenta `durationMonths` meses ACTIVOS desde el ancla: cada ciclo mensual cuyo
+ * mes-inicio no es blackout cuenta como un mes activo; los meses blackout se
+ * iteran pero NO cuentan (freeze + extend). Así un anual (12) que cruza ene/feb
+ * se extiende ~14 meses calendario.
+ */
+export const getMembershipExpiry = (
+    anchor: Date,
+    durationMonths: number,
+    blackout: readonly number[] = MEMBERSHIP_BLACKOUT_MONTHS
+): string => {
+    const startStr = formatDateUTC(anchor)
+    const [sy, sm, sd] = startStr.split("-").map(Number)
+    if (!sy || !sm || !sd || durationMonths <= 0) return startStr
+
+    let active = 0
+    let k = 0
+    // Guardia: tope de iteraciones (duración + todos los blackouts posibles).
+    const maxIterations = (durationMonths + blackout.length) * 12 + 12
+    while (active < durationMonths && k < maxIterations) {
+        const monthOneBased = ((sm - 1 + k) % 12 + 12) % 12 + 1
+        if (!isBlackoutMonth(monthOneBased, blackout)) {
+            active += 1
+        }
+        k += 1
+    }
+    return addMonthsToParts(sy, sm, sd, k)
+}
+
+export type MembershipAccessStatus = "OK" | "NOT_STARTED" | "EXPIRED" | "BLACKOUT" | "NOT_APPLICABLE"
+
+/**
+ * Estado de acceso de una membresía a término fijo para el día `today`
+ * (string "YYYY-MM-DD" en hora Lima, vía getTodayDateString). Devuelve también
+ * las fechas calculadas para construir mensajes. Para membresías que no son a
+ * término fijo devuelve NOT_APPLICABLE (el llamador usa la lógica legacy).
+ */
+export const getMembershipAccessStatus = (
+    ticket: ScanTicket,
+    today: string,
+    blackout: readonly number[] = MEMBERSHIP_BLACKOUT_MONTHS
+): { status: MembershipAccessStatus; startStr: string; expiryStr: string } => {
+    if (!isFixedTermMembership(ticket)) {
+        return { status: "NOT_APPLICABLE", startStr: "", expiryStr: "" }
+    }
+    const anchor = getMembershipAnchor(ticket)!
+    const duration = ticket.ticketType.membershipDurationMonths!
+    const startStr = formatDateUTC(anchor)
+    const expiryStr = getMembershipExpiry(anchor, duration, blackout)
+    const monthOneBased = Number(today.split("-")[1])
+
+    if (today < startStr) return { status: "NOT_STARTED", startStr, expiryStr }
+    if (today >= expiryStr) return { status: "EXPIRED", startStr, expiryStr }
+    if (isBlackoutMonth(monthOneBased, blackout)) return { status: "BLACKOUT", startStr, expiryStr }
+    return { status: "OK", startStr, expiryStr }
+}
+
+/**
+ * ¿`today` cae dentro de la ventana vigente de una membresía a término fijo
+ * (después del inicio, antes de la expiración y fuera del blackout)?
+ */
+export const isWithinMembershipWindow = (
+    ticket: ScanTicket,
+    today: string,
+    blackout: readonly number[] = MEMBERSHIP_BLACKOUT_MONTHS
+): boolean => getMembershipAccessStatus(ticket, today, blackout).status === "OK"
+
+/**
  * Resumen de asistencia para membresías: cupo total = límite mensual, usadas =
  * clases consumidas dentro del mes en curso. Lo no usado en meses previos no
  * cuenta (reinicio sin acumular).
@@ -164,7 +264,8 @@ export const buildMembershipMonthlySummary = (
     today: string
 ): AttendanceSummary => {
     const limit = ticket.ticketType.monthlyClassLimit ?? 0
-    const period = getMembershipPeriod(today, ticket.event.startDate)
+    const anchor = getMembershipAnchor(ticket)
+    const period = anchor ? getMembershipPeriod(today, anchor) : null
     if (!period) {
         return { total: limit, used: 0, remaining: limit }
     }

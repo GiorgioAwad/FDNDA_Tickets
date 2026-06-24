@@ -35,6 +35,7 @@ export type TicketTypeClient = {
     isPackage?: boolean | null
     packageDaysCount?: number | null
     monthlyClassLimit?: number | null
+    membershipDurationMonths?: number | null
     validDays?: unknown
     servilexEnabled?: boolean
     servilexIndicator?: string | null
@@ -536,6 +537,8 @@ export default function TicketPurchaseCard({
                 },
                 servilexEnabled: Boolean(ticket.servilexEnabled),
                 servilexIndicator: ticket.servilexIndicator || null,
+                monthlyClassLimit: ticket.monthlyClassLimit ?? null,
+                membershipDurationMonths: ticket.membershipDurationMonths ?? null,
             })
             return
         }
@@ -628,8 +631,29 @@ export default function TicketPurchaseCard({
     const isPoolFreeView = isPoolFreeEventCategory(eventCategory)
     const isPlansLayout = ticketLayout === "PLANS" && !isPoolFreeView
 
+    // ACADEMIA (membresías): el rango del evento es la ventana de venta. Fuera de
+    // ese rango (día Lima) se cierra la compra. El control real es server-side en
+    // /api/orders; esto es solo el reflejo en UI.
+    const academiaSaleClosed =
+        eventCategory === "ACADEMIA" &&
+        !!limaClock &&
+        !!eventStartDate &&
+        !!eventEndDate &&
+        (() => {
+            const startKey = toDateKeyUTC(eventStartDate)
+            const endKey = toDateKeyUTC(eventEndDate)
+            if (!startKey || !endKey) return false
+            return limaClock.dateKey < startKey || limaClock.dateKey > endKey
+        })()
+
     const plansPanel = (
         <div className="space-y-6">
+            {academiaSaleClosed && (
+                <div className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+                    <Info className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <span>La venta de planes está cerrada. Solo puedes comprar dentro de las fechas habilitadas del evento.</span>
+                </div>
+            )}
             <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {visibleTicketMeta.map(({ ticket, maxQty, soldOut }) => (
                     <PlanTierCard
@@ -637,6 +661,7 @@ export default function TicketPurchaseCard({
                         ticket={ticket}
                         quantity={getCartQuantity(ticket.id)}
                         soldOut={soldOut}
+                        saleClosed={academiaSaleClosed}
                         maxQty={maxQty}
                         onIncrement={() => handleIncrement(ticket.id, maxQty)}
                         onDecrement={() => handleDecrement(ticket.id)}
@@ -645,7 +670,7 @@ export default function TicketPurchaseCard({
             </div>
 
             <div className="flex flex-col items-center gap-3">
-                <Button asChild size="lg" className="w-full sm:w-auto sm:px-12" disabled={safeItemCount === 0}>
+                <Button asChild size="lg" className="w-full sm:w-auto sm:px-12" disabled={safeItemCount === 0 || academiaSaleClosed}>
                     <Link href="/checkout">Ir a pagar</Link>
                 </Button>
                 <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3 text-sm text-blue-800">

@@ -30,6 +30,8 @@ export interface CartAttendee {
     lastNameMaternal: string
     dni: string
     matricula?: string
+    // Membresías a término fijo: fecha de inicio elegida ("YYYY-MM-DD").
+    membershipStartDate?: string
     scheduleSelections?: CartScheduleSelection[]
 }
 
@@ -46,6 +48,9 @@ export interface CartItem {
     scheduleConfig?: CartScheduleConfig
     servilexEnabled?: boolean
     servilexIndicator?: string | null
+    // Membresías a término fijo (ACADEMIA): habilitan el selector de fecha de inicio.
+    monthlyClassLimit?: number | null
+    membershipDurationMonths?: number | null
 }
 
 export interface BillingData {
@@ -71,6 +76,11 @@ interface CartContextType {
         lineKey: string,
         index: number,
         field: "firstName" | "secondName" | "lastNamePaternal" | "lastNameMaternal" | "dni" | "matricula",
+        value: string
+    ) => void
+    updateAttendeeMembershipStartDate: (
+        lineKey: string,
+        index: number,
         value: string
     ) => void
     updateAttendeeScheduleSelection: (
@@ -271,6 +281,7 @@ const createEmptyAttendee = (scheduleConfig?: CartScheduleConfig): CartAttendee 
         lastNameMaternal: "",
         dni: "",
         matricula: "",
+        membershipStartDate: "",
         scheduleSelections: requiredSelections > 0 ? createEmptySelections(requiredSelections, scheduleConfig) : [],
     }
 }
@@ -300,6 +311,8 @@ const normalizeAttendee = (input: unknown, scheduleConfig?: CartScheduleConfig):
         lastNameMaternal,
         dni: typeof record.dni === "string" ? record.dni : "",
         matricula: typeof record.matricula === "string" ? record.matricula : "",
+        membershipStartDate:
+            typeof record.membershipStartDate === "string" ? record.membershipStartDate : "",
         scheduleSelections: normalizeScheduleSelections(record.scheduleSelections, scheduleConfig),
     }
 }
@@ -360,6 +373,10 @@ const normalizeCartItem = (input: unknown): CartItem | null => {
         servilexEnabled: Boolean(record.servilexEnabled),
         servilexIndicator:
             typeof record.servilexIndicator === "string" ? record.servilexIndicator : null,
+        monthlyClassLimit:
+            typeof record.monthlyClassLimit === "number" ? record.monthlyClassLimit : null,
+        membershipDurationMonths:
+            typeof record.membershipDurationMonths === "number" ? record.membershipDurationMonths : null,
     }
 }
 
@@ -569,6 +586,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         )
     }
 
+    const updateAttendeeMembershipStartDate = (
+        lineKey: string,
+        index: number,
+        value: string
+    ) => {
+        updateItems((current) =>
+            current.map((item) => {
+                if (getCartItemKey(item) === lineKey) {
+                    const newAttendees = [...item.attendees]
+                    if (newAttendees[index]) {
+                        newAttendees[index] = {
+                            ...newAttendees[index],
+                            membershipStartDate: value,
+                        }
+                    }
+                    return { ...item, attendees: newAttendees }
+                }
+                return item
+            })
+        )
+    }
+
     const updateAttendeeScheduleSelection = (
         lineKey: string,
         attendeeIndex: number,
@@ -706,6 +745,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 removeItem,
                 updateQuantity,
                 updateAttendee,
+                updateAttendeeMembershipStartDate,
                 updateAttendeeScheduleSelection,
                 billingData,
                 updateBillingData,
@@ -729,6 +769,7 @@ export function useCart() {
             removeItem: () => {},
             updateQuantity: () => {},
             updateAttendee: () => {},
+            updateAttendeeMembershipStartDate: () => {},
             updateAttendeeScheduleSelection: () => {},
             billingData: DEFAULT_BILLING_DATA,
             updateBillingData: () => {},

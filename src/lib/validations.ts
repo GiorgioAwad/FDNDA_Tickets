@@ -133,6 +133,11 @@ const orderAttendeeSchema = z
         lastNameMaternal: z.string().trim().max(100, "Apellido materno muy largo").optional().default(""),
         dni: z.string().trim().max(12).optional().default(""),
         matricula: z.string().max(50).optional(),
+        // Membresías a término fijo: fecha de inicio elegida por el comprador.
+        membershipStartDate: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha invalida")
+            .optional(),
         scheduleSelections: z
             .array(
                 z.object({

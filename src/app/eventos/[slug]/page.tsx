@@ -206,6 +206,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
         isPackage: ticket.isPackage,
         packageDaysCount: ticket.packageDaysCount,
         monthlyClassLimit: ticket.monthlyClassLimit,
+        membershipDurationMonths: ticket.membershipDurationMonths,
         validDays: ticket.validDays,
         servilexEnabled: ticket.servilexEnabled,
         servilexIndicator: ticket.servilexIndicator,

@@ -31,6 +31,7 @@ interface TicketType {
     isPackage?: boolean
     packageDaysCount?: number
     monthlyClassLimit?: number | null
+    membershipDurationMonths?: number | null
     validDays?: unknown
     sortOrder?: number
     originalPrice?: number | null
@@ -89,6 +90,7 @@ const buildEmptyFormData = (sucursalCode = DEFAULT_ABIO_EVENT_SUCURSAL_CODE): Pa
     isPackage: false,
     packageDaysCount: 0,
     monthlyClassLimit: null,
+    membershipDurationMonths: null,
     sortOrder: 0,
     originalPrice: null,
     benefits: null,
@@ -1639,6 +1641,28 @@ export function TicketTypeManager({
                                     />
                                     <p className="text-[11px] text-gray-500">
                                         Si se define, la asistencia se reinicia cada mes y no se acumula.
+                                    </p>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium">Duración de membresía</label>
+                                    <select
+                                        className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                        value={formData.membershipDurationMonths ?? ""}
+                                        onChange={(e) => {
+                                            const n = Number(e.target.value)
+                                            setFormData({
+                                                ...formData,
+                                                membershipDurationMonths: n > 0 ? n : null,
+                                            })
+                                        }}
+                                    >
+                                        <option value="">Sin duración fija (ligada al evento)</option>
+                                        <option value="6">Semestral (6 meses)</option>
+                                        <option value="12">Anual (12 meses)</option>
+                                    </select>
+                                    <p className="text-[11px] text-gray-500">
+                                        Con duración fija, el comprador elige su fecha de inicio en el checkout
+                                        y la vigencia se desacopla del rango del evento (blackout enero/febrero).
                                     </p>
                                 </div>
                                 <div className="space-y-2">

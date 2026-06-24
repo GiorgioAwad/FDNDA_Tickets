@@ -11,7 +11,7 @@ import {
     pickQrDateForTicket,
     ticketUsesPurchasedDates,
 } from "@/lib/ticket-date-policy"
-import { getMembershipPeriod } from "@/lib/scan-helpers"
+import { getMembershipPeriod, getMembershipExpiry } from "@/lib/scan-helpers"
 export const runtime = "nodejs"
 
 type TicketEntitlement = {
@@ -256,8 +256,19 @@ export async function GET(
         // Check if this date is valid for the ticket
         let dateStr = formatDateUTC(qrDate)
         // Membresía: solo cuentan las clases usadas dentro del mes en curso
-        // (reinicio sin acumular). El resto del cómputo de paquete sigue igual.
-        const membershipPeriod = isMembership ? getMembershipPeriod(todayStr, ticket.event.startDate) : null
+        // (reinicio sin acumular). El ciclo se ancla a la fecha de inicio elegida
+        // por el comprador (membresías a término fijo) o, en legacy, al inicio del
+        // evento. El resto del cómputo de paquete sigue igual.
+        const membershipAnchor = ticket.membershipStartDate ?? ticket.event.startDate
+        const membershipPeriod = isMembership ? getMembershipPeriod(todayStr, membershipAnchor) : null
+        const isFixedTerm =
+            isMembership &&
+            ticket.membershipStartDate != null &&
+            ticket.ticketType.membershipDurationMonths != null &&
+            ticket.ticketType.membershipDurationMonths > 0
+        const membershipExpiry = isFixedTerm
+            ? getMembershipExpiry(membershipAnchor, ticket.ticketType.membershipDurationMonths!)
+            : null
         const usedCount =
             isMembership && membershipPeriod
                 ? entitlements.filter((item) => {
@@ -390,6 +401,12 @@ export async function GET(
                           used: usedCount,
                           remaining: Math.max((packageDaysCount ?? 0) - usedCount, 0),
                           periodStart: membershipPeriod?.startStr ?? null,
+                          // Membresías a término fijo (anual/semestral)
+                          membershipStart: ticket.membershipStartDate
+                              ? formatDateUTC(ticket.membershipStartDate)
+                              : null,
+                          membershipExpiry,
+                          durationMonths: ticket.ticketType.membershipDurationMonths ?? null,
                       }
                     : null,
             },

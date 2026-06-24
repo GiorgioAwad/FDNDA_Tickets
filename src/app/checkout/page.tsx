@@ -14,6 +14,10 @@ import {
     getLimaDateKey,
     getShiftOptionsForDate,
 } from "@/lib/ticket-schedule"
+import {
+    validateMembershipStartDate,
+    MEMBERSHIP_START_MAX_MONTHS_AHEAD,
+} from "@/lib/membership-config"
 import { formatDate, formatPrice } from "@/lib/utils"
 import type { IzipayCheckoutConfig } from "@/lib/izipay"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
@@ -43,6 +47,7 @@ export default function CheckoutPage() {
         removeItem,
         updateQuantity,
         updateAttendee,
+        updateAttendeeMembershipStartDate,
         updateAttendeeScheduleSelection,
         billingData,
         updateBillingData,
@@ -185,6 +190,41 @@ export default function CheckoutPage() {
     const hasItemsRequiringAttendees = useMemo(
         () => items.some((item) => collectsAttendeeIdentity(item)),
         [collectsAttendeeIdentity, items]
+    )
+
+    // Membresía a término fijo (anual/semestral): pide al comprador elegir la
+    // fecha de inicio. Se detecta por ACADEMIA + cupo mensual + duración fija.
+    const isFixedTermMembershipItem = useCallback(
+        (item: (typeof items)[number]) =>
+            getEventCategory(item) === "ACADEMIA" &&
+            (item.monthlyClassLimit ?? 0) > 0 &&
+            (item.membershipDurationMonths ?? 0) > 0,
+        [getEventCategory]
+    )
+
+    // "Hoy" en hora Lima (no UTC) y tope forward para el selector de fecha.
+    const membershipToday = useMemo(() => getLimaDateKey(), [])
+    const membershipMaxDate = useMemo(() => {
+        const [y, m, d] = membershipToday.split("-").map(Number)
+        const total = y * 12 + (m - 1) + MEMBERSHIP_START_MAX_MONTHS_AHEAD
+        const ny = Math.floor(total / 12)
+        const nm = (total % 12) + 1
+        const lastDay = new Date(Date.UTC(ny, nm, 0)).getUTCDate()
+        const nd = Math.min(d, lastDay)
+        return `${ny}-${String(nm).padStart(2, "0")}-${String(nd).padStart(2, "0")}`
+    }, [membershipToday])
+
+    const hasMissingMembershipStart = useMemo(
+        () =>
+            items.some(
+                (item) =>
+                    isFixedTermMembershipItem(item) &&
+                    item.attendees.some(
+                        (attendee) =>
+                            !validateMembershipStartDate(attendee.membershipStartDate, membershipToday).ok
+                    )
+            ),
+        [isFixedTermMembershipItem, items, membershipToday]
     )
 
     const boletaFullName = useMemo(
@@ -981,6 +1021,49 @@ export default function CheckoutPage() {
                                                             La referencia interna ABIO del alumno se genera automaticamente al procesar la compra. Para ABIO se enviaran nombre, segundo nombre, apellido paterno y apellido materno por separado.
                                                         </div>
                                                     )}
+
+                                                    {isFixedTermMembershipItem(item) && (() => {
+                                                        const membershipCheck = validateMembershipStartDate(
+                                                            attendee.membershipStartDate,
+                                                            membershipToday
+                                                        )
+                                                        const durationLabel =
+                                                            item.membershipDurationMonths === 12
+                                                                ? "anual"
+                                                                : item.membershipDurationMonths === 6
+                                                                    ? "semestral"
+                                                                    : `${item.membershipDurationMonths} meses`
+                                                        return (
+                                                            <div className="rounded-md border border-dashed border-emerald-200 bg-emerald-50 px-3 py-3">
+                                                                <label className="text-xs font-medium text-emerald-800 mb-1 block">
+                                                                    Fecha de inicio de tu membresía ({durationLabel})
+                                                                </label>
+                                                                <Input
+                                                                    type="date"
+                                                                    value={attendee.membershipStartDate || ""}
+                                                                    min={membershipToday}
+                                                                    max={membershipMaxDate}
+                                                                    onChange={(e) =>
+                                                                        updateAttendeeMembershipStartDate(
+                                                                            itemKey,
+                                                                            attendeeIndex,
+                                                                            e.target.value
+                                                                        )
+                                                                    }
+                                                                    className="bg-white"
+                                                                />
+                                                                {attendee.membershipStartDate && !membershipCheck.ok ? (
+                                                                    <p className="mt-1 text-[11px] text-red-600">
+                                                                        {membershipCheck.error}
+                                                                    </p>
+                                                                ) : (
+                                                                    <p className="mt-1 text-[11px] text-emerald-700">
+                                                                        Tu membresía no aplica para enero y febrero; la vigencia se extiende esos meses.
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        )
+                                                    })()}
                                                     </>
                                                     )}
 
@@ -1230,7 +1313,7 @@ export default function CheckoutPage() {
                                             size="lg"
                                             onClick={handlePayment}
                                             loading={loading}
-                                            disabled={hasMissingAttendeeData || hasMissingScheduleSelections || hasMissingBillingData}
+                                            disabled={hasMissingAttendeeData || hasMissingScheduleSelections || hasMissingMembershipStart || hasMissingBillingData}
                                         >
                                             <CreditCard className="h-4 w-4 mr-2" />
                                             Pagar {formatPrice(finalTotal)}
@@ -1249,6 +1332,11 @@ export default function CheckoutPage() {
                                         {!hasMissingBillingData && !hasMissingAttendeeData && hasMissingScheduleSelections && (
                                             <p className="text-xs text-amber-600 text-center">
                                                 Completa los dias y turnos (si aplica) para cada entrada
+                                            </p>
+                                        )}
+                                        {!hasMissingBillingData && !hasMissingAttendeeData && !hasMissingScheduleSelections && hasMissingMembershipStart && (
+                                            <p className="text-xs text-amber-600 text-center">
+                                                Elige una fecha de inicio valida para cada membresia (no en enero ni febrero)
                                             </p>
                                         )}
 

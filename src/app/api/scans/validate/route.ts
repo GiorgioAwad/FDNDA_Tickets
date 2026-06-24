@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
-import { parseQRPayload, verifySignature, getTodayDateString } from "@/lib/qr"
+import { parseQRPayload, verifySignature, getTodayDateString, formatDateUTC } from "@/lib/qr"
 import { getShiftOptionsForDate, normalizeShiftLabel, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import {
     getExpectedShiftForDate,
@@ -18,6 +18,8 @@ import {
     buildMembershipMonthlySummary,
     generateEntitlements,
     isMembershipTicket,
+    isFixedTermMembership,
+    getMembershipAccessStatus,
     isWithinEventRange,
 } from "@/lib/scan-helpers"
 
@@ -147,6 +149,11 @@ export async function POST(request: NextRequest) {
         // - El resto de eventos permite ingresar cualquier día dentro del rango del evento.
         //   Esto cubre el fallback "compró su entrada para un día pero asiste otro día".
         const withinEventRange = isWithinEventRange(ticket, today)
+        // Membresías a término fijo (anual/semestral): la vigencia se desacopla del
+        // rango del evento. Aplica blackout enero/febrero (freeze + extend) y la
+        // ventana inicio→expiración anclada a la fecha elegida por el comprador.
+        // Las membresías legacy NO entran aquí y siguen acotadas por el evento.
+        const fixedTermMembership = isFixedTermMembership(ticket)
         if (isPiscina) {
             if (payload.date !== today && !override) {
                 await logScan(ticket.id, user.id, eventId, "INVALID", "QR fuera de fecha")
@@ -158,7 +165,37 @@ export async function POST(request: NextRequest) {
                     message: "El QR no corresponde al dia de hoy. Abre tu ticket para actualizarlo.",
                 })
             }
-        } else if (!withinEventRange) {
+        } else if (fixedTermMembership && !override) {
+            const access = getMembershipAccessStatus(ticket, today)
+            if (access.status === "BLACKOUT") {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Membresía en blackout (ene/feb)")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "MEMBERSHIP_BLACKOUT",
+                    message: "Tu membresía no aplica para enero y febrero por términos y condiciones.",
+                })
+            }
+            if (access.status === "NOT_STARTED") {
+                await logScan(ticket.id, user.id, eventId, "EXPIRED", "Membresía aún no inicia")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "MEMBERSHIP_NOT_STARTED",
+                    message: `Tu membresía inicia el ${formatDmy(access.startStr)}.`,
+                })
+            }
+            if (access.status === "EXPIRED") {
+                await logScan(ticket.id, user.id, eventId, "EXPIRED", "Membresía vencida")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "MEMBERSHIP_EXPIRED",
+                    message: `Tu membresía venció el ${formatDmy(lastValidDay(access.expiryStr))}.`,
+                })
+            }
+            // status OK → continúa con el flujo normal (cupo mensual, etc.)
+        } else if (!fixedTermMembership && !withinEventRange) {
             await logScan(ticket.id, user.id, eventId, "EXPIRED", "Fecha fuera del rango del evento")
             return NextResponse.json({
                 success: false,
@@ -574,6 +611,22 @@ export async function POST(request: NextRequest) {
             { status: 500 }
         )
     }
+}
+
+// "YYYY-MM-DD" -> "DD/MM/YYYY" (string-based, sin Date para evitar desfases TZ).
+function formatDmy(isoDate: string): string {
+    const [y, m, d] = isoDate.split("-")
+    if (!y || !m || !d) return isoDate
+    return `${d}/${m}/${y}`
+}
+
+// Último día vigente (la expiración es exclusiva). Resta un día sobre una fecha
+// pura UTC; es solo para el mensaje al staff.
+function lastValidDay(expiryExclusive: string): string {
+    if (!expiryExclusive) return expiryExclusive
+    const d = new Date(`${expiryExclusive}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() - 1)
+    return formatDateUTC(d)
 }
 
 async function logScan(

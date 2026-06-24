@@ -3,6 +3,7 @@ import { generateTicketCode, getDaysBetween, formatPrice } from "@/lib/utils"
 import { sendPurchaseEmail, sendMerchOrderConfirmationEmail, type MerchOrderEmailItem } from "@/lib/email"
 import { onTicketSold } from "@/lib/cached-queries"
 import { extractTicketValidDates, normalizeScheduleSelections } from "@/lib/ticket-schedule"
+import { getTodayDateString } from "@/lib/qr"
 import { buildNaturalPersonFullName } from "@/lib/billing"
 import { buildServilexInvoiceSnapshots } from "@/lib/servilex"
 import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
@@ -76,6 +77,7 @@ type StoredAttendeeData = {
     lastNameMaternal?: string | null
     dni?: string | null
     matricula?: string | null
+    membershipStartDate?: string | null
     scheduleSelections?: unknown
 }
 
@@ -353,6 +355,28 @@ const toDateObjectsFromDateStrings = (values: string[]): Date[] => {
         const [, year, month, day] = match
         return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12, 0, 0))
     })
+}
+
+/**
+ * Fecha de inicio (@db.Date) para una membresía a término fijo. Devuelve null si
+ * el ticket type no es una membresía con duración fija (legacy / no-membresía).
+ * Usa la fecha elegida por el comprador; si falta (no debería: cliente + ruta de
+ * órdenes la validan), cae al día actual en hora Lima como red de seguridad para
+ * NO bloquear el fulfillment de una orden ya pagada. Se guarda al MEDIODÍA UTC
+ * para evitar el off-by-one al truncar a @db.Date.
+ */
+const resolveMembershipStartDate = (
+    ticketType: { monthlyClassLimit?: number | null; membershipDurationMonths?: number | null },
+    attendee: StoredAttendeeData | null
+): Date | null => {
+    const isFixedTerm =
+        typeof ticketType.monthlyClassLimit === "number" && ticketType.monthlyClassLimit > 0 &&
+        typeof ticketType.membershipDurationMonths === "number" && ticketType.membershipDurationMonths > 0
+    if (!isFixedTerm) return null
+
+    const chosen = attendee?.membershipStartDate
+    const dateStr = chosen && /^\d{4}-\d{2}-\d{2}$/.test(chosen) ? chosen : getTodayDateString()
+    return new Date(`${dateStr}T12:00:00Z`)
 }
 
 const buildEntitlementDates = (input: {
@@ -657,6 +681,7 @@ export async function fulfillPaidOrder({
                     eventCategory: event.category,
                 })
                 const ticketCode = generateTicketCode()
+                const membershipStartDate = resolveMembershipStartDate(ticketType, attendee)
 
                 await tx.ticket.create({
                     data: {
@@ -667,6 +692,7 @@ export async function fulfillPaidOrder({
                         ticketCode,
                         attendeeName: attendeeFullName,
                         attendeeDni: attendee.dni || undefined,
+                        membershipStartDate,
                         status: "ACTIVE",
                         entitlements: {
                             create: entitlementDates.map((date) => ({

@@ -2,14 +2,25 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import {
     getMembershipPeriod,
+    getMembershipExpiry,
+    isFixedTermMembership,
+    isWithinMembershipWindow,
+    getMembershipAccessStatus,
     buildMembershipMonthlySummary,
     type ScanTicket,
 } from "@/lib/scan-helpers"
+import { isBlackoutMonth } from "@/lib/membership-config"
+
+type MakeTicketOptions = {
+    membershipStartDate?: string | null
+    membershipDurationMonths?: number | null
+}
 
 const makeTicket = (
     startDate: string,
     monthlyClassLimit: number,
-    usedDates: string[]
+    usedDates: string[],
+    options: MakeTicketOptions = {}
 ): ScanTicket => ({
     id: "t1",
     orderId: "o1",
@@ -19,6 +30,9 @@ const makeTicket = (
     attendeeDni: null,
     status: "ACTIVE",
     eventId: "e1",
+    membershipStartDate: options.membershipStartDate
+        ? new Date(`${options.membershipStartDate}T12:00:00Z`)
+        : null,
     event: {
         title: "Membresías",
         startDate: new Date(`${startDate}T00:00:00Z`),
@@ -29,6 +43,7 @@ const makeTicket = (
         isPackage: false,
         packageDaysCount: null,
         monthlyClassLimit,
+        membershipDurationMonths: options.membershipDurationMonths ?? null,
         validDays: null,
     },
     entitlements: usedDates.map((d, i) => ({
@@ -39,7 +54,7 @@ const makeTicket = (
     })),
 })
 
-test("getMembershipPeriod anchors months to the event start day", () => {
+test("getMembershipPeriod anchors months to the anchor day", () => {
     const period = getMembershipPeriod("2026-04-10", new Date("2026-03-15T00:00:00Z"))
     assert.ok(period)
     assert.equal(period!.index, 0) // 2026-04-10 sigue dentro del primer ciclo [03-15, 04-15)
@@ -87,4 +102,108 @@ test("monthly summary blocks when the cycle quota is exhausted", () => {
     )
     const ticket = makeTicket("2026-03-01", 20, usedDates)
     assert.equal(buildMembershipMonthlySummary(ticket, "2026-03-25").remaining, 0)
+})
+
+// ==================== TÉRMINO FIJO (anual / semestral) ====================
+
+test("isBlackoutMonth flags January and February by default", () => {
+    assert.equal(isBlackoutMonth(1), true)
+    assert.equal(isBlackoutMonth(2), true)
+    assert.equal(isBlackoutMonth(3), false)
+    assert.equal(isBlackoutMonth(12), false)
+})
+
+test("isFixedTermMembership requires chosen start date AND duration", () => {
+    const fixed = makeTicket("2026-07-01", 20, [], {
+        membershipStartDate: "2026-09-15",
+        membershipDurationMonths: 12,
+    })
+    assert.equal(isFixedTermMembership(fixed), true)
+
+    // Legacy: sin fecha de inicio ni duración → NO es a término fijo
+    const legacy = makeTicket("2026-07-01", 20, [])
+    assert.equal(isFixedTermMembership(legacy), false)
+
+    // Con fecha pero sin duración → tampoco
+    const partial = makeTicket("2026-07-01", 20, [], { membershipStartDate: "2026-09-15" })
+    assert.equal(isFixedTermMembership(partial), false)
+})
+
+test("getMembershipExpiry extends an annual membership over the Jan/Feb blackout", () => {
+    // 12 meses activos desde 2026-03-15, saltando ene/feb → vence 2027-05-15 (exclusivo)
+    const expiry = getMembershipExpiry(new Date("2026-03-15T12:00:00Z"), 12)
+    assert.equal(expiry, "2027-05-15")
+})
+
+test("getMembershipExpiry extends a semestral membership over the blackout", () => {
+    // 6 meses activos desde 2026-10-01: Oct,Nov,Dic + (salta ene,feb) + Mar,Abr,May
+    // → vence 2027-06-01 (exclusivo)
+    const expiry = getMembershipExpiry(new Date("2026-10-01T12:00:00Z"), 6)
+    assert.equal(expiry, "2027-06-01")
+})
+
+test("getMembershipExpiry without blackout overlap is a plain month add", () => {
+    // 6 meses desde 2026-03-01 sin cruzar ene/feb → 2026-09-01
+    const expiry = getMembershipExpiry(new Date("2026-03-01T12:00:00Z"), 6)
+    assert.equal(expiry, "2026-09-01")
+})
+
+test("isWithinMembershipWindow respects start, expiry and blackout", () => {
+    const ticket = makeTicket("2026-07-01", 20, [], {
+        membershipStartDate: "2026-03-15",
+        membershipDurationMonths: 12,
+    })
+    // Día normal dentro de la vigencia
+    assert.equal(isWithinMembershipWindow(ticket, "2026-03-20"), true)
+    // Antes del inicio elegido
+    assert.equal(isWithinMembershipWindow(ticket, "2026-03-10"), false)
+    // Dentro de la ventana pero en enero (blackout)
+    assert.equal(isWithinMembershipWindow(ticket, "2027-01-15"), false)
+    // Pasada la expiración (2027-05-15 exclusivo)
+    assert.equal(isWithinMembershipWindow(ticket, "2027-05-20"), false)
+})
+
+test("getMembershipAccessStatus distinguishes blackout, not-started and expired", () => {
+    const ticket = makeTicket("2026-07-01", 20, [], {
+        membershipStartDate: "2026-03-15",
+        membershipDurationMonths: 12,
+    })
+    assert.equal(getMembershipAccessStatus(ticket, "2026-03-20").status, "OK")
+    assert.equal(getMembershipAccessStatus(ticket, "2026-03-10").status, "NOT_STARTED")
+    assert.equal(getMembershipAccessStatus(ticket, "2027-02-10").status, "BLACKOUT")
+    assert.equal(getMembershipAccessStatus(ticket, "2027-05-15").status, "EXPIRED")
+
+    // Legacy no es a término fijo → NOT_APPLICABLE (usa la lógica de evento)
+    const legacy = makeTicket("2026-07-01", 20, [])
+    assert.equal(getMembershipAccessStatus(legacy, "2026-07-10").status, "NOT_APPLICABLE")
+})
+
+test("fixed-term membership anchors the monthly cycle to the chosen start date", () => {
+    // Inicio elegido 2026-09-10; el corte mensual cae el día 10.
+    const ticket = makeTicket("2026-07-01", 8, ["2026-09-12", "2026-09-15", "2026-10-20"], {
+        membershipStartDate: "2026-09-10",
+        membershipDurationMonths: 12,
+    })
+    // 2026-09-20 está en el ciclo [09-10, 10-10): cuentan 09-12 y 09-15 (no 10-20)
+    assert.deepEqual(buildMembershipMonthlySummary(ticket, "2026-09-20"), {
+        total: 8,
+        used: 2,
+        remaining: 6,
+    })
+    // 2026-10-20 está en el ciclo [10-10, 11-10): solo cuenta 10-20 (reinicio)
+    assert.deepEqual(buildMembershipMonthlySummary(ticket, "2026-10-20"), {
+        total: 8,
+        used: 1,
+        remaining: 7,
+    })
+})
+
+test("legacy membership (no chosen start) still anchors to the event start", () => {
+    const legacy = makeTicket("2026-03-01", 20, ["2026-03-05", "2026-03-10"])
+    // Mismo comportamiento que antes: anclado a event.startDate
+    assert.deepEqual(buildMembershipMonthlySummary(legacy, "2026-03-15"), {
+        total: 20,
+        used: 2,
+        remaining: 18,
+    })
 })
