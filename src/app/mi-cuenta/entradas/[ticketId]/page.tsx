@@ -426,7 +426,9 @@ export default function TicketDetailPage() {
                                 </div>
                                 <p className="text-sm text-gray-600">
                                     Válido a partir del{" "}
-                                    <span className="font-bold text-gray-900">{formatDate(ticket.event.startDate)}</span>
+                                    <span className="font-bold text-gray-900">
+                                        {formatDate(ticket.membershipAttendance?.membershipStart ?? ticket.event.startDate)}
+                                    </span>
                                 </p>
                                 <p className="text-xs text-gray-400">
                                     El carnet con tu código QR estará disponible desde esa fecha.
@@ -499,8 +501,12 @@ export default function TicketDetailPage() {
                         <div className="flex items-start gap-3">
                             <Calendar className="h-5 w-5 text-gray-400 mt-0.5" />
                             <div>
-                                <div className="text-xs text-gray-500">Fecha del Evento</div>
-                                <div className="font-medium">{formatDate(ticket.event.startDate)}</div>
+                                <div className="text-xs text-gray-500">
+                                    {ticket.membershipAttendance?.membershipStart ? "Inicio de membresía" : "Fecha del Evento"}
+                                </div>
+                                <div className="font-medium">
+                                    {formatDate(ticket.membershipAttendance?.membershipStart ?? ticket.event.startDate)}
+                                </div>
                             </div>
                         </div>
 
