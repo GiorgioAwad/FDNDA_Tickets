@@ -43,6 +43,10 @@ interface EventFormData {
     visibility: "PUBLIC" | "PRIVATE"
     bannerUrl: string
     ticketLayout: "LIST" | "PLANS"
+    // Membresías a término fijo: fecha de inicio fija (todos) o rango de selección.
+    membershipStartFixed: string
+    membershipStartMin: string
+    membershipStartMax: string
 }
 
 export function EventForm({ initialData, isEditing = false, showBack = true }: EventFormProps) {
@@ -72,6 +76,15 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
         visibility: initialData?.visibility || "PUBLIC",
         bannerUrl: initialData?.bannerUrl || "",
         ticketLayout: initialData?.ticketLayout || "LIST",
+        membershipStartFixed: initialData?.membershipStartFixed
+            ? formatDateInput(initialData.membershipStartFixed)
+            : "",
+        membershipStartMin: initialData?.membershipStartMin
+            ? formatDateInput(initialData.membershipStartMin)
+            : "",
+        membershipStartMax: initialData?.membershipStartMax
+            ? formatDateInput(initialData.membershipStartMax)
+            : "",
     })
     const [accessToken, setAccessToken] = useState<string | null>(initialData?.accessToken ?? null)
     const [regenerating, setRegenerating] = useState(false)
@@ -367,6 +380,56 @@ export function EventForm({ initialData, isEditing = false, showBack = true }: E
                                             Se usa para sugerir cantidad de clases del paquete cuando creas
                                             entradas (ej: 3/sem × 4 semanas = 12 clases).
                                         </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {formData.category === "ACADEMIA" && (
+                                <div className="rounded-lg border bg-gray-50 p-4 space-y-3">
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-gray-700">
+                                            Inicio de membresía (planes a término fijo)
+                                        </h4>
+                                        <p className="text-xs text-gray-500">
+                                            Define cómo se resuelve la fecha de inicio que elige el comprador.
+                                            Si pones una <strong>fecha fija</strong>, todos inician ese día y no se
+                                            muestra selector. Si no, y defines un <strong>rango</strong>, el comprador
+                                            elige dentro de ese rango. Si dejas todo vacío, elige libremente (desde hoy).
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Fecha de inicio fija (todos)</label>
+                                        <Input
+                                            type="date"
+                                            name="membershipStartFixed"
+                                            value={formData.membershipStartFixed}
+                                            onChange={handleChange}
+                                        />
+                                        <p className="text-[11px] text-gray-500">
+                                            Vacío = sin fecha fija (usa el rango de abajo o selección libre).
+                                        </p>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium">Rango: desde</label>
+                                            <Input
+                                                type="date"
+                                                name="membershipStartMin"
+                                                value={formData.membershipStartMin}
+                                                onChange={handleChange}
+                                                disabled={Boolean(formData.membershipStartFixed)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium">Rango: hasta</label>
+                                            <Input
+                                                type="date"
+                                                name="membershipStartMax"
+                                                value={formData.membershipStartMax}
+                                                onChange={handleChange}
+                                                disabled={Boolean(formData.membershipStartFixed)}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             )}

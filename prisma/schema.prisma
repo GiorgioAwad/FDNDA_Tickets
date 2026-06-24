@@ -273,6 +273,14 @@ model Event {
   discipline  String?   // e.g., "Natación", "Waterpolo", etc.
   // Cómo se muestran las entradas en la página pública del evento.
   ticketLayout EventTicketLayout @default(LIST)
+  // Membresías a término fijo: cómo se resuelve la fecha de inicio que elige (o
+  // se fuerza a) el comprador en el checkout.
+  //  - Si membershipStartFixed está presente: TODOS inician ese día (sin selector).
+  //  - Si no, y hay min/max: el comprador elige dentro de [min, max].
+  //  - Si nada: default (>= hoy, <= hoy + 18 meses), sin enero/febrero.
+  membershipStartFixed DateTime? @db.Date
+  membershipStartMin   DateTime? @db.Date
+  membershipStartMax   DateTime? @db.Date
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

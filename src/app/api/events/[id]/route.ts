@@ -110,6 +110,9 @@ export async function PUT(
             bannerUrl,
             discipline,
             ticketLayout,
+            membershipStartFixed,
+            membershipStartMin,
+            membershipStartMax,
         } = body as {
             title?: string
             description?: string
@@ -127,7 +130,21 @@ export async function PUT(
             bannerUrl?: string
             discipline?: string
             ticketLayout?: "LIST" | "PLANS"
+            membershipStartFixed?: string | null
+            membershipStartMin?: string | null
+            membershipStartMax?: string | null
         }
+        // Fechas de inicio de membresía (@db.Date). "" o null limpian el campo;
+        // undefined no lo toca. parseDateOnly normaliza "YYYY-MM-DD".
+        const parseMembershipDate = (value: string | null | undefined): Date | null | undefined => {
+            if (value === undefined) return undefined
+            if (!value) return null
+            const parsed = parseDateOnly(value)
+            return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null
+        }
+        const parsedMembershipStartFixed = parseMembershipDate(membershipStartFixed)
+        const parsedMembershipStartMin = parseMembershipDate(membershipStartMin)
+        const parsedMembershipStartMax = parseMembershipDate(membershipStartMax)
         const resolvedTicketLayout =
             ticketLayout === undefined ? undefined : ticketLayout === "PLANS" ? "PLANS" : "LIST"
 
@@ -228,6 +245,9 @@ export async function PUT(
                 bannerUrl,
                 discipline,
                 ticketLayout: resolvedTicketLayout,
+                membershipStartFixed: parsedMembershipStartFixed,
+                membershipStartMin: parsedMembershipStartMin,
+                membershipStartMax: parsedMembershipStartMax,
                 ...tokenPatch,
             },
         })

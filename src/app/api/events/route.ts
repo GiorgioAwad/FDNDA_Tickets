@@ -57,6 +57,9 @@ type EventPayload = {
     bannerUrl?: string
     discipline?: string
     ticketLayout?: EventTicketLayout
+    membershipStartFixed?: string | null
+    membershipStartMin?: string | null
+    membershipStartMax?: string | null
     ticketTypes?: TicketTypePayload[]
     eventDays?: EventDayPayload[]
 }
@@ -143,10 +146,19 @@ export async function POST(request: NextRequest) {
             bannerUrl,
             discipline,
             ticketLayout,
+            membershipStartFixed,
+            membershipStartMin,
+            membershipStartMax,
             ticketTypes, // Optional array of ticket types to create
             eventDays,   // Optional array of days to create
         } = body
         const resolvedTicketLayout: EventTicketLayout = ticketLayout === "PLANS" ? "PLANS" : "LIST"
+        // Fechas de inicio de membresía (@db.Date). "" / null = sin valor.
+        const parseMembershipDate = (value: string | null | undefined): Date | null => {
+            if (!value) return null
+            const parsed = parseDateOnly(value)
+            return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null
+        }
         const parsedAdvanceAmount = Number(advanceAmount || 0)
         const parsedAcademiaWeeklyFrequency = (() => {
             if (academiaWeeklyFrequency === undefined || academiaWeeklyFrequency === null || academiaWeeklyFrequency === "") {
@@ -204,6 +216,9 @@ export async function POST(request: NextRequest) {
                 accessToken,
                 bannerUrl,
                 discipline,
+                membershipStartFixed: parseMembershipDate(membershipStartFixed),
+                membershipStartMin: parseMembershipDate(membershipStartMin),
+                membershipStartMax: parseMembershipDate(membershipStartMax),
                 ticketLayout: resolvedTicketLayout,
                 createdBy: user.id,
                 ticketTypes: ticketTypes

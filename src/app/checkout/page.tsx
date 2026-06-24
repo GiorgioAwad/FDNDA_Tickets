@@ -16,7 +16,8 @@ import {
 } from "@/lib/ticket-schedule"
 import {
     validateMembershipStartDate,
-    MEMBERSHIP_START_MAX_MONTHS_AHEAD,
+    resolveMembershipStartSetup,
+    type MembershipStartConfig,
 } from "@/lib/membership-config"
 import { formatDate, formatPrice } from "@/lib/utils"
 import type { IzipayCheckoutConfig } from "@/lib/izipay"
@@ -85,6 +86,11 @@ export default function CheckoutPage() {
     const [todayDateKey, setTodayDateKey] = useState("")
     const [eventCategoriesById, setEventCategoriesById] = useState<Record<string, EventCategory>>({})
     const categoryRequestsRef = useRef(new Set<string>())
+    // Config de inicio de membresía por evento (fija / rango), cargada del API.
+    const [membershipStartConfigById, setMembershipStartConfigById] = useState<
+        Record<string, MembershipStartConfig>
+    >({})
+    const membershipConfigRequestsRef = useRef(new Set<string>())
 
     useEffect(() => {
         const updateToday = () => setTodayDateKey(getLimaDateKey())
@@ -202,29 +208,75 @@ export default function CheckoutPage() {
         [getEventCategory]
     )
 
-    // "Hoy" en hora Lima (no UTC) y tope forward para el selector de fecha.
+    // "Hoy" en hora Lima (no UTC).
     const membershipToday = useMemo(() => getLimaDateKey(), [])
-    const membershipMaxDate = useMemo(() => {
-        const [y, m, d] = membershipToday.split("-").map(Number)
-        const total = y * 12 + (m - 1) + MEMBERSHIP_START_MAX_MONTHS_AHEAD
-        const ny = Math.floor(total / 12)
-        const nm = (total % 12) + 1
-        const lastDay = new Date(Date.UTC(ny, nm, 0)).getUTCDate()
-        const nd = Math.min(d, lastDay)
-        return `${ny}-${String(nm).padStart(2, "0")}-${String(nd).padStart(2, "0")}`
-    }, [membershipToday])
+
+    // Resuelve el modo de inicio (fija / rango / libre) según la config del evento.
+    const getMembershipStartSetup = useCallback(
+        (item: (typeof items)[number]) =>
+            resolveMembershipStartSetup(membershipStartConfigById[item.eventId], membershipToday),
+        [membershipStartConfigById, membershipToday]
+    )
+
+    // Carga la config de inicio de membresía de cada evento con planes a término
+    // fijo. El efecto de categorías salta estos items (ya traen eventCategory), por
+    // eso aquí se hace un fetch dedicado.
+    useEffect(() => {
+        const fetchConfigs = async () => {
+            const pending = Array.from(
+                new Set(
+                    items.filter((item) => isFixedTermMembershipItem(item)).map((item) => item.eventId)
+                )
+            ).filter(
+                (eventId) =>
+                    eventId &&
+                    !(eventId in membershipStartConfigById) &&
+                    !membershipConfigRequestsRef.current.has(eventId)
+            )
+            if (pending.length === 0) return
+            pending.forEach((eventId) => membershipConfigRequestsRef.current.add(eventId))
+
+            const toDay = (value: unknown) =>
+                typeof value === "string" && value.length >= 10 ? value.slice(0, 10) : null
+            const updates: Record<string, MembershipStartConfig> = {}
+            await Promise.all(
+                pending.map(async (eventId) => {
+                    try {
+                        const response = await fetch(`/api/events/${encodeURIComponent(eventId)}`)
+                        if (!response.ok) return
+                        const payload = await response.json()
+                        const data = payload?.data
+                        updates[eventId] = {
+                            fixed: toDay(data?.membershipStartFixed),
+                            min: toDay(data?.membershipStartMin),
+                            max: toDay(data?.membershipStartMax),
+                        }
+                    } catch {
+                        // best-effort: si falla, queda en modo default
+                    }
+                })
+            )
+            if (Object.keys(updates).length === 0) return
+            setMembershipStartConfigById((current) => ({ ...current, ...updates }))
+        }
+        void fetchConfigs()
+    }, [isFixedTermMembershipItem, items, membershipStartConfigById])
 
     const hasMissingMembershipStart = useMemo(
         () =>
-            items.some(
-                (item) =>
-                    isFixedTermMembershipItem(item) &&
-                    item.attendees.some(
-                        (attendee) =>
-                            !validateMembershipStartDate(attendee.membershipStartDate, membershipToday).ok
-                    )
-            ),
-        [isFixedTermMembershipItem, items, membershipToday]
+            items.some((item) => {
+                if (!isFixedTermMembershipItem(item)) return false
+                const setup = getMembershipStartSetup(item)
+                if (setup.mode === "fixed") return false // fecha forzada, no requiere input
+                return item.attendees.some(
+                    (attendee) =>
+                        !validateMembershipStartDate(attendee.membershipStartDate, membershipToday, {
+                            min: setup.min,
+                            max: setup.max,
+                        }).ok
+                )
+            }),
+        [getMembershipStartSetup, isFixedTermMembershipItem, items, membershipToday]
     )
 
     const boletaFullName = useMemo(
@@ -1023,16 +1075,36 @@ export default function CheckoutPage() {
                                                     )}
 
                                                     {isFixedTermMembershipItem(item) && (() => {
-                                                        const membershipCheck = validateMembershipStartDate(
-                                                            attendee.membershipStartDate,
-                                                            membershipToday
-                                                        )
+                                                        const setup = getMembershipStartSetup(item)
                                                         const durationLabel =
                                                             item.membershipDurationMonths === 12
                                                                 ? "anual"
                                                                 : item.membershipDurationMonths === 6
                                                                     ? "semestral"
                                                                     : `${item.membershipDurationMonths} meses`
+
+                                                        // Fecha fija: aviso de solo lectura (todos inician ese día).
+                                                        if (setup.mode === "fixed") {
+                                                            return (
+                                                                <div className="rounded-md border border-dashed border-emerald-200 bg-emerald-50 px-3 py-3">
+                                                                    <p className="text-xs font-medium text-emerald-800">
+                                                                        Inicio de tu membresía ({durationLabel})
+                                                                    </p>
+                                                                    <p className="mt-1 text-sm font-semibold text-emerald-900">
+                                                                        {formatDate(setup.fixed, { dateStyle: "long" })}
+                                                                    </p>
+                                                                    <p className="mt-1 text-[11px] text-emerald-700">
+                                                                        Todas las membresías de este plan inician en esta fecha. No aplica en enero ni febrero.
+                                                                    </p>
+                                                                </div>
+                                                            )
+                                                        }
+
+                                                        const membershipCheck = validateMembershipStartDate(
+                                                            attendee.membershipStartDate,
+                                                            membershipToday,
+                                                            { min: setup.min, max: setup.max }
+                                                        )
                                                         return (
                                                             <div className="rounded-md border border-dashed border-emerald-200 bg-emerald-50 px-3 py-3">
                                                                 <label className="text-xs font-medium text-emerald-800 mb-1 block">
@@ -1041,8 +1113,8 @@ export default function CheckoutPage() {
                                                                 <Input
                                                                     type="date"
                                                                     value={attendee.membershipStartDate || ""}
-                                                                    min={membershipToday}
-                                                                    max={membershipMaxDate}
+                                                                    min={setup.min}
+                                                                    max={setup.max}
                                                                     onChange={(e) =>
                                                                         updateAttendeeMembershipStartDate(
                                                                             itemKey,
@@ -1058,7 +1130,9 @@ export default function CheckoutPage() {
                                                                     </p>
                                                                 ) : (
                                                                     <p className="mt-1 text-[11px] text-emerald-700">
-                                                                        Tu membresía no aplica para enero y febrero; la vigencia se extiende esos meses.
+                                                                        {setup.mode === "window"
+                                                                            ? `Elige entre el ${formatDate(setup.min, { dateStyle: "medium" })} y el ${formatDate(setup.max, { dateStyle: "medium" })}. No aplica en enero ni febrero.`
+                                                                            : "Tu membresía no aplica para enero y febrero; la vigencia se extiende esos meses."}
                                                                     </p>
                                                                 )}
                                                             </div>

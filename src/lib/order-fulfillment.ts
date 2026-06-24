@@ -3,7 +3,7 @@ import { generateTicketCode, getDaysBetween, formatPrice } from "@/lib/utils"
 import { sendPurchaseEmail, sendMerchOrderConfirmationEmail, type MerchOrderEmailItem } from "@/lib/email"
 import { onTicketSold } from "@/lib/cached-queries"
 import { extractTicketValidDates, normalizeScheduleSelections } from "@/lib/ticket-schedule"
-import { getTodayDateString } from "@/lib/qr"
+import { getTodayDateString, formatDateUTC } from "@/lib/qr"
 import { buildNaturalPersonFullName } from "@/lib/billing"
 import { buildServilexInvoiceSnapshots } from "@/lib/servilex"
 import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
@@ -367,15 +367,20 @@ const toDateObjectsFromDateStrings = (values: string[]): Date[] => {
  */
 const resolveMembershipStartDate = (
     ticketType: { monthlyClassLimit?: number | null; membershipDurationMonths?: number | null },
-    attendee: StoredAttendeeData | null
+    attendee: StoredAttendeeData | null,
+    event: { membershipStartFixed?: Date | null }
 ): Date | null => {
     const isFixedTerm =
         typeof ticketType.monthlyClassLimit === "number" && ticketType.monthlyClassLimit > 0 &&
         typeof ticketType.membershipDurationMonths === "number" && ticketType.membershipDurationMonths > 0
     if (!isFixedTerm) return null
 
+    // Evento con fecha de inicio FIJA: todos inician ese día (ignora la elección
+    // del comprador). Si no, usa la fecha elegida; si falta, cae al día actual.
+    const fixedStr = event.membershipStartFixed ? formatDateUTC(event.membershipStartFixed) : null
     const chosen = attendee?.membershipStartDate
-    const dateStr = chosen && /^\d{4}-\d{2}-\d{2}$/.test(chosen) ? chosen : getTodayDateString()
+    const dateStr =
+        fixedStr ?? (chosen && /^\d{4}-\d{2}-\d{2}$/.test(chosen) ? chosen : getTodayDateString())
     return new Date(`${dateStr}T12:00:00Z`)
 }
 
@@ -681,7 +686,7 @@ export async function fulfillPaidOrder({
                     eventCategory: event.category,
                 })
                 const ticketCode = generateTicketCode()
-                const membershipStartDate = resolveMembershipStartDate(ticketType, attendee)
+                const membershipStartDate = resolveMembershipStartDate(ticketType, attendee, event)
 
                 await tx.ticket.create({
                     data: {

@@ -27,6 +27,10 @@ export interface CachedEvent {
     visibility: "PUBLIC" | "PRIVATE"
     accessToken: string | null
     discipline: string | null
+    // Config de inicio de membresía (ISO o null). Ver membership-config.
+    membershipStartFixed: string | null
+    membershipStartMin: string | null
+    membershipStartMax: string | null
     minTicketPrice?: number | null
 }
 
@@ -83,6 +87,15 @@ export async function getCachedEvent(eventId: string): Promise<CachedEvent | nul
                 visibility: event.visibility,
                 accessToken: event.accessToken,
                 discipline: event.discipline,
+                membershipStartFixed: event.membershipStartFixed
+                    ? event.membershipStartFixed.toISOString()
+                    : null,
+                membershipStartMin: event.membershipStartMin
+                    ? event.membershipStartMin.toISOString()
+                    : null,
+                membershipStartMax: event.membershipStartMax
+                    ? event.membershipStartMax.toISOString()
+                    : null,
                 minTicketPrice: null,
             }
         },
@@ -119,6 +132,15 @@ export async function getCachedEventBySlug(slug: string): Promise<CachedEvent | 
                 visibility: event.visibility,
                 accessToken: event.accessToken,
                 discipline: event.discipline,
+                membershipStartFixed: event.membershipStartFixed
+                    ? event.membershipStartFixed.toISOString()
+                    : null,
+                membershipStartMin: event.membershipStartMin
+                    ? event.membershipStartMin.toISOString()
+                    : null,
+                membershipStartMax: event.membershipStartMax
+                    ? event.membershipStartMax.toISOString()
+                    : null,
                 minTicketPrice: null,
             }
         },
@@ -203,6 +225,15 @@ export async function getCachedPublishedEvents(): Promise<CachedEvent[]> {
                 visibility: event.visibility,
                 accessToken: null,
                 discipline: event.discipline,
+                membershipStartFixed: event.membershipStartFixed
+                    ? event.membershipStartFixed.toISOString()
+                    : null,
+                membershipStartMin: event.membershipStartMin
+                    ? event.membershipStartMin.toISOString()
+                    : null,
+                membershipStartMax: event.membershipStartMax
+                    ? event.membershipStartMax.toISOString()
+                    : null,
                 minTicketPrice: event.ticketTypes[0] ? Number(event.ticketTypes[0].price) : null,
             }))
         },

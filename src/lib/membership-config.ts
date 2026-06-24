@@ -33,17 +33,60 @@ const addMonthsToDateStr = (yyyyMmDd: string, months: number): string => {
     return `${ny}-${String(nm).padStart(2, "0")}-${String(nd).padStart(2, "0")}`
 }
 
+// "YYYY-MM-DD" -> "DD/MM/YYYY" para mensajes (string-based).
+const dmy = (isoDate: string): string => {
+    const [y, m, d] = isoDate.split("-")
+    return y && m && d ? `${d}/${m}/${y}` : isoDate
+}
+
+/**
+ * Configuración de la fecha de inicio de membresía a nivel evento. Fechas en
+ * "YYYY-MM-DD" (o null). Resuelta por `resolveMembershipStartSetup`.
+ */
+export type MembershipStartConfig = {
+    fixed?: string | null
+    min?: string | null
+    max?: string | null
+}
+
+export type MembershipStartSetup =
+    | { mode: "fixed"; fixed: string }
+    | { mode: "window"; min: string; max: string }
+    | { mode: "default"; min: string; max: string }
+
+/**
+ * Resuelve cómo se elige la fecha de inicio según la config del evento:
+ *  - fija  → todos inician ese día (sin selector).
+ *  - rango → el comprador elige dentro de [min, max].
+ *  - default → desde hoy hasta hoy + N meses.
+ * Compartido por checkout (cliente) y validación de pedido (servidor).
+ */
+export const resolveMembershipStartSetup = (
+    config: MembershipStartConfig | null | undefined,
+    todayStr: string
+): MembershipStartSetup => {
+    if (config?.fixed) return { mode: "fixed", fixed: config.fixed }
+    if (config?.min && config?.max) return { mode: "window", min: config.min, max: config.max }
+    return {
+        mode: "default",
+        min: todayStr,
+        max: addMonthsToDateStr(todayStr, MEMBERSHIP_START_MAX_MONTHS_AHEAD),
+    }
+}
+
 /**
  * Validación compartida (cliente + servidor) de la fecha de inicio elegida para
  * una membresía a término fijo. `todayStr` y `dateStr` son "YYYY-MM-DD" en hora
- * Lima. Reglas: formato válido, fecha real, no en mes blackout, no anterior a
- * hoy, y dentro de la ventana forward permitida.
+ * Lima. Reglas: formato válido, fecha real, no en mes blackout, dentro de
+ * [min, max]. Por defecto min=hoy y max=hoy + N meses; se pueden acotar con
+ * `opts.min`/`opts.max` (ventana del evento).
  */
 export const validateMembershipStartDate = (
     dateStr: string | null | undefined,
     todayStr: string,
-    blackout: readonly number[] = MEMBERSHIP_BLACKOUT_MONTHS
+    opts: { min?: string | null; max?: string | null; blackout?: readonly number[] } = {}
 ): { ok: true } | { ok: false; error: string } => {
+    const blackout = opts.blackout ?? MEMBERSHIP_BLACKOUT_MONTHS
     if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
         return { ok: false, error: "Selecciona la fecha de inicio de tu membresía." }
     }
@@ -55,11 +98,23 @@ export const validateMembershipStartDate = (
     if (isBlackoutMonth(m, blackout)) {
         return { ok: false, error: "La membresía no puede iniciar en enero ni febrero." }
     }
-    if (dateStr < todayStr) {
-        return { ok: false, error: "La fecha de inicio no puede ser anterior a hoy." }
+    const min = opts.min || todayStr
+    const max = opts.max || addMonthsToDateStr(todayStr, MEMBERSHIP_START_MAX_MONTHS_AHEAD)
+    if (dateStr < min) {
+        return {
+            ok: false,
+            error: opts.min
+                ? `La fecha de inicio debe ser desde el ${dmy(min)}.`
+                : "La fecha de inicio no puede ser anterior a hoy.",
+        }
     }
-    if (dateStr > addMonthsToDateStr(todayStr, MEMBERSHIP_START_MAX_MONTHS_AHEAD)) {
-        return { ok: false, error: "La fecha de inicio es demasiado lejana." }
+    if (dateStr > max) {
+        return {
+            ok: false,
+            error: opts.max
+                ? `La fecha de inicio no puede ser posterior al ${dmy(max)}.`
+                : "La fecha de inicio es demasiado lejana.",
+        }
     }
     return { ok: true }
 }

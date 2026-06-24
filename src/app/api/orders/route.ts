@@ -8,7 +8,7 @@ import { createOrderSchema } from "@/lib/validations"
 import { onTicketSold } from "@/lib/cached-queries"
 import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
-import { validateMembershipStartDate } from "@/lib/membership-config"
+import { validateMembershipStartDate, resolveMembershipStartSetup } from "@/lib/membership-config"
 import { getTodayDateString, formatDateUTC } from "@/lib/qr"
 import {
     getCurrentOrFutureScheduleDates,
@@ -115,12 +115,27 @@ export async function POST(request: NextRequest) {
                     startDate: true,
                     endDate: true,
                     servilexSucursalCode: true,
+                    membershipStartFixed: true,
+                    membershipStartMin: true,
+                    membershipStartMax: true,
                 },
             })
 
             if (!eventConfig) {
                 throw new Error("Evento no encontrado")
             }
+
+            // Modo de inicio de membresía del evento (fija / rango / libre), para
+            // validar la fecha que envía el comprador (o ignorarla si es fija).
+            const todayLima = getTodayDateString()
+            const membershipStartSetup = resolveMembershipStartSetup(
+                {
+                    fixed: eventConfig.membershipStartFixed ? formatDateUTC(eventConfig.membershipStartFixed) : null,
+                    min: eventConfig.membershipStartMin ? formatDateUTC(eventConfig.membershipStartMin) : null,
+                    max: eventConfig.membershipStartMax ? formatDateUTC(eventConfig.membershipStartMax) : null,
+                },
+                todayLima
+            )
 
             // Ventana de venta = rango del evento, SOLO para ACADEMIA (membresías):
             // el rango define cuándo se puede comprar, no la duración. Para EVENTO y
@@ -210,15 +225,19 @@ export async function POST(request: NextRequest) {
                     ? item.attendees.map((attendee) => ({ ...attendee }))
                     : []
 
-                // Membresías a término fijo: si el asistente envió fecha de inicio,
-                // validarla server-side (formato, no blackout, no pasada, ventana
-                // forward). El día se calcula en hora Lima (no UTC del contenedor).
-                const todayLima = getTodayDateString()
-                for (const attendee of attendeeData) {
-                    if (attendee.membershipStartDate) {
-                        const result = validateMembershipStartDate(attendee.membershipStartDate, todayLima)
-                        if (!result.ok) {
-                            throw new Error(result.error)
+                // Membresías a término fijo: validar la fecha de inicio enviada
+                // contra la config del evento. En modo "fija" se ignora (el
+                // fulfillment fuerza la fecha del evento). El día es en hora Lima.
+                if (membershipStartSetup.mode !== "fixed") {
+                    for (const attendee of attendeeData) {
+                        if (attendee.membershipStartDate) {
+                            const result = validateMembershipStartDate(attendee.membershipStartDate, todayLima, {
+                                min: membershipStartSetup.min,
+                                max: membershipStartSetup.max,
+                            })
+                            if (!result.ok) {
+                                throw new Error(result.error)
+                            }
                         }
                     }
                 }
