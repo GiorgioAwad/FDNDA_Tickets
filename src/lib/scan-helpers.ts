@@ -34,6 +34,8 @@ export type ScanTicket = {
         monthlyClassLimit?: number | null
         // 6 = semestral, 12 = anual. null = vigencia ligada al evento (legacy).
         membershipDurationMonths?: number | null
+        // Membresías ORO: permite varios ingresos por día (cada uno cuenta al cupo).
+        allowMultipleDailyScans?: boolean | null
         validDays: unknown | null
     }
     entitlements: TicketEntitlement[]
@@ -136,6 +138,14 @@ export const isMembershipTicket = (ticket: ScanTicket): boolean => {
     const limit = ticket.ticketType.monthlyClassLimit
     return typeof limit === "number" && limit > 0
 }
+
+/**
+ * Membresía con varios ingresos por día (ej. ORO): no se bloquea el reingreso del
+ * mismo día y cada escaneo cuenta como 1 clase del cupo mensual (se cuenta por
+ * scans VALID del mes). Solo aplica a membresías (monthlyClassLimit).
+ */
+export const membershipAllowsMultipleDailyScans = (ticket: ScanTicket): boolean =>
+    isMembershipTicket(ticket) && ticket.ticketType.allowMultipleDailyScans === true
 
 /**
  * Membresía a término fijo (anual/semestral): el comprador eligió fecha de

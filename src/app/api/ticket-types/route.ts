@@ -139,6 +139,7 @@ export async function POST(request: NextRequest) {
             packageDaysCount,
             monthlyClassLimit,
             membershipDurationMonths,
+            allowMultipleDailyScans,
             validDays,
             sortOrder,
             isActive,
@@ -301,6 +302,7 @@ export async function POST(request: NextRequest) {
                 packageDaysCount: Boolean(isPackage) ? packageDays : null,
                 monthlyClassLimit: normalizeMonthlyLimit(monthlyClassLimit),
                 membershipDurationMonths: normalizeDurationMonths(membershipDurationMonths),
+                allowMultipleDailyScans: Boolean(allowMultipleDailyScans),
                 validDays: normalizeValidDays(validDays),
                 sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
                 isActive: isActive === undefined ? true : Boolean(isActive),
@@ -359,6 +361,7 @@ export async function PUT(request: NextRequest) {
             packageDaysCount,
             monthlyClassLimit,
             membershipDurationMonths,
+            allowMultipleDailyScans,
             validDays,
             sortOrder,
             isActive,
@@ -478,6 +481,7 @@ export async function PUT(request: NextRequest) {
             packageDaysCount?: number | null
             monthlyClassLimit?: number | null
             membershipDurationMonths?: number | null
+            allowMultipleDailyScans?: boolean
             validDays?: Prisma.InputJsonValue
             sortOrder?: number
             isActive?: boolean
@@ -509,6 +513,7 @@ export async function PUT(request: NextRequest) {
         if (isActive !== undefined) data.isActive = Boolean(isActive)
         if (monthlyClassLimit !== undefined) data.monthlyClassLimit = normalizeMonthlyLimit(monthlyClassLimit)
         if (membershipDurationMonths !== undefined) data.membershipDurationMonths = normalizeDurationMonths(membershipDurationMonths)
+        if (allowMultipleDailyScans !== undefined) data.allowMultipleDailyScans = Boolean(allowMultipleDailyScans)
         if (originalPrice !== undefined) data.originalPrice = normalizeOptionalPrice(originalPrice)
         if (benefits !== undefined) data.benefits = normalizeBenefits(benefits) ?? Prisma.JsonNull
         if (isFeatured !== undefined) data.isFeatured = Boolean(isFeatured)

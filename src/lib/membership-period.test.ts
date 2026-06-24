@@ -6,6 +6,7 @@ import {
     isFixedTermMembership,
     isWithinMembershipWindow,
     getMembershipAccessStatus,
+    membershipAllowsMultipleDailyScans,
     buildMembershipMonthlySummary,
     type ScanTicket,
 } from "@/lib/scan-helpers"
@@ -14,6 +15,7 @@ import { isBlackoutMonth } from "@/lib/membership-config"
 type MakeTicketOptions = {
     membershipStartDate?: string | null
     membershipDurationMonths?: number | null
+    allowMultipleDailyScans?: boolean
 }
 
 const makeTicket = (
@@ -44,6 +46,7 @@ const makeTicket = (
         packageDaysCount: null,
         monthlyClassLimit,
         membershipDurationMonths: options.membershipDurationMonths ?? null,
+        allowMultipleDailyScans: options.allowMultipleDailyScans ?? false,
         validDays: null,
     },
     entitlements: usedDates.map((d, i) => ({
@@ -196,6 +199,19 @@ test("fixed-term membership anchors the monthly cycle to the chosen start date",
         used: 1,
         remaining: 7,
     })
+})
+
+test("membershipAllowsMultipleDailyScans solo aplica a membresías con el flag", () => {
+    const oro = makeTicket("2026-07-01", 60, [], { allowMultipleDailyScans: true })
+    assert.equal(membershipAllowsMultipleDailyScans(oro), true)
+
+    // Membresía sin el flag
+    const plata = makeTicket("2026-07-01", 20, [])
+    assert.equal(membershipAllowsMultipleDailyScans(plata), false)
+
+    // Con el flag pero SIN cupo mensual (no es membresía) → false
+    const noMembership = makeTicket("2026-07-01", 0, [], { allowMultipleDailyScans: true })
+    assert.equal(membershipAllowsMultipleDailyScans(noMembership), false)
 })
 
 test("legacy membership (no chosen start) still anchors to the event start", () => {

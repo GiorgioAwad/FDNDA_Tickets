@@ -32,6 +32,7 @@ interface TicketType {
     packageDaysCount?: number
     monthlyClassLimit?: number | null
     membershipDurationMonths?: number | null
+    allowMultipleDailyScans?: boolean
     validDays?: unknown
     sortOrder?: number
     originalPrice?: number | null
@@ -91,6 +92,7 @@ const buildEmptyFormData = (sucursalCode = DEFAULT_ABIO_EVENT_SUCURSAL_CODE): Pa
     packageDaysCount: 0,
     monthlyClassLimit: null,
     membershipDurationMonths: null,
+    allowMultipleDailyScans: false,
     sortOrder: 0,
     originalPrice: null,
     benefits: null,
@@ -1664,6 +1666,25 @@ export function TicketTypeManager({
                                         Con duración fija, el comprador elige su fecha de inicio en el checkout
                                         y la vigencia se desacopla del rango del evento (blackout enero/febrero).
                                     </p>
+                                </div>
+                                <div className="md:col-span-2 space-y-2">
+                                    <label className="flex items-start gap-2 text-xs font-medium">
+                                        <input
+                                            type="checkbox"
+                                            className="mt-0.5"
+                                            checked={Boolean(formData.allowMultipleDailyScans)}
+                                            onChange={(e) =>
+                                                setFormData({ ...formData, allowMultipleDailyScans: e.target.checked })
+                                            }
+                                        />
+                                        <span>
+                                            Permitir varios ingresos por día (ej. ORO)
+                                            <span className="block text-[11px] font-normal text-gray-500">
+                                                No se bloquea el reingreso del mismo día y cada escaneo cuenta como
+                                                1 clase del cupo mensual. Solo aplica a membresías (con cupo mensual).
+                                            </span>
+                                        </span>
+                                    </label>
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-medium">Precio regular (tachado)</label>

@@ -334,6 +334,10 @@ model TicketType {
   // vigencia se desacopla del rango del evento y aplica el blackout enero/febrero
   // (freeze + extend). null = legacy: vigencia ligada al rango del evento.
   membershipDurationMonths Int?
+  // Membresías: si true, permite varios ingresos el MISMO día (no se bloquea el
+  // reingreso) y cada escaneo cuenta como 1 clase del cupo mensual (se cuenta por
+  // scans VALID del mes, no por días). Solo aplica a membresías (monthlyClassLimit).
+  allowMultipleDailyScans Boolean @default(false)
   validDays        Json?    // Array of dates ["2024-03-15", "2024-03-16"]
   // Presentación tipo "plan" (layout PLANS del evento)
   originalPrice    Decimal? @db.Decimal(10, 2) // Precio regular para mostrar tachado

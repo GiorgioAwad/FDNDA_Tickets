@@ -20,6 +20,9 @@ import {
     isMembershipTicket,
     isFixedTermMembership,
     getMembershipAccessStatus,
+    membershipAllowsMultipleDailyScans,
+    getMembershipAnchor,
+    getMembershipPeriod,
     isWithinEventRange,
 } from "@/lib/scan-helpers"
 
@@ -370,6 +373,70 @@ export async function POST(request: NextRequest) {
                 return { total: summary.total, used, remaining: Math.max(summary.total - used, 0) }
             }
             return summary
+        }
+
+        // Membresía con varios ingresos por día (ORO): no se bloquea el reingreso
+        // del mismo día; cada escaneo cuenta como 1 clase del cupo mensual. Se cuenta
+        // por SCANS VALID del mes (hay un solo entitlement por día, así que contar
+        // entitlements no serviría). Se resuelve aquí, antes de la lógica normal de
+        // entitlement (que sí bloquea el reingreso).
+        if (membershipAllowsMultipleDailyScans(ticket)) {
+            const anchor = getMembershipAnchor(ticket)
+            const period = anchor ? getMembershipPeriod(today, anchor) : null
+            const limit = ticket.ticketType.monthlyClassLimit ?? 0
+            const monthlyUsed = period
+                ? await prisma.scan.count({
+                      where: {
+                          ticketId: ticket.id,
+                          result: "VALID",
+                          date: {
+                              gte: new Date(`${period.startStr}T00:00:00Z`),
+                              lt: new Date(`${period.endStr}T00:00:00Z`),
+                          },
+                      },
+                  })
+                : 0
+
+            if (limit > 0 && monthlyUsed >= limit) {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Cupo mensual de clases agotado", currentShift, todayDate)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "NO_CLASSES",
+                    message: "Cupo mensual de clases agotado",
+                    scannedAt: new Date().toISOString(),
+                    attendance: { total: limit, used: monthlyUsed, remaining: Math.max(limit - monthlyUsed, 0) },
+                })
+            }
+
+            // Marca el día como asistido (para el carnet) y registra el ingreso.
+            const usedAt = new Date()
+            await prisma.ticketDayEntitlement.upsert({
+                where: { ticketId_date: { ticketId: ticket.id, date: todayDate } },
+                create: { ticketId: ticket.id, date: todayDate, status: "USED", usedAt },
+                update: { status: "USED", usedAt },
+            })
+            await logScan(ticket.id, user.id, eventId, "VALID", "Ingreso multiple/dia (membresia)", currentShift, todayDate)
+
+            const newUsed = monthlyUsed + 1
+            return NextResponse.json({
+                success: true,
+                valid: true,
+                reason: "VALID",
+                isMembership: true,
+                message: "Asistencia registrada",
+                ticket: {
+                    id: ticket.id,
+                    ticketCode: ticket.ticketCode,
+                    attendeeName: ticket.attendeeName,
+                    attendeeDni: ticket.attendeeDni,
+                    eventTitle: ticket.event.title,
+                    ticketTypeName: ticket.ticketType.name,
+                    entryDate: today,
+                },
+                scannedAt: usedAt.toISOString(),
+                attendance: { total: limit, used: newUsed, remaining: Math.max(limit - newUsed, 0) },
+            })
         }
 
         // Buscar entitlement para hoy

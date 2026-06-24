@@ -269,14 +269,30 @@ export async function GET(
         const membershipExpiry = isFixedTerm
             ? getMembershipExpiry(membershipAnchor, ticket.ticketType.membershipDurationMonths!)
             : null
-        const usedCount =
-            isMembership && membershipPeriod
-                ? entitlements.filter((item) => {
-                      if (item.status !== "USED") return false
-                      const d = formatDateUTC(item.date)
-                      return d >= membershipPeriod.startStr && d < membershipPeriod.endStr
-                  }).length
-                : entitlements.filter((item) => item.status === "USED").length
+        // Membresía con varios ingresos por día (ORO): el cupo cuenta por SCANS VALID
+        // del mes (cada ingreso es una clase), no por días/entitlements.
+        const allowMultiDaily = isMembership && ticket.ticketType.allowMultipleDailyScans === true
+        let usedCount: number
+        if (isMembership && allowMultiDaily && membershipPeriod) {
+            usedCount = await prisma.scan.count({
+                where: {
+                    ticketId: ticket.id,
+                    result: "VALID",
+                    date: {
+                        gte: new Date(`${membershipPeriod.startStr}T00:00:00Z`),
+                        lt: new Date(`${membershipPeriod.endStr}T00:00:00Z`),
+                    },
+                },
+            })
+        } else if (isMembership && membershipPeriod) {
+            usedCount = entitlements.filter((item) => {
+                if (item.status !== "USED") return false
+                const d = formatDateUTC(item.date)
+                return d >= membershipPeriod.startStr && d < membershipPeriod.endStr
+            }).length
+        } else {
+            usedCount = entitlements.filter((item) => item.status === "USED").length
+        }
         const isPackage = isPackageLike && packageDaysCount
         const eventStart = ticket.event?.startDate ? formatDateLocal(ticket.event.startDate) : null
         const eventEnd = ticket.event?.endDate ? formatDateLocal(ticket.event.endDate) : null
