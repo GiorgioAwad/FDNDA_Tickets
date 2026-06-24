@@ -134,10 +134,13 @@ const orderAttendeeSchema = z
         dni: z.string().trim().max(12).optional().default(""),
         matricula: z.string().max(50).optional(),
         // Membresías a término fijo: fecha de inicio elegida por el comprador.
-        membershipStartDate: z
-            .string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha invalida")
-            .optional(),
+        // El checkout inicializa este campo como "" (input controlado); tratamos
+        // el string vacío como ausente para no romper compras sin fecha (no-membresía
+        // o membresía sin duración fija configurada).
+        membershipStartDate: z.preprocess(
+            (value) => (value === "" ? undefined : value),
+            z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha invalida").optional()
+        ),
         scheduleSelections: z
             .array(
                 z.object({
