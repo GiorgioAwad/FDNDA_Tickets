@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PaginationControls } from "@/components/ui/pagination-controls"
 import { formatPrice } from "@/lib/utils"
+import { formatComprobanteLabel } from "@/lib/billing"
 import * as XLSX from "xlsx"
 import {
     Loader2,
@@ -93,6 +94,9 @@ interface Order {
     paymentNeedsReview: boolean
     createdAt: string
     paidAt: string | null
+    documentType?: string | null
+    buyerName?: string | null
+    buyerDocNumber?: string | null
     discountCode?: {
         code: string
         type: string
@@ -272,6 +276,26 @@ export default function IncomePage() {
         }
     }
 
+    const getComprobanteBadge = (documentType: string | null | undefined) => {
+        if (documentType === "FACTURA") {
+            return (
+                <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200">
+                    <FileText className="h-3 w-3 mr-1" />
+                    Factura
+                </Badge>
+            )
+        }
+        if (documentType === "BOLETA") {
+            return (
+                <Badge className="bg-sky-100 text-sky-700 border-sky-200">
+                    <FileText className="h-3 w-3 mr-1" />
+                    Boleta
+                </Badge>
+            )
+        }
+        return <span className="text-gray-400">—</span>
+    }
+
     const getReviewBadge = (order: Order) => {
         if (!order.paymentNeedsReview) {
             return null
@@ -361,6 +385,9 @@ export default function IncomePage() {
                     "Precio Unitario": item.ticketType.price || 0,
                     "Subtotal": item.subtotal,
                     "Total Orden": idx === 0 ? order.totalAmount : "",
+                    "Comprobante": idx === 0 ? formatComprobanteLabel(order.documentType, "") : "",
+                    "Doc. Comprobante": idx === 0 ? (order.buyerDocNumber || "") : "",
+                    "Nombre / Razón Social": idx === 0 ? (order.buyerName || "") : "",
                     "Estado": idx === 0 ? statusMap[order.status] || order.status : "",
                     "Revision Manual": idx === 0 ? (order.paymentNeedsReview ? "Si" : "No") : "",
                     "Método Pago": idx === 0 ? (order.provider || "-") : "",
@@ -388,6 +415,9 @@ export default function IncomePage() {
             { wch: 14 },  // Precio Unitario
             { wch: 12 },  // Subtotal
             { wch: 12 },  // Total Orden
+            { wch: 12 },  // Comprobante
+            { wch: 16 },  // Doc. Comprobante
+            { wch: 28 },  // Nombre / Razón Social
             { wch: 12 },  // Estado
             { wch: 14 },  // Revision Manual
             { wch: 12 },  // Método Pago
@@ -565,6 +595,7 @@ export default function IncomePage() {
                                         <th className="pb-3 font-medium">Cliente</th>
                                         <th className="pb-3 font-medium">Evento</th>
                                         <th className="pb-3 font-medium">Monto</th>
+                                        <th className="pb-3 font-medium">Comprobante</th>
                                         <th className="pb-3 font-medium">Estado</th>
                                         <th className="pb-3 font-medium">Fecha</th>
                                         <th className="pb-3 font-medium"></th>
@@ -594,6 +625,9 @@ export default function IncomePage() {
                                             </td>
                                             <td className="py-3 font-medium">
                                                 {formatPrice(order.totalAmount)}
+                                            </td>
+                                            <td className="py-3">
+                                                {getComprobanteBadge(order.documentType)}
                                             </td>
                                             <td className="py-3">
                                                 <div className="flex flex-col items-start">
@@ -685,6 +719,24 @@ export default function IncomePage() {
                                         <p className="text-gray-500">Email</p>
                                         <p className="font-medium">{selectedOrder.user.email}</p>
                                     </div>
+                                    <div>
+                                        <p className="text-gray-500">Comprobante</p>
+                                        <div className="mt-0.5">{getComprobanteBadge(selectedOrder.documentType)}</div>
+                                    </div>
+                                    {(selectedOrder.buyerDocNumber || selectedOrder.buyerName) && (
+                                        <div>
+                                            <p className="text-gray-500">
+                                                {selectedOrder.documentType === "FACTURA"
+                                                    ? "RUC / Razón Social"
+                                                    : "Documento / Nombre"}
+                                            </p>
+                                            <p className="font-medium">
+                                                {[selectedOrder.buyerDocNumber, selectedOrder.buyerName]
+                                                    .filter(Boolean)
+                                                    .join(" · ") || "—"}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

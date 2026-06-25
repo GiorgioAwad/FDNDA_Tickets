@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 import { formatDateInput, formatDateTimeForExport, generateSlug } from "@/lib/utils"
 import { extractOrderPaymentDetails } from "@/lib/payment-details"
+import { formatComprobanteLabel } from "@/lib/billing"
 import {
     allocateAmountsProportionally,
     roundCurrency,
@@ -73,6 +74,9 @@ export async function GET(
                 providerResponse: true,
                 paidAt: true,
                 createdAt: true,
+                documentType: true,
+                buyerName: true,
+                buyerDocNumber: true,
                 user: { select: { name: true, email: true } },
                 orderItems: {
                     select: {
@@ -107,6 +111,9 @@ export async function GET(
             "order_currency",
             "order_provider",
             "order_provider_ref",
+            "comprobante",
+            "buyer_doc_number",
+            "buyer_billing_name",
             "order_payment_operation_number",
             "order_payment_method",
             "order_payment_method_raw",
@@ -212,6 +219,9 @@ export async function GET(
                     order.currency,
                     order.provider,
                     order.providerRef || "",
+                    formatComprobanteLabel(order.documentType, ""),
+                    order.buyerDocNumber || "",
+                    order.buyerName || "",
                     paymentDetails.operationNumber || "",
                     paymentDetails.methodLabel || order.provider,
                     paymentDetails.methodCode || "",

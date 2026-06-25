@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatPrice } from "@/lib/utils"
+import { formatComprobanteLabel } from "@/lib/billing"
 import {
     AlertCircle,
     CheckCircle,
@@ -55,6 +56,7 @@ interface MerchReportOrder {
     shippingUbigeo: string | null
     shippingReference: string | null
     shippingPhone: string | null
+    documentType: string | null
     buyerDocNumber: string | null
     buyerName: string | null
     buyerPhone: string | null
@@ -164,6 +166,7 @@ export default function MerchReportPage() {
                 "Orden Izipay": order.providerOrderNumber || "",
                 "Transaccion Izipay": order.providerTransactionId || "",
                 "Cliente": order.buyerName || order.user.name || "",
+                "Comprobante": formatComprobanteLabel(order.documentType, ""),
                 "Documento": order.buyerDocNumber || "",
                 "Email": order.user.email,
                 "Telefono": order.buyerPhone || "",
@@ -201,6 +204,7 @@ export default function MerchReportPage() {
             { wch: 18 },
             { wch: 22 },
             { wch: 28 },
+            { wch: 12 },
             { wch: 14 },
             { wch: 30 },
             { wch: 14 },
@@ -371,6 +375,7 @@ export default function MerchReportPage() {
                                         <th className="pb-3 font-medium">Orden</th>
                                         <th className="pb-3 font-medium">Numero operacion</th>
                                         <th className="pb-3 font-medium">Cliente</th>
+                                        <th className="pb-3 font-medium">Comprobante</th>
                                         <th className="pb-3 font-medium">Productos</th>
                                         <th className="pb-3 font-medium">Entrega</th>
                                         <th className="pb-3 font-medium">Monto</th>
@@ -394,6 +399,15 @@ export default function MerchReportPage() {
                                             <td className="py-3 min-w-[180px]">
                                                 <p className="font-medium">{order.buyerName || order.user.name || "-"}</p>
                                                 <p className="text-xs text-gray-500">{order.user.email}</p>
+                                            </td>
+                                            <td className="py-3">
+                                                {order.documentType === "FACTURA" ? (
+                                                    <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200">Factura</Badge>
+                                                ) : order.documentType === "BOLETA" ? (
+                                                    <Badge className="bg-sky-100 text-sky-700 border-sky-200">Boleta</Badge>
+                                                ) : (
+                                                    <span className="text-gray-400">—</span>
+                                                )}
                                             </td>
                                             <td className="py-3 min-w-[240px]">
                                                 <div className="space-y-1">

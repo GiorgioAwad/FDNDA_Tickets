@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 import { generateSlug, formatDateInput, formatDateTimeForExport } from "@/lib/utils"
 import { extractOrderPaymentDetails } from "@/lib/payment-details"
+import { formatComprobanteLabel } from "@/lib/billing"
 import * as XLSX from "xlsx"
 export const runtime = "nodejs"
 
@@ -60,6 +61,9 @@ export async function GET(
                         providerTransactionId: true,
                         providerResponse: true,
                         paidAt: true,
+                        documentType: true,
+                        buyerName: true,
+                        buyerDocNumber: true,
                         user: { select: { name: true, email: true } },
                     },
                 },
@@ -81,6 +85,9 @@ export async function GET(
             "ticket_type_name",
             "order_id",
             "order_provider",
+            "comprobante",
+            "buyer_doc_number",
+            "buyer_billing_name",
             "order_payment_operation_number",
             "order_payment_method",
             "order_payment_method_raw",
@@ -109,6 +116,9 @@ export async function GET(
                 ticket.ticketType?.name || "",
                 ticket.order?.id || "",
                 ticket.order?.provider || "",
+                formatComprobanteLabel(ticket.order?.documentType, ""),
+                ticket.order?.buyerDocNumber || "",
+                ticket.order?.buyerName || "",
                 paymentDetails.operationNumber || "",
                 paymentDetails.methodLabel || ticket.order?.provider || "",
                 paymentDetails.methodCode || "",

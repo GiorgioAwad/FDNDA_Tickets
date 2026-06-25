@@ -114,6 +114,7 @@ export async function GET() {
                         shippingUbigeo: order.shippingUbigeo,
                         shippingReference: order.shippingReference,
                         shippingPhone: order.shippingPhone,
+                        documentType: order.documentType,
                         buyerDocNumber: order.buyerDocNumber,
                         buyerName: order.buyerName,
                         buyerPhone: order.buyerPhone,

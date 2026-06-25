@@ -150,6 +150,9 @@ export async function GET(request: NextRequest) {
                 paymentNeedsReview: order.paymentNeedsReview,
                 createdAt: order.createdAt,
                 paidAt: order.paidAt,
+                documentType: order.documentType,
+                buyerName: order.buyerName,
+                buyerDocNumber: order.buyerDocNumber,
                 user: order.user,
                 items: order.orderItems.map((item) => {
                     // Agregar día/turno comprado a partir de attendeeData.scheduleSelections.

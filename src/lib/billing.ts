@@ -2,6 +2,20 @@ import { formatUbigeoLocation } from "@/lib/ubigeo-peru"
 
 export type BillingDocumentType = "BOLETA" | "FACTURA"
 
+/**
+ * Etiqueta legible del comprobante que solicitó el comprador.
+ * Las órdenes legacy (previas a la captura de datos de facturación) no tienen
+ * `documentType`, por lo que se devuelve el `fallback` ("—" en UI, "" en Excel).
+ */
+export function formatComprobanteLabel(
+    documentType: string | null | undefined,
+    fallback = "—"
+): string {
+    if (documentType === "FACTURA") return "Factura"
+    if (documentType === "BOLETA") return "Boleta"
+    return fallback
+}
+
 /** Quita acentos y baja a minúsculas para comparar nombres de lugares de forma laxa. */
 function deburr(s: string): string {
     return s
