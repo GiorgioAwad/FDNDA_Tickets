@@ -49,11 +49,28 @@ export interface ScheduleFrequencyOption {
 
 export type SchedulePlanMode = "CHOOSE_FREQUENCY" | "FIXED_FREQUENCY"
 
+export type ScheduleCategoryId = "ADULTOS" | "NINOS"
+
+/**
+ * Categoría (adultos / niños) DENTRO de un plan. La categoría la elige el
+ * comprador en el checkout (no el admin): define qué frecuencias/horas aplican.
+ */
+export interface ScheduleCategoryOption {
+    id: ScheduleCategoryId
+    label: string
+    frequencies: ScheduleFrequencyOption[]
+}
+
+/**
+ * Perfil de horario = un PLAN (BRONCE / PLATA). Lo elige el admin por entrada
+ * (`membershipScheduleKey`). Contiene ambas categorías; el comprador elige la
+ * suya en el checkout.
+ */
 export interface MembershipScheduleProfile {
     key: string
     label: string
     planMode: SchedulePlanMode
-    frequencies: ScheduleFrequencyOption[]
+    categories: ScheduleCategoryOption[]
 }
 
 // ── Selección normalizada (lo que se guarda en Ticket.membershipSchedule) ──────
@@ -77,14 +94,17 @@ export interface MembershipScheduleGroupChoice {
 export interface MembershipScheduleSelection {
     profileKey: string
     sucursalCode: string
+    category: ScheduleCategoryId
+    categoryLabel: string
     frequency: ScheduleFrequencyId
     frequencyLabel: string
     sessions: MembershipScheduleSession[]
     groups: MembershipScheduleGroupChoice[]
 }
 
-/** Entrada cruda desde el checkout: frecuencia + hora elegida por grupo. */
+/** Entrada cruda desde el checkout: categoría + frecuencia + hora por grupo. */
 export interface MembershipScheduleInput {
+    category?: string | null
     frequency?: string | null
     hours?: Record<string, string> | null
 }
@@ -190,47 +210,76 @@ const lv = (hours: HourSlot[]): ScheduleFrequencyOption => ({
     dayGroups: [{ id: "main", label: "Lunes a Viernes", weekdays: [1, 2, 3, 4, 5], hours }],
 })
 
-const bronce = (key: string, label: string, lmvFreq: ScheduleFrequencyOption, mjsFreq: ScheduleFrequencyOption): MembershipScheduleProfile => ({
-    key,
-    label,
+const CATEGORY_LABEL: Record<ScheduleCategoryId, string> = {
+    ADULTOS: "Adultos",
+    NINOS: "Niños (6 a 17 años)",
+}
+
+const category = (id: ScheduleCategoryId, frequencies: ScheduleFrequencyOption[]): ScheduleCategoryOption => ({
+    id,
+    label: CATEGORY_LABEL[id],
+    frequencies,
+})
+
+// BRONCE = interdiario (elige frecuencia L-M-V o M-J-S). Una entrada se vende a
+// adultos y niños; el comprador elige su categoría en el checkout.
+const bronce = (
+    adultLmv: ScheduleFrequencyOption,
+    adultMjs: ScheduleFrequencyOption,
+    kidLmv: ScheduleFrequencyOption,
+    kidMjs: ScheduleFrequencyOption
+): MembershipScheduleProfile => ({
+    key: "BRONCE",
+    label: "BRONCE (interdiario)",
     planMode: "CHOOSE_FREQUENCY",
-    frequencies: [lmvFreq, mjsFreq],
+    categories: [category("ADULTOS", [adultLmv, adultMjs]), category("NINOS", [kidLmv, kidMjs])],
 })
 
-const plata = (key: string, label: string, lvFreq: ScheduleFrequencyOption): MembershipScheduleProfile => ({
-    key,
-    label,
+// PLATA = diario (Lun a Vie), solo elige hora.
+const plata = (adultLv: ScheduleFrequencyOption, kidLv: ScheduleFrequencyOption): MembershipScheduleProfile => ({
+    key: "PLATA",
+    label: "PLATA (Lun a Vie)",
     planMode: "FIXED_FREQUENCY",
-    frequencies: [lvFreq],
+    categories: [category("ADULTOS", [adultLv]), category("NINOS", [kidLv])],
 })
 
-/** Claves de perfil disponibles (categoría + plan). */
-export const MEMBERSHIP_SCHEDULE_KEYS = [
-    "ADULTOS_BRONCE",
-    "ADULTOS_PLATA",
-    "NINOS_BRONCE",
-    "NINOS_PLATA",
-] as const
+/** Claves de perfil disponibles (= plan; la categoría se elige en checkout). */
+export const MEMBERSHIP_SCHEDULE_KEYS = ["BRONCE", "PLATA"] as const
 export type MembershipScheduleKey = (typeof MEMBERSHIP_SCHEDULE_KEYS)[number]
 
+// Compatibilidad con claves antiguas (categoría + plan) por si quedó alguna
+// entrada configurada antes de mover la categoría al checkout.
+const LEGACY_KEY_ALIASES: Record<string, MembershipScheduleKey> = {
+    ADULTOS_BRONCE: "BRONCE",
+    NINOS_BRONCE: "BRONCE",
+    ADULTOS_PLATA: "PLATA",
+    NINOS_PLATA: "PLATA",
+}
+
 /**
- * Matriz sede → clave de perfil → perfil de horario. Para agregar una sede nueva
- * basta con añadir su `servilexSucursalCode` aquí.
+ * Matriz sede → plan → perfil de horario. Para agregar una sede nueva basta con
+ * añadir su `servilexSucursalCode` aquí.
  */
 export const MEMBERSHIP_SCHEDULES: Record<string, Partial<Record<MembershipScheduleKey, MembershipScheduleProfile>>> = {
     // Campo de Marte
     "01": {
-        ADULTOS_BRONCE: bronce("ADULTOS_BRONCE", "Adultos – BRONCE (interdiario)", lmv(CM_ADULT_HOURS), mjs(CM_ADULT_HOURS, CM_ADULT_SAT_HOURS)),
-        ADULTOS_PLATA: plata("ADULTOS_PLATA", "Adultos – PLATA (Lun a Vie)", lv(CM_ADULT_HOURS)),
-        NINOS_BRONCE: bronce("NINOS_BRONCE", "Niños – BRONCE (interdiario)", lmv(CM_KIDS_HOURS), mjs(CM_KIDS_HOURS, CM_KIDS_SAT_HOURS)),
-        NINOS_PLATA: plata("NINOS_PLATA", "Niños – PLATA (Lun a Vie)", lv(CM_KIDS_HOURS)),
+        BRONCE: bronce(
+            lmv(CM_ADULT_HOURS),
+            mjs(CM_ADULT_HOURS, CM_ADULT_SAT_HOURS),
+            lmv(CM_KIDS_HOURS),
+            mjs(CM_KIDS_HOURS, CM_KIDS_SAT_HOURS)
+        ),
+        PLATA: plata(lv(CM_ADULT_HOURS), lv(CM_KIDS_HOURS)),
     },
     // VIDENA
     "03": {
-        ADULTOS_BRONCE: bronce("ADULTOS_BRONCE", "Adultos – BRONCE (interdiario)", lmv(VID_ADULT_HOURS), mjs(VID_ADULT_MJS_WEEKDAY_HOURS, VID_SAT_HOURS)),
-        ADULTOS_PLATA: plata("ADULTOS_PLATA", "Adultos – PLATA (Lun a Vie)", lv(VID_ADULT_HOURS)),
-        NINOS_BRONCE: bronce("NINOS_BRONCE", "Niños – BRONCE (interdiario)", lmv(VID_AFTERNOON_HOURS), mjs(VID_AFTERNOON_HOURS, VID_SAT_HOURS)),
-        NINOS_PLATA: plata("NINOS_PLATA", "Niños – PLATA (Lun a Vie)", lv(VID_AFTERNOON_HOURS)),
+        BRONCE: bronce(
+            lmv(VID_ADULT_HOURS),
+            mjs(VID_ADULT_MJS_WEEKDAY_HOURS, VID_SAT_HOURS),
+            lmv(VID_AFTERNOON_HOURS),
+            mjs(VID_AFTERNOON_HOURS, VID_SAT_HOURS)
+        ),
+        PLATA: plata(lv(VID_ADULT_HOURS), lv(VID_AFTERNOON_HOURS)),
     },
 }
 
@@ -247,7 +296,8 @@ export function getMembershipScheduleProfile(
     scheduleKey: string | null | undefined
 ): MembershipScheduleProfile | null {
     if (!sucursalCode || !scheduleKey) return null
-    return MEMBERSHIP_SCHEDULES[sucursalCode]?.[scheduleKey as MembershipScheduleKey] ?? null
+    const resolvedKey = LEGACY_KEY_ALIASES[scheduleKey] ?? (scheduleKey as MembershipScheduleKey)
+    return MEMBERSHIP_SCHEDULES[sucursalCode]?.[resolvedKey] ?? null
 }
 
 /** Claves válidas para una sede (para poblar el dropdown del admin). */
@@ -308,7 +358,8 @@ type ValidateResult =
  * normalizada lista para guardar en `Ticket.membershipSchedule`. Compartido por
  * checkout (cliente) y `api/orders` (servidor).
  *
- *  - La frecuencia debe existir en el perfil (BRONCE: LMV o MJS; PLATA: LV).
+ *  - La categoría debe existir en el perfil (ADULTOS / NINOS) — elegida en checkout.
+ *  - La frecuencia debe existir en esa categoría (BRONCE: LMV o MJS; PLATA: LV).
  *  - Cada grupo de días de esa frecuencia debe tener una hora elegida que
  *    pertenezca a las horas permitidas del grupo.
  */
@@ -317,10 +368,16 @@ export function validateMembershipScheduleSelection(
     input: MembershipScheduleInput | null | undefined,
     sucursalCode: string
 ): ValidateResult {
+    const categoryId = typeof input?.category === "string" ? input.category.trim() : ""
     const freqId = typeof input?.frequency === "string" ? input.frequency.trim() : ""
     const hours = input?.hours && typeof input.hours === "object" ? input.hours : {}
 
-    const frequency = profile.frequencies.find((f) => f.id === freqId)
+    const category = profile.categories.find((c) => c.id === categoryId)
+    if (!category) {
+        return { ok: false, error: "Indica si la membresía es para adulto o niño." }
+    }
+
+    const frequency = category.frequencies.find((f) => f.id === freqId)
     if (!frequency) {
         return {
             ok: false,
@@ -360,6 +417,8 @@ export function validateMembershipScheduleSelection(
         selection: {
             profileKey: profile.key,
             sucursalCode,
+            category: category.id,
+            categoryLabel: category.label,
             frequency: frequency.id,
             frequencyLabel: frequency.label,
             sessions,
@@ -409,6 +468,8 @@ export function parseMembershipScheduleSelection(value: unknown): MembershipSche
     return {
         profileKey: typeof record.profileKey === "string" ? record.profileKey : "",
         sucursalCode: typeof record.sucursalCode === "string" ? record.sucursalCode : "",
+        category: (record.category === "NINOS" ? "NINOS" : "ADULTOS") as ScheduleCategoryId,
+        categoryLabel: typeof record.categoryLabel === "string" ? record.categoryLabel : "",
         frequency: (typeof record.frequency === "string" ? record.frequency : "LMV") as ScheduleFrequencyId,
         frequencyLabel: typeof record.frequencyLabel === "string" ? record.frequencyLabel : "",
         sessions,

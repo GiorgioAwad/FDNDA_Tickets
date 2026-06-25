@@ -1176,11 +1176,16 @@ export default function CheckoutPage() {
                                                         const profile = getScheduleProfileForItem(item)
                                                         if (!profile) return null
                                                         const selection = attendee.membershipSchedule
+                                                        const selectedCategory =
+                                                            profile.categories.find((c) => c.id === selection?.category) ?? null
                                                         const chooseFrequency = profile.planMode === "CHOOSE_FREQUENCY"
-                                                        const selectedFreqId = chooseFrequency
-                                                            ? (profile.frequencies.find((f) => f.id === selection?.frequency)?.id ?? "")
-                                                            : profile.frequencies[0].id
-                                                        const selectedFreq = profile.frequencies.find((f) => f.id === selectedFreqId) ?? null
+                                                        const selectedFreqId = selectedCategory
+                                                            ? chooseFrequency
+                                                                ? (selectedCategory.frequencies.find((f) => f.id === selection?.frequency)?.id ?? "")
+                                                                : selectedCategory.frequencies[0].id
+                                                            : ""
+                                                        const selectedFreq =
+                                                            selectedCategory?.frequencies.find((f) => f.id === selectedFreqId) ?? null
                                                         return (
                                                             <div className="rounded-md border border-dashed border-sky-200 bg-sky-50 px-3 py-3 space-y-3">
                                                                 <div>
@@ -1190,11 +1195,38 @@ export default function CheckoutPage() {
                                                                     </p>
                                                                 </div>
 
-                                                                {chooseFrequency && (
+                                                                <div>
+                                                                    <label className="text-[11px] font-medium text-sky-800 mb-1 block">¿Para quién es?</label>
+                                                                    <div className="flex flex-wrap gap-2">
+                                                                        {profile.categories.map((cat) => {
+                                                                            const active = cat.id === selectedCategory?.id
+                                                                            return (
+                                                                                <button
+                                                                                    key={cat.id}
+                                                                                    type="button"
+                                                                                    onClick={() =>
+                                                                                        updateAttendeeMembershipSchedule(itemKey, attendeeIndex, {
+                                                                                            category: cat.id,
+                                                                                        })
+                                                                                    }
+                                                                                    className={`rounded-md border px-3 py-1.5 text-xs font-medium transition ${
+                                                                                        active
+                                                                                            ? "border-sky-500 bg-white text-sky-800 ring-1 ring-sky-400"
+                                                                                            : "border-sky-200 bg-white/60 text-sky-600 hover:border-sky-300"
+                                                                                    }`}
+                                                                                >
+                                                                                    {cat.label}
+                                                                                </button>
+                                                                            )
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+
+                                                                {selectedCategory && chooseFrequency && (
                                                                     <div>
                                                                         <label className="text-[11px] font-medium text-sky-800 mb-1 block">Frecuencia</label>
                                                                         <div className="flex flex-wrap gap-2">
-                                                                            {profile.frequencies.map((freq) => {
+                                                                            {selectedCategory.frequencies.map((freq) => {
                                                                                 const active = freq.id === selectedFreqId
                                                                                 return (
                                                                                     <button
@@ -1202,6 +1234,7 @@ export default function CheckoutPage() {
                                                                                         type="button"
                                                                                         onClick={() =>
                                                                                             updateAttendeeMembershipSchedule(itemKey, attendeeIndex, {
+                                                                                                category: selectedCategory.id,
                                                                                                 frequency: freq.id,
                                                                                             })
                                                                                         }
@@ -1219,7 +1252,7 @@ export default function CheckoutPage() {
                                                                     </div>
                                                                 )}
 
-                                                                {selectedFreq && (
+                                                                {selectedCategory && selectedFreq && (
                                                                     <div className="space-y-2">
                                                                         {selectedFreq.dayGroups.map((group) => {
                                                                             const value = selection?.hours?.[group.id] ?? ""
@@ -1233,6 +1266,7 @@ export default function CheckoutPage() {
                                                                                         value={valid ? value : ""}
                                                                                         onChange={(e) =>
                                                                                             updateAttendeeMembershipSchedule(itemKey, attendeeIndex, {
+                                                                                                category: selectedCategory.id,
                                                                                                 frequency: selectedFreqId,
                                                                                                 groupId: group.id,
                                                                                                 hour: e.target.value,

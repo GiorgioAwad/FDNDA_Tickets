@@ -174,14 +174,14 @@ export const isFixedTermMembership = (ticket: ScanTicket): boolean => {
 }
 
 /**
- * Membresía de natación con horario semanal fijo: el comprador eligió frecuencia
- * + hora en el checkout y quedó guardado en `Ticket.membershipSchedule`. Sólo en
- * este caso el escáner valida día+hora. Devuelve la selección parseada o null.
+ * Membresía de natación con horario semanal fijo: el comprador eligió categoría +
+ * frecuencia + hora en el checkout y quedó guardado en `Ticket.membershipSchedule`.
+ * Sólo en este caso el escáner valida día+hora. Es independiente del cupo mensual
+ * (una entrada puede tener horario sin tener cupo). Devuelve la selección o null.
  */
 export const getMembershipScheduleSelection = (
     ticket: ScanTicket
-): MembershipScheduleSelection | null =>
-    isMembershipTicket(ticket) ? parseMembershipScheduleSelection(ticket.membershipSchedule) : null
+): MembershipScheduleSelection | null => parseMembershipScheduleSelection(ticket.membershipSchedule)
 
 /** ¿El ticket es una membresía con horario semanal fijo guardado? */
 export const hasWeeklySchedule = (ticket: ScanTicket): boolean =>

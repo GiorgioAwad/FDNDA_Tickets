@@ -530,7 +530,10 @@ export default function TicketDetailPage() {
                                     <Clock className="h-5 w-5 text-gray-400 mt-0.5" />
                                     <div>
                                         <div className="text-xs text-gray-500">Tu horario</div>
-                                        <div className="font-medium">{schedule.frequencyLabel}</div>
+                                        <div className="font-medium">
+                                            {schedule.categoryLabel ? `${schedule.categoryLabel} · ` : ""}
+                                            {schedule.frequencyLabel}
+                                        </div>
                                         <ul className="mt-1 space-y-0.5 text-sm text-gray-600">
                                             {schedule.groups.map((group) => (
                                                 <li key={group.id}>

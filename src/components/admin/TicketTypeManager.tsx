@@ -1692,8 +1692,7 @@ export function TicketTypeManager({
                                         </span>
                                     </label>
                                 </div>
-                                {(formData.monthlyClassLimit ?? 0) > 0 &&
-                                    getMembershipScheduleKeysForSucursal(eventSucursal.code).length > 0 && (
+                                {getMembershipScheduleKeysForSucursal(eventSucursal.code).length > 0 && (
                                     <div className="md:col-span-2 space-y-2">
                                         <label className="text-xs font-medium">Horario semanal de membresía (natación)</label>
                                         <select
@@ -1714,9 +1713,9 @@ export function TicketTypeManager({
                                             ))}
                                         </select>
                                         <p className="text-[11px] text-gray-500">
-                                            Si se define, el comprador elige frecuencia (interdiario) y hora en el checkout
-                                            según la sede ({eventSucursal.code}), y el escáner valida día + hora. BRONCE elige
-                                            frecuencia; PLATA es de lunes a viernes y solo elige hora.
+                                            Elige el plan. En el checkout el comprador elige su categoría (adulto o niño),
+                                            la frecuencia y la hora según la sede ({eventSucursal.code}); el escáner valida
+                                            día + hora. BRONCE elige frecuencia; PLATA es de lunes a viernes y solo elige hora.
                                         </p>
                                     </div>
                                 )}

@@ -23,8 +23,10 @@ export interface CartScheduleSelection {
 }
 
 // Membresías de natación: selección de horario semanal fijo del checkout.
-// `hours` mapea id-de-grupo → "HH:MM-HH:MM" (ver lib/membership-schedule.ts).
+// `category` (ADULTOS/NINOS) y `frequency` los elige el comprador; `hours` mapea
+// id-de-grupo → "HH:MM-HH:MM" (ver lib/membership-schedule.ts).
 export interface CartMembershipSchedule {
+    category: string
     frequency: string
     hours: Record<string, string>
 }
@@ -106,7 +108,7 @@ interface CartContextType {
     updateAttendeeMembershipSchedule: (
         lineKey: string,
         index: number,
-        patch: { frequency?: string; groupId?: string; hour?: string }
+        patch: { category?: string; frequency?: string; groupId?: string; hour?: string }
     ) => void
     billingData: BillingData
     updateBillingData: (field: keyof BillingData, value: string) => void
@@ -292,6 +294,8 @@ const normalizeScheduleSelections = (
 const normalizeMembershipSchedule = (input: unknown): CartMembershipSchedule | undefined => {
     if (!input || typeof input !== "object") return undefined
     const record = input as Record<string, unknown>
+    const categoryRaw = typeof record.category === "string" ? record.category.trim() : ""
+    const category = categoryRaw === "ADULTOS" || categoryRaw === "NINOS" ? categoryRaw : ""
     const frequency = typeof record.frequency === "string" ? record.frequency.trim() : ""
     const hours: Record<string, string> = {}
     if (record.hours && typeof record.hours === "object") {
@@ -299,8 +303,8 @@ const normalizeMembershipSchedule = (input: unknown): CartMembershipSchedule | u
             if (typeof value === "string" && value.trim()) hours[key] = value.trim()
         }
     }
-    if (!frequency && Object.keys(hours).length === 0) return undefined
-    return { frequency, hours }
+    if (!category && !frequency && Object.keys(hours).length === 0) return undefined
+    return { category, frequency, hours }
 }
 
 const createEmptyAttendee = (scheduleConfig?: CartScheduleConfig): CartAttendee => {
@@ -702,7 +706,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const updateAttendeeMembershipSchedule = (
         lineKey: string,
         index: number,
-        patch: { frequency?: string; groupId?: string; hour?: string }
+        patch: { category?: string; frequency?: string; groupId?: string; hour?: string }
     ) => {
         updateItems((current) =>
             current.map((item) => {
@@ -711,23 +715,31 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 const attendee = attendees[index]
                 if (!attendee) return item
 
-                const prev = attendee.membershipSchedule ?? { frequency: "", hours: {} }
+                const prev = attendee.membershipSchedule ?? { category: "", frequency: "", hours: {} }
+                let category = prev.category
                 let frequency = prev.frequency
                 let hours = { ...prev.hours }
+                // Cambiar de categoría reinicia frecuencia + horas (cambian las opciones).
+                if (typeof patch.category === "string" && patch.category !== prev.category) {
+                    category = patch.category
+                    frequency = ""
+                    hours = {}
+                }
                 // Cambiar de frecuencia limpia las horas (los grupos difieren).
-                if (typeof patch.frequency === "string" && patch.frequency !== prev.frequency) {
+                if (typeof patch.frequency === "string" && patch.frequency !== frequency) {
                     frequency = patch.frequency
                     hours = {}
                 }
                 if (patch.groupId) {
-                    // Una hora puede traer su frecuencia (PLATA fija la frecuencia LV).
+                    // Una hora puede traer su categoría/frecuencia (PLATA fija LV).
+                    if (typeof patch.category === "string") category = patch.category
                     if (typeof patch.frequency === "string") frequency = patch.frequency
                     hours[patch.groupId] = patch.hour ?? ""
-                } else if (typeof patch.frequency !== "string") {
+                } else if (typeof patch.category !== "string" && typeof patch.frequency !== "string") {
                     return item
                 }
 
-                attendees[index] = { ...attendee, membershipSchedule: { frequency, hours } }
+                attendees[index] = { ...attendee, membershipSchedule: { category, frequency, hours } }
                 return { ...item, attendees }
             })
         )

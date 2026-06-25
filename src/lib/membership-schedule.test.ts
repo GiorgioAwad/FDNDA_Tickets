@@ -15,44 +15,62 @@ import {
 // ── Lookup de perfiles ─────────────────────────────────────────────────────────
 
 test("getMembershipScheduleProfile devuelve null para sede/clave inválida", () => {
-    assert.equal(getMembershipScheduleProfile(null, "ADULTOS_BRONCE"), null)
+    assert.equal(getMembershipScheduleProfile(null, "BRONCE"), null)
     assert.equal(getMembershipScheduleProfile("01", null), null)
-    assert.equal(getMembershipScheduleProfile("99", "ADULTOS_BRONCE"), null)
+    assert.equal(getMembershipScheduleProfile("99", "BRONCE"), null)
     assert.equal(getMembershipScheduleProfile("01", "NO_EXISTE"), null)
 })
 
-test("getMembershipScheduleKeysForSucursal lista las 4 claves por sede", () => {
-    assert.deepEqual(getMembershipScheduleKeysForSucursal("01").sort(), [
-        "ADULTOS_BRONCE",
-        "ADULTOS_PLATA",
-        "NINOS_BRONCE",
-        "NINOS_PLATA",
-    ])
+test("getMembershipScheduleKeysForSucursal lista los planes (BRONCE, PLATA)", () => {
+    assert.deepEqual(getMembershipScheduleKeysForSucursal("01").sort(), ["BRONCE", "PLATA"])
+    assert.deepEqual(getMembershipScheduleKeysForSucursal("03").sort(), ["BRONCE", "PLATA"])
     assert.deepEqual(getMembershipScheduleKeysForSucursal("99"), [])
 })
 
-test("BRONCE expone elegir frecuencia (LMV, MJS); PLATA frecuencia fija (LV)", () => {
-    const bronce = getMembershipScheduleProfile("01", "ADULTOS_BRONCE")!
+test("claves legacy (categoría+plan) siguen resolviendo al plan", () => {
+    assert.equal(getMembershipScheduleProfile("01", "ADULTOS_BRONCE")?.key, "BRONCE")
+    assert.equal(getMembershipScheduleProfile("01", "NINOS_PLATA")?.key, "PLATA")
+})
+
+test("BRONCE elige frecuencia y tiene ambas categorías; PLATA es fija (LV)", () => {
+    const bronce = getMembershipScheduleProfile("01", "BRONCE")!
     assert.equal(bronce.planMode, "CHOOSE_FREQUENCY")
     assert.deepEqual(
-        bronce.frequencies.map((f) => f.id),
+        bronce.categories.map((c) => c.id).sort(),
+        ["ADULTOS", "NINOS"]
+    )
+    const adultBronce = bronce.categories.find((c) => c.id === "ADULTOS")!
+    assert.deepEqual(
+        adultBronce.frequencies.map((f) => f.id),
         ["LMV", "MJS"]
     )
-    const plata = getMembershipScheduleProfile("01", "ADULTOS_PLATA")!
+    const plata = getMembershipScheduleProfile("01", "PLATA")!
     assert.equal(plata.planMode, "FIXED_FREQUENCY")
+    const adultPlata = plata.categories.find((c) => c.id === "ADULTOS")!
     assert.deepEqual(
-        plata.frequencies.map((f) => f.id),
+        adultPlata.frequencies.map((f) => f.id),
         ["LV"]
     )
 })
 
 // ── Validación + expansión a sesiones ──────────────────────────────────────────
 
-test("LMV expande a 3 sesiones (Lun, Mié, Vie) con la misma hora", () => {
-    const profile = getMembershipScheduleProfile("01", "ADULTOS_BRONCE")!
-    const result = validateMembershipScheduleSelection(profile, { frequency: "LMV", hours: { main: "09:00-10:00" } }, "01")
+test("rechaza sin categoría", () => {
+    const profile = getMembershipScheduleProfile("01", "BRONCE")!
+    const r = validateMembershipScheduleSelection(profile, { frequency: "LMV", hours: { main: "09:00-10:00" } }, "01")
+    assert.equal(r.ok, false)
+})
+
+test("adultos LMV expande a 3 sesiones (Lun, Mié, Vie) con la misma hora", () => {
+    const profile = getMembershipScheduleProfile("01", "BRONCE")!
+    const result = validateMembershipScheduleSelection(
+        profile,
+        { category: "ADULTOS", frequency: "LMV", hours: { main: "09:00-10:00" } },
+        "01"
+    )
     assert.equal(result.ok, true)
     if (!result.ok) return
+    assert.equal(result.selection.category, "ADULTOS")
     assert.deepEqual(
         result.selection.sessions.map((s) => s.weekday).sort(),
         [1, 3, 5]
@@ -60,11 +78,11 @@ test("LMV expande a 3 sesiones (Lun, Mié, Vie) con la misma hora", () => {
     assert.ok(result.selection.sessions.every((s) => s.start === "09:00" && s.end === "10:00"))
 })
 
-test("MJS usa hora distinta para Mar/Jue y para Sábado", () => {
-    const profile = getMembershipScheduleProfile("01", "ADULTOS_BRONCE")!
+test("adultos MJS usa hora distinta para Mar/Jue y para Sábado", () => {
+    const profile = getMembershipScheduleProfile("01", "BRONCE")!
     const result = validateMembershipScheduleSelection(
         profile,
-        { frequency: "MJS", hours: { weekday: "09:00-10:00", saturday: "06:00-07:00" } },
+        { category: "ADULTOS", frequency: "MJS", hours: { weekday: "09:00-10:00", saturday: "06:00-07:00" } },
         "01"
     )
     assert.equal(result.ok, true)
@@ -75,9 +93,26 @@ test("MJS usa hora distinta para Mar/Jue y para Sábado", () => {
     assert.equal(byDay.get(6), "06:00-07:00") // Sáb (solo 6-7 / 7-8 en CM adultos)
 })
 
+test("niños CM tienen franjas de tarde distintas a adultos", () => {
+    const profile = getMembershipScheduleProfile("01", "BRONCE")!
+    // 3-4pm es válido para niños, no para adultos
+    assert.equal(
+        validateMembershipScheduleSelection(profile, { category: "NINOS", frequency: "LMV", hours: { main: "15:00-16:00" } }, "01").ok,
+        true
+    )
+    assert.equal(
+        validateMembershipScheduleSelection(profile, { category: "ADULTOS", frequency: "LMV", hours: { main: "15:00-16:00" } }, "01").ok,
+        false
+    )
+})
+
 test("PLATA (LV) expande a Lun-Vie con una sola hora", () => {
-    const profile = getMembershipScheduleProfile("01", "ADULTOS_PLATA")!
-    const result = validateMembershipScheduleSelection(profile, { frequency: "LV", hours: { main: "08:00-09:00" } }, "01")
+    const profile = getMembershipScheduleProfile("01", "PLATA")!
+    const result = validateMembershipScheduleSelection(
+        profile,
+        { category: "ADULTOS", frequency: "LV", hours: { main: "08:00-09:00" } },
+        "01"
+    )
     assert.equal(result.ok, true)
     if (!result.ok) return
     assert.deepEqual(
@@ -86,36 +121,36 @@ test("PLATA (LV) expande a Lun-Vie con una sola hora", () => {
     )
 })
 
-test("rechaza frecuencia ausente o no soportada", () => {
-    const profile = getMembershipScheduleProfile("01", "ADULTOS_BRONCE")!
-    assert.equal(validateMembershipScheduleSelection(profile, { hours: {} }, "01").ok, false)
-    assert.equal(validateMembershipScheduleSelection(profile, { frequency: "LV", hours: { main: "09:00-10:00" } }, "01").ok, false)
-})
-
-test("rechaza hora fuera del catálogo del grupo", () => {
-    const profile = getMembershipScheduleProfile("01", "ADULTOS_BRONCE")!
-    // 3-4pm es franja de niños, no de adultos CM
-    const r = validateMembershipScheduleSelection(profile, { frequency: "LMV", hours: { main: "15:00-16:00" } }, "01")
-    assert.equal(r.ok, false)
+test("rechaza frecuencia ausente o no soportada por la categoría", () => {
+    const profile = getMembershipScheduleProfile("01", "BRONCE")!
+    assert.equal(validateMembershipScheduleSelection(profile, { category: "ADULTOS", hours: {} }, "01").ok, false)
+    assert.equal(
+        validateMembershipScheduleSelection(profile, { category: "ADULTOS", frequency: "LV", hours: { main: "09:00-10:00" } }, "01").ok,
+        false
+    )
 })
 
 test("rechaza MJS sin la hora del sábado", () => {
-    const profile = getMembershipScheduleProfile("01", "ADULTOS_BRONCE")!
-    const r = validateMembershipScheduleSelection(profile, { frequency: "MJS", hours: { weekday: "09:00-10:00" } }, "01")
+    const profile = getMembershipScheduleProfile("01", "BRONCE")!
+    const r = validateMembershipScheduleSelection(
+        profile,
+        { category: "ADULTOS", frequency: "MJS", hours: { weekday: "09:00-10:00" } },
+        "01"
+    )
     assert.equal(r.ok, false)
 })
 
 test("VIDENA adultos M-J-S Mar/Jue acepta mañana y tarde", () => {
-    const profile = getMembershipScheduleProfile("03", "ADULTOS_BRONCE")!
+    const profile = getMembershipScheduleProfile("03", "BRONCE")!
     const manana = validateMembershipScheduleSelection(
         profile,
-        { frequency: "MJS", hours: { weekday: "07:00-08:00", saturday: "08:00-09:00" } },
+        { category: "ADULTOS", frequency: "MJS", hours: { weekday: "07:00-08:00", saturday: "08:00-09:00" } },
         "03"
     )
     assert.equal(manana.ok, true)
     const tarde = validateMembershipScheduleSelection(
         profile,
-        { frequency: "MJS", hours: { weekday: "16:00-17:00", saturday: "12:00-13:00" } },
+        { category: "ADULTOS", frequency: "MJS", hours: { weekday: "16:00-17:00", saturday: "12:00-13:00" } },
         "03"
     )
     assert.equal(tarde.ok, true)
@@ -123,14 +158,19 @@ test("VIDENA adultos M-J-S Mar/Jue acepta mañana y tarde", () => {
 
 // ── Round-trip de la selección guardada ────────────────────────────────────────
 
-test("parseMembershipScheduleSelection re-hidrata lo guardado", () => {
-    const profile = getMembershipScheduleProfile("01", "ADULTOS_BRONCE")!
-    const result = validateMembershipScheduleSelection(profile, { frequency: "MJS", hours: { weekday: "09:00-10:00", saturday: "06:00-07:00" } }, "01")
+test("parseMembershipScheduleSelection re-hidrata lo guardado (con categoría)", () => {
+    const profile = getMembershipScheduleProfile("01", "BRONCE")!
+    const result = validateMembershipScheduleSelection(
+        profile,
+        { category: "NINOS", frequency: "MJS", hours: { weekday: "15:00-16:00", saturday: "08:00-09:00" } },
+        "01"
+    )
     assert.equal(result.ok, true)
     if (!result.ok) return
     const json = JSON.parse(JSON.stringify(result.selection))
     const parsed = parseMembershipScheduleSelection(json)
     assert.ok(parsed)
+    assert.equal(parsed!.category, "NINOS")
     assert.equal(parsed!.frequency, "MJS")
     assert.equal(parsed!.sessions.length, 3)
 })
@@ -150,8 +190,7 @@ const SESSIONS: MembershipScheduleSession[] = [
 ]
 
 test("match: día y hora correctos → ok", () => {
-    const r = matchMembershipSession(SESSIONS, 1, "09:30")
-    assert.equal(r.ok, true)
+    assert.equal(matchMembershipSession(SESSIONS, 1, "09:30").ok, true)
 })
 
 test("match: día equivocado → WRONG_DAY", () => {
@@ -169,9 +208,7 @@ test("match: hora fuera de franja → WRONG_TIME", () => {
 })
 
 test("match: respeta la tolerancia previa al inicio", () => {
-    // 08:50 está dentro de la gracia (15 min antes de las 09:00)
     assert.equal(matchMembershipSession(SESSIONS, 1, "08:50").ok, true)
-    // 08:40 está fuera de la gracia
     assert.equal(matchMembershipSession(SESSIONS, 1, "08:40").ok, false)
     assert.equal(MEMBERSHIP_SCAN_GRACE_MINUTES, 15)
 })
