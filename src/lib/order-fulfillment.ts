@@ -3,6 +3,7 @@ import { generateTicketCode, getDaysBetween, formatPrice } from "@/lib/utils"
 import { sendPurchaseEmail, sendMerchOrderConfirmationEmail, type MerchOrderEmailItem } from "@/lib/email"
 import { onTicketSold } from "@/lib/cached-queries"
 import { extractTicketValidDates, normalizeScheduleSelections } from "@/lib/ticket-schedule"
+import { parseMembershipScheduleSelection } from "@/lib/membership-schedule"
 import { getTodayDateString, formatDateUTC } from "@/lib/qr"
 import { buildNaturalPersonFullName } from "@/lib/billing"
 import { buildServilexInvoiceSnapshots } from "@/lib/servilex"
@@ -79,6 +80,8 @@ type StoredAttendeeData = {
     matricula?: string | null
     membershipStartDate?: string | null
     scheduleSelections?: unknown
+    // Membresías de natación: selección de horario semanal normalizada (api/orders).
+    membershipSchedule?: unknown
 }
 
 type InvoiceDbClient = Prisma.TransactionClient | typeof prisma
@@ -687,6 +690,10 @@ export async function fulfillPaidOrder({
                 })
                 const ticketCode = generateTicketCode()
                 const membershipStartDate = resolveMembershipStartDate(ticketType, attendee, event)
+                // Membresías de natación: el horario semanal elegido (normalizado
+                // en api/orders) se persiste tal cual para que el escáner valide
+                // día+hora durante toda la membresía.
+                const membershipSchedule = parseMembershipScheduleSelection(attendee.membershipSchedule)
 
                 await tx.ticket.create({
                     data: {
@@ -698,6 +705,9 @@ export async function fulfillPaidOrder({
                         attendeeName: attendeeFullName,
                         attendeeDni: attendee.dni || undefined,
                         membershipStartDate,
+                        membershipSchedule: membershipSchedule
+                            ? (membershipSchedule as unknown as Prisma.InputJsonValue)
+                            : Prisma.JsonNull,
                         status: "ACTIVE",
                         entitlements: {
                             create: entitlementDates.map((date) => ({

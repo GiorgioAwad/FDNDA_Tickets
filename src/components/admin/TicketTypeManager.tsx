@@ -12,6 +12,10 @@ import {
     getShiftOptionsForDate,
     parseTicketScheduleConfig,
 } from "@/lib/ticket-schedule"
+import {
+    getMembershipScheduleKeysForSucursal,
+    getMembershipScheduleProfile,
+} from "@/lib/membership-schedule"
 import ServilexServiceCombobox from "@/components/admin/ServilexServiceCombobox"
 import { AbioCatalogControls } from "@/components/admin/AbioCatalogControls"
 import { AbioBindingSelector } from "@/components/admin/AbioBindingSelector"
@@ -33,6 +37,7 @@ interface TicketType {
     monthlyClassLimit?: number | null
     membershipDurationMonths?: number | null
     allowMultipleDailyScans?: boolean
+    membershipScheduleKey?: string | null
     validDays?: unknown
     sortOrder?: number
     originalPrice?: number | null
@@ -93,6 +98,7 @@ const buildEmptyFormData = (sucursalCode = DEFAULT_ABIO_EVENT_SUCURSAL_CODE): Pa
     monthlyClassLimit: null,
     membershipDurationMonths: null,
     allowMultipleDailyScans: false,
+    membershipScheduleKey: null,
     sortOrder: 0,
     originalPrice: null,
     benefits: null,
@@ -1686,6 +1692,34 @@ export function TicketTypeManager({
                                         </span>
                                     </label>
                                 </div>
+                                {(formData.monthlyClassLimit ?? 0) > 0 &&
+                                    getMembershipScheduleKeysForSucursal(eventSucursal.code).length > 0 && (
+                                    <div className="md:col-span-2 space-y-2">
+                                        <label className="text-xs font-medium">Horario semanal de membresía (natación)</label>
+                                        <select
+                                            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                            value={formData.membershipScheduleKey ?? ""}
+                                            onChange={(e) =>
+                                                setFormData({
+                                                    ...formData,
+                                                    membershipScheduleKey: e.target.value || null,
+                                                })
+                                            }
+                                        >
+                                            <option value="">Sin horario semanal</option>
+                                            {getMembershipScheduleKeysForSucursal(eventSucursal.code).map((key) => (
+                                                <option key={key} value={key}>
+                                                    {getMembershipScheduleProfile(eventSucursal.code, key)?.label ?? key}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <p className="text-[11px] text-gray-500">
+                                            Si se define, el comprador elige frecuencia (interdiario) y hora en el checkout
+                                            según la sede ({eventSucursal.code}), y el escáner valida día + hora. BRONCE elige
+                                            frecuencia; PLATA es de lunes a viernes y solo elige hora.
+                                        </p>
+                                    </div>
+                                )}
                                 <div className="space-y-2">
                                     <label className="text-xs font-medium">Precio regular (tachado)</label>
                                     <Input

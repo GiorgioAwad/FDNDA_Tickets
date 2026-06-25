@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
-import { parseQRPayload, verifySignature, getTodayDateString, formatDateUTC } from "@/lib/qr"
+import { parseQRPayload, verifySignature, getTodayDateString, getLimaTime, formatDateUTC } from "@/lib/qr"
 import { getShiftOptionsForDate, normalizeShiftLabel, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
+import {
+    matchMembershipSession,
+    formatSessionsDaysLabel,
+    formatSlotLabel,
+    weekdayFromDateKey,
+} from "@/lib/membership-schedule"
 import {
     getExpectedShiftForDate,
     getTicketScheduleSelectionsForAttendee,
@@ -20,6 +26,7 @@ import {
     isMembershipTicket,
     isFixedTermMembership,
     getMembershipAccessStatus,
+    getMembershipScheduleSelection,
     membershipAllowsMultipleDailyScans,
     getMembershipAnchor,
     getMembershipPeriod,
@@ -206,6 +213,38 @@ export async function POST(request: NextRequest) {
                 reason: "QR_EXPIRED",
                 message: "El evento no esta activo en esta fecha.",
             })
+        }
+
+        // Membresías de natación con horario semanal fijo: el ingreso solo es
+        // válido en los días de la frecuencia elegida y dentro de la franja horaria
+        // elegida (hora Lima). El override de emergencia (Staff/Admin) lo omite y
+        // queda registrado en Scan.notes (ver el logScan del flujo de éxito).
+        const weeklySchedule = getMembershipScheduleSelection(ticket)
+        if (weeklySchedule && !override) {
+            const weekday = weekdayFromDateKey(today)
+            const match = matchMembershipSession(weeklySchedule.sessions, weekday, getLimaTime())
+            if (!match.ok && match.reason === "WRONG_DAY") {
+                const daysLabel = formatSessionsDaysLabel(weeklySchedule.sessions)
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Día fuera del horario de membresía (${daysLabel})`)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "MEMBERSHIP_WRONG_DAY",
+                    allowOverride: true,
+                    message: `Tu horario de membresía es ${daysLabel}. Hoy no te corresponde.`,
+                })
+            }
+            if (!match.ok && match.reason === "WRONG_TIME") {
+                const slotLabel = formatSlotLabel({ start: match.session.start, end: match.session.end })
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", `Hora fuera de la franja de membresía (${slotLabel})`)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "MEMBERSHIP_WRONG_TIME",
+                    allowOverride: true,
+                    message: `Tu horario de membresía es de ${slotLabel}. Ya no aplica a esta hora.`,
+                })
+            }
         }
 
         const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)

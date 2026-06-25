@@ -6,7 +6,8 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { formatDate } from "@/lib/utils"
-import { ArrowLeft, Calendar, MapPin, User, Download, Loader2, RefreshCw } from "lucide-react"
+import { parseMembershipScheduleSelection, formatSlotLabel } from "@/lib/membership-schedule"
+import { ArrowLeft, Calendar, Clock, MapPin, User, Download, Loader2, RefreshCw } from "lucide-react"
 import Image from "next/image"
 
 interface TicketDetail {
@@ -31,6 +32,8 @@ interface TicketDetail {
         validDays?: unknown
     }
     isMembership?: boolean
+    // Membresías de natación con horario semanal fijo (selección normalizada).
+    membershipSchedule?: unknown
     membershipAttendance?: {
         total: number
         used: number
@@ -518,6 +521,30 @@ export default function TicketDetailPage() {
                                 <div className="text-sm text-gray-500">{ticket.event.location}</div>
                             </div>
                         </div>
+
+                        {(() => {
+                            const schedule = parseMembershipScheduleSelection(ticket.membershipSchedule)
+                            if (!schedule) return null
+                            return (
+                                <div className="flex items-start gap-3">
+                                    <Clock className="h-5 w-5 text-gray-400 mt-0.5" />
+                                    <div>
+                                        <div className="text-xs text-gray-500">Tu horario</div>
+                                        <div className="font-medium">{schedule.frequencyLabel}</div>
+                                        <ul className="mt-1 space-y-0.5 text-sm text-gray-600">
+                                            {schedule.groups.map((group) => (
+                                                <li key={group.id}>
+                                                    {group.label}: {formatSlotLabel({ start: group.start, end: group.end })}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        <p className="mt-1 text-[11px] text-gray-400">
+                                            Tu horario es fijo durante toda la membresía.
+                                        </p>
+                                    </div>
+                                </div>
+                            )
+                        })()}
 
                         <div className="pt-4 mt-4 border-t">
                             <div className="flex justify-between items-center text-sm text-gray-500">

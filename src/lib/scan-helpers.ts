@@ -2,6 +2,10 @@ import { formatDateUTC, formatDateLocal, getTodayDateString } from "@/lib/qr"
 import { getDaysBetween } from "@/lib/utils"
 import { extractTicketValidDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { MEMBERSHIP_BLACKOUT_MONTHS, isBlackoutMonth } from "@/lib/membership-config"
+import {
+    parseMembershipScheduleSelection,
+    type MembershipScheduleSelection,
+} from "@/lib/membership-schedule"
 
 // ==================== TYPES ====================
 
@@ -26,6 +30,9 @@ export type ScanTicket = {
     // Fecha de inicio elegida por el comprador (membresías a término fijo).
     // null = legacy → se ancla a event.startDate.
     membershipStartDate?: Date | null
+    // Horario semanal fijo elegido por el comprador (membresías de natación).
+    // JSON normalizado (MembershipScheduleSelection). null = sin horario semanal.
+    membershipSchedule?: unknown | null
     event: { title: string; startDate: Date; endDate: Date; category?: string }
     ticketType: {
         name: string
@@ -36,6 +43,8 @@ export type ScanTicket = {
         membershipDurationMonths?: number | null
         // Membresías ORO: permite varios ingresos por día (cada uno cuenta al cupo).
         allowMultipleDailyScans?: boolean | null
+        // Clave del perfil de horario semanal (ver membership-schedule.ts).
+        membershipScheduleKey?: string | null
         validDays: unknown | null
     }
     entitlements: TicketEntitlement[]
@@ -163,6 +172,20 @@ export const isFixedTermMembership = (ticket: ScanTicket): boolean => {
         duration > 0
     )
 }
+
+/**
+ * Membresía de natación con horario semanal fijo: el comprador eligió frecuencia
+ * + hora en el checkout y quedó guardado en `Ticket.membershipSchedule`. Sólo en
+ * este caso el escáner valida día+hora. Devuelve la selección parseada o null.
+ */
+export const getMembershipScheduleSelection = (
+    ticket: ScanTicket
+): MembershipScheduleSelection | null =>
+    isMembershipTicket(ticket) ? parseMembershipScheduleSelection(ticket.membershipSchedule) : null
+
+/** ¿El ticket es una membresía con horario semanal fijo guardado? */
+export const hasWeeklySchedule = (ticket: ScanTicket): boolean =>
+    getMembershipScheduleSelection(ticket) != null
 
 /**
  * Ancla de la membresía: la fecha de inicio elegida por el comprador o, en

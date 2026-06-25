@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { invalidateTicketTypeCache } from "@/lib/cache"
 import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
+import { getMembershipScheduleProfile } from "@/lib/membership-schedule"
 import { isPoolFreeEventCategory } from "@/lib/pool-free"
 import { getAbioCatalogConfig } from "@/lib/abio-catalog"
 import { Prisma } from "@prisma/client"
@@ -86,6 +87,16 @@ const normalizeDurationMonths = (value: unknown): number | null => {
     return Math.floor(num)
 }
 
+// Membresías de natación: clave del perfil de horario semanal. Solo se acepta si
+// existe en el catálogo (membership-schedule.ts) para la sede del evento.
+const normalizeScheduleKey = (value: unknown, sucursalCode: string | null): string | null => {
+    if (value === undefined || value === null || value === "") return null
+    if (typeof value !== "string") return null
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    return getMembershipScheduleProfile(sucursalCode, trimmed) ? trimmed : null
+}
+
 // Precio regular (tachado) para layout de planes. Devuelve null si no aplica.
 const normalizeOptionalPrice = (value: unknown): number | null => {
     if (value === undefined || value === null || value === "") return null
@@ -140,6 +151,7 @@ export async function POST(request: NextRequest) {
             monthlyClassLimit,
             membershipDurationMonths,
             allowMultipleDailyScans,
+            membershipScheduleKey,
             validDays,
             sortOrder,
             isActive,
@@ -303,6 +315,7 @@ export async function POST(request: NextRequest) {
                 monthlyClassLimit: normalizeMonthlyLimit(monthlyClassLimit),
                 membershipDurationMonths: normalizeDurationMonths(membershipDurationMonths),
                 allowMultipleDailyScans: Boolean(allowMultipleDailyScans),
+                membershipScheduleKey: normalizeScheduleKey(membershipScheduleKey, resolvedSucursalCode),
                 validDays: normalizeValidDays(validDays),
                 sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
                 isActive: isActive === undefined ? true : Boolean(isActive),
@@ -362,6 +375,7 @@ export async function PUT(request: NextRequest) {
             monthlyClassLimit,
             membershipDurationMonths,
             allowMultipleDailyScans,
+            membershipScheduleKey,
             validDays,
             sortOrder,
             isActive,
@@ -482,6 +496,7 @@ export async function PUT(request: NextRequest) {
             monthlyClassLimit?: number | null
             membershipDurationMonths?: number | null
             allowMultipleDailyScans?: boolean
+            membershipScheduleKey?: string | null
             validDays?: Prisma.InputJsonValue
             sortOrder?: number
             isActive?: boolean
@@ -514,6 +529,7 @@ export async function PUT(request: NextRequest) {
         if (monthlyClassLimit !== undefined) data.monthlyClassLimit = normalizeMonthlyLimit(monthlyClassLimit)
         if (membershipDurationMonths !== undefined) data.membershipDurationMonths = normalizeDurationMonths(membershipDurationMonths)
         if (allowMultipleDailyScans !== undefined) data.allowMultipleDailyScans = Boolean(allowMultipleDailyScans)
+        if (membershipScheduleKey !== undefined) data.membershipScheduleKey = normalizeScheduleKey(membershipScheduleKey, eventSucursalCode)
         if (originalPrice !== undefined) data.originalPrice = normalizeOptionalPrice(originalPrice)
         if (benefits !== undefined) data.benefits = normalizeBenefits(benefits) ?? Prisma.JsonNull
         if (isFeatured !== undefined) data.isFeatured = Boolean(isFeatured)

@@ -36,6 +36,7 @@ export type TicketTypeClient = {
     packageDaysCount?: number | null
     monthlyClassLimit?: number | null
     membershipDurationMonths?: number | null
+    membershipScheduleKey?: string | null
     validDays?: unknown
     servilexEnabled?: boolean
     servilexIndicator?: string | null
@@ -57,6 +58,8 @@ type TicketPurchaseCardProps = {
     eventStartDate?: string | Date
     eventEndDate?: string | Date
     ticketLayout?: "LIST" | "PLANS"
+    // Sede del evento (servilexSucursalCode): resuelve el horario semanal de membresías.
+    eventSucursalCode?: string | null
 }
 
 type PoolSlotOption = {
@@ -213,6 +216,7 @@ export default function TicketPurchaseCard({
     eventStartDate,
     eventEndDate,
     ticketLayout = "LIST",
+    eventSucursalCode,
 }: TicketPurchaseCardProps) {
     const { addItem, updateQuantity, removeItem, items, itemCount } = useCart()
     const { status } = useSession()
@@ -539,6 +543,8 @@ export default function TicketPurchaseCard({
                 servilexIndicator: ticket.servilexIndicator || null,
                 monthlyClassLimit: ticket.monthlyClassLimit ?? null,
                 membershipDurationMonths: ticket.membershipDurationMonths ?? null,
+                membershipScheduleKey: ticket.membershipScheduleKey ?? null,
+                membershipScheduleSucursal: eventSucursalCode ?? null,
             })
             return
         }

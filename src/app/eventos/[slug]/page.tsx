@@ -207,6 +207,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
         packageDaysCount: ticket.packageDaysCount,
         monthlyClassLimit: ticket.monthlyClassLimit,
         membershipDurationMonths: ticket.membershipDurationMonths,
+        membershipScheduleKey: ticket.membershipScheduleKey,
         validDays: ticket.validDays,
         servilexEnabled: ticket.servilexEnabled,
         servilexIndicator: ticket.servilexIndicator,
@@ -339,6 +340,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
                                         eventStartDate={event.startDate}
                                         eventEndDate={event.endDate}
                                         ticketLayout={event.ticketLayout}
+                                        eventSucursalCode={event.servilexSucursalCode}
                                     />
                                 </CardContent>
                             </Card>
@@ -353,6 +355,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
                                 eventStartDate={event.startDate}
                                 eventEndDate={event.endDate}
                                 ticketLayout={event.ticketLayout}
+                                eventSucursalCode={event.servilexSucursalCode}
                             />
                         )}
                     </div>
@@ -368,6 +371,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
                                 eventStartDate={event.startDate}
                                 eventEndDate={event.endDate}
                                 ticketLayout={event.ticketLayout}
+                                eventSucursalCode={event.servilexSucursalCode}
                             />
                         </div>
                     )}

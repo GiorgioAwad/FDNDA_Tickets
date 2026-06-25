@@ -222,6 +222,7 @@ export async function POST(
                         monthlyClassLimit: tt.monthlyClassLimit,
                         membershipDurationMonths: tt.membershipDurationMonths,
                         allowMultipleDailyScans: tt.allowMultipleDailyScans,
+                        membershipScheduleKey: tt.membershipScheduleKey,
                         originalPrice: tt.originalPrice,
                         benefits: (tt.benefits ?? Prisma.JsonNull) as Prisma.InputJsonValue,
                         isFeatured: tt.isFeatured,

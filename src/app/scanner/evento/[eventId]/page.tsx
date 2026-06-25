@@ -36,6 +36,7 @@ interface ScanResult {
     message?: string
     scannedAt?: string
     isPiscina?: boolean
+    allowOverride?: boolean
     overridden?: boolean
     ticket?: {
         id: string
@@ -83,6 +84,8 @@ const FORCEABLE_REASONS = new Set([
     "INVALID_SHIFT",
     "NO_CLASSES",
     "SHIFT_REQUIRED",
+    "MEMBERSHIP_WRONG_DAY",
+    "MEMBERSHIP_WRONG_TIME",
 ])
 
 const SCAN_DEBOUNCE_MS = 300 // Ultra-fast response between scans
@@ -1348,9 +1351,9 @@ export default function EventScannerPage() {
                                     </div>
                                 )}
 
-                                {/* Forzar ingreso (emergencia) — solo piscina y rechazos de día/turno */}
+                                {/* Forzar ingreso (emergencia) — piscina/membresía y rechazos de día/turno/horario */}
                                 {!scanResult.valid &&
-                                    (isPiscina || scanResult.isPiscina) &&
+                                    (isPiscina || scanResult.isPiscina || scanResult.allowOverride) &&
                                     FORCEABLE_REASONS.has(scanResult.reason ?? "") && (
                                         <Button
                                             onClick={forceLastScan}

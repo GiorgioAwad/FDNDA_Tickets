@@ -182,3 +182,21 @@ export function getTodayDateString(): string {
     const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ""
     return `${get("year")}-${get("month")}-${get("day")}`
 }
+
+/**
+ * Hora civil actual "HH:MM" (24h) en America/Lima. El contenedor corre en UTC,
+ * así que para validar la franja horaria de una membresía (escáner) hay que
+ * calcular la hora en Lima, no `new Date().getHours()`.
+ */
+export function getLimaTime(date: Date = new Date()): string {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "America/Lima",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).formatToParts(date)
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "00"
+    // en-GB puede devolver "24" a medianoche en algunos entornos; normalizamos.
+    const hour = get("hour") === "24" ? "00" : get("hour")
+    return `${hour}:${get("minute")}`
+}
