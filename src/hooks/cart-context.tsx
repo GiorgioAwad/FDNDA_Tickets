@@ -22,6 +22,15 @@ export interface CartScheduleSelection {
     shift: string
 }
 
+// Membresías de natación: selección de horario semanal fijo del checkout.
+// `category` (ADULTOS/NINOS) y `frequency` los elige el comprador; `hours` mapea
+// id-de-grupo → "HH:MM-HH:MM" (ver lib/membership-schedule.ts).
+export interface CartMembershipSchedule {
+    category: string
+    frequency: string
+    hours: Record<string, string>
+}
+
 export interface CartAttendee {
     name: string
     firstName: string
@@ -33,6 +42,8 @@ export interface CartAttendee {
     // Membresías a término fijo: fecha de inicio elegida ("YYYY-MM-DD").
     membershipStartDate?: string
     scheduleSelections?: CartScheduleSelection[]
+    // Membresías de natación con horario semanal fijo.
+    membershipSchedule?: CartMembershipSchedule
 }
 
 export interface CartItem {
@@ -51,6 +62,10 @@ export interface CartItem {
     // Membresías a término fijo (ACADEMIA): habilitan el selector de fecha de inicio.
     monthlyClassLimit?: number | null
     membershipDurationMonths?: number | null
+    // Membresías de natación con horario semanal fijo: clave del perfil + sede
+    // (servilexSucursalCode del evento) para resolverlo en el checkout.
+    membershipScheduleKey?: string | null
+    membershipScheduleSucursal?: string | null
 }
 
 export interface BillingData {
@@ -89,6 +104,11 @@ interface CartContextType {
         selectionIndex: number,
         field: "date" | "shift",
         value: string
+    ) => void
+    updateAttendeeMembershipSchedule: (
+        lineKey: string,
+        index: number,
+        patch: { category?: string; frequency?: string; groupId?: string; hour?: string }
     ) => void
     billingData: BillingData
     updateBillingData: (field: keyof BillingData, value: string) => void
@@ -271,6 +291,22 @@ const normalizeScheduleSelections = (
     return selections
 }
 
+const normalizeMembershipSchedule = (input: unknown): CartMembershipSchedule | undefined => {
+    if (!input || typeof input !== "object") return undefined
+    const record = input as Record<string, unknown>
+    const categoryRaw = typeof record.category === "string" ? record.category.trim() : ""
+    const category = categoryRaw === "ADULTOS" || categoryRaw === "NINOS" ? categoryRaw : ""
+    const frequency = typeof record.frequency === "string" ? record.frequency.trim() : ""
+    const hours: Record<string, string> = {}
+    if (record.hours && typeof record.hours === "object") {
+        for (const [key, value] of Object.entries(record.hours as Record<string, unknown>)) {
+            if (typeof value === "string" && value.trim()) hours[key] = value.trim()
+        }
+    }
+    if (!category && !frequency && Object.keys(hours).length === 0) return undefined
+    return { category, frequency, hours }
+}
+
 const createEmptyAttendee = (scheduleConfig?: CartScheduleConfig): CartAttendee => {
     const requiredSelections = getRequiredScheduleSelections(scheduleConfig)
     return {
@@ -314,6 +350,7 @@ const normalizeAttendee = (input: unknown, scheduleConfig?: CartScheduleConfig):
         membershipStartDate:
             typeof record.membershipStartDate === "string" ? record.membershipStartDate : "",
         scheduleSelections: normalizeScheduleSelections(record.scheduleSelections, scheduleConfig),
+        membershipSchedule: normalizeMembershipSchedule(record.membershipSchedule),
     }
 }
 
@@ -377,6 +414,10 @@ const normalizeCartItem = (input: unknown): CartItem | null => {
             typeof record.monthlyClassLimit === "number" ? record.monthlyClassLimit : null,
         membershipDurationMonths:
             typeof record.membershipDurationMonths === "number" ? record.membershipDurationMonths : null,
+        membershipScheduleKey:
+            typeof record.membershipScheduleKey === "string" ? record.membershipScheduleKey : null,
+        membershipScheduleSucursal:
+            typeof record.membershipScheduleSucursal === "string" ? record.membershipScheduleSucursal : null,
     }
 }
 
@@ -662,6 +703,48 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         )
     }
 
+    const updateAttendeeMembershipSchedule = (
+        lineKey: string,
+        index: number,
+        patch: { category?: string; frequency?: string; groupId?: string; hour?: string }
+    ) => {
+        updateItems((current) =>
+            current.map((item) => {
+                if (getCartItemKey(item) !== lineKey) return item
+                const attendees = [...item.attendees]
+                const attendee = attendees[index]
+                if (!attendee) return item
+
+                const prev = attendee.membershipSchedule ?? { category: "", frequency: "", hours: {} }
+                let category = prev.category
+                let frequency = prev.frequency
+                let hours = { ...prev.hours }
+                // Cambiar de categoría reinicia frecuencia + horas (cambian las opciones).
+                if (typeof patch.category === "string" && patch.category !== prev.category) {
+                    category = patch.category
+                    frequency = ""
+                    hours = {}
+                }
+                // Cambiar de frecuencia limpia las horas (los grupos difieren).
+                if (typeof patch.frequency === "string" && patch.frequency !== frequency) {
+                    frequency = patch.frequency
+                    hours = {}
+                }
+                if (patch.groupId) {
+                    // Una hora puede traer su categoría/frecuencia (PLATA fija LV).
+                    if (typeof patch.category === "string") category = patch.category
+                    if (typeof patch.frequency === "string") frequency = patch.frequency
+                    hours[patch.groupId] = patch.hour ?? ""
+                } else if (typeof patch.category !== "string" && typeof patch.frequency !== "string") {
+                    return item
+                }
+
+                attendees[index] = { ...attendee, membershipSchedule: { category, frequency, hours } }
+                return { ...item, attendees }
+            })
+        )
+    }
+
     const billingKey = cartKey ? `${cartKey}:billing` : null
 
     const getBillingSnapshot = useCallback(() => {
@@ -747,6 +830,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 updateAttendee,
                 updateAttendeeMembershipStartDate,
                 updateAttendeeScheduleSelection,
+                updateAttendeeMembershipSchedule,
                 billingData,
                 updateBillingData,
                 prefillBillingData,
@@ -771,6 +855,7 @@ export function useCart() {
             updateAttendee: () => {},
             updateAttendeeMembershipStartDate: () => {},
             updateAttendeeScheduleSelection: () => {},
+            updateAttendeeMembershipSchedule: () => {},
             billingData: DEFAULT_BILLING_DATA,
             updateBillingData: () => {},
             prefillBillingData: () => {},

@@ -9,6 +9,10 @@ import { onTicketSold } from "@/lib/cached-queries"
 import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 import { validateMembershipStartDate, resolveMembershipStartSetup } from "@/lib/membership-config"
+import {
+    getMembershipScheduleProfile,
+    validateMembershipScheduleSelection,
+} from "@/lib/membership-schedule"
 import { getTodayDateString, formatDateUTC } from "@/lib/qr"
 import {
     getCurrentOrFutureScheduleDates,
@@ -253,6 +257,7 @@ export async function POST(request: NextRequest) {
                         capacity: number
                         isPackage: boolean
                         packageDaysCount: number | null
+                        membershipScheduleKey: string | null
                         validDays: Prisma.JsonValue | null
                         servilexEnabled: boolean
                         servilexIndicator: string | null
@@ -276,6 +281,7 @@ export async function POST(request: NextRequest) {
                             capacity: true,
                             isPackage: true,
                             packageDaysCount: true,
+                            membershipScheduleKey: true,
                             validDays: true,
                             isActive: true,
                             servilexEnabled: true,
@@ -334,6 +340,7 @@ export async function POST(request: NextRequest) {
                             isActive: boolean
                             isPackage: boolean
                             packageDaysCount: number | null
+                            membershipScheduleKey: string | null
                             validDays: Prisma.JsonValue | null
                             servilexEnabled: boolean
                             servilexIndicator: string | null
@@ -348,7 +355,7 @@ export async function POST(request: NextRequest) {
                     >(Prisma.sql`
                         SELECT
                             "id", "name", "price", "eventId", "capacity", "sold", "isActive",
-                            "isPackage", "packageDaysCount", "validDays",
+                            "isPackage", "packageDaysCount", "membershipScheduleKey", "validDays",
                             "servilexEnabled", "servilexIndicator", "servilexSucursalCode",
                             "servilexServiceCode", "servilexDisciplineCode", "servilexScheduleCode",
                             "servilexPoolCode", "servilexExtraConfig", "servilexBindingId"
@@ -474,6 +481,32 @@ export async function POST(request: NextRequest) {
                             scheduleSelections,
                         }
                     })
+                }
+
+                // Membresías de natación con horario semanal fijo: validar la
+                // selección (frecuencia + hora) contra el perfil de la sede y
+                // guardar la versión normalizada (con sesiones) en attendeeData,
+                // para que el fulfillment la copie al ticket. Solo aplica si el
+                // ticket type tiene membershipScheduleKey y existe perfil de sede.
+                const membershipScheduleProfile = getMembershipScheduleProfile(
+                    eventConfig.servilexSucursalCode,
+                    reservedTicketType.membershipScheduleKey
+                )
+                if (membershipScheduleProfile) {
+                    if (attendeeData.length < item.quantity) {
+                        throw new Error(`Selecciona el horario de membresía para "${reservedTicketType.name}"`)
+                    }
+                    attendeeData = attendeeData.slice(0, item.quantity).map((attendee) => {
+                        const result = validateMembershipScheduleSelection(
+                            membershipScheduleProfile,
+                            attendee.membershipSchedule,
+                            eventConfig.servilexSucursalCode || ""
+                        )
+                        if (!result.ok) {
+                            throw new Error(result.error)
+                        }
+                        return { ...attendee, membershipSchedule: result.selection }
+                    }) as unknown as typeof attendeeData
                 }
 
                 // Igual que EVENTO, piscina libre no guarda identidad del

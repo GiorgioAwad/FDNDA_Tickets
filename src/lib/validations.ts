@@ -149,6 +149,16 @@ const orderAttendeeSchema = z
                 })
             )
             .optional(),
+        // Membresías de natación con horario semanal fijo: categoría + frecuencia
+        // elegidas + hora por grupo de días. Se valida contra el perfil en el servidor.
+        membershipSchedule: z
+            .object({
+                category: z.string().max(8).optional(),
+                frequency: z.string().max(8).optional(),
+                hours: z.record(z.string(), z.string().max(20)).optional(),
+            })
+            .passthrough()
+            .optional(),
     })
     .transform((attendee) => ({
         ...attendee,

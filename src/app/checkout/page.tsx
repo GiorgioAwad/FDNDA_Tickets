@@ -19,6 +19,12 @@ import {
     resolveMembershipStartSetup,
     type MembershipStartConfig,
 } from "@/lib/membership-config"
+import {
+    getMembershipScheduleProfile,
+    validateMembershipScheduleSelection,
+    formatSlotLabel,
+    slotToValue,
+} from "@/lib/membership-schedule"
 import { formatDate, formatPrice } from "@/lib/utils"
 import type { IzipayCheckoutConfig } from "@/lib/izipay"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
@@ -50,6 +56,7 @@ export default function CheckoutPage() {
         updateAttendee,
         updateAttendeeMembershipStartDate,
         updateAttendeeScheduleSelection,
+        updateAttendeeMembershipSchedule,
         billingData,
         updateBillingData,
         prefillBillingData,
@@ -278,6 +285,31 @@ export default function CheckoutPage() {
                 )
             }),
         [getMembershipStartSetup, isFixedTermMembershipItem, items, membershipToday]
+    )
+
+    // Membresías de natación con horario semanal fijo: resuelve el perfil de
+    // horario (sede + clave) que viene en el item del carrito.
+    const getScheduleProfileForItem = useCallback(
+        (item: (typeof items)[number]) =>
+            getMembershipScheduleProfile(item.membershipScheduleSucursal, item.membershipScheduleKey),
+        []
+    )
+
+    const hasMissingMembershipSchedule = useMemo(
+        () =>
+            items.some((item) => {
+                const profile = getScheduleProfileForItem(item)
+                if (!profile) return false
+                return item.attendees.some(
+                    (attendee) =>
+                        !validateMembershipScheduleSelection(
+                            profile,
+                            attendee.membershipSchedule,
+                            item.membershipScheduleSucursal || ""
+                        ).ok
+                )
+            }),
+        [getScheduleProfileForItem, items]
     )
 
     const boletaFullName = useMemo(
@@ -1139,6 +1171,127 @@ export default function CheckoutPage() {
                                                             </div>
                                                         )
                                                     })()}
+
+                                                    {(() => {
+                                                        const profile = getScheduleProfileForItem(item)
+                                                        if (!profile) return null
+                                                        const selection = attendee.membershipSchedule
+                                                        const selectedCategory =
+                                                            profile.categories.find((c) => c.id === selection?.category) ?? null
+                                                        const chooseFrequency = profile.planMode === "CHOOSE_FREQUENCY"
+                                                        const selectedFreqId = selectedCategory
+                                                            ? chooseFrequency
+                                                                ? (selectedCategory.frequencies.find((f) => f.id === selection?.frequency)?.id ?? "")
+                                                                : selectedCategory.frequencies[0].id
+                                                            : ""
+                                                        const selectedFreq =
+                                                            selectedCategory?.frequencies.find((f) => f.id === selectedFreqId) ?? null
+                                                        return (
+                                                            <div className="rounded-md border border-dashed border-sky-200 bg-sky-50 px-3 py-3 space-y-3">
+                                                                <div>
+                                                                    <p className="text-xs font-medium text-sky-800">Horario de tu membresía</p>
+                                                                    <p className="mt-0.5 text-[11px] text-sky-700">
+                                                                        El horario que elijas se respeta durante toda tu membresía y no se puede cambiar.
+                                                                    </p>
+                                                                </div>
+
+                                                                <div>
+                                                                    <label className="text-[11px] font-medium text-sky-800 mb-1 block">¿Para quién es?</label>
+                                                                    <div className="flex flex-wrap gap-2">
+                                                                        {profile.categories.map((cat) => {
+                                                                            const active = cat.id === selectedCategory?.id
+                                                                            return (
+                                                                                <button
+                                                                                    key={cat.id}
+                                                                                    type="button"
+                                                                                    onClick={() =>
+                                                                                        updateAttendeeMembershipSchedule(itemKey, attendeeIndex, {
+                                                                                            category: cat.id,
+                                                                                        })
+                                                                                    }
+                                                                                    className={`rounded-md border px-3 py-1.5 text-xs font-medium transition ${
+                                                                                        active
+                                                                                            ? "border-sky-500 bg-white text-sky-800 ring-1 ring-sky-400"
+                                                                                            : "border-sky-200 bg-white/60 text-sky-600 hover:border-sky-300"
+                                                                                    }`}
+                                                                                >
+                                                                                    {cat.label}
+                                                                                </button>
+                                                                            )
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+
+                                                                {selectedCategory && chooseFrequency && (
+                                                                    <div>
+                                                                        <label className="text-[11px] font-medium text-sky-800 mb-1 block">Frecuencia</label>
+                                                                        <div className="flex flex-wrap gap-2">
+                                                                            {selectedCategory.frequencies.map((freq) => {
+                                                                                const active = freq.id === selectedFreqId
+                                                                                return (
+                                                                                    <button
+                                                                                        key={freq.id}
+                                                                                        type="button"
+                                                                                        onClick={() =>
+                                                                                            updateAttendeeMembershipSchedule(itemKey, attendeeIndex, {
+                                                                                                category: selectedCategory.id,
+                                                                                                frequency: freq.id,
+                                                                                            })
+                                                                                        }
+                                                                                        className={`rounded-md border px-3 py-1.5 text-xs font-medium transition ${
+                                                                                            active
+                                                                                                ? "border-sky-500 bg-white text-sky-800 ring-1 ring-sky-400"
+                                                                                                : "border-sky-200 bg-white/60 text-sky-600 hover:border-sky-300"
+                                                                                        }`}
+                                                                                    >
+                                                                                        {freq.label}
+                                                                                    </button>
+                                                                                )
+                                                                            })}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                {selectedCategory && selectedFreq && (
+                                                                    <div className="space-y-2">
+                                                                        {selectedFreq.dayGroups.map((group) => {
+                                                                            const value = selection?.hours?.[group.id] ?? ""
+                                                                            const valid = group.hours.some((h) => slotToValue(h) === value)
+                                                                            return (
+                                                                                <div key={group.id}>
+                                                                                    <label className="text-[11px] text-sky-700 mb-1 block">
+                                                                                        Horario · {group.label}
+                                                                                    </label>
+                                                                                    <select
+                                                                                        value={valid ? value : ""}
+                                                                                        onChange={(e) =>
+                                                                                            updateAttendeeMembershipSchedule(itemKey, attendeeIndex, {
+                                                                                                category: selectedCategory.id,
+                                                                                                frequency: selectedFreqId,
+                                                                                                groupId: group.id,
+                                                                                                hour: e.target.value,
+                                                                                            })
+                                                                                        }
+                                                                                        className="w-full rounded-md border border-sky-200 bg-white px-3 py-2 text-sm"
+                                                                                    >
+                                                                                        <option value="">Selecciona un horario</option>
+                                                                                        {group.hours.map((h) => {
+                                                                                            const v = slotToValue(h)
+                                                                                            return (
+                                                                                                <option key={v} value={v}>
+                                                                                                    {formatSlotLabel(h)}
+                                                                                                </option>
+                                                                                            )
+                                                                                        })}
+                                                                                    </select>
+                                                                                </div>
+                                                                            )
+                                                                        })}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )
+                                                    })()}
                                                     </>
                                                     )}
 
@@ -1388,7 +1541,7 @@ export default function CheckoutPage() {
                                             size="lg"
                                             onClick={handlePayment}
                                             loading={loading}
-                                            disabled={hasMissingAttendeeData || hasMissingScheduleSelections || hasMissingMembershipStart || hasMissingBillingData}
+                                            disabled={hasMissingAttendeeData || hasMissingScheduleSelections || hasMissingMembershipStart || hasMissingMembershipSchedule || hasMissingBillingData}
                                         >
                                             <CreditCard className="h-4 w-4 mr-2" />
                                             Pagar {formatPrice(finalTotal)}
@@ -1412,6 +1565,11 @@ export default function CheckoutPage() {
                                         {!hasMissingBillingData && !hasMissingAttendeeData && !hasMissingScheduleSelections && hasMissingMembershipStart && (
                                             <p className="text-xs text-amber-600 text-center">
                                                 Elige una fecha de inicio valida para cada membresia (no en enero ni febrero)
+                                            </p>
+                                        )}
+                                        {!hasMissingBillingData && !hasMissingAttendeeData && !hasMissingScheduleSelections && !hasMissingMembershipStart && hasMissingMembershipSchedule && (
+                                            <p className="text-xs text-amber-600 text-center">
+                                                Elige la frecuencia y el horario de tu membresia
                                             </p>
                                         )}
 

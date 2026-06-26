@@ -338,6 +338,12 @@ model TicketType {
   // reingreso) y cada escaneo cuenta como 1 clase del cupo mensual (se cuenta por
   // scans VALID del mes, no por días). Solo aplica a membresías (monthlyClassLimit).
   allowMultipleDailyScans Boolean @default(false)
+  // Membresías de natación con horario semanal fijo (BRONCE/PLATA): clave del
+  // perfil de horario en src/lib/membership-schedule.ts (ej. "ADULTOS_BRONCE").
+  // La sede sale de event.servilexSucursalCode. Si está presente, el comprador
+  // elige frecuencia + hora en el checkout y el escáner valida día+hora.
+  // null = sin horario semanal (ORO / legacy intactos).
+  membershipScheduleKey String?
   validDays        Json?    // Array of dates ["2024-03-15", "2024-03-16"]
   // Presentación tipo "plan" (layout PLANS del evento)
   originalPrice    Decimal? @db.Decimal(10, 2) // Precio regular para mostrar tachado
@@ -483,6 +489,10 @@ model Ticket {
   // checkout. Ancla los ciclos mensuales y la vigencia (ver scan-helpers).
   // null = legacy → se usa event.startDate como ancla.
   membershipStartDate DateTime? @db.Date
+  // Membresías de natación con horario semanal fijo: la selección normalizada del
+  // comprador (frecuencia + sesiones día/hora). Ver lib/membership-schedule.ts
+  // (MembershipScheduleSelection). null = sin horario semanal.
+  membershipSchedule Json?
   status       TicketStatus @default(ACTIVE)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -495,12 +505,36 @@ model Ticket {
   entitlements  TicketDayEntitlement[]
   scans         Scan[]
   courtesyInfo  CourtesyTicket?
+  // Membresías semestral/anual BRONCE/PLATA: horario elegido por mes (puntos de
+  // cambio). El base/mes 0 sigue siendo membershipSchedule; cada fila aquí es un
+  // cambio que rige desde su monthIndex en adelante. Ver lib/membership-schedule.
+  monthlySchedules MembershipMonthlySchedule[]
 
   @@index([eventId])
   @@index([userId])
   @@index([orderId])
   @@index([status])
   @@map("tickets")
+}
+
+// Cambio de horario por mes para membresías a término fijo (semestral/anual)
+// BRONCE/PLATA. El alumno fija, antes de que acabe el mes en curso, el horario
+// del próximo mes; si no cambia nada se hereda el mes anterior (al final, el de
+// checkout = Ticket.membershipSchedule). monthIndex = índice 0-based desde
+// membershipStartDate (= getMembershipPeriod.index), normalmente >= 1.
+model MembershipMonthlySchedule {
+  id         String   @id @default(cuid())
+  ticketId   String
+  monthIndex Int
+  selection  Json // MembershipScheduleSelection normalizada (mismo shape que Ticket.membershipSchedule)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, monthIndex])
+  @@index([ticketId])
+  @@map("membership_monthly_schedules")
 }
 
 model TicketDayEntitlement {
