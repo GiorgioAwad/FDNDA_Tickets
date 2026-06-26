@@ -505,12 +505,36 @@ model Ticket {
   entitlements  TicketDayEntitlement[]
   scans         Scan[]
   courtesyInfo  CourtesyTicket?
+  // Membresías semestral/anual BRONCE/PLATA: horario elegido por mes (puntos de
+  // cambio). El base/mes 0 sigue siendo membershipSchedule; cada fila aquí es un
+  // cambio que rige desde su monthIndex en adelante. Ver lib/membership-schedule.
+  monthlySchedules MembershipMonthlySchedule[]
 
   @@index([eventId])
   @@index([userId])
   @@index([orderId])
   @@index([status])
   @@map("tickets")
+}
+
+// Cambio de horario por mes para membresías a término fijo (semestral/anual)
+// BRONCE/PLATA. El alumno fija, antes de que acabe el mes en curso, el horario
+// del próximo mes; si no cambia nada se hereda el mes anterior (al final, el de
+// checkout = Ticket.membershipSchedule). monthIndex = índice 0-based desde
+// membershipStartDate (= getMembershipPeriod.index), normalmente >= 1.
+model MembershipMonthlySchedule {
+  id         String   @id @default(cuid())
+  ticketId   String
+  monthIndex Int
+  selection  Json // MembershipScheduleSelection normalizada (mismo shape que Ticket.membershipSchedule)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, monthIndex])
+  @@index([ticketId])
+  @@map("membership_monthly_schedules")
 }
 
 model TicketDayEntitlement {

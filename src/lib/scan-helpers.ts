@@ -4,6 +4,7 @@ import { extractTicketValidDates, parseTicketScheduleConfig } from "@/lib/ticket
 import { MEMBERSHIP_BLACKOUT_MONTHS, isBlackoutMonth } from "@/lib/membership-config"
 import {
     parseMembershipScheduleSelection,
+    getEffectiveMembershipSchedule,
     type MembershipScheduleSelection,
 } from "@/lib/membership-schedule"
 
@@ -33,6 +34,9 @@ export type ScanTicket = {
     // Horario semanal fijo elegido por el comprador (membresías de natación).
     // JSON normalizado (MembershipScheduleSelection). null = sin horario semanal.
     membershipSchedule?: unknown | null
+    // Cambios de horario por mes (membresías semestral/anual). Cada fila rige
+    // desde su monthIndex en adelante; el base/mes 0 es membershipSchedule.
+    monthlySchedules?: { monthIndex: number; selection: unknown }[] | null
     event: { title: string; startDate: Date; endDate: Date; category?: string }
     ticketType: {
         name: string
@@ -186,6 +190,24 @@ export const getMembershipScheduleSelection = (
 /** ¿El ticket es una membresía con horario semanal fijo guardado? */
 export const hasWeeklySchedule = (ticket: ScanTicket): boolean =>
     getMembershipScheduleSelection(ticket) != null
+
+/**
+ * Horario semanal EFECTIVO para el mes `monthIndex` de la membresía (0-based
+ * desde el ancla): aplica el cambio mensual vigente (override) o, si no hay,
+ * hereda el mes anterior hasta llegar al horario de checkout. El escáner usa
+ * esto en vez de `getMembershipScheduleSelection` (estático).
+ */
+export const getEffectiveScheduleSelection = (
+    ticket: ScanTicket,
+    monthIndex: number
+): MembershipScheduleSelection | null => {
+    const base = parseMembershipScheduleSelection(ticket.membershipSchedule)
+    const overrides = (ticket.monthlySchedules ?? []).map((m) => ({
+        monthIndex: m.monthIndex,
+        selection: parseMembershipScheduleSelection(m.selection),
+    }))
+    return getEffectiveMembershipSchedule(base, overrides, monthIndex)
+}
 
 /**
  * Ancla de la membresía: la fecha de inicio elegida por el comprador o, en

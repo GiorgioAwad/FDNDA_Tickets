@@ -477,6 +477,57 @@ export function parseMembershipScheduleSelection(value: unknown): MembershipSche
     }
 }
 
+// ── Horario efectivo por mes (cambio mensual) ─────────────────────────────────
+
+/** Un punto de cambio: el horario elegido para un mes concreto de la membresía. */
+export interface MembershipScheduleOverride {
+    monthIndex: number
+    selection: MembershipScheduleSelection | null
+}
+
+/**
+ * Horario efectivo de un mes de la membresía: el override válido con mayor
+ * `monthIndex` ≤ `monthIndex`, o el `base` (checkout) si no hay ninguno antes.
+ * Implementa "heredar el mes anterior": un cambio en el mes N rige N, N+1, …
+ * hasta el siguiente cambio. Función pura (no toca DB).
+ */
+export function getEffectiveMembershipSchedule(
+    base: MembershipScheduleSelection | null,
+    overrides: MembershipScheduleOverride[],
+    monthIndex: number
+): MembershipScheduleSelection | null {
+    let best: { monthIndex: number; selection: MembershipScheduleSelection } | null = null
+    for (const o of overrides) {
+        if (
+            o.selection &&
+            o.monthIndex <= monthIndex &&
+            (best === null || o.monthIndex > best.monthIndex)
+        ) {
+            best = { monthIndex: o.monthIndex, selection: o.selection }
+        }
+    }
+    return best?.selection ?? base
+}
+
+/** Texto legible de una selección de horario (frecuencia + franjas por grupo). */
+export function formatScheduleSummary(selection: MembershipScheduleSelection | null): string {
+    if (!selection) return "—"
+    const parts = selection.groups.map(
+        (g) => `${g.label}: ${formatSlotLabel({ start: g.start, end: g.end })}`
+    )
+    return parts.length > 0 ? `${selection.frequencyLabel} · ${parts.join(" · ")}` : selection.frequencyLabel
+}
+
+/** Convierte una selección normalizada a la forma de input del selector (UI). */
+export function scheduleSelectionToInput(
+    selection: MembershipScheduleSelection | null
+): MembershipScheduleInput {
+    if (!selection) return { category: null, frequency: null, hours: {} }
+    const hours: Record<string, string> = {}
+    for (const g of selection.groups) hours[g.id] = `${g.start}-${g.end}`
+    return { category: selection.category, frequency: selection.frequency, hours }
+}
+
 // ── Enforcement (escáner) ──────────────────────────────────────────────────────
 
 export type SessionMatchResult =

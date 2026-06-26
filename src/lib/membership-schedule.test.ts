@@ -8,8 +8,12 @@ import {
     matchMembershipSession,
     weekdayFromDateKey,
     formatSessionsDaysLabel,
+    getEffectiveMembershipSchedule,
+    scheduleSelectionToInput,
+    formatScheduleSummary,
     MEMBERSHIP_SCAN_GRACE_MINUTES,
     type MembershipScheduleSession,
+    type MembershipScheduleSelection,
 } from "@/lib/membership-schedule"
 
 // ── Lookup de perfiles ─────────────────────────────────────────────────────────
@@ -227,4 +231,67 @@ test("weekdayFromDateKey: 2026-06-25 es jueves (4)", () => {
 
 test("formatSessionsDaysLabel ordena Lun→Sáb", () => {
     assert.equal(formatSessionsDaysLabel(SESSIONS), "Lun, Mié, Vie")
+})
+
+// ── Horario efectivo por mes (cambio mensual) ──────────────────────────────────
+
+const makeSel = (tag: string): MembershipScheduleSelection => ({
+    profileKey: tag,
+    sucursalCode: "01",
+    category: "ADULTOS",
+    categoryLabel: "Adultos",
+    frequency: "LMV",
+    frequencyLabel: tag,
+    sessions: [{ weekday: 1, start: "07:00", end: "08:00" }],
+    groups: [{ id: "g1", label: "L-M-V", weekdays: [1, 3, 5], start: "07:00", end: "08:00" }],
+})
+
+test("efectivo: sin overrides devuelve el base en cualquier mes", () => {
+    const base = makeSel("base")
+    assert.equal(getEffectiveMembershipSchedule(base, [], 0)?.profileKey, "base")
+    assert.equal(getEffectiveMembershipSchedule(base, [], 7)?.profileKey, "base")
+})
+
+test("efectivo: override en mes 2 rige 2 y 3, no 0 ni 1 (hereda el anterior)", () => {
+    const base = makeSel("base")
+    const ov = [{ monthIndex: 2, selection: makeSel("m2") }]
+    assert.equal(getEffectiveMembershipSchedule(base, ov, 0)?.profileKey, "base")
+    assert.equal(getEffectiveMembershipSchedule(base, ov, 1)?.profileKey, "base")
+    assert.equal(getEffectiveMembershipSchedule(base, ov, 2)?.profileKey, "m2")
+    assert.equal(getEffectiveMembershipSchedule(base, ov, 3)?.profileKey, "m2")
+})
+
+test("efectivo: con varios cambios toma el más reciente ≤ mes", () => {
+    const base = makeSel("base")
+    const ov = [
+        { monthIndex: 4, selection: makeSel("m4") },
+        { monthIndex: 2, selection: makeSel("m2") },
+    ]
+    assert.equal(getEffectiveMembershipSchedule(base, ov, 3)?.profileKey, "m2")
+    assert.equal(getEffectiveMembershipSchedule(base, ov, 4)?.profileKey, "m4")
+    assert.equal(getEffectiveMembershipSchedule(base, ov, 12)?.profileKey, "m4")
+})
+
+test("efectivo: override con selección null se ignora (hereda)", () => {
+    const base = makeSel("base")
+    const ov = [{ monthIndex: 2, selection: null }]
+    assert.equal(getEffectiveMembershipSchedule(base, ov, 3)?.profileKey, "base")
+})
+
+test("efectivo: base null y sin overrides devuelve null", () => {
+    assert.equal(getEffectiveMembershipSchedule(null, [], 0), null)
+})
+
+test("scheduleSelectionToInput mapea categoría/frecuencia/horas", () => {
+    const input = scheduleSelectionToInput(makeSel("x"))
+    assert.equal(input.category, "ADULTOS")
+    assert.equal(input.frequency, "LMV")
+    assert.equal(input.hours?.["g1"], "07:00-08:00")
+})
+
+test("formatScheduleSummary incluye la frecuencia y la franja", () => {
+    const s = formatScheduleSummary(makeSel("Interdiario"))
+    assert.match(s, /Interdiario/)
+    assert.match(s, /7:00/)
+    assert.equal(formatScheduleSummary(null), "—")
 })

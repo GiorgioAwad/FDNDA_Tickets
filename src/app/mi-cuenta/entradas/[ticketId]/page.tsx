@@ -6,7 +6,14 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { formatDate } from "@/lib/utils"
-import { parseMembershipScheduleSelection, formatSlotLabel } from "@/lib/membership-schedule"
+import {
+    parseMembershipScheduleSelection,
+    formatSlotLabel,
+    type MembershipScheduleProfile,
+    type MembershipScheduleSelection,
+    type MembershipScheduleInput,
+} from "@/lib/membership-schedule"
+import { NextMonthScheduleEditor } from "@/components/membership/NextMonthScheduleEditor"
 import { ArrowLeft, Calendar, Clock, MapPin, User, Download, Loader2, RefreshCw } from "lucide-react"
 import Image from "next/image"
 
@@ -42,6 +49,17 @@ interface TicketDetail {
         membershipStart?: string | null
         membershipExpiry?: string | null
         durationMonths?: number | null
+    } | null
+    // Cambio de horario mensual (semestral/anual BRONCE/PLATA).
+    monthlySchedule?: {
+        profile: MembershipScheduleProfile
+        current: MembershipScheduleSelection | null
+        next: {
+            monthIndex: number
+            monthStart: string
+            input: MembershipScheduleInput
+            summary: string
+        } | null
     } | null
     order?: {
         user?: {
@@ -523,13 +541,18 @@ export default function TicketDetailPage() {
                         </div>
 
                         {(() => {
-                            const schedule = parseMembershipScheduleSelection(ticket.membershipSchedule)
+                            const schedule =
+                                ticket.monthlySchedule?.current ??
+                                parseMembershipScheduleSelection(ticket.membershipSchedule)
                             if (!schedule) return null
+                            const isMonthly = Boolean(ticket.monthlySchedule)
                             return (
                                 <div className="flex items-start gap-3">
                                     <Clock className="h-5 w-5 text-gray-400 mt-0.5" />
                                     <div>
-                                        <div className="text-xs text-gray-500">Tu horario</div>
+                                        <div className="text-xs text-gray-500">
+                                            {isMonthly ? "Tu horario de este mes" : "Tu horario"}
+                                        </div>
                                         <div className="font-medium">
                                             {schedule.categoryLabel ? `${schedule.categoryLabel} · ` : ""}
                                             {schedule.frequencyLabel}
@@ -542,12 +565,26 @@ export default function TicketDetailPage() {
                                             ))}
                                         </ul>
                                         <p className="mt-1 text-[11px] text-gray-400">
-                                            Tu horario es fijo durante toda la membresía.
+                                            {isMonthly
+                                                ? "Puedes cambiar tu horario para el próximo mes abajo."
+                                                : "Tu horario es fijo durante toda la membresía."}
                                         </p>
                                     </div>
                                 </div>
                             )
                         })()}
+
+                        {ticket.status === "ACTIVE" && ticket.monthlySchedule?.next && (
+                            <NextMonthScheduleEditor
+                                ticketId={ticket.id}
+                                profile={ticket.monthlySchedule.profile}
+                                initial={ticket.monthlySchedule.next.input}
+                                summary={ticket.monthlySchedule.next.summary}
+                                nextMonthLabel={formatDate(ticket.monthlySchedule.next.monthStart, {
+                                    dateStyle: "medium",
+                                })}
+                            />
+                        )}
 
                         <div className="pt-4 mt-4 border-t">
                             <div className="flex justify-between items-center text-sm text-gray-500">

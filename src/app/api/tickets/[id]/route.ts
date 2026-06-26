@@ -12,6 +12,13 @@ import {
     ticketUsesPurchasedDates,
 } from "@/lib/ticket-date-policy"
 import { getMembershipPeriod, getMembershipExpiry } from "@/lib/scan-helpers"
+import {
+    getMembershipScheduleProfile,
+    parseMembershipScheduleSelection,
+    getEffectiveMembershipSchedule,
+    scheduleSelectionToInput,
+    formatScheduleSummary,
+} from "@/lib/membership-schedule"
 export const runtime = "nodejs"
 
 type TicketEntitlement = {
@@ -108,6 +115,7 @@ export async function GET(
                     },
                 },
                 courtesyInfo: true,
+                monthlySchedules: { select: { monthIndex: true, selection: true } },
             },
         })
 
@@ -397,6 +405,52 @@ export async function GET(
 
         const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
 
+        // Cambio de horario mensual (semestral/anual BRONCE/PLATA): horario
+        // efectivo del mes en curso + el del próximo mes (para mantener o cambiar).
+        const scheduleProfile =
+            isFixedTerm && (ticket.ticketType.membershipDurationMonths ?? 0) > 1
+                ? getMembershipScheduleProfile(
+                      ticket.event.servilexSucursalCode,
+                      ticket.ticketType.membershipScheduleKey
+                  )
+                : null
+        const baseSchedule = parseMembershipScheduleSelection(ticket.membershipSchedule)
+        let monthlySchedule: {
+            profile: NonNullable<typeof scheduleProfile>
+            current: ReturnType<typeof getEffectiveMembershipSchedule>
+            next: {
+                monthIndex: number
+                monthStart: string
+                input: ReturnType<typeof scheduleSelectionToInput>
+                summary: string
+            } | null
+        } | null = null
+        if (scheduleProfile && baseSchedule && membershipPeriod) {
+            const overrides = (ticket.monthlySchedules ?? []).map((m) => ({
+                monthIndex: m.monthIndex,
+                selection: parseMembershipScheduleSelection(m.selection),
+            }))
+            const curIdx = membershipPeriod.index
+            const curEff = getEffectiveMembershipSchedule(baseSchedule, overrides, curIdx)
+            const nextStart = membershipPeriod.endStr
+            const hasNext = !membershipExpiry || nextStart < membershipExpiry
+            const nextEff = hasNext
+                ? getEffectiveMembershipSchedule(baseSchedule, overrides, curIdx + 1)
+                : null
+            monthlySchedule = {
+                profile: scheduleProfile,
+                current: curEff,
+                next: hasNext
+                    ? {
+                          monthIndex: curIdx + 1,
+                          monthStart: nextStart,
+                          input: scheduleSelectionToInput(nextEff),
+                          summary: formatScheduleSummary(nextEff),
+                      }
+                    : null,
+            }
+        }
+
         return NextResponse.json({
             success: true,
             data: {
@@ -425,6 +479,7 @@ export async function GET(
                           durationMonths: ticket.ticketType.membershipDurationMonths ?? null,
                       }
                     : null,
+                monthlySchedule,
             },
         })
     } catch (error) {

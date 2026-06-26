@@ -26,7 +26,7 @@ import {
     isMembershipTicket,
     isFixedTermMembership,
     getMembershipAccessStatus,
-    getMembershipScheduleSelection,
+    getEffectiveScheduleSelection,
     membershipAllowsMultipleDailyScans,
     getMembershipAnchor,
     getMembershipPeriod,
@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
                 event: true,
                 ticketType: true,
                 entitlements: true,
+                monthlySchedules: { select: { monthIndex: true, selection: true } },
             },
         }) as ScanTicket | null
 
@@ -219,7 +220,14 @@ export async function POST(request: NextRequest) {
         // válido en los días de la frecuencia elegida y dentro de la franja horaria
         // elegida (hora Lima). El override de emergencia (Staff/Admin) lo omite y
         // queda registrado en Scan.notes (ver el logScan del flujo de éxito).
-        const weeklySchedule = getMembershipScheduleSelection(ticket)
+        // Horario efectivo del mes en curso (aplica el cambio mensual vigente; si
+        // no hay, hereda el horario de checkout). El índice de mes se ancla a la
+        // fecha de inicio de la membresía (mismo cálculo que el cupo mensual).
+        const scheduleAnchor = getMembershipAnchor(ticket)
+        const scheduleMonthIndex = scheduleAnchor
+            ? getMembershipPeriod(today, scheduleAnchor)?.index ?? 0
+            : 0
+        const weeklySchedule = getEffectiveScheduleSelection(ticket, scheduleMonthIndex)
         if (weeklySchedule && !override) {
             const weekday = weekdayFromDateKey(today)
             const match = matchMembershipSession(weeklySchedule.sessions, weekday, getLimaTime())
