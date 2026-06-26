@@ -94,7 +94,9 @@ export default async function MyTicketsPage() {
     }
 
     const tickets = await prisma.ticket.findMany({
-        where: { userId: user.id },
+        // Ocultar entradas canceladas: un carnet anulado no debe aparecer en la
+        // cuenta del usuario (ni mostrarse como tarjeta). El escáner ya las rechaza.
+        where: { userId: user.id, status: { not: "CANCELLED" } },
         include: {
             event: true,
             ticketType: true,
