@@ -385,6 +385,46 @@ export function isIzipayPaymentApproved(result: { code?: string }): boolean {
     return result.code === "00"
 }
 
+// Estados de orden Izipay (consulta Transaction/Search) que NO representan un
+// cobro real: el QR/Yape se genero pero no se pago, o vencio.
+const IZIPAY_UNPAID_STATE_MESSAGES = [
+    "pendiente", // "Pendiente de pago"
+    "expirado", // QR/Yape vencido sin pagar
+    "anulado",
+    "cancelado",
+    "denegado",
+    "rechazado",
+    "en proceso",
+]
+
+// IMPORTANTE: a diferencia de una notificacion (IPN) o del redirect del pago
+// —donde code "00" SI significa pago aprobado— la CONSULTA (Transaction/Search)
+// devuelve code "00" para indicar que la consulta respondio bien, NO que la
+// orden este pagada. El estado real vive en response.order[0]: un cobro real
+// trae codeAuth (codigo de autorizacion) no vacio; un QR generado-pero-no-pagado
+// queda "Pendiente de pago"/"Expirado" con codeAuth vacio. Confiar en el code
+// "00" del sobre marcaba PAID ordenes nunca pagadas (emitiendo entrada + boleta
+// SUNAT sin cobro). Exigimos codeAuth + estado no-impago para evitarlo.
+export function isIzipayQueryPaymentApproved(parsed: ParsedIzipayPaymentResult): boolean {
+    if (parsed.code !== "00") {
+        return false
+    }
+
+    const order =
+        parsed.payload?.response?.order?.[0] || parsed.raw?.response?.order?.[0]
+    const codeAuth = (order?.codeAuth || "").trim()
+    if (!codeAuth) {
+        return false
+    }
+
+    const stateMessage = (order?.stateMessage || "").trim().toLowerCase()
+    if (IZIPAY_UNPAID_STATE_MESSAGES.some((s) => stateMessage.includes(s))) {
+        return false
+    }
+
+    return true
+}
+
 export function verifyIzipayWebhookSignature(
     payload: IzipayWebhookPayload,
     receivedHash: string
@@ -712,11 +752,11 @@ export async function searchIzipayTransaction(
             }
         }
 
-        const status = isIzipayPaymentApproved(parsed)
-            ? "PAID"
-            : isIzipayCommunicationError(parsed.code)
-                ? "PENDING"
-                : "CANCELLED"
+        // La consulta NO debe cancelar (solo una notificacion firmada cancela) ni
+        // marcar PAID por el code "00" del sobre. Un cobro real exige codeAuth;
+        // todo lo demas (impago, vencido, error de comunicacion) queda PENDING y
+        // se reintenta hasta pedir revision manual.
+        const status = isIzipayQueryPaymentApproved(parsed) ? "PAID" : "PENDING"
 
         return {
             success: true,
