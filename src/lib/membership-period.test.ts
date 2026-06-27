@@ -9,12 +9,14 @@ import {
     validateMembershipFreezeMonth,
     membershipAllowsMultipleDailyScans,
     buildMembershipMonthlySummary,
+    getMembershipAnchor,
     type ScanTicket,
 } from "@/lib/scan-helpers"
 import { isBlackoutMonth } from "@/lib/membership-config"
 
 type MakeTicketOptions = {
     membershipStartDate?: string | null
+    membershipStartFixed?: string | null
     membershipDurationMonths?: number | null
     allowMultipleDailyScans?: boolean
     membershipFreeze?: {
@@ -52,6 +54,9 @@ const makeTicket = (
         title: "Membresías",
         startDate: new Date(`${startDate}T00:00:00Z`),
         endDate: new Date("2026-12-31T00:00:00Z"),
+        membershipStartFixed: options.membershipStartFixed
+            ? new Date(`${options.membershipStartFixed}T12:00:00Z`)
+            : null,
     },
     ticketType: {
         name: "PLATA",
@@ -143,6 +148,25 @@ test("isFixedTermMembership requires chosen start date AND duration", () => {
     // Con fecha pero sin duración → tampoco
     const partial = makeTicket("2026-07-01", 20, [], { membershipStartDate: "2026-09-15" })
     assert.equal(isFixedTermMembership(partial), false)
+})
+
+test("event fixed start makes an existing missing-start ticket fixed-term", () => {
+    const ticket = makeTicket("2026-06-25", 12, [], {
+        membershipStartFixed: "2026-08-01",
+        membershipDurationMonths: 6,
+    })
+
+    assert.equal(isFixedTermMembership(ticket), true)
+    assert.equal(getMembershipAnchor(ticket)?.toISOString().slice(0, 10), "2026-08-01")
+
+    const access = getMembershipAccessStatus(ticket, "2026-06-27")
+    assert.equal(access.status, "NOT_STARTED")
+    assert.equal(access.startStr, "2026-08-01")
+    assert.deepEqual(buildMembershipMonthlySummary(ticket, "2026-06-27"), {
+        total: 12,
+        used: 0,
+        remaining: 12,
+    })
 })
 
 test("getMembershipExpiry extends an annual membership over the Jan/Feb blackout", () => {

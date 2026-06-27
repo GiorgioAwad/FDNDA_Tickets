@@ -52,7 +52,13 @@ export type ScanTicket = {
     monthlySchedules?: { monthIndex: number; selection: unknown }[] | null
     // Congelamiento voluntario: un mes calendario completo por membresía.
     membershipFreeze?: MembershipFreezeRange | null
-    event: { title: string; startDate: Date; endDate: Date; category?: string }
+    event: {
+        title: string
+        startDate: Date
+        endDate: Date
+        category?: string
+        membershipStartFixed?: Date | null
+    }
     ticketType: {
         name: string
         isPackage: boolean
@@ -258,11 +264,14 @@ export const membershipAllowsMultipleDailyScans = (ticket: ScanTicket): boolean 
  * Las membresías legacy (sin estos campos) caen al comportamiento anclado al
  * evento, sin blackout.
  */
+export const getFixedTermMembershipAnchor = (ticket: ScanTicket): Date | null =>
+    ticket.membershipStartDate ?? ticket.event?.membershipStartFixed ?? null
+
 export const isFixedTermMembership = (ticket: ScanTicket): boolean => {
     const duration = ticket.ticketType.membershipDurationMonths
     return (
         isMembershipTicket(ticket) &&
-        ticket.membershipStartDate != null &&
+        getFixedTermMembershipAnchor(ticket) != null &&
         typeof duration === "number" &&
         duration > 0
     )
@@ -306,7 +315,7 @@ export const getEffectiveScheduleSelection = (
  * se calculan a partir de aquí.
  */
 export const getMembershipAnchor = (ticket: ScanTicket): Date | null =>
-    ticket.membershipStartDate ?? ticket.event?.startDate ?? null
+    getFixedTermMembershipAnchor(ticket) ?? ticket.event?.startDate ?? null
 
 /**
  * Período (mes) de la membresía que contiene `today`, anclado a `anchor`.

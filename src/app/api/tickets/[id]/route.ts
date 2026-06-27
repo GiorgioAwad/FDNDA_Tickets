@@ -16,6 +16,8 @@ import {
     getMembershipExpiry,
     getMembershipAccessStatus,
     getEligibleMembershipFreezeMonths,
+    getMembershipAnchor,
+    isFixedTermMembership,
 } from "@/lib/scan-helpers"
 import {
     getMembershipScheduleProfile,
@@ -274,13 +276,9 @@ export async function GET(
         // (reinicio sin acumular). El ciclo se ancla a la fecha de inicio elegida
         // por el comprador (membresías a término fijo) o, en legacy, al inicio del
         // evento. El resto del cómputo de paquete sigue igual.
-        const membershipAnchor = ticket.membershipStartDate ?? ticket.event.startDate
-        const membershipPeriod = isMembership ? getMembershipPeriod(todayStr, membershipAnchor) : null
-        const isFixedTerm =
-            isMembership &&
-            ticket.membershipStartDate != null &&
-            ticket.ticketType.membershipDurationMonths != null &&
-            ticket.ticketType.membershipDurationMonths > 0
+        const membershipAnchor = getMembershipAnchor(ticket)
+        const membershipPeriod = isMembership && membershipAnchor ? getMembershipPeriod(todayStr, membershipAnchor) : null
+        const isFixedTerm = isFixedTermMembership(ticket)
         const freezeRanges = ticket.membershipFreeze
             ? [{
                   month: ticket.membershipFreeze.month,
@@ -288,7 +286,7 @@ export async function GET(
                   endStr: formatDateUTC(ticket.membershipFreeze.endDate),
               }]
             : []
-        const membershipExpiry = isFixedTerm
+        const membershipExpiry = isFixedTerm && membershipAnchor
             ? getMembershipExpiry(membershipAnchor, ticket.ticketType.membershipDurationMonths!, undefined, freezeRanges)
             : null
         const membershipAccess = isFixedTerm
@@ -526,8 +524,8 @@ export async function GET(
                           remaining: Math.max((packageDaysCount ?? 0) - usedCount, 0),
                           periodStart: membershipPeriod?.startStr ?? null,
                           // Membresías a término fijo (anual/semestral)
-                          membershipStart: ticket.membershipStartDate
-                              ? formatDateUTC(ticket.membershipStartDate)
+                          membershipStart: isFixedTerm && membershipAnchor
+                              ? formatDateUTC(membershipAnchor)
                               : null,
                           membershipExpiry,
                           durationMonths: ticket.ticketType.membershipDurationMonths ?? null,

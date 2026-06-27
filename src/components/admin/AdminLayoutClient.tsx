@@ -13,6 +13,7 @@ import {
     AlertCircle,
     LayoutDashboard,
     Calendar,
+    CalendarClock,
     Ticket,
     Gift,
     FileText,
@@ -60,6 +61,7 @@ const adminNavigation: NavGroup[] = [
         title: "Ventas",
         items: [
             { label: "Entradas", href: "/admin/entradas", icon: Ticket },
+            { label: "Membresias", href: "/admin/membresias", icon: CalendarClock },
             { label: "Cortesías", href: "/admin/cortesias", icon: Gift },
             { label: "Merch", href: "/admin/merch", icon: ShoppingBag },
             { label: "Pedidos merch", href: "/admin/merch/pedidos", icon: Package },
@@ -286,6 +288,7 @@ function AdminTopBar({ onMenuClick, title }: AdminTopBarProps) {
         if (pathname.includes("/entradas")) return "Entradas"
         if (pathname.includes("/cortesias")) return "Cortesías"
         if (pathname.includes("/ingresos")) return "Ingresos"
+        if (pathname.includes("/membresias")) return "Membresias"
         if (pathname.includes("/reportes/merch")) return "Reporte merch"
         if (pathname.includes("/merch/pedidos")) return "Pedidos merch"
         if (pathname.includes("/reportes")) return "Reportes"
