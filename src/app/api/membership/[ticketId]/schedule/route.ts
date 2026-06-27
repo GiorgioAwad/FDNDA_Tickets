@@ -44,6 +44,7 @@ export async function POST(
                 ticketType: true,
                 entitlements: true,
                 monthlySchedules: { select: { monthIndex: true, selection: true } },
+                membershipFreeze: true,
             },
         })
 
@@ -93,7 +94,14 @@ export async function POST(
         const targetStart = period?.endStr ?? null
 
         // No permitir fijar un mes fuera de la vigencia de la membresía.
-        const expiryStr = getMembershipExpiry(anchor, duration)
+        const freezeRanges = ticket.membershipFreeze
+            ? [{
+                  month: ticket.membershipFreeze.month,
+                  startStr: ticket.membershipFreeze.startDate.toISOString().slice(0, 10),
+                  endStr: ticket.membershipFreeze.endDate.toISOString().slice(0, 10),
+              }]
+            : []
+        const expiryStr = getMembershipExpiry(anchor, duration, undefined, freezeRanges)
         if (targetStart && targetStart >= expiryStr) {
             return NextResponse.json(
                 { success: false, error: "Tu membresía no tiene un mes siguiente disponible." },

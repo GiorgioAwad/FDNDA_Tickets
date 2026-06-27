@@ -11,7 +11,12 @@ import {
     pickQrDateForTicket,
     ticketUsesPurchasedDates,
 } from "@/lib/ticket-date-policy"
-import { getMembershipPeriod, getMembershipExpiry } from "@/lib/scan-helpers"
+import {
+    getMembershipPeriod,
+    getMembershipExpiry,
+    getMembershipAccessStatus,
+    getEligibleMembershipFreezeMonths,
+} from "@/lib/scan-helpers"
 import {
     getMembershipScheduleProfile,
     parseMembershipScheduleSelection,
@@ -20,6 +25,7 @@ import {
     formatScheduleSummary,
 } from "@/lib/membership-schedule"
 export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
 type TicketEntitlement = {
     date: Date
@@ -116,6 +122,7 @@ export async function GET(
                 },
                 courtesyInfo: true,
                 monthlySchedules: { select: { monthIndex: true, selection: true } },
+                membershipFreeze: true,
             },
         })
 
@@ -274,9 +281,19 @@ export async function GET(
             ticket.membershipStartDate != null &&
             ticket.ticketType.membershipDurationMonths != null &&
             ticket.ticketType.membershipDurationMonths > 0
+        const freezeRanges = ticket.membershipFreeze
+            ? [{
+                  month: ticket.membershipFreeze.month,
+                  startStr: formatDateUTC(ticket.membershipFreeze.startDate),
+                  endStr: formatDateUTC(ticket.membershipFreeze.endDate),
+              }]
+            : []
         const membershipExpiry = isFixedTerm
-            ? getMembershipExpiry(membershipAnchor, ticket.ticketType.membershipDurationMonths!)
+            ? getMembershipExpiry(membershipAnchor, ticket.ticketType.membershipDurationMonths!, undefined, freezeRanges)
             : null
+        const membershipAccess = isFixedTerm
+            ? getMembershipAccessStatus(ticket, dateStr)
+            : { status: "NOT_APPLICABLE" as const, startStr: "", expiryStr: "" }
         // Membresía con varios ingresos por día (ORO): el cupo cuenta por SCANS VALID
         // del mes (cada ingreso es una clase), no por días/entitlements.
         const allowMultiDaily = isMembership && ticket.ticketType.allowMultipleDailyScans === true
@@ -316,6 +333,10 @@ export async function GET(
             ? usedCount < packageDaysCount! && isAllowedPurchasedDate
             : (isWithinEventRange && entitlementDates.includes(dateStr))
 
+        if (isFixedTerm && membershipAccess.status !== "OK") {
+            hasEntitlement = false
+        }
+
         if (!isPackage && !hasEntitlement && !dateParam && entitlementDates.length > 0) {
             const nextEntitlement =
                 entitlementDates.find((entitlement) => entitlement >= dateStr) ??
@@ -341,6 +362,15 @@ export async function GET(
             })
         } else if (!hasEntitlement) {
             const reasonParts: string[] = []
+            if (isFixedTerm && membershipAccess.status === "FROZEN") {
+                reasonParts.push(`Membresía congelada (${membershipAccess.freeze?.startStr} a ${membershipAccess.freeze?.endStr})`)
+            } else if (isFixedTerm && membershipAccess.status === "BLACKOUT") {
+                reasonParts.push("Membresía en blackout enero/febrero")
+            } else if (isFixedTerm && membershipAccess.status === "NOT_STARTED") {
+                reasonParts.push(`Membresía inicia el ${membershipAccess.startStr}`)
+            } else if (isFixedTerm && membershipAccess.status === "EXPIRED") {
+                reasonParts.push(`Membresía vencida desde ${membershipAccess.expiryStr}`)
+            }
             if (!isWithinEventRange) {
                 reasonParts.push(`Fecha ${dateStr} fuera del rango del evento (${eventStart} a ${eventEnd})`)
             }
@@ -464,6 +494,30 @@ export async function GET(
                 qrDate: dateStr,
                 qrShift,
                 isMembership,
+                membershipFreeze: isFixedTerm
+                    ? {
+                          applied: ticket.membershipFreeze
+                              ? {
+                                    month: ticket.membershipFreeze.month,
+                                    start: formatDateUTC(ticket.membershipFreeze.startDate),
+                                    end: formatDateUTC(ticket.membershipFreeze.endDate),
+                                    createdAt: ticket.membershipFreeze.createdAt.toISOString(),
+                                }
+                              : null,
+                          eligible: ticket.status === "ACTIVE" && !ticket.membershipFreeze,
+                          availableMonths: ticket.status === "ACTIVE"
+                              ? getEligibleMembershipFreezeMonths(ticket, new Date())
+                              : [],
+                          accessStatus: membershipAccess.status,
+                          current: membershipAccess.freeze
+                              ? {
+                                    month: membershipAccess.freeze.month,
+                                    start: membershipAccess.freeze.startStr,
+                                    end: membershipAccess.freeze.endStr,
+                                }
+                              : null,
+                      }
+                    : null,
                 // Cupo del mes en curso para membresías (reinicio sin acumular)
                 membershipAttendance: isMembership
                     ? {

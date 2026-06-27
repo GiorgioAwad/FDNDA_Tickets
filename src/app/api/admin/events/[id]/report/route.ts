@@ -38,6 +38,7 @@ type AttendeeRow = {
     paidAtLocal: string | null
     buyerName: string | null
     buyerEmail: string | null
+    buyerPhone: string | null
     paymentMethod: string | null
     paymentMethodRaw: string | null
     paymentBrand: string | null
@@ -216,7 +217,8 @@ export async function GET(
                         documentType: true,
                         buyerName: true,
                         buyerDocNumber: true,
-                        user: { select: { name: true, email: true } },
+                        buyerPhone: true,
+                        user: { select: { name: true, email: true, phone: true } },
                     },
                 },
             },
@@ -239,6 +241,7 @@ export async function GET(
                     : null,
                 buyerName: ticket.order?.user?.name || null,
                 buyerEmail: ticket.order?.user?.email || null,
+                buyerPhone: ticket.order?.buyerPhone || ticket.order?.user?.phone || null,
                 paymentMethod: paymentDetails.methodLabel,
                 paymentMethodRaw: paymentDetails.methodCode,
                 paymentBrand: paymentDetails.brand,

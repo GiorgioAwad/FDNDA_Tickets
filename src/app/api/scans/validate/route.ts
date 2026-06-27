@@ -101,6 +101,7 @@ export async function POST(request: NextRequest) {
                 ticketType: true,
                 entitlements: true,
                 monthlySchedules: { select: { monthIndex: true, selection: true } },
+                membershipFreeze: true,
             },
         }) as ScanTicket | null
 
@@ -185,6 +186,15 @@ export async function POST(request: NextRequest) {
                     valid: false,
                     reason: "MEMBERSHIP_BLACKOUT",
                     message: "Tu membresía no aplica para enero y febrero por términos y condiciones.",
+                })
+            }
+            if (access.status === "FROZEN") {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Membresía congelada")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "MEMBERSHIP_FROZEN",
+                    message: `Tu membresía está congelada del ${formatDmy(access.freeze?.startStr ?? "")} al ${formatDmy(lastValidDay(access.freeze?.endStr ?? ""))}.`,
                 })
             }
             if (access.status === "NOT_STARTED") {

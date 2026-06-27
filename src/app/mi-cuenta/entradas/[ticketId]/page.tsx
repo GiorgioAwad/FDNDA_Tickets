@@ -14,7 +14,7 @@ import {
     type MembershipScheduleInput,
 } from "@/lib/membership-schedule"
 import { NextMonthScheduleEditor } from "@/components/membership/NextMonthScheduleEditor"
-import { ArrowLeft, Calendar, Clock, MapPin, User, Download, Loader2, RefreshCw } from "lucide-react"
+import { ArrowLeft, Calendar, Clock, MapPin, User, Download, Loader2, RefreshCw, Snowflake } from "lucide-react"
 import Image from "next/image"
 
 interface TicketDetail {
@@ -49,6 +49,26 @@ interface TicketDetail {
         membershipStart?: string | null
         membershipExpiry?: string | null
         durationMonths?: number | null
+    } | null
+    membershipFreeze?: {
+        applied: {
+            month: string
+            start: string
+            end: string
+            createdAt: string
+        } | null
+        eligible: boolean
+        availableMonths: {
+            month: string
+            startStr: string
+            endStr: string
+        }[]
+        accessStatus: "OK" | "NOT_STARTED" | "EXPIRED" | "BLACKOUT" | "FROZEN" | "NOT_APPLICABLE"
+        current: {
+            month: string
+            start: string
+            end: string
+        } | null
     } | null
     // Cambio de horario mensual (semestral/anual BRONCE/PLATA).
     monthlySchedule?: {
@@ -153,11 +173,27 @@ const shortShiftLabel = (shift: string) => {
     return shift.replace(/\s*\(.*\)$/, "")
 }
 
+const formatMonthLabel = (month: string) => {
+    if (!/^\d{4}-\d{2}$/.test(month)) return month
+    return formatDate(`${month}-01`, { month: "long", year: "numeric" })
+}
+
+const previousDateKey = (dateStr: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
+    const date = new Date(`${dateStr}T12:00:00Z`)
+    date.setUTCDate(date.getUTCDate() - 1)
+    return formatDateKey(date)
+}
+
 export default function TicketDetailPage() {
     const params = useParams()
     const [ticket, setTicket] = useState<TicketDetail | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState("")
+    const [freezeMonth, setFreezeMonth] = useState("")
+    const [freezeSubmitting, setFreezeSubmitting] = useState(false)
+    const [freezeMessage, setFreezeMessage] = useState("")
+    const [freezeError, setFreezeError] = useState("")
 
     useEffect(() => {
         const fetchTicket = async () => {
@@ -168,6 +204,7 @@ export default function TicketDetailPage() {
                 }
                 const data = await response.json()
                 setTicket(data.data)
+                setFreezeMonth(data.data?.membershipFreeze?.availableMonths?.[0]?.month ?? "")
             } catch (err) {
                 setError("No se pudo cargar el ticket")
                 console.error(err)
@@ -198,6 +235,42 @@ export default function TicketDetailPage() {
         )
     }
 
+    const handleFreezeSubmit = async () => {
+        if (!ticket || !freezeMonth || freezeSubmitting) return
+
+        const confirmed = window.confirm(
+            `Se congelará tu membresía durante ${formatMonthLabel(freezeMonth)}. Esta acción solo puede usarse una vez por membresía.`
+        )
+        if (!confirmed) return
+
+        setFreezeSubmitting(true)
+        setFreezeError("")
+        setFreezeMessage("")
+        try {
+            const response = await fetch(`/api/membership/${ticket.id}/freeze`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ month: freezeMonth }),
+            })
+            const result = await response.json().catch(() => null)
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || "No se pudo congelar la membresía")
+            }
+
+            const refreshed = await fetch(`/api/tickets/${ticket.id}`, { cache: "no-store" })
+            const refreshedData = await refreshed.json().catch(() => null)
+            if (refreshed.ok && refreshedData?.success) {
+                setTicket(refreshedData.data)
+                setFreezeMonth(refreshedData.data?.membershipFreeze?.availableMonths?.[0]?.month ?? "")
+            }
+            setFreezeMessage("Congelamiento registrado.")
+        } catch (err) {
+            setFreezeError(err instanceof Error ? err.message : "No se pudo congelar la membresía")
+        } finally {
+            setFreezeSubmitting(false)
+        }
+    }
+
     const isPiscina = ticket.event?.category === "PISCINA_LIBRE"
     const isEvento = ticket.event?.category === "EVENTO"
     const clasesLabel = isEvento ? "entradas" : "asistencias"
@@ -210,6 +283,10 @@ export default function TicketDetailPage() {
     // (periodStart = null): la membresía aún no arranca.
     const membershipNotStarted =
         isMembership && ticket.membershipAttendance != null && ticket.membershipAttendance.periodStart == null
+    const membershipFrozen = ticket.membershipFreeze?.accessStatus === "FROZEN"
+    const currentFreeze = ticket.membershipFreeze?.current ?? ticket.membershipFreeze?.applied ?? null
+    const venueText = `${ticket.event?.venue ?? ""} ${ticket.event?.location ?? ""} ${ticket.event?.title ?? ""}`.toLowerCase()
+    const isVidenaMembership = isMembership && venueText.includes("videna")
     let isPackageLike = Boolean(
         ticket.ticketType.isPackage || ticket.ticketType.packageDaysCount || classCount
     )
@@ -455,6 +532,26 @@ export default function TicketDetailPage() {
                                     El carnet con tu código QR estará disponible desde esa fecha.
                                 </p>
                             </div>
+                        ) : ticket.status === "ACTIVE" && membershipFrozen ? (
+                            <div className="flex w-full flex-col items-center justify-center gap-3 py-6 text-center">
+                                <div className="flex h-44 w-44 sm:h-56 sm:w-56 flex-col items-center justify-center gap-2 rounded-xl bg-sky-50 px-4">
+                                    <Snowflake className="h-10 w-10 text-sky-600" />
+                                    <span className="text-sm font-semibold text-sky-700">Membresía congelada</span>
+                                </div>
+                                {currentFreeze && (
+                                    <p className="text-sm text-gray-600">
+                                        Congelada del{" "}
+                                        <span className="font-bold text-gray-900">{formatDate(currentFreeze.start)}</span>{" "}
+                                        al{" "}
+                                        <span className="font-bold text-gray-900">
+                                            {formatDate(previousDateKey(currentFreeze.end))}
+                                        </span>
+                                    </p>
+                                )}
+                                <p className="text-xs text-gray-400">
+                                    El código QR se reactivará al finalizar el mes congelado.
+                                </p>
+                            </div>
                         ) : ticket.status === "ACTIVE" ? (
                             <>
                                 <div className="bg-white p-2 rounded-xl shadow-inner mb-4">
@@ -574,6 +671,80 @@ export default function TicketDetailPage() {
                             )
                         })()}
 
+                        {isMembership && ticket.membershipFreeze && (
+                            <div className="rounded-xl border border-sky-100 bg-sky-50 p-4">
+                                <div className="flex items-start gap-3">
+                                    <Snowflake className="mt-0.5 h-5 w-5 text-sky-600" />
+                                    <div className="flex-1 space-y-3">
+                                        <div>
+                                            <div className="text-sm font-semibold text-sky-900">
+                                                Congelamiento de membresía
+                                            </div>
+                                            <p className="mt-1 text-xs text-sky-800">
+                                                Puedes congelar una sola vez por membresía, por un mes calendario completo,
+                                                con al menos 48 horas de anticipación. No es fraccionable, no es retroactivo
+                                                y no aplica para enero o febrero porque esos meses ya extienden la vigencia.
+                                            </p>
+                                            {isVidenaMembership && (
+                                                <p className="mt-2 text-xs text-sky-800">
+                                                    En Videna, el congelamiento no debe coincidir con cierres por mantenimiento
+                                                    ya en curso; coordina con administración si existe un aviso de cierre.
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        {ticket.membershipFreeze.applied ? (
+                                            <div className="rounded-lg bg-white/70 px-3 py-2 text-xs text-sky-900">
+                                                <div className="font-semibold">
+                                                    Congelamiento registrado: {formatMonthLabel(ticket.membershipFreeze.applied.month)}
+                                                </div>
+                                                <div>
+                                                    Del {formatDate(ticket.membershipFreeze.applied.start)} al{" "}
+                                                    {formatDate(previousDateKey(ticket.membershipFreeze.applied.end))}.
+                                                </div>
+                                            </div>
+                                        ) : ticket.membershipFreeze.availableMonths.length > 0 ? (
+                                            <div className="space-y-2">
+                                                <label htmlFor="freezeMonth" className="block text-xs font-medium text-sky-900">
+                                                    Mes a congelar
+                                                </label>
+                                                <div className="flex flex-col gap-2 sm:flex-row">
+                                                    <select
+                                                        id="freezeMonth"
+                                                        value={freezeMonth}
+                                                        onChange={(event) => setFreezeMonth(event.target.value)}
+                                                        className="h-10 flex-1 rounded-md border border-sky-200 bg-white px-3 text-sm text-gray-900"
+                                                    >
+                                                        {ticket.membershipFreeze.availableMonths.map((option) => (
+                                                            <option key={option.month} value={option.month}>
+                                                                {formatMonthLabel(option.month)}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <Button
+                                                        type="button"
+                                                        onClick={handleFreezeSubmit}
+                                                        disabled={!freezeMonth || freezeSubmitting}
+                                                        className="gap-2"
+                                                    >
+                                                        {freezeSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                                                        Congelar
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-sky-800">
+                                                No hay meses disponibles para congelar según la vigencia y la anticipación mínima.
+                                            </p>
+                                        )}
+
+                                        {freezeMessage && <p className="text-xs font-medium text-emerald-700">{freezeMessage}</p>}
+                                        {freezeError && <p className="text-xs font-medium text-red-600">{freezeError}</p>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {ticket.status === "ACTIVE" && ticket.monthlySchedule?.next && (
                             <NextMonthScheduleEditor
                                 ticketId={ticket.id}
@@ -618,6 +789,11 @@ export default function TicketDetailPage() {
                                         <p className="text-amber-600">
                                             No aplica en enero ni febrero; la vigencia se extiende esos meses.
                                         </p>
+                                        {ticket.membershipFreeze?.applied && (
+                                            <p className="text-sky-600">
+                                                Congelamiento: {formatMonthLabel(ticket.membershipFreeze.applied.month)}; la vigencia se extendió un mes calendario.
+                                            </p>
+                                        )}
                                     </div>
                                 )}
                             </div>

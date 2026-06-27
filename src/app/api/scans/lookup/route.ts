@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
-import { getTodayDateString } from "@/lib/qr"
+import { formatDateUTC, getTodayDateString } from "@/lib/qr"
 import { getShiftOptionsForDate, normalizeShiftLabel, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import {
     getExpectedShiftForDate,
@@ -15,6 +15,8 @@ import {
     matchesToday,
     buildAttendanceSummary,
     generateEntitlements,
+    isFixedTermMembership,
+    getMembershipAccessStatus,
 } from "@/lib/scan-helpers"
 
 export const runtime = "nodejs"
@@ -224,6 +226,7 @@ export async function POST(request: NextRequest) {
                 event: true,
                 ticketType: true,
                 entitlements: true,
+                membershipFreeze: true,
             },
         }) as ScanTicket | null
 
@@ -278,6 +281,47 @@ export async function POST(request: NextRequest) {
 
         const today = getTodayDateString()
         const todayDate = new Date(`${today}T12:00:00Z`)
+        const fixedTermMembership = isFixedTermMembership(ticket)
+        if (fixedTermMembership && !override) {
+            const access = getMembershipAccessStatus(ticket, today)
+            if (access.status === "BLACKOUT") {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Membresía en blackout (ene/feb)")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "MEMBERSHIP_BLACKOUT",
+                    message: "Tu membresía no aplica para enero y febrero por términos y condiciones.",
+                })
+            }
+            if (access.status === "FROZEN") {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Membresía congelada")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "MEMBERSHIP_FROZEN",
+                    message: `Tu membresía está congelada del ${formatDmy(access.freeze?.startStr ?? "")} al ${formatDmy(lastValidDay(access.freeze?.endStr ?? ""))}.`,
+                })
+            }
+            if (access.status === "NOT_STARTED") {
+                await logScan(ticket.id, user.id, eventId, "EXPIRED", "Membresía aún no inicia")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "MEMBERSHIP_NOT_STARTED",
+                    message: `Tu membresía inicia el ${formatDmy(access.startStr)}.`,
+                })
+            }
+            if (access.status === "EXPIRED") {
+                await logScan(ticket.id, user.id, eventId, "EXPIRED", "Membresía vencida")
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "MEMBERSHIP_EXPIRED",
+                    message: `Tu membresía venció el ${formatDmy(lastValidDay(access.expiryStr))}.`,
+                })
+            }
+        }
+
         const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
         const strictDateSchedule = scheduleConfig.dates.length > 0
         const configuredShifts = getShiftOptionsForDate(scheduleConfig, today)
@@ -636,6 +680,19 @@ export async function POST(request: NextRequest) {
             { status: 500 }
         )
     }
+}
+
+function formatDmy(isoDate: string): string {
+    const [y, m, d] = isoDate.split("-")
+    if (!y || !m || !d) return isoDate
+    return `${d}/${m}/${y}`
+}
+
+function lastValidDay(expiryExclusive: string): string {
+    if (!expiryExclusive) return expiryExclusive
+    const d = new Date(`${expiryExclusive}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() - 1)
+    return formatDateUTC(d)
 }
 
 async function logScan(
