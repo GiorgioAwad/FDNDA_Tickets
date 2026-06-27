@@ -6,6 +6,7 @@ import {
     isFixedTermMembership,
     isWithinMembershipWindow,
     getMembershipAccessStatus,
+    validateMembershipFreezeMonth,
     membershipAllowsMultipleDailyScans,
     buildMembershipMonthlySummary,
     type ScanTicket,
@@ -16,6 +17,11 @@ type MakeTicketOptions = {
     membershipStartDate?: string | null
     membershipDurationMonths?: number | null
     allowMultipleDailyScans?: boolean
+    membershipFreeze?: {
+        month: string
+        startDate: string
+        endDate: string
+    } | null
 }
 
 const makeTicket = (
@@ -34,6 +40,13 @@ const makeTicket = (
     eventId: "e1",
     membershipStartDate: options.membershipStartDate
         ? new Date(`${options.membershipStartDate}T12:00:00Z`)
+        : null,
+    membershipFreeze: options.membershipFreeze
+        ? {
+              month: options.membershipFreeze.month,
+              startDate: new Date(`${options.membershipFreeze.startDate}T12:00:00Z`),
+              endDate: new Date(`${options.membershipFreeze.endDate}T12:00:00Z`),
+          }
         : null,
     event: {
         title: "Membresías",
@@ -151,6 +164,13 @@ test("getMembershipExpiry without blackout overlap is a plain month add", () => 
     assert.equal(expiry, "2026-09-01")
 })
 
+test("getMembershipExpiry extends one calendar month for a membership freeze", () => {
+    const expiry = getMembershipExpiry(new Date("2026-03-01T12:00:00Z"), 6, undefined, [
+        { month: "2026-08", startStr: "2026-08-01", endStr: "2026-09-01" },
+    ])
+    assert.equal(expiry, "2026-10-01")
+})
+
 test("isWithinMembershipWindow respects start, expiry and blackout", () => {
     const ticket = makeTicket("2026-07-01", 20, [], {
         membershipStartDate: "2026-03-15",
@@ -179,6 +199,49 @@ test("getMembershipAccessStatus distinguishes blackout, not-started and expired"
     // Legacy no es a término fijo → NOT_APPLICABLE (usa la lógica de evento)
     const legacy = makeTicket("2026-07-01", 20, [])
     assert.equal(getMembershipAccessStatus(legacy, "2026-07-10").status, "NOT_APPLICABLE")
+})
+
+test("getMembershipAccessStatus returns FROZEN during the freeze month", () => {
+    const ticket = makeTicket("2026-07-01", 20, [], {
+        membershipStartDate: "2026-03-01",
+        membershipDurationMonths: 6,
+        membershipFreeze: {
+            month: "2026-08",
+            startDate: "2026-08-01",
+            endDate: "2026-09-01",
+        },
+    })
+
+    const access = getMembershipAccessStatus(ticket, "2026-08-15")
+    assert.equal(access.status, "FROZEN")
+    assert.equal(access.expiryStr, "2026-10-01")
+    assert.equal(access.freeze?.month, "2026-08")
+})
+
+test("validateMembershipFreezeMonth rejects January and February", () => {
+    const ticket = makeTicket("2026-07-01", 20, [], {
+        membershipStartDate: "2026-03-01",
+        membershipDurationMonths: 12,
+    })
+
+    const result = validateMembershipFreezeMonth(ticket, "2027-01", new Date("2026-12-20T12:00:00Z"))
+    assert.equal(result.ok, false)
+    if (!result.ok) {
+        assert.match(result.error, /Enero y febrero/)
+    }
+})
+
+test("validateMembershipFreezeMonth requires 48 hours notice", () => {
+    const ticket = makeTicket("2026-07-01", 20, [], {
+        membershipStartDate: "2026-03-01",
+        membershipDurationMonths: 12,
+    })
+
+    const result = validateMembershipFreezeMonth(ticket, "2026-08", new Date("2026-07-30T06:00:00Z"))
+    assert.equal(result.ok, false)
+    if (!result.ok) {
+        assert.match(result.error, /48 horas/)
+    }
 })
 
 test("fixed-term membership anchors the monthly cycle to the chosen start date", () => {

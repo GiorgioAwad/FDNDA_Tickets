@@ -77,7 +77,8 @@ export async function GET(
                 documentType: true,
                 buyerName: true,
                 buyerDocNumber: true,
-                user: { select: { name: true, email: true } },
+                buyerPhone: true,
+                user: { select: { name: true, email: true, phone: true } },
                 orderItems: {
                     select: {
                         ticketTypeId: true,
@@ -114,6 +115,7 @@ export async function GET(
             "comprobante",
             "buyer_doc_number",
             "buyer_billing_name",
+            "buyer_phone",
             "order_payment_operation_number",
             "order_payment_method",
             "order_payment_method_raw",
@@ -222,6 +224,7 @@ export async function GET(
                     formatComprobanteLabel(order.documentType, ""),
                     order.buyerDocNumber || "",
                     order.buyerName || "",
+                    order.buyerPhone || order.user?.phone || "",
                     paymentDetails.operationNumber || "",
                     paymentDetails.methodLabel || order.provider,
                     paymentDetails.methodCode || "",

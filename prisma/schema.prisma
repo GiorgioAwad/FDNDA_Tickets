@@ -509,6 +509,7 @@ model Ticket {
   // cambio). El base/mes 0 sigue siendo membershipSchedule; cada fila aquí es un
   // cambio que rige desde su monthIndex en adelante. Ver lib/membership-schedule.
   monthlySchedules MembershipMonthlySchedule[]
+  membershipFreeze MembershipFreeze?
 
   @@index([eventId])
   @@index([userId])
@@ -535,6 +536,23 @@ model MembershipMonthlySchedule {
   @@unique([ticketId, monthIndex])
   @@index([ticketId])
   @@map("membership_monthly_schedules")
+}
+
+// Congelamiento voluntario de membresía: máximo un mes calendario por ticket.
+// startDate es el primer día del mes y endDate es exclusiva (primer día del mes
+// siguiente). Durante ese rango el QR no aplica y la vigencia se extiende un mes.
+model MembershipFreeze {
+  id        String   @id @default(cuid())
+  ticketId  String   @unique
+  month     String
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([startDate, endDate])
+  @@map("membership_freezes")
 }
 
 model TicketDayEntitlement {
