@@ -4,7 +4,6 @@ import { getIzipayQueryLanguage, searchIzipayTransaction } from "@/lib/izipay"
 import { acquireLockWithStatus, releaseLock } from "@/lib/cache"
 import {
     buildIzipayProviderResponse,
-    cancelIzipayOrder,
     fulfillIzipayOrder,
     getIzipayStoredSource,
 } from "@/lib/izipay-payment"
@@ -303,54 +302,9 @@ export async function getIzipayOrderStatusById(input: {
             }
         }
 
-        if (query.success && query.status === "CANCELLED") {
-            const cancellation = await cancelIzipayOrder({
-                orderId: order.id,
-                providerOrderNumber: order.providerOrderNumber || undefined,
-                providerTransactionId: query.transactionId || order.providerTransactionId || undefined,
-                providerResponse: buildIzipayProviderResponse(
-                    "query",
-                    (query.raw || {
-                        status: query.status,
-                        orderNumber: order.providerOrderNumber,
-                        transactionId: query.transactionId || order.providerTransactionId,
-                    }) as Prisma.InputJsonValue
-                ),
-            })
-
-            if (!cancellation.cancelled) {
-                const currentOrder = await getOrderSnapshot(order.id)
-
-                if (currentOrder) {
-                    return {
-                        success: true,
-                        orderId: currentOrder.id,
-                        status: currentOrder.status,
-                        source: getIzipayStoredSource(currentOrder.providerResponse),
-                        reviewRequired: currentOrder.paymentNeedsReview,
-                        eventTitle: getEventTitle(currentOrder),
-                    }
-                }
-            }
-
-            await updateSyncState({
-                orderId: order.id,
-                attempts: nextAttempts,
-                lastSyncAt: syncTimestamp,
-                reviewRequired: false,
-            })
-
-            return {
-                success: true,
-                orderId: order.id,
-                status: "CANCELLED",
-                source: "query",
-                reviewRequired: false,
-                eventTitle,
-                message: query.message,
-            }
-        }
-
+        // orderinfo puede devolver un rechazo antes de que la autorizacion final
+        // quede visible. Solo una notificacion firmada cancela; una consulta no
+        // pagada permanece pendiente hasta agotar reintentos y pedir revision.
         const reviewRequired = nextAttempts >= IZIPAY_MAX_SYNC_ATTEMPTS
         await updateSyncState({
             orderId: order.id,
