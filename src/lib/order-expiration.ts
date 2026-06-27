@@ -12,6 +12,10 @@ const IZIPAY_STALE_MINUTES = (() => {
     const v = Number(process.env.ORDER_IZIPAY_EXPIRATION_MINUTES)
     return Number.isFinite(v) && v > 0 ? Math.floor(v) : 180
 })()
+const IZIPAY_MIN_SYNC_ATTEMPTS_BEFORE_EXPIRATION = (() => {
+    const v = Number(process.env.ORDER_IZIPAY_MIN_SYNC_ATTEMPTS_BEFORE_EXPIRATION)
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 6
+})()
 const MAX_ORDERS_PER_RUN = 200
 
 export interface ExpirePendingOrdersResult {
@@ -50,11 +54,17 @@ export async function expirePendingOrders(
                         { providerTransactionId: null },
                     ],
                 },
-                // Izipay con pago iniciado pero abandonado: pasada la ventana larga
-                // la sesion ya murio -> cancelar y liberar cupo (incluye needs-review).
+                // Izipay con pago iniciado pero abandonado: antes de cancelar debe
+                // haber pasado por varias conciliaciones. Si llega a revision
+                // manual, no se autocancela: ahi es mas seguro cruzar Izipay/CSV que
+                // convertir un cobro tardio en CANCELLED-sin-entrada.
                 {
                     provider: "IZIPAY",
                     createdAt: { lte: izipayCutoffDate },
+                    paymentNeedsReview: false,
+                    paymentSyncAttempts: {
+                        gte: IZIPAY_MIN_SYNC_ATTEMPTS_BEFORE_EXPIRATION,
+                    },
                 },
             ],
         },
