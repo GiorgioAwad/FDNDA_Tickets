@@ -151,6 +151,7 @@ export interface MembershipPeriod {
 }
 
 const pad2 = (value: number): string => String(value).padStart(2, "0")
+const MEMBERSHIP_FREEZE_LAST_MONTH = 11
 
 /**
  * Suma `k` meses a un día (Y-M-D), manteniendo el día ancla (clamp al último
@@ -210,6 +211,12 @@ const startOfMonthInLimaAsUtc = (monthKey: string): Date | null => {
 const dmy = (isoDate: string): string => {
     const [y, m, d] = isoDate.split("-")
     return y && m && d ? `${d}/${m}/${y}` : isoDate
+}
+
+const getLatestMembershipFreezeMonth = (anchor: Date): string => {
+    const membershipStart = formatDateUTC(anchor)
+    const [year] = membershipStart.split("-")
+    return `${year}-${pad2(MEMBERSHIP_FREEZE_LAST_MONTH)}`
 }
 
 export const getMembershipFreezeMonthRange = (month: string): MembershipFreezeMonthRange | null => {
@@ -472,6 +479,14 @@ export const validateMembershipFreezeMonth = (
 
     const membershipStart = formatDateUTC(anchor)
     const membershipExpiry = getMembershipExpiry(anchor, duration, blackout)
+    const latestFreezeMonth = getLatestMembershipFreezeMonth(anchor)
+    if (range.month > latestFreezeMonth) {
+        return {
+            ok: false,
+            error: `El congelamiento solo puede elegirse hasta noviembre de ${latestFreezeMonth.slice(0, 4)}.`,
+        }
+    }
+
     if (range.startStr < membershipStart || range.endStr > membershipExpiry) {
         return {
             ok: false,
@@ -489,10 +504,13 @@ export const getEligibleMembershipFreezeMonths = (
 ): MembershipFreezeMonthRange[] => {
     const { year, month } = getLimaDateParts(now)
     const currentMonth = `${year}-${pad2(month)}`
+    const anchor = getMembershipAnchor(ticket)
+    const latestFreezeMonth = anchor ? getLatestMembershipFreezeMonth(anchor) : null
     const options: MembershipFreezeMonthRange[] = []
 
     for (let offset = 0; offset <= maxMonthsAhead; offset += 1) {
         const candidate = addMonthsToMonthKey(currentMonth, offset)
+        if (latestFreezeMonth && candidate > latestFreezeMonth) break
         const result = validateMembershipFreezeMonth(ticket, candidate, now)
         if (result.ok) options.push(result.range)
     }

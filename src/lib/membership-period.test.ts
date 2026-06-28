@@ -7,6 +7,7 @@ import {
     isWithinMembershipWindow,
     getMembershipAccessStatus,
     validateMembershipFreezeMonth,
+    getEligibleMembershipFreezeMonths,
     membershipAllowsMultipleDailyScans,
     buildMembershipMonthlySummary,
     getMembershipAnchor,
@@ -266,6 +267,32 @@ test("validateMembershipFreezeMonth requires 48 hours notice", () => {
     if (!result.ok) {
         assert.match(result.error, /48 horas/)
     }
+})
+
+test("validateMembershipFreezeMonth caps voluntary freezes at November of the start year", () => {
+    const ticket = makeTicket("2026-07-01", 20, [], {
+        membershipStartDate: "2026-08-01",
+        membershipDurationMonths: 6,
+    })
+
+    const result = validateMembershipFreezeMonth(ticket, "2027-03", new Date("2026-08-05T12:00:00Z"))
+    assert.equal(result.ok, false)
+    if (!result.ok) {
+        assert.match(result.error, /noviembre de 2026/)
+    }
+})
+
+test("getEligibleMembershipFreezeMonths does not offer months after November", () => {
+    const ticket = makeTicket("2026-07-01", 20, [], {
+        membershipStartDate: "2026-08-01",
+        membershipDurationMonths: 6,
+    })
+
+    const months = getEligibleMembershipFreezeMonths(ticket, new Date("2026-07-01T12:00:00Z")).map(
+        (range) => range.month
+    )
+
+    assert.deepEqual(months, ["2026-08", "2026-09", "2026-10", "2026-11"])
 })
 
 test("fixed-term membership anchors the monthly cycle to the chosen start date", () => {
