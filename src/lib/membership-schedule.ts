@@ -39,7 +39,7 @@ export interface ScheduleDayGroup {
     hours: HourSlot[]
 }
 
-export type ScheduleFrequencyId = "LMV" | "MJS" | "LV"
+export type ScheduleFrequencyId = "LMV" | "MJS" | "LV" | "MJ"
 
 export interface ScheduleFrequencyOption {
     id: ScheduleFrequencyId
@@ -187,6 +187,7 @@ const FREQ_LABEL: Record<ScheduleFrequencyId, string> = {
     LMV: "Lunes, Miércoles y Viernes",
     MJS: "Martes, Jueves y Sábado",
     LV: "Lunes a Viernes",
+    MJ: "Martes y Jueves",
 }
 
 // Constructores de frecuencias reutilizables.
@@ -209,6 +210,13 @@ const lv = (hours: HourSlot[]): ScheduleFrequencyOption => ({
     id: "LV",
     label: FREQ_LABEL.LV,
     dayGroups: [{ id: "main", label: "Lunes a Viernes", weekdays: [1, 2, 3, 4, 5], hours }],
+})
+
+// 2 veces/semana: martes y jueves, una sola hora para ambos días (igual que LMV).
+const mj = (hours: HourSlot[]): ScheduleFrequencyOption => ({
+    id: "MJ",
+    label: FREQ_LABEL.MJ,
+    dayGroups: [{ id: "main", label: "Martes y Jueves", weekdays: [2, 4], hours }],
 })
 
 const CATEGORY_LABEL: Record<ScheduleCategoryId, string> = {
@@ -244,8 +252,18 @@ const plata = (adultLv: ScheduleFrequencyOption, kidLv: ScheduleFrequencyOption)
     categories: [category("ADULTOS", [adultLv]), category("NINOS", [kidLv])],
 })
 
+// BRONCE 2x = martes y jueves (frecuencia fija). El comprador solo elige hora.
+// Mismas franjas de Mar/Jue que el interdiario M-J-S, pero sin sábado y con cupo
+// mensual de 8 clases (se configura en el TicketType).
+const bronce2x = (adultMj: ScheduleFrequencyOption, kidMj: ScheduleFrequencyOption): MembershipScheduleProfile => ({
+    key: "BRONCE_2X",
+    label: "BRONCE (Mar y Jue)",
+    planMode: "FIXED_FREQUENCY",
+    categories: [category("ADULTOS", [adultMj]), category("NINOS", [kidMj])],
+})
+
 /** Claves de perfil disponibles (= plan; la categoría se elige en checkout). */
-export const MEMBERSHIP_SCHEDULE_KEYS = ["BRONCE", "PLATA"] as const
+export const MEMBERSHIP_SCHEDULE_KEYS = ["BRONCE", "PLATA", "BRONCE_2X"] as const
 export type MembershipScheduleKey = (typeof MEMBERSHIP_SCHEDULE_KEYS)[number]
 
 // Compatibilidad con claves antiguas (categoría + plan) por si quedó alguna
@@ -271,6 +289,8 @@ export const MEMBERSHIP_SCHEDULES: Record<string, Partial<Record<MembershipSched
             mjs(CM_KIDS_HOURS, CM_KIDS_SAT_HOURS)
         ),
         PLATA: plata(lv(CM_ADULT_HOURS), lv(CM_KIDS_HOURS)),
+        // 2x/semana: mismas horas Mar/Jue del interdiario (sin sábado).
+        BRONCE_2X: bronce2x(mj(CM_ADULT_HOURS), mj(CM_KIDS_HOURS)),
     },
     // VIDENA
     "03": {
@@ -281,6 +301,8 @@ export const MEMBERSHIP_SCHEDULES: Record<string, Partial<Record<MembershipSched
             mjs(VID_AFTERNOON_HOURS, VID_SAT_HOURS)
         ),
         PLATA: plata(lv(VID_ADULT_HOURS), lv(VID_AFTERNOON_HOURS)),
+        // 2x/semana: mismas horas Mar/Jue del interdiario (sin sábado).
+        BRONCE_2X: bronce2x(mj(VID_ADULT_MJS_WEEKDAY_HOURS), mj(VID_AFTERNOON_HOURS)),
     },
 }
 

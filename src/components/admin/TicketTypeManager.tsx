@@ -1715,7 +1715,8 @@ export function TicketTypeManager({
                                         <p className="text-[11px] text-gray-500">
                                             Elige el plan. En el checkout el comprador elige su categoría (adulto o niño),
                                             la frecuencia y la hora según la sede ({eventSucursal.code}); el escáner valida
-                                            día + hora. BRONCE elige frecuencia; PLATA es de lunes a viernes y solo elige hora.
+                                            día + hora. BRONCE elige frecuencia; PLATA es de lunes a viernes y solo elige hora;
+                                            BRONCE (Mar y Jue) es 2 veces por semana (martes y jueves) y solo elige hora.
                                         </p>
                                     </div>
                                 )}

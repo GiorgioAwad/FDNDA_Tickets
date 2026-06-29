@@ -25,9 +25,9 @@ test("getMembershipScheduleProfile devuelve null para sede/clave inválida", () 
     assert.equal(getMembershipScheduleProfile("01", "NO_EXISTE"), null)
 })
 
-test("getMembershipScheduleKeysForSucursal lista los planes (BRONCE, PLATA)", () => {
-    assert.deepEqual(getMembershipScheduleKeysForSucursal("01").sort(), ["BRONCE", "PLATA"])
-    assert.deepEqual(getMembershipScheduleKeysForSucursal("03").sort(), ["BRONCE", "PLATA"])
+test("getMembershipScheduleKeysForSucursal lista los planes (BRONCE, PLATA, BRONCE_2X)", () => {
+    assert.deepEqual(getMembershipScheduleKeysForSucursal("01").sort(), ["BRONCE", "BRONCE_2X", "PLATA"])
+    assert.deepEqual(getMembershipScheduleKeysForSucursal("03").sort(), ["BRONCE", "BRONCE_2X", "PLATA"])
     assert.deepEqual(getMembershipScheduleKeysForSucursal("99"), [])
 })
 
@@ -158,6 +158,76 @@ test("VIDENA adultos M-J-S Mar/Jue acepta mañana y tarde", () => {
         "03"
     )
     assert.equal(tarde.ok, true)
+})
+
+// ── BRONCE 2x (martes y jueves, frecuencia fija) ───────────────────────────────
+
+test("BRONCE_2X es frecuencia fija (MJ) con ambas categorías en ambas sedes", () => {
+    for (const sede of ["01", "03"]) {
+        const profile = getMembershipScheduleProfile(sede, "BRONCE_2X")!
+        assert.ok(profile, `BRONCE_2X debe existir en sede ${sede}`)
+        assert.equal(profile.planMode, "FIXED_FREQUENCY")
+        assert.deepEqual(profile.categories.map((c) => c.id).sort(), ["ADULTOS", "NINOS"])
+        for (const cat of profile.categories) {
+            assert.deepEqual(cat.frequencies.map((f) => f.id), ["MJ"])
+        }
+    }
+})
+
+test("BRONCE_2X adultos expande solo a Mar y Jue con la misma hora", () => {
+    const profile = getMembershipScheduleProfile("01", "BRONCE_2X")!
+    const result = validateMembershipScheduleSelection(
+        profile,
+        { category: "ADULTOS", frequency: "MJ", hours: { main: "09:00-10:00" } },
+        "01"
+    )
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.deepEqual(
+        result.selection.sessions.map((s) => s.weekday).sort(),
+        [2, 4]
+    )
+    assert.ok(result.selection.sessions.every((s) => s.start === "09:00" && s.end === "10:00"))
+})
+
+test("BRONCE_2X reusa las horas Mar/Jue del interdiario y rechaza horas fuera del catálogo", () => {
+    // VIDENA adultos: 16:00-17:00 (tarde) es válido en Mar/Jue (igual que MJS weekday).
+    const vid = getMembershipScheduleProfile("03", "BRONCE_2X")!
+    assert.equal(
+        validateMembershipScheduleSelection(vid, { category: "ADULTOS", frequency: "MJ", hours: { main: "16:00-17:00" } }, "03").ok,
+        true
+    )
+    // CM adultos: 15:00-16:00 NO está en su catálogo (es franja de niños) → rechazo.
+    const cm = getMembershipScheduleProfile("01", "BRONCE_2X")!
+    assert.equal(
+        validateMembershipScheduleSelection(cm, { category: "ADULTOS", frequency: "MJ", hours: { main: "15:00-16:00" } }, "01").ok,
+        false
+    )
+})
+
+test("BRONCE_2X: el escáner solo acepta martes y jueves", () => {
+    const profile = getMembershipScheduleProfile("01", "BRONCE_2X")!
+    const result = validateMembershipScheduleSelection(
+        profile,
+        { category: "ADULTOS", frequency: "MJ", hours: { main: "09:00-10:00" } },
+        "01"
+    )
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    const sessions = result.selection.sessions
+    // Martes (2) y Jueves (4) dentro de la franja → ok.
+    assert.equal(matchMembershipSession(sessions, 2, "09:30").ok, true)
+    assert.equal(matchMembershipSession(sessions, 4, "09:30").ok, true)
+    // Resto de días → WRONG_DAY.
+    for (const wd of [1, 3, 5, 6, 0]) {
+        const m = matchMembershipSession(sessions, wd, "09:30")
+        assert.equal(m.ok, false)
+        if (!m.ok) assert.equal(m.reason, "WRONG_DAY")
+    }
+    // Martes fuera de hora → WRONG_TIME.
+    const late = matchMembershipSession(sessions, 2, "12:00")
+    assert.equal(late.ok, false)
+    if (!late.ok) assert.equal(late.reason, "WRONG_TIME")
 })
 
 // ── Round-trip de la selección guardada ────────────────────────────────────────
