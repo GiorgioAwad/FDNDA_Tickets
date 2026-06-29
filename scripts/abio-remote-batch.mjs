@@ -3,7 +3,7 @@
 // (staging o produccion) cada N segundos y guarda evidencia en tmp/.
 //
 // Uso:
-//   npm run abio:remote-batch -- --base https://fdnda-tickets-staging.vercel.app
+//   npm run abio:remote-batch -- --base https://staging.ticketingfdnda.pe
 //   npm run abio:remote-batch -- --base https://... --interval 120 --max 10
 //   npm run abio:remote-batch -- --base https://... --once
 //

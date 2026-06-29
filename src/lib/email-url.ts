@@ -24,14 +24,16 @@ function normalizeHttpOrigin(value: string | undefined): string | null {
     }
 }
 
-function isUnsafeProductionOrigin(origin: string): boolean {
+// Dominios *.vercel.app son despliegues legacy: NUNCA deben usarse como origen
+// de links de email (en ningún entorno), o el correo de verificación termina
+// redirigiendo a Vercel en vez del dominio oficial.
+function isVercelOrigin(origin: string): boolean {
+    return new URL(origin).hostname.toLowerCase().endsWith(".vercel.app")
+}
+
+function isLoopbackOrigin(origin: string): boolean {
     const hostname = new URL(origin).hostname.toLowerCase()
-    return (
-        hostname === "localhost" ||
-        hostname === "127.0.0.1" ||
-        hostname === "::1" ||
-        hostname.endsWith(".vercel.app")
-    )
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
 }
 
 export function resolveEmailBaseUrl(
@@ -46,10 +48,10 @@ export function resolveEmailBaseUrl(
     for (const value of configuredUrls) {
         const configuredUrl = normalizeHttpOrigin(value)
         if (!configuredUrl) continue
-        if (
-            env.NODE_ENV === "production" &&
-            isUnsafeProductionOrigin(configuredUrl)
-        ) {
+        // Vercel jamás es válido como dominio de email.
+        if (isVercelOrigin(configuredUrl)) continue
+        // En producción tampoco aceptamos localhost / loopback.
+        if (env.NODE_ENV === "production" && isLoopbackOrigin(configuredUrl)) {
             continue
         }
 

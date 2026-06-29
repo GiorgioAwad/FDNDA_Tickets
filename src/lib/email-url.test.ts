@@ -70,3 +70,21 @@ test("rechaza Vercel y localhost como origen de emails en produccion", () => {
         "https://ticketingfdnda.pe"
     )
 })
+
+test("rechaza Vercel tambien fuera de produccion (nunca emite links .vercel.app)", () => {
+    // Sin NODE_ENV=production, un NEXTAUTH_URL de Vercel NO debe ganar.
+    assert.equal(
+        resolveEmailBaseUrl({
+            NEXTAUTH_URL: "https://fdnda-tickets.vercel.app",
+        }),
+        "http://localhost:3000"
+    )
+    // Y si hay dominio oficial, ese gana sobre el de Vercel.
+    assert.equal(
+        resolveEmailBaseUrl({
+            NEXT_PUBLIC_APP_URL: "https://ticketingfdnda.pe",
+            NEXTAUTH_URL: "https://fdnda-tickets.vercel.app",
+        }),
+        "https://ticketingfdnda.pe"
+    )
+})
