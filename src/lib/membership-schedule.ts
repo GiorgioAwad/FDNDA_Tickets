@@ -150,8 +150,8 @@ const CM_KIDS_SAT_HOURS: HourSlot[] = [
     slot("13:00", "14:00"),
 ]
 
-// VIDENA — adultos estándar (filas de adultos del cuadro): 6–11am, 1–3pm, 7–9pm
-// (11am–1pm cerrado).
+// VIDENA — adultos estándar (filas de adultos del cuadro): 6–11am, 1–3pm, 7–10pm
+// (11am–1pm cerrado). El 9–10pm se agregó a pedido (aplica a BRONCE y PLATA adultos).
 const VID_ADULT_HOURS: HourSlot[] = [
     slot("06:00", "07:00"),
     slot("07:00", "08:00"),
@@ -162,6 +162,7 @@ const VID_ADULT_HOURS: HourSlot[] = [
     slot("14:00", "15:00"),
     slot("19:00", "20:00"),
     slot("20:00", "21:00"),
+    slot("21:00", "22:00"),
 ]
 // VIDENA — tarde (3–7pm), franja de niños del cuadro.
 const VID_AFTERNOON_HOURS: HourSlot[] = [
