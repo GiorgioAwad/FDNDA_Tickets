@@ -150,8 +150,8 @@ const CM_KIDS_SAT_HOURS: HourSlot[] = [
     slot("13:00", "14:00"),
 ]
 
-// VIDENA — adultos estándar (filas de adultos del cuadro): 6–11am, 1–3pm, 7–10pm
-// (11am–1pm cerrado). El 9–10pm se agregó a pedido (aplica a BRONCE y PLATA adultos).
+// VIDENA — adultos, día de semana: 6–11am, 1–3pm, 7–10pm (11am–1pm y 3–7pm
+// cerrados para adultos). Aplica a BRONCE y PLATA.
 const VID_ADULT_HOURS: HourSlot[] = [
     slot("06:00", "07:00"),
     slot("07:00", "08:00"),
@@ -164,18 +164,17 @@ const VID_ADULT_HOURS: HourSlot[] = [
     slot("20:00", "21:00"),
     slot("21:00", "22:00"),
 ]
-// VIDENA — tarde (3–7pm), franja de niños del cuadro.
+// VIDENA — niños, día de semana: 3–7pm.
 const VID_AFTERNOON_HOURS: HourSlot[] = [
     slot("15:00", "16:00"),
     slot("16:00", "17:00"),
     slot("17:00", "18:00"),
     slot("18:00", "19:00"),
 ]
-// VIDENA — adultos M-J-S Mar/Jue: mañana/estándar + tarde (confirmado por el
-// usuario: además del turno tarde de la nota, se mantiene la mañana).
-const VID_ADULT_MJS_WEEKDAY_HOURS: HourSlot[] = [...VID_ADULT_HOURS, ...VID_AFTERNOON_HOURS]
-// VIDENA — sábado M-J-S (nota al pie del cuadro): 8am–1pm.
-const VID_SAT_HOURS: HourSlot[] = [
+// VIDENA — adultos, sábado: 6–8am.
+const VID_ADULT_SAT_HOURS: HourSlot[] = [slot("06:00", "07:00"), slot("07:00", "08:00")]
+// VIDENA — niños, sábado: 8am–1pm.
+const VID_KIDS_SAT_HOURS: HourSlot[] = [
     slot("08:00", "09:00"),
     slot("09:00", "10:00"),
     slot("10:00", "11:00"),
@@ -296,13 +295,13 @@ export const MEMBERSHIP_SCHEDULES: Record<string, Partial<Record<MembershipSched
     "03": {
         BRONCE: bronce(
             lmv(VID_ADULT_HOURS),
-            mjs(VID_ADULT_MJS_WEEKDAY_HOURS, VID_SAT_HOURS),
+            mjs(VID_ADULT_HOURS, VID_ADULT_SAT_HOURS),
             lmv(VID_AFTERNOON_HOURS),
-            mjs(VID_AFTERNOON_HOURS, VID_SAT_HOURS)
+            mjs(VID_AFTERNOON_HOURS, VID_KIDS_SAT_HOURS)
         ),
         PLATA: plata(lv(VID_ADULT_HOURS), lv(VID_AFTERNOON_HOURS)),
         // 2x/semana: mismas horas Mar/Jue del interdiario (sin sábado).
-        BRONCE_2X: bronce2x(mj(VID_ADULT_MJS_WEEKDAY_HOURS), mj(VID_AFTERNOON_HOURS)),
+        BRONCE_2X: bronce2x(mj(VID_ADULT_HOURS), mj(VID_AFTERNOON_HOURS)),
     },
 }
 

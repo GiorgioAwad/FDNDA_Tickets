@@ -144,20 +144,46 @@ test("rechaza MJS sin la hora del sábado", () => {
     assert.equal(r.ok, false)
 })
 
-test("VIDENA adultos M-J-S Mar/Jue acepta mañana y tarde", () => {
+test("VIDENA adultos M-J-S: Mar/Jue son horas de adulto y el sábado es 6–8am", () => {
     const profile = getMembershipScheduleProfile("03", "BRONCE")!
-    const manana = validateMembershipScheduleSelection(
+    // Mar/Jue por la mañana + sábado 6–8am → válido.
+    const ok = validateMembershipScheduleSelection(
+        profile,
+        { category: "ADULTOS", frequency: "MJS", hours: { weekday: "07:00-08:00", saturday: "06:00-07:00" } },
+        "03"
+    )
+    assert.equal(ok.ok, true)
+    // La tarde (3–7pm) es franja de niños: rechazada para adultos.
+    const tarde = validateMembershipScheduleSelection(
+        profile,
+        { category: "ADULTOS", frequency: "MJS", hours: { weekday: "16:00-17:00", saturday: "06:00-07:00" } },
+        "03"
+    )
+    assert.equal(tarde.ok, false)
+    // El sábado de niños (8am–1pm) no aplica a adultos.
+    const satKids = validateMembershipScheduleSelection(
         profile,
         { category: "ADULTOS", frequency: "MJS", hours: { weekday: "07:00-08:00", saturday: "08:00-09:00" } },
         "03"
     )
-    assert.equal(manana.ok, true)
-    const tarde = validateMembershipScheduleSelection(
+    assert.equal(satKids.ok, false)
+})
+
+test("VIDENA niños M-J-S: tarde Mar/Jue (3–7pm) + sábado 8am–1pm", () => {
+    const profile = getMembershipScheduleProfile("03", "BRONCE")!
+    const ok = validateMembershipScheduleSelection(
         profile,
-        { category: "ADULTOS", frequency: "MJS", hours: { weekday: "16:00-17:00", saturday: "12:00-13:00" } },
+        { category: "NINOS", frequency: "MJS", hours: { weekday: "16:00-17:00", saturday: "12:00-13:00" } },
         "03"
     )
-    assert.equal(tarde.ok, true)
+    assert.equal(ok.ok, true)
+    // El sábado de adultos (6–8am) no aplica a niños.
+    const satAdult = validateMembershipScheduleSelection(
+        profile,
+        { category: "NINOS", frequency: "MJS", hours: { weekday: "16:00-17:00", saturday: "06:00-07:00" } },
+        "03"
+    )
+    assert.equal(satAdult.ok, false)
 })
 
 // ── BRONCE 2x (martes y jueves, frecuencia fija) ───────────────────────────────
@@ -191,11 +217,16 @@ test("BRONCE_2X adultos expande solo a Mar y Jue con la misma hora", () => {
 })
 
 test("BRONCE_2X reusa las horas Mar/Jue del interdiario y rechaza horas fuera del catálogo", () => {
-    // VIDENA adultos: 16:00-17:00 (tarde) es válido en Mar/Jue (igual que MJS weekday).
+    // VIDENA adultos Mar/Jue: 07:00-08:00 (mañana) es válido (igual que MJS weekday).
     const vid = getMembershipScheduleProfile("03", "BRONCE_2X")!
     assert.equal(
-        validateMembershipScheduleSelection(vid, { category: "ADULTOS", frequency: "MJ", hours: { main: "16:00-17:00" } }, "03").ok,
+        validateMembershipScheduleSelection(vid, { category: "ADULTOS", frequency: "MJ", hours: { main: "07:00-08:00" } }, "03").ok,
         true
+    )
+    // VIDENA adultos: 16:00-17:00 es franja de niños (tarde) → rechazo.
+    assert.equal(
+        validateMembershipScheduleSelection(vid, { category: "ADULTOS", frequency: "MJ", hours: { main: "16:00-17:00" } }, "03").ok,
+        false
     )
     // CM adultos: 15:00-16:00 NO está en su catálogo (es franja de niños) → rechazo.
     const cm = getMembershipScheduleProfile("01", "BRONCE_2X")!
