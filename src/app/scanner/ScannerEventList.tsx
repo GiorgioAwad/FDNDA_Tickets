@@ -7,14 +7,15 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { 
-    Calendar, 
-    MapPin, 
-    ArrowRight, 
-    ScanLine, 
-    Search, 
+import {
+    Calendar,
+    MapPin,
+    ArrowRight,
+    ScanLine,
+    Search,
     Filter,
-    X
+    X,
+    UserCheck
 } from "lucide-react"
 
 type ScannerEvent = {
@@ -74,10 +75,16 @@ export default function ScannerEventList({ events }: ScannerEventListProps) {
                     <div className="p-2.5 sm:p-3 rounded-xl bg-blue-600 text-white">
                         <ScanLine className="h-6 w-6 sm:h-8 sm:w-8" />
                     </div>
-                    <div>
+                    <div className="flex-1">
                         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Scanner FDNDA</h1>
                         <p className="text-gray-500">Selecciona un evento para escanear</p>
                     </div>
+                    <Link href="/scanner/asistencia">
+                        <Button variant="outline" className="gap-2">
+                            <UserCheck className="h-4 w-4" />
+                            <span className="hidden sm:inline">Asistencia manual</span>
+                        </Button>
+                    </Link>
                 </div>
 
                 {/* Filters */}
