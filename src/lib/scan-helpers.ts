@@ -5,6 +5,8 @@ import { MEMBERSHIP_BLACKOUT_MONTHS, isBlackoutMonth } from "@/lib/membership-co
 import {
     parseMembershipScheduleSelection,
     getEffectiveMembershipSchedule,
+    formatScheduleSummary,
+    formatSessionsDaysLabel,
     type MembershipScheduleSelection,
 } from "@/lib/membership-schedule"
 
@@ -651,4 +653,68 @@ export const isWithinEventRange = (ticket: ScanTicket, today: string): boolean =
     const eventStart = ticket.event?.startDate ? formatDateUTC(ticket.event.startDate) : null
     const eventEnd = ticket.event?.endDate ? formatDateUTC(ticket.event.endDate) : null
     return eventStart && eventEnd ? today >= eventStart && today <= eventEnd : false
+}
+
+// ==================== DISPLAY (panel de asistencia manual) ====================
+
+/**
+ * Info de membresía lista para mostrar en el panel de asistencia manual del staff:
+ * plan, categoría (adultos/niños), frecuencia y horario del mes en curso. Para
+ * ORO (acceso libre) no hay horario semanal → `freeAccess = true` y el resto va
+ * en null. Función PURA (sin Prisma): los conteos de scans del mes/día para ORO
+ * se calculan en la ruta. Reutiliza `getEffectiveScheduleSelection` (horario del
+ * mes efectivo) y los formateadores de `membership-schedule.ts`.
+ */
+export interface MembershipDisplay {
+    isMembership: boolean
+    isOro: boolean
+    /** Etiqueta corta del plan: "ORO" | "BRONCE" | "BRONCE 2×" | "PLATA" | "Membresía". */
+    planLabel: string
+    /** "Adultos" / "Niños (…)" o null si no aplica. */
+    categoryLabel: string | null
+    /** "Lunes, Miércoles y Viernes" o null (ORO/sin horario). */
+    frequencyLabel: string | null
+    /** Texto legible del horario (frecuencia · grupo: hora) o null. */
+    scheduleText: string | null
+    /** Días compactos ("Lun, Mié, Vie") o null. */
+    daysLabel: string | null
+    /** true para ORO sin horario semanal → la UI muestra "Acceso libre". */
+    freeAccess: boolean
+}
+
+const SCHEDULE_KEY_PLAN_LABEL: Record<string, string> = {
+    BRONCE: "BRONCE",
+    BRONCE_2X: "BRONCE 2×",
+    PLATA: "PLATA",
+}
+
+export const buildMembershipDisplay = (
+    ticket: ScanTicket,
+    today: string = getTodayDateString()
+): MembershipDisplay | null => {
+    const isMembership = isMembershipTicket(ticket)
+    if (!isMembership) return null
+    // ORO = membresía con varios ingresos por día (requiere cupo mensual). Mismo
+    // criterio que el escáner y las rutas, para que las tres capas coincidan.
+    const isOro = membershipAllowsMultipleDailyScans(ticket)
+
+    const anchor = getMembershipAnchor(ticket)
+    const monthIndex = anchor ? getMembershipPeriod(today, anchor)?.index ?? 0 : 0
+    const selection = getEffectiveScheduleSelection(ticket, monthIndex)
+
+    const scheduleKey = ticket.ticketType.membershipScheduleKey ?? selection?.profileKey ?? null
+    const planLabel = isOro
+        ? "ORO"
+        : (scheduleKey ? SCHEDULE_KEY_PLAN_LABEL[scheduleKey] : undefined) ?? "Membresía"
+
+    return {
+        isMembership,
+        isOro,
+        planLabel,
+        categoryLabel: selection?.categoryLabel ?? null,
+        frequencyLabel: selection?.frequencyLabel ?? null,
+        scheduleText: selection ? formatScheduleSummary(selection) : null,
+        daysLabel: selection ? formatSessionsDaysLabel(selection.sessions) : null,
+        freeAccess: !selection,
+    }
 }

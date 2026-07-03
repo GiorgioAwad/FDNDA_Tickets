@@ -14,6 +14,20 @@ export interface AttendanceEventOption {
     category: string
 }
 
+interface MembershipInfo {
+    isMembership: boolean
+    isOro: boolean
+    planLabel: string
+    categoryLabel: string | null
+    frequencyLabel: string | null
+    scheduleText: string | null
+    daysLabel: string | null
+    freeAccess: boolean
+    /** Solo ORO: tope e ingresos de hoy. */
+    dailyLimit?: number
+    dailyUsed?: number
+}
+
 interface TicketResult {
     id: string
     ticketCode: string
@@ -22,6 +36,7 @@ interface TicketResult {
     ticketType: { name: string; isPackage: boolean }
     attendance: { total: number; used: number; remaining: number }
     todayStatus: "AVAILABLE" | "USED" | "NO_ENTITLEMENT"
+    membership: MembershipInfo | null
 }
 
 interface MarkResult {
@@ -29,6 +44,14 @@ interface MarkResult {
     success: boolean
     message: string
     attendance?: { total: number; used: number; remaining: number }
+}
+
+/** Clases del badge de plan según el nivel de membresía. */
+const planBadgeClass = (planLabel: string): string => {
+    if (planLabel === "ORO") return "bg-amber-100 text-amber-800 border-amber-200"
+    if (planLabel === "PLATA") return "bg-slate-100 text-slate-700 border-slate-200"
+    if (planLabel.startsWith("BRONCE")) return "bg-orange-100 text-orange-800 border-orange-200"
+    return "bg-blue-100 text-blue-800 border-blue-200"
 }
 
 interface ManualAttendancePanelProps {
@@ -118,15 +141,25 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
             // Update the ticket in results
             if (data.attendance) {
                 setResults((prev) =>
-                    prev.map((t) =>
-                        t.id === ticket.id
-                            ? {
-                                ...t,
-                                attendance: data.attendance,
-                                todayStatus: data.valid ? "USED" as const : t.todayStatus,
-                            }
-                            : t
-                    )
+                    prev.map((t) => {
+                        if (t.id !== ticket.id) return t
+                        const isOro = t.membership?.isOro === true
+                        const dailyLimit = t.membership?.dailyLimit ?? 2
+                        const nextDailyUsed =
+                            typeof data.dailyUsed === "number" ? data.dailyUsed : t.membership?.dailyUsed
+                        const nextMembership = t.membership
+                            ? { ...t.membership, dailyUsed: nextDailyUsed }
+                            : t.membership
+                        // ORO: mantener "AVAILABLE" mientras queden ingresos del día,
+                        // para que el botón siga disponible para el 2º ingreso.
+                        const dailyExhausted = isOro ? (nextDailyUsed ?? 0) >= dailyLimit : true
+                        return {
+                            ...t,
+                            attendance: data.attendance,
+                            todayStatus: data.valid && dailyExhausted ? ("USED" as const) : t.todayStatus,
+                            membership: nextMembership,
+                        }
+                    })
                 )
             }
         } catch {
@@ -218,7 +251,14 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                     {results.map((ticket) => {
                         const mark = markResults[ticket.id]
                         const isMarking = markingId === ticket.id
-                        const canMark = ticket.todayStatus !== "USED" && ticket.attendance.remaining > 0
+                        const membership = ticket.membership
+                        const isOro = membership?.isOro === true
+                        const dailyUsed = membership?.dailyUsed ?? 0
+                        const dailyLimit = membership?.dailyLimit ?? 2
+                        const canMark = isOro
+                            ? dailyUsed < dailyLimit &&
+                              (ticket.attendance.total <= 0 || ticket.attendance.remaining > 0)
+                            : ticket.todayStatus !== "USED" && ticket.attendance.remaining > 0
 
                         return (
                             <div
@@ -244,6 +284,48 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                             {ticket.ticketType.name}
                                         </p>
 
+                                        {/* Membership: plan, schedule & frequency */}
+                                        {membership?.isMembership && (
+                                            <div className="mt-1.5 space-y-0.5">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <Badge className={planBadgeClass(membership.planLabel)}>
+                                                        {membership.planLabel}
+                                                    </Badge>
+                                                    {membership.categoryLabel && (
+                                                        <span className="text-xs text-gray-500">
+                                                            {membership.categoryLabel}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {membership.freeAccess ? (
+                                                    <p className="text-xs text-gray-500">
+                                                        Acceso libre · sin horario fijo
+                                                    </p>
+                                                ) : (
+                                                    <>
+                                                        {membership.frequencyLabel && (
+                                                            <p className="text-xs text-gray-600">
+                                                                <span className="text-gray-400">Frecuencia:</span>{" "}
+                                                                {membership.frequencyLabel}
+                                                            </p>
+                                                        )}
+                                                        {membership.scheduleText && (
+                                                            <p className="text-xs text-gray-600">
+                                                                <span className="text-gray-400">Horario:</span>{" "}
+                                                                {membership.scheduleText}
+                                                            </p>
+                                                        )}
+                                                    </>
+                                                )}
+                                                {isOro && (
+                                                    <p className="text-xs text-gray-600">
+                                                        <span className="text-gray-400">Ingresos hoy:</span>{" "}
+                                                        {dailyUsed}/{dailyLimit}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+
                                         {/* Attendance progress */}
                                         <div className="mt-2">
                                             <div className="flex items-center gap-2 text-xs text-gray-600">
@@ -267,7 +349,7 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
 
                                     {/* Status & Action */}
                                     <div className="flex items-center gap-2 sm:flex-col sm:items-end">
-                                        {ticket.todayStatus === "USED" && !mark && (
+                                        {ticket.todayStatus === "USED" && !mark && !isOro && (
                                             <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
                                                 <CheckCircle2 className="h-3 w-3 mr-1" />
                                                 Ya registrado hoy
@@ -279,7 +361,7 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                             </Badge>
                                         )}
 
-                                        {mark ? (
+                                        {mark && (
                                             <Badge
                                                 className={
                                                     mark.success
@@ -294,7 +376,8 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                                 )}
                                                 {mark.message}
                                             </Badge>
-                                        ) : canMark ? (
+                                        )}
+                                        {canMark && (
                                             <Button
                                                 size="sm"
                                                 onClick={() => handleMarkAttendance(ticket)}
@@ -306,9 +389,9 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                                 ) : (
                                                     <UserCheck className="h-4 w-4" />
                                                 )}
-                                                Marcar Asistencia
+                                                {isOro && dailyUsed >= 1 ? "Marcar 2º ingreso" : "Marcar Asistencia"}
                                             </Button>
-                                        ) : null}
+                                        )}
                                     </div>
                                 </div>
                             </div>

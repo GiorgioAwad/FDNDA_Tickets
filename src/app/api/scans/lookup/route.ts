@@ -17,9 +17,17 @@ import {
     generateEntitlements,
     isFixedTermMembership,
     getMembershipAccessStatus,
+    getMembershipAnchor,
+    getMembershipPeriod,
+    membershipAllowsMultipleDailyScans,
 } from "@/lib/scan-helpers"
 
 export const runtime = "nodejs"
+
+// Panel manual: los planes ORO pueden marcar hasta 2 ingresos por día (ej. hacer
+// 2 horas); cada ingreso cuenta como 1 clase del cupo mensual. (El escáner QR
+// `validate` no aplica este tope: mantiene ingresos ilimitados.)
+const ORO_MAX_DAILY_SCANS = 2
 
 const TICKET_CODE_REGEX = /^[A-Z2-9]{4}(?:-[A-Z2-9]{4}){2}$/
 const TICKET_CODE_COMPACT_REGEX = /^[A-Z2-9]{12}$/
@@ -456,6 +464,106 @@ export async function POST(request: NextRequest) {
             return buildAttendanceSummary(ticket)
         }
 
+        // Membresía con varios ingresos por día (ORO): permite hasta 2 ingresos por
+        // día en el panel manual; cada ingreso cuenta como 1 clase del cupo mensual
+        // (se cuenta por SCANS VALID del mes, ya que hay un solo entitlement por
+        // día). Se resuelve aquí, antes de la lógica normal de entitlement (que
+        // bloquearía el reingreso con ALREADY_USED). Igual que en `validate`, pero
+        // con tope de 2/día propio del panel manual.
+        if (membershipAllowsMultipleDailyScans(ticket)) {
+            const anchor = getMembershipAnchor(ticket)
+            const period = anchor ? getMembershipPeriod(today, anchor) : null
+            const limit = ticket.ticketType.monthlyClassLimit ?? 0
+
+            const [todayScans, monthlyUsed] = await Promise.all([
+                prisma.scan.count({
+                    where: { ticketId: ticket.id, result: "VALID", date: todayDate },
+                }),
+                period
+                    ? prisma.scan.count({
+                          where: {
+                              ticketId: ticket.id,
+                              result: "VALID",
+                              date: {
+                                  gte: new Date(`${period.startStr}T00:00:00Z`),
+                                  lt: new Date(`${period.endStr}T00:00:00Z`),
+                              },
+                          },
+                      })
+                    : Promise.resolve(0),
+            ])
+
+            const buildOroAttendance = (used: number) => ({
+                total: limit > 0 ? limit : used,
+                used,
+                remaining: limit > 0 ? Math.max(limit - used, 0) : 0,
+            })
+
+            const oroTicketInfo = {
+                id: ticket.id,
+                ticketCode: ticket.ticketCode,
+                attendeeName: ticket.attendeeName,
+                attendeeDni: ticket.attendeeDni,
+                eventTitle: ticket.event.title,
+                ticketTypeName: ticket.ticketType.name,
+            }
+
+            // Tope de 2 ingresos por día.
+            if (todayScans >= ORO_MAX_DAILY_SCANS) {
+                await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Límite 2 ingresos/día ORO", null, todayDate)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "ALREADY_USED",
+                    message: "Límite de 2 ingresos por día alcanzado",
+                    ticket: oroTicketInfo,
+                    scannedAt: new Date().toISOString(),
+                    attendance: buildOroAttendance(monthlyUsed),
+                    dailyLimit: ORO_MAX_DAILY_SCANS,
+                    dailyUsed: todayScans,
+                })
+            }
+
+            // Cupo mensual agotado.
+            if (limit > 0 && monthlyUsed >= limit) {
+                await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Cupo mensual de clases agotado", null, todayDate)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "NO_CLASSES",
+                    message: "Cupo mensual de clases agotado",
+                    ticket: oroTicketInfo,
+                    scannedAt: new Date().toISOString(),
+                    attendance: buildOroAttendance(monthlyUsed),
+                    dailyLimit: ORO_MAX_DAILY_SCANS,
+                    dailyUsed: todayScans,
+                })
+            }
+
+            // Marca el día como asistido (para el carnet) y registra el ingreso.
+            const usedAt = new Date()
+            await prisma.ticketDayEntitlement.upsert({
+                where: { ticketId_date: { ticketId: ticket.id, date: todayDate } },
+                create: { ticketId: ticket.id, date: todayDate, status: "USED", usedAt },
+                update: { status: "USED", usedAt },
+            })
+            await logScan(ticket.id, user.id, eventId, "VALID", "Ingreso ORO (panel manual)", null, todayDate)
+
+            const newUsed = monthlyUsed + 1
+            return NextResponse.json({
+                success: true,
+                valid: true,
+                reason: "VALID",
+                isMembership: true,
+                message: todayScans >= 1 ? "Segunda asistencia registrada" : "Asistencia registrada",
+                ticket: { ...oroTicketInfo, entryDate: today },
+                scannedAt: usedAt.toISOString(),
+                attendance: buildOroAttendance(newUsed),
+                dailyLimit: ORO_MAX_DAILY_SCANS,
+                dailyUsed: todayScans + 1,
+            })
+        }
+
         let entitlement = ticket.entitlements.find((item) => matchesToday(item.date, today))
 
         // override (emergencia) permite reasignar el día comprado a hoy aun en piscina.
@@ -701,7 +809,8 @@ async function logScan(
     eventId: string,
     result: ScanResultType,
     notes?: string,
-    shift?: string | null
+    shift?: string | null,
+    date: Date = new Date()
 ) {
     try {
         await prisma.scan.create({
@@ -709,7 +818,9 @@ async function logScan(
                 ticketId,
                 staffId,
                 eventId,
-                date: new Date(),
+                // @db.Date: guardar el día (Lima) del ingreso; el timestamp real va
+                // en scannedAt (default now). Ver memoria scan_date_dbdate_utc.
+                date,
                 result,
                 shift: shift || null,
                 notes,
