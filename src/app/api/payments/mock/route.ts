@@ -3,13 +3,20 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { mockIzipayPayment } from "@/lib/izipay"
 import { fulfillPaidOrder } from "@/lib/order-fulfillment"
+import { isMockPaymentsAllowed } from "@/lib/payment-mode"
 export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
     try {
-        const paymentsMode = process.env.PAYMENTS_MODE || "mock"
-
-        if (paymentsMode !== "mock") {
+        // El pago simulado fabrica una orden PAID sin cobro real. Se bloquea en
+        // cualquier despliegue productivo aunque el env traiga PAYMENTS_MODE=mock
+        // (p. ej. una build de Vercel apuntando a la BD de producción).
+        if (!isMockPaymentsAllowed()) {
+            console.error(
+                "[payments/mock] intento de pago simulado bloqueado (NODE_ENV=%s, PAYMENTS_MODE=%s)",
+                process.env.NODE_ENV,
+                process.env.PAYMENTS_MODE
+            )
             return NextResponse.json(
                 { success: false, error: "Ruta no disponible" },
                 { status: 404 }
