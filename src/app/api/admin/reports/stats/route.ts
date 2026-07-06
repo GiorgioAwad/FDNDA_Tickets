@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
+import { allocateAmountsProportionally, roundCurrency } from "@/lib/order-revenue"
 
 export const dynamic = "force-dynamic"
 
@@ -27,17 +28,30 @@ export async function GET() {
             }
         })
 
-        // Sales by event
-        const eventSales: Record<string, number> = {}
+        // Sales by event: use charged order amounts, not TicketType list prices.
+        const eventStats = new Map<string, { title: string; revenue: number; tickets: number }>()
         paidOrders.forEach(order => {
-            order.orderItems.forEach(item => {
+            const allocatedAmounts = allocateAmountsProportionally(
+                order.orderItems.map((item) => Number(item.subtotal)),
+                Number(order.totalAmount)
+            )
+
+            order.orderItems.forEach((item, index) => {
                 if (!item.ticketType) return
+                const eventId = item.ticketType.eventId
                 const eventTitle = item.ticketType.event.title
-                eventSales[eventTitle] = (eventSales[eventTitle] || 0) + Number(item.subtotal)
+                const current = eventStats.get(eventId) || {
+                    title: eventTitle,
+                    revenue: 0,
+                    tickets: 0,
+                }
+                current.revenue += allocatedAmounts[index] || 0
+                current.tickets += item.quantity
+                eventStats.set(eventId, current)
             })
         })
-        const salesByEvent = Object.entries(eventSales)
-            .map(([name, total]) => ({ name, total }))
+        const salesByEvent = Array.from(eventStats.values())
+            .map((event) => ({ name: event.title, total: roundCurrency(event.revenue) }))
             .sort((a, b) => b.total - a.total)
             .slice(0, 10)
 
@@ -68,18 +82,11 @@ export async function GET() {
             .sort((a, b) => b.count - a.count)
             .slice(0, 6)
 
-        // Top events
-        const events = await prisma.event.findMany({
-            include: {
-                _count: { select: { tickets: true } },
-                ticketTypes: { select: { price: true, sold: true } }
-            }
-        })
-        const topEvents = events
-            .map(e => ({
-                title: e.title,
-                tickets: e._count.tickets,
-                revenue: e.ticketTypes.reduce((acc, tt) => acc + (Number(tt.price) * tt.sold), 0)
+        const topEvents = Array.from(eventStats.values())
+            .map((event) => ({
+                title: event.title,
+                tickets: event.tickets,
+                revenue: roundCurrency(event.revenue),
             }))
             .sort((a, b) => b.revenue - a.revenue)
             .slice(0, 5)
