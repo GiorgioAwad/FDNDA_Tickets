@@ -534,22 +534,33 @@ export default function TicketPurchaseCard({
                         : "EVENTO",
                 price: ticket.price,
                 quantity: 1,
-                scheduleConfig: {
-                    dates: selectedDate ? [selectedDate] : metadata.schedule.dates,
-                    shifts: metadata.schedule.shifts,
-                    slots: selectedDate
-                        ? metadata.schedule.slots?.filter((slot) => slot.date === selectedDate)
-                        : metadata.schedule.slots,
-                    // Para ACADEMIA el paquete es flexible: el comprador no preselecciona fechas,
-                    // las N clases se consumen en cualquier dia del rango. La bolsa de piscina
-                    // tampoco preselecciona (se reserva luego). Para otros paquetes (full-day,
-                    // paquete de turnos) si exigimos seleccion explicita.
-                    requiredDays:
-                        !isBag && ticket.isPackage && eventCategory !== "ACADEMIA"
-                            ? (ticket.packageDaysCount ?? null)
-                            : null,
-                    requireShiftSelection: metadata.schedule.requireShiftSelection,
-                },
+                // La bolsa NO lleva fechas/turnos: se compra como producto simple y las
+                // visitas se reservan luego. En piscina, metadata.schedule.dates cae al
+                // rango completo del evento (fallback de los horarios sueltos), lo que
+                // haría que el checkout pidiera elegir un día — por eso se vacía aquí.
+                scheduleConfig: isBag
+                    ? {
+                        dates: [],
+                        shifts: [],
+                        slots: undefined,
+                        requiredDays: null,
+                        requireShiftSelection: false,
+                    }
+                    : {
+                        dates: selectedDate ? [selectedDate] : metadata.schedule.dates,
+                        shifts: metadata.schedule.shifts,
+                        slots: selectedDate
+                            ? metadata.schedule.slots?.filter((slot) => slot.date === selectedDate)
+                            : metadata.schedule.slots,
+                        // Para ACADEMIA el paquete es flexible: el comprador no preselecciona
+                        // fechas, las N clases se consumen en cualquier dia del rango. Para
+                        // otros paquetes (full-day, paquete de turnos) si exigimos seleccion.
+                        requiredDays:
+                            ticket.isPackage && eventCategory !== "ACADEMIA"
+                                ? (ticket.packageDaysCount ?? null)
+                                : null,
+                        requireShiftSelection: metadata.schedule.requireShiftSelection,
+                    },
                 servilexEnabled: Boolean(ticket.servilexEnabled),
                 servilexIndicator: ticket.servilexIndicator || null,
                 monthlyClassLimit: ticket.monthlyClassLimit ?? null,
