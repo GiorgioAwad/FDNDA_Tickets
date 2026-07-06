@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { formatDate } from "@/lib/utils"
+import { PoolBagCarnet, type PoolBagTicket } from "@/components/tickets/PoolBagCarnet"
 import {
     parseMembershipScheduleSelection,
     formatSlotLabel,
@@ -99,6 +100,9 @@ interface TicketDetail {
     qrDataUrl: string
     qrDate: string
     qrShift?: string | null
+    // Bolsa de piscina libre: la vista se delega a PoolBagCarnet.
+    isPoolBag?: boolean
+    poolBag?: PoolBagTicket["poolBag"]
 }
 
 const getWeekdayIndexes = (label: string) => {
@@ -195,26 +199,26 @@ export default function TicketDetailPage() {
     const [freezeMessage, setFreezeMessage] = useState("")
     const [freezeError, setFreezeError] = useState("")
 
-    useEffect(() => {
-        const fetchTicket = async () => {
-            try {
-                const response = await fetch(`/api/tickets/${params.ticketId}`, { cache: "no-store" })
-                if (!response.ok) {
-                    throw new Error("Error al cargar el ticket")
-                }
-                const data = await response.json()
-                setTicket(data.data)
-                setFreezeMonth(data.data?.membershipFreeze?.availableMonths?.[0]?.month ?? "")
-            } catch (err) {
-                setError("No se pudo cargar el ticket")
-                console.error(err)
-            } finally {
-                setLoading(false)
+    const loadTicket = useCallback(async () => {
+        try {
+            const response = await fetch(`/api/tickets/${params.ticketId}`, { cache: "no-store" })
+            if (!response.ok) {
+                throw new Error("Error al cargar el ticket")
             }
+            const data = await response.json()
+            setTicket(data.data)
+            setFreezeMonth(data.data?.membershipFreeze?.availableMonths?.[0]?.month ?? "")
+        } catch (err) {
+            setError("No se pudo cargar el ticket")
+            console.error(err)
+        } finally {
+            setLoading(false)
         }
-
-        fetchTicket()
     }, [params.ticketId])
+
+    useEffect(() => {
+        void loadTicket()
+    }, [loadTicket])
 
     if (loading) {
         return (
@@ -231,6 +235,24 @@ export default function TicketDetailPage() {
                 <Link href="/mi-cuenta/entradas">
                     <Button variant="outline">Volver a mis entradas</Button>
                 </Link>
+            </div>
+        )
+    }
+
+    // Bolsa de piscina libre: vista dedicada (reservar/cancelar visitas + QR de hoy).
+    if (ticket.isPoolBag && ticket.poolBag) {
+        return (
+            <div className="min-h-screen bg-gray-50 py-6 sm:py-8 px-4">
+                <div className="max-w-md mx-auto">
+                    <Link
+                        href="/mi-cuenta/entradas"
+                        className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
+                    >
+                        <ArrowLeft className="h-4 w-4" />
+                        Volver
+                    </Link>
+                    <PoolBagCarnet ticket={ticket as unknown as PoolBagTicket} onChange={loadTicket} />
+                </div>
             </div>
         )
     }

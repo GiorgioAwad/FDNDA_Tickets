@@ -496,6 +496,13 @@ export default function TicketPurchaseCard({
         return ticketMeta.filter((entry) => entry.ticket.id === selectedPoolSlot.ticketId)
     }, [eventCategory, selectedPoolSlot, ticketMeta])
 
+    // Bolsas de piscina libre (paquetes): se compran como producto simple, sin elegir
+    // fecha/horario (las visitas se reservan luego desde "Mi cuenta").
+    const bagTicketMeta = useMemo(() => {
+        if (!isPoolFreeEventCategory(eventCategory)) return []
+        return ticketMeta.filter((entry) => Boolean(entry.ticket.isPackage))
+    }, [eventCategory, ticketMeta])
+
     const getCartQuantity = (itemKey: string) => {
         if (!mounted) return 0
         const found = items.find((item) => (item.lineKey || item.ticketTypeId) === itemKey)
@@ -511,6 +518,9 @@ export default function TicketPurchaseCard({
 
         const currentQty = getCartQuantity(itemKey)
         const nextQty = Math.min(currentQty + 1, maxQty)
+        // Bolsa de piscina libre: paquete que NO pre-selecciona fechas (las visitas se
+        // reservan luego desde "Mi cuenta"). Se compra como producto simple.
+        const isBag = eventCategory === "PISCINA_LIBRE" && Boolean(ticket.isPackage)
         if (currentQty === 0) {
             addItem({
                 lineKey: itemKey,
@@ -531,10 +541,11 @@ export default function TicketPurchaseCard({
                         ? metadata.schedule.slots?.filter((slot) => slot.date === selectedDate)
                         : metadata.schedule.slots,
                     // Para ACADEMIA el paquete es flexible: el comprador no preselecciona fechas,
-                    // las N clases se consumen en cualquier dia del rango. Para otros tipos
-                    // (full-day, paquete de turnos) si exigimos seleccion explicita.
+                    // las N clases se consumen en cualquier dia del rango. La bolsa de piscina
+                    // tampoco preselecciona (se reserva luego). Para otros paquetes (full-day,
+                    // paquete de turnos) si exigimos seleccion explicita.
                     requiredDays:
-                        ticket.isPackage && eventCategory !== "ACADEMIA"
+                        !isBag && ticket.isPackage && eventCategory !== "ACADEMIA"
                             ? (ticket.packageDaysCount ?? null)
                             : null,
                     requireShiftSelection: metadata.schedule.requireShiftSelection,
@@ -818,6 +829,86 @@ export default function TicketPurchaseCard({
         </>
     )
 
+    // Bolsas de piscina libre: producto simple (compra ahora, reserva luego).
+    const poolBagPanel = bagTicketMeta.length > 0 ? (
+        <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 sm:rounded-2xl sm:p-5">
+            <div>
+                <h4 className="text-base font-bold text-slate-900 sm:text-xl">Bolsas de visitas</h4>
+                <p className="text-[11px] leading-tight text-slate-500 sm:text-sm">
+                    Compra una vez y reserva tus visitas cuando quieras desde &ldquo;Mi cuenta&rdquo;.
+                </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+                {bagTicketMeta.map(({ ticket, maxQty, soldOut }) => {
+                    const qty = getCartQuantity(ticket.id)
+                    return (
+                        <div
+                            key={ticket.id}
+                            className={`rounded-xl border p-3 sm:p-4 ${soldOut ? "bg-gray-50 opacity-60" : "bg-white"}`}
+                        >
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <h5 className="text-sm font-semibold sm:text-base">{ticket.name}</h5>
+                                    {ticket.description && (
+                                        <p className="text-xs text-gray-500">{ticket.description}</p>
+                                    )}
+                                </div>
+                                <div className="text-right">
+                                    {ticket.originalPrice ? (
+                                        <div className="text-xs text-gray-400 line-through">
+                                            {formatPrice(ticket.originalPrice)}
+                                        </div>
+                                    ) : null}
+                                    <div className="text-base font-bold text-[hsl(210,100%,40%)] sm:text-lg">
+                                        {formatPrice(ticket.price)}
+                                    </div>
+                                </div>
+                            </div>
+                            {Array.isArray(ticket.benefits) && ticket.benefits.length > 0 && (
+                                <ul className="mt-2 space-y-1 text-xs text-gray-600">
+                                    {ticket.benefits.map((benefit, index) => (
+                                        <li key={index} className="flex items-start gap-1">
+                                            <CheckCircle className="mt-0.5 h-3 w-3 flex-shrink-0 text-emerald-500" />
+                                            <span>{benefit.text}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            {soldOut ? (
+                                <div className="mt-3 text-sm font-semibold text-red-600">No disponible</div>
+                            ) : (
+                                <div className="mt-3 flex items-center justify-end gap-2">
+                                    <span className="text-xs text-gray-500">Cantidad</span>
+                                    <div className="flex items-center gap-2 rounded-full border px-2 py-1">
+                                        <button
+                                            type="button"
+                                            className="h-7 w-7 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                                            onClick={() => handleDecrement(ticket.id)}
+                                            disabled={qty === 0}
+                                            aria-label="Quitar"
+                                        >
+                                            <Minus className="h-3 w-3 mx-auto" />
+                                        </button>
+                                        <span className="min-w-[1.5rem] text-center text-sm font-semibold">{qty}</span>
+                                        <button
+                                            type="button"
+                                            className="h-7 w-7 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                                            onClick={() => handleIncrement(ticket.id, maxQty)}
+                                            disabled={qty >= maxQty}
+                                            aria-label="Agregar"
+                                        >
+                                            <Plus className="h-3 w-3 mx-auto" />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )
+                })}
+            </div>
+        </div>
+    ) : null
+
     if (isPlansLayout) {
         return (
             <div>
@@ -846,6 +937,8 @@ export default function TicketPurchaseCard({
                 {ticketTypes.length > 0 ? (
                     <>
                         {isPoolFreeView ? (
+                            <div className="space-y-4 sm:space-y-6">
+                            {poolBagPanel}
                             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,380px)] xl:items-start xl:gap-6">
                                 <div className="min-w-0 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5 sm:space-y-3 sm:rounded-2xl sm:p-5">
                                     <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
@@ -978,6 +1071,7 @@ export default function TicketPurchaseCard({
                                 <div className="min-w-0 space-y-4 overflow-hidden xl:sticky xl:top-24">
                                     {purchasePanel}
                                 </div>
+                            </div>
                             </div>
                         ) : (
                             purchasePanel

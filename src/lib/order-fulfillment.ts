@@ -8,6 +8,7 @@ import { getTodayDateString, formatDateUTC } from "@/lib/qr"
 import { buildNaturalPersonFullName } from "@/lib/billing"
 import { buildServilexInvoiceSnapshots } from "@/lib/servilex"
 import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
+import { isPoolBagTicketType } from "@/lib/pool-bag"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 import { Prisma } from "@prisma/client"
 
@@ -417,6 +418,11 @@ const buildEntitlementDates = (input: {
 
     // Piscina libre: solo 1 entitlement (el dia seleccionado)
     if (input.eventCategory === "PISCINA_LIBRE") {
+        // Bolsa (paquete): NO se pre-generan entitlements. Cada visita se crea como
+        // una PoolVisitReservation al reservar desde "Mi cuenta".
+        if (input.ticketType.isPackage && input.ticketType.packageDaysCount) {
+            return []
+        }
         if (selectedDates.length > 0) {
             return toDateObjectsFromDateStrings([selectedDates[0]])
         }
@@ -615,7 +621,13 @@ export async function fulfillPaidOrder({
                 const ticketType = item.ticketType
                 const ticketTypeId = item.ticketTypeId
 
-                if (isPoolFreeEventCategory(ticketType.event.category)) {
+                const isBag = isPoolBagTicketType({
+                    eventCategory: ticketType.event.category,
+                    isPackage: ticketType.isPackage,
+                    packageDaysCount: ticketType.packageDaysCount,
+                })
+
+                if (isPoolFreeEventCategory(ticketType.event.category) && !isBag) {
                     const reservationCounts = buildPoolFreeReservationCounts({
                         attendees: Array.isArray(item.attendeeData) ? item.attendeeData : [],
                         quantity: item.quantity,

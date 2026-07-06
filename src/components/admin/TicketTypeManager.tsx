@@ -647,6 +647,33 @@ export function TicketTypeManager({
         setIsAdding(true)
     }
 
+    // Bolsa de piscina libre ("10 visitas"): paquete que se compra una vez y cuyas
+    // visitas se reservan luego desde "Mi cuenta". Modo "standard" ⇒ validDays queda
+    // vacío (no tiene cupo por-fecha propio); consume el cupo de los horarios sueltos.
+    // Boleta ABIO PN por el total (cantidad = N visitas), horas nominales.
+    const startPoolBagTicket = () => {
+        setEntryMode("standard")
+        setFormData({
+            ...buildEmptyFormData(eventSucursal.code),
+            name: "Bolsa 10 visitas",
+            price: 150,
+            capacity: 0,
+            isPackage: true,
+            packageDaysCount: 10,
+            servilexEnabled: true,
+            servilexIndicator: "PN",
+            servilexSucursalCode: eventSucursal.code,
+            servilexExtraConfig: { cantidad: 10 },
+        })
+        setCapacityInput("0")
+        setSelectedValidDays([])
+        setShiftEntries([])
+        setDateShiftSelections({})
+        setRequireShiftSelection(false)
+        setFullDayPackageDays(10)
+        setIsAdding(true)
+    }
+
     const handleSave = async () => {
         if (!formData.name || formData.price === undefined) return
 
@@ -1191,6 +1218,17 @@ export function TicketTypeManager({
                         >
                             <Plus className="h-4 w-4 mr-2" />
                             Generar Horarios
+                        </Button>
+                        )}
+                        {usesDailyCapacity && (
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={startPoolBagTicket}
+                        >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Bolsa de visitas
                         </Button>
                         )}
                     </div>

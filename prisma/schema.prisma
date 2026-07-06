@@ -57,6 +57,13 @@ enum EntitlementStatus {
   USED
 }
 
+// Bolsa de piscina libre ("10 visitas"): estado de cada reserva de visita.
+enum PoolReservationStatus {
+  RESERVED  // cupo tomado, aún no asistido
+  USED      // ya escaneado/asistido
+  CANCELLED // liberado (devuelve el cupo y el crédito)
+}
+
 enum ScanResult {
   VALID
   INVALID
@@ -374,6 +381,8 @@ model TicketType {
   orderItems      OrderItem[]
   tickets         Ticket[]
   courtesyBatches CourtesyBatch[]
+  // Reservas de bolsa que consumen el cupo de este horario (relación inversa).
+  poolReservations PoolVisitReservation[] @relation("PoolReservationSlot")
 
   @@index([eventId])
   @@index([isActive])
@@ -510,6 +519,8 @@ model Ticket {
   // cambio que rige desde su monthIndex en adelante. Ver lib/membership-schedule.
   monthlySchedules MembershipMonthlySchedule[]
   membershipFreeze MembershipFreeze?
+  // Bolsa de piscina libre: reservas de visita del titular (draw-down de créditos).
+  poolReservations PoolVisitReservation[]
 
   @@index([eventId])
   @@index([userId])
@@ -568,6 +579,37 @@ model TicketDayEntitlement {
   @@unique([ticketId, date])
   @@index([ticketId, status])
   @@map("ticket_day_entitlements")
+}
+
+// Reserva de visita de una bolsa de piscina libre. La bolsa (TicketType isPackage
+// con packageDaysCount créditos) se compra primero y luego el titular reserva cada
+// visita eligiendo fecha + horario. Cada reserva consume el cupo del horario elegido
+// en ticket_type_date_inventories (sourceTicketTypeId, date) y lo libera al cancelar.
+// Se usa una tabla propia (no TicketDayEntitlement) porque permite repetir día en
+// horarios distintos y modela el ciclo RESERVED/USED/CANCELLED sin tocar el índice
+// único (ticketId, date) del que dependen los upsert de escáner/membresías.
+model PoolVisitReservation {
+  id                 String                @id @default(cuid())
+  ticketId           String
+  sourceTicketTypeId String                // el horario de piscina cuyo cupo se consume
+  date               DateTime              @db.Date
+  shift              String                // etiqueta del horario (horaInicio-horaFin) para el escáner/carnet
+  status             PoolReservationStatus @default(RESERVED)
+  usedAt             DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  // Relations
+  ticket           Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sourceTicketType TicketType @relation("PoolReservationSlot", fields: [sourceTicketTypeId], references: [id])
+
+  // 1 reserva por horario/día por bolsa (permite repetir día en horarios distintos).
+  // Solo aplica a filas no canceladas: la app filtra CANCELLED al reservar (una fila
+  // cancelada bloquearía re-reservar el mismo slot). Ver pool-bag.ts.
+  @@unique([ticketId, date, sourceTicketTypeId])
+  @@index([ticketId, status])
+  @@index([sourceTicketTypeId, date])
+  @@map("pool_visit_reservations")
 }
 
 model Scan {

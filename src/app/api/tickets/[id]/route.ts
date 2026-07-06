@@ -26,6 +26,12 @@ import {
     scheduleSelectionToInput,
     formatScheduleSummary,
 } from "@/lib/membership-schedule"
+import {
+    isPoolBagTicketType,
+    getPoolBagCredits,
+    getPoolSlotShiftLabel,
+    getPoolSlotStartMinutes,
+} from "@/lib/pool-bag"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -141,6 +147,142 @@ export async function GET(
                 { success: false, error: "Ticket no encontrado" },
                 { status: 404 }
             )
+        }
+
+        // ===== Bolsa de piscina libre: reservas + QR de la visita de hoy =====
+        // La bolsa no usa entitlements; las visitas son PoolVisitReservation. El QR
+        // solo es escaneable el día de la visita (piscina estricta), así que se emite
+        // para la reserva de HOY aún no usada.
+        if (
+            isPoolBagTicketType({
+                eventCategory: ticket.event?.category,
+                isPackage: ticket.ticketType.isPackage,
+                packageDaysCount: ticket.ticketType.packageDaysCount,
+            })
+        ) {
+            const reservationRows = await prisma.poolVisitReservation.findMany({
+                where: { ticketId: ticket.id, status: { in: ["RESERVED", "USED"] } },
+                orderBy: [{ date: "asc" }, { shift: "asc" }],
+            })
+            const credits = getPoolBagCredits(reservationRows, ticket.ticketType.packageDaysCount)
+            const todayStr = getTodayDateString()
+
+            // Horarios (slots) del evento para el selector de reserva, con su cupo por
+            // fecha. Un slot sin fila de inventario para una fecha se toma como abierto
+            // a su capacidad base (lazy-create al reservar), igual que PoolDayCupos.
+            const slotRows = await prisma.ticketType.findMany({
+                where: { eventId: ticket.eventId, isActive: true, isPackage: false },
+                orderBy: { sortOrder: "asc" },
+                select: {
+                    id: true,
+                    name: true,
+                    price: true,
+                    capacity: true,
+                    servilexExtraConfig: true,
+                    dateInventories: {
+                        select: { date: true, capacity: true, sold: true, isEnabled: true },
+                    },
+                },
+            })
+            const slots = slotRows.map((s) => ({
+                ticketTypeId: s.id,
+                name: s.name,
+                shift: getPoolSlotShiftLabel({ name: s.name, servilexExtraConfig: s.servilexExtraConfig }),
+                startMinutes: getPoolSlotStartMinutes({ servilexExtraConfig: s.servilexExtraConfig }),
+                price: Number(s.price),
+                capacity: s.capacity,
+                dateInventories: s.dateInventories.map((inv) => ({
+                    date: formatDateUTC(inv.date),
+                    capacity: inv.capacity,
+                    sold: inv.sold,
+                    isEnabled: inv.isEnabled,
+                })),
+            }))
+
+            const reservations = reservationRows.map((r) => ({
+                id: r.id,
+                date: formatDateUTC(r.date),
+                shift: r.shift,
+                status: r.status,
+                usedAt: r.usedAt ? r.usedAt.toISOString() : null,
+            }))
+
+            const requestedDate =
+                dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : null
+            const targetReservation =
+                reservationRows.find(
+                    (r) =>
+                        r.status === "RESERVED" &&
+                        formatDateUTC(r.date) === todayStr &&
+                        (!requestedDate || formatDateUTC(r.date) === requestedDate)
+                ) ?? null
+
+            let bagQrDataUrl: string | null = null
+            let bagQrShift: string | null = null
+            let bagQrDate: string | null = null
+            if (ticket.status === "ACTIVE" && targetReservation) {
+                bagQrShift = targetReservation.shift
+                bagQrDate = formatDateUTC(targetReservation.date)
+                try {
+                    const payload = createQRPayload(
+                        ticket.id,
+                        ticket.eventId,
+                        ticket.userId,
+                        ticket.ticketCode,
+                        parseDateOnly(bagQrDate),
+                        bagQrShift
+                    )
+                    bagQrDataUrl = await generateQRDataURL(payload)
+                    await logTicketIssuance({
+                        outcome: "OK",
+                        ticketId: ticket.id,
+                        userId: ticket.userId,
+                        eventId: ticket.eventId,
+                        qrDate: bagQrDate,
+                        qrShift: bagQrShift,
+                        requestedDate: dateParam,
+                        request,
+                    })
+                } catch (qrErr) {
+                    console.error("QR generation error (bag):", qrErr)
+                    bagQrDataUrl = null
+                }
+            } else if (ticket.status === "ACTIVE") {
+                await logTicketIssuance({
+                    outcome: "NO_ENTITLEMENT",
+                    reason: "Bolsa sin reserva para hoy",
+                    ticketId: ticket.id,
+                    userId: ticket.userId,
+                    eventId: ticket.eventId,
+                    requestedDate: dateParam,
+                    request,
+                })
+            }
+
+            return NextResponse.json({
+                success: true,
+                data: {
+                    ...ticket,
+                    entitlements: [],
+                    isPoolBag: true,
+                    poolBag: {
+                        credits,
+                        reservations,
+                        today: todayStr,
+                        slots,
+                        eventStart: formatDateUTC(ticket.event.startDate),
+                        eventEnd: formatDateUTC(ticket.event.endDate),
+                    },
+                    qrDataUrl: bagQrDataUrl,
+                    qrDate: bagQrDate,
+                    qrShift: bagQrShift,
+                    scanCount: credits.used,
+                    scans: reservationRows
+                        .filter((r) => r.status === "USED")
+                        .map((r) => ({ date: formatDateUTC(r.date), shift: r.shift })),
+                    isMembership: false,
+                },
+            })
         }
 
         let entitlements = ticket.entitlements

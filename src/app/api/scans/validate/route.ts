@@ -15,6 +15,11 @@ import {
     shiftsMatch,
 } from "@/lib/ticket-shift"
 import { canReassignToScanDate, ticketUsesPurchasedDates } from "@/lib/ticket-date-policy"
+import {
+    isPoolBagTicketType,
+    getPoolBagCredits,
+    pickReservationForShift,
+} from "@/lib/pool-bag"
 import { rateLimit } from "@/lib/rate-limit"
 import {
     type ScanResultType,
@@ -223,6 +228,127 @@ export async function POST(request: NextRequest) {
                 valid: false,
                 reason: "QR_EXPIRED",
                 message: "El evento no esta activo en esta fecha.",
+            })
+        }
+
+        // ===== Bolsa de piscina libre: consumir una PoolVisitReservation =====
+        // La bolsa no usa entitlements; cada visita es una reserva (día + horario) que
+        // ya descontó su cupo. Aquí se consume la reserva de hoy que casa el turno del
+        // QR (payload.shift). El día==hoy ya se validó arriba (piscina estricta).
+        if (
+            isPoolBagTicketType({
+                eventCategory: ticket.event?.category,
+                isPackage: ticket.ticketType.isPackage,
+                packageDaysCount: ticket.ticketType.packageDaysCount,
+            })
+        ) {
+            const packageDaysCount = ticket.ticketType.packageDaysCount ?? 0
+            const allReservations = await prisma.poolVisitReservation.findMany({
+                where: { ticketId: ticket.id, status: { in: ["RESERVED", "USED"] } },
+            })
+            const credits = getPoolBagCredits(allReservations, packageDaysCount)
+            const qrShift = normalizeShiftLabel(payload.shift)
+            const todayReservations = allReservations.filter((r) => matchesToday(r.date, today))
+
+            let target = pickReservationForShift(todayReservations, qrShift)
+            // Override de emergencia: si no hay reserva para hoy, consume la próxima
+            // RESERVED (queda registrado como ingreso forzado).
+            if ((!target || target.status !== "RESERVED") && override) {
+                target =
+                    allReservations
+                        .filter((r) => r.status === "RESERVED")
+                        .sort(
+                            (a, b) =>
+                                formatDateUTC(a.date).localeCompare(formatDateUTC(b.date)) ||
+                                a.shift.localeCompare(b.shift)
+                        )[0] ?? target
+            }
+
+            const ticketInfo = {
+                id: ticket.id,
+                ticketCode: ticket.ticketCode,
+                attendeeName: ticket.attendeeName,
+                attendeeDni: ticket.attendeeDni,
+                eventTitle: ticket.event.title,
+                ticketTypeName: ticket.ticketType.name,
+            }
+
+            if (!target) {
+                const usedToday = todayReservations.some((r) => r.status === "USED")
+                await logScan(
+                    ticket.id,
+                    user.id,
+                    eventId,
+                    usedToday ? "ALREADY_USED" : "WRONG_DAY",
+                    usedToday ? "Bolsa: ya registrada hoy" : "Bolsa: sin reserva para hoy",
+                    qrShift,
+                    todayDate
+                )
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: usedToday ? "ALREADY_USED" : "NO_RESERVATION",
+                    isPiscina: true,
+                    message: usedToday
+                        ? "Ya registraste tu visita de hoy"
+                        : "No tienes una reserva para hoy con esta bolsa",
+                    ...(usedToday ? { ticket: ticketInfo } : {}),
+                    attendance: { total: credits.total, used: credits.used, remaining: Math.max(credits.total - credits.used, 0) },
+                })
+            }
+
+            if (target.status === "USED") {
+                await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Bolsa: reserva ya usada", target.shift, todayDate)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "ALREADY_USED",
+                    isPiscina: true,
+                    message: "Ya registraste esta visita",
+                    ticket: ticketInfo,
+                    scannedAt: (target.usedAt ?? new Date()).toISOString(),
+                    attendance: { total: credits.total, used: credits.used, remaining: Math.max(credits.total - credits.used, 0) },
+                })
+            }
+
+            const usedAt = new Date()
+            const consumed = await prisma.poolVisitReservation.updateMany({
+                where: { id: target.id, status: "RESERVED" },
+                data: { status: "USED", usedAt },
+            })
+            if (consumed.count === 0) {
+                await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Bolsa: ya usada por otro scanner", target.shift, todayDate)
+                return NextResponse.json({
+                    success: false,
+                    valid: false,
+                    reason: "ALREADY_USED",
+                    isPiscina: true,
+                    message: "Asistencia ya registrada",
+                    ticket: ticketInfo,
+                    attendance: { total: credits.total, used: credits.used, remaining: Math.max(credits.total - credits.used, 0) },
+                })
+            }
+
+            await logScan(
+                ticket.id,
+                user.id,
+                eventId,
+                "VALID",
+                override ? "Bolsa: OVERRIDE emergencia (fuera de dia/turno)" : "Bolsa: visita",
+                target.shift,
+                todayDate
+            )
+            const newUsed = credits.used + 1
+            return NextResponse.json({
+                success: true,
+                valid: true,
+                reason: "VALID",
+                overridden: override,
+                isPiscina: true,
+                message: override ? "Asistencia registrada (ingreso forzado)" : "Asistencia registrada",
+                ticket: { ...ticketInfo, entryDate: today },
+                scannedAt: usedAt.toISOString(),
+                attendance: { total: credits.total, used: newUsed, remaining: Math.max(credits.total - newUsed, 0) },
             })
         }
 

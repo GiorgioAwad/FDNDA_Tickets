@@ -7,6 +7,7 @@ import { rateLimit } from "@/lib/rate-limit"
 import { createOrderSchema } from "@/lib/validations"
 import { onTicketSold } from "@/lib/cached-queries"
 import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
+import { isPoolBagTicketType } from "@/lib/pool-bag"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 import { validateMembershipStartDate, resolveMembershipStartSetup } from "@/lib/membership-config"
 import {
@@ -307,23 +308,41 @@ export async function POST(request: NextRequest) {
                         throw new Error(`El tipo de entrada "${ticketType.name}" no esta disponible`)
                     }
 
-                    const reservationCounts = buildPoolFreeReservationCounts({
-                        attendees: attendeeData,
-                        quantity: item.quantity,
-                        validDays: ticketType.validDays,
-                        eventStartDate: eventConfig.startDate,
-                        eventEndDate: eventConfig.endDate,
-                        ticketLabel: ticketType.name,
-                    })
+                    if (
+                        isPoolBagTicketType({
+                            eventCategory: eventConfig.category,
+                            isPackage: ticketType.isPackage,
+                            packageDaysCount: ticketType.packageDaysCount,
+                        })
+                    ) {
+                        // Bolsa de piscina libre: se vende como entrada simple (no tiene
+                        // cupo por-fecha propio). Las visitas se reservan luego desde
+                        // "Mi cuenta" y ahí se descuenta el cupo del horario elegido.
+                        // Reserva diferida del sold de la bolsa (ver simpleReserves).
+                        simpleReserves.push({
+                            ticketTypeId: ticketType.id,
+                            quantity: item.quantity,
+                            name: ticketType.name,
+                        })
+                    } else {
+                        const reservationCounts = buildPoolFreeReservationCounts({
+                            attendees: attendeeData,
+                            quantity: item.quantity,
+                            validDays: ticketType.validDays,
+                            eventStartDate: eventConfig.startDate,
+                            eventEndDate: eventConfig.endDate,
+                            ticketLabel: ticketType.name,
+                        })
 
-                    // Reserva diferida (ver simpleReserves/poolReserves arriba).
-                    poolReserves.push({
-                        ticketTypeId: ticketType.id,
-                        quantity: item.quantity,
-                        templateCapacity: ticketType.capacity,
-                        reservations: reservationCounts,
-                        ticketLabel: ticketType.name,
-                    })
+                        // Reserva diferida (ver simpleReserves/poolReserves arriba).
+                        poolReserves.push({
+                            ticketTypeId: ticketType.id,
+                            quantity: item.quantity,
+                            templateCapacity: ticketType.capacity,
+                            reservations: reservationCounts,
+                            ticketLabel: ticketType.name,
+                        })
+                    }
 
                     reservedTicketType = ticketType
                 } else {
