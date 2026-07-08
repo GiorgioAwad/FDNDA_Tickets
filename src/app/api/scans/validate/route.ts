@@ -40,6 +40,12 @@ import {
 
 export const runtime = "nodejs"
 
+// Doble asistencia en planes con horario semanal (BRONCE/PLATA con
+// allowMultipleDailyScans): el QR aplica el mismo tope de 2 ingresos/día que el
+// panel manual, para proteger el cupo mensual chico (8-12 clases). ORO (sin
+// horario semanal, acceso libre) mantiene ingresos ilimitados por día.
+const SCHEDULED_MEMBERSHIP_MAX_DAILY_SCANS = 2
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -558,11 +564,13 @@ export async function POST(request: NextRequest) {
             return summary
         }
 
-        // Membresía con varios ingresos por día (ORO): no se bloquea el reingreso
-        // del mismo día; cada escaneo cuenta como 1 clase del cupo mensual. Se cuenta
-        // por SCANS VALID del mes (hay un solo entitlement por día, así que contar
-        // entitlements no serviría). Se resuelve aquí, antes de la lógica normal de
-        // entitlement (que sí bloquea el reingreso).
+        // Membresía con varios ingresos por día (ORO, BRONCE/PLATA con doble
+        // asistencia): no se bloquea el reingreso del mismo día; cada escaneo
+        // cuenta como 1 clase del cupo mensual. Se cuenta por SCANS VALID del mes
+        // (hay un solo entitlement por día, así que contar entitlements no
+        // serviría). Se resuelve aquí, antes de la lógica normal de entitlement
+        // (que sí bloquea el reingreso). Para planes con horario semanal ya pasó
+        // la validación de día+hora de más arriba.
         if (membershipAllowsMultipleDailyScans(ticket)) {
             const anchor = getMembershipAnchor(ticket)
             const period = anchor ? getMembershipPeriod(today, anchor) : null
@@ -579,6 +587,34 @@ export async function POST(request: NextRequest) {
                       },
                   })
                 : 0
+
+            // Planes con horario semanal (BRONCE/PLATA): tope de 2 ingresos/día,
+            // igual que el panel manual. ORO (sin horario) no tiene tope.
+            let todayScans = 0
+            if (weeklySchedule) {
+                todayScans = await prisma.scan.count({
+                    where: { ticketId: ticket.id, result: "VALID", date: todayDate },
+                })
+                if (todayScans >= SCHEDULED_MEMBERSHIP_MAX_DAILY_SCANS) {
+                    await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Límite 2 ingresos/día (doble asistencia)", currentShift, todayDate)
+                    return NextResponse.json({
+                        success: false,
+                        valid: false,
+                        reason: "ALREADY_USED",
+                        message: "Límite de 2 ingresos por día alcanzado",
+                        ticket: {
+                            id: ticket.id,
+                            ticketCode: ticket.ticketCode,
+                            attendeeName: ticket.attendeeName,
+                            attendeeDni: ticket.attendeeDni,
+                            eventTitle: ticket.event.title,
+                            ticketTypeName: ticket.ticketType.name,
+                        },
+                        scannedAt: new Date().toISOString(),
+                        attendance: { total: limit, used: monthlyUsed, remaining: Math.max(limit - monthlyUsed, 0) },
+                    })
+                }
+            }
 
             if (limit > 0 && monthlyUsed >= limit) {
                 await logScan(ticket.id, user.id, eventId, "WRONG_DAY", "Cupo mensual de clases agotado", currentShift, todayDate)
@@ -607,7 +643,7 @@ export async function POST(request: NextRequest) {
                 valid: true,
                 reason: "VALID",
                 isMembership: true,
-                message: "Asistencia registrada",
+                message: weeklySchedule && todayScans >= 1 ? "Segunda asistencia registrada" : "Asistencia registrada",
                 ticket: {
                     id: ticket.id,
                     ticketCode: ticket.ticketCode,

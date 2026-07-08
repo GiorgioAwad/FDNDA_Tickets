@@ -24,10 +24,12 @@ import {
 
 export const runtime = "nodejs"
 
-// Panel manual: los planes ORO pueden marcar hasta 2 ingresos por día (ej. hacer
+// Panel manual: las membresías con varios ingresos por día (ORO, BRONCE/PLATA
+// con doble asistencia) pueden marcar hasta 2 ingresos por día (ej. hacer
 // 2 horas); cada ingreso cuenta como 1 clase del cupo mensual. (El escáner QR
-// `validate` no aplica este tope: mantiene ingresos ilimitados.)
-const ORO_MAX_DAILY_SCANS = 2
+// `validate` aplica este mismo tope solo a planes con horario semanal; para ORO
+// mantiene ingresos ilimitados.)
+const MEMBERSHIP_MAX_DAILY_SCANS = 2
 
 const TICKET_CODE_REGEX = /^[A-Z2-9]{4}(?:-[A-Z2-9]{4}){2}$/
 const TICKET_CODE_COMPACT_REGEX = /^[A-Z2-9]{12}$/
@@ -464,12 +466,13 @@ export async function POST(request: NextRequest) {
             return buildAttendanceSummary(ticket)
         }
 
-        // Membresía con varios ingresos por día (ORO): permite hasta 2 ingresos por
-        // día en el panel manual; cada ingreso cuenta como 1 clase del cupo mensual
-        // (se cuenta por SCANS VALID del mes, ya que hay un solo entitlement por
-        // día). Se resuelve aquí, antes de la lógica normal de entitlement (que
-        // bloquearía el reingreso con ALREADY_USED). Igual que en `validate`, pero
-        // con tope de 2/día propio del panel manual.
+        // Membresía con varios ingresos por día (ORO, BRONCE/PLATA con doble
+        // asistencia): permite hasta 2 ingresos por día en el panel manual; cada
+        // ingreso cuenta como 1 clase del cupo mensual (se cuenta por SCANS VALID
+        // del mes, ya que hay un solo entitlement por día). Se resuelve aquí,
+        // antes de la lógica normal de entitlement (que bloquearía el reingreso
+        // con ALREADY_USED). Igual que en `validate`, pero con tope de 2/día
+        // para todos los planes (el panel no valida horario: criterio del staff).
         if (membershipAllowsMultipleDailyScans(ticket)) {
             const anchor = getMembershipAnchor(ticket)
             const period = anchor ? getMembershipPeriod(today, anchor) : null
@@ -493,13 +496,13 @@ export async function POST(request: NextRequest) {
                     : Promise.resolve(0),
             ])
 
-            const buildOroAttendance = (used: number) => ({
+            const buildMembershipAttendance = (used: number) => ({
                 total: limit > 0 ? limit : used,
                 used,
                 remaining: limit > 0 ? Math.max(limit - used, 0) : 0,
             })
 
-            const oroTicketInfo = {
+            const membershipTicketInfo = {
                 id: ticket.id,
                 ticketCode: ticket.ticketCode,
                 attendeeName: ticket.attendeeName,
@@ -509,17 +512,17 @@ export async function POST(request: NextRequest) {
             }
 
             // Tope de 2 ingresos por día.
-            if (todayScans >= ORO_MAX_DAILY_SCANS) {
-                await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Límite 2 ingresos/día ORO", null, todayDate)
+            if (todayScans >= MEMBERSHIP_MAX_DAILY_SCANS) {
+                await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Límite 2 ingresos/día (doble asistencia)", null, todayDate)
                 return NextResponse.json({
                     success: false,
                     valid: false,
                     reason: "ALREADY_USED",
                     message: "Límite de 2 ingresos por día alcanzado",
-                    ticket: oroTicketInfo,
+                    ticket: membershipTicketInfo,
                     scannedAt: new Date().toISOString(),
-                    attendance: buildOroAttendance(monthlyUsed),
-                    dailyLimit: ORO_MAX_DAILY_SCANS,
+                    attendance: buildMembershipAttendance(monthlyUsed),
+                    dailyLimit: MEMBERSHIP_MAX_DAILY_SCANS,
                     dailyUsed: todayScans,
                 })
             }
@@ -532,10 +535,10 @@ export async function POST(request: NextRequest) {
                     valid: false,
                     reason: "NO_CLASSES",
                     message: "Cupo mensual de clases agotado",
-                    ticket: oroTicketInfo,
+                    ticket: membershipTicketInfo,
                     scannedAt: new Date().toISOString(),
-                    attendance: buildOroAttendance(monthlyUsed),
-                    dailyLimit: ORO_MAX_DAILY_SCANS,
+                    attendance: buildMembershipAttendance(monthlyUsed),
+                    dailyLimit: MEMBERSHIP_MAX_DAILY_SCANS,
                     dailyUsed: todayScans,
                 })
             }
@@ -547,7 +550,7 @@ export async function POST(request: NextRequest) {
                 create: { ticketId: ticket.id, date: todayDate, status: "USED", usedAt },
                 update: { status: "USED", usedAt },
             })
-            await logScan(ticket.id, user.id, eventId, "VALID", "Ingreso ORO (panel manual)", null, todayDate)
+            await logScan(ticket.id, user.id, eventId, "VALID", "Ingreso membresía (panel manual)", null, todayDate)
 
             const newUsed = monthlyUsed + 1
             return NextResponse.json({
@@ -556,10 +559,10 @@ export async function POST(request: NextRequest) {
                 reason: "VALID",
                 isMembership: true,
                 message: todayScans >= 1 ? "Segunda asistencia registrada" : "Asistencia registrada",
-                ticket: { ...oroTicketInfo, entryDate: today },
+                ticket: { ...membershipTicketInfo, entryDate: today },
                 scannedAt: usedAt.toISOString(),
-                attendance: buildOroAttendance(newUsed),
-                dailyLimit: ORO_MAX_DAILY_SCANS,
+                attendance: buildMembershipAttendance(newUsed),
+                dailyLimit: MEMBERSHIP_MAX_DAILY_SCANS,
                 dailyUsed: todayScans + 1,
             })
         }

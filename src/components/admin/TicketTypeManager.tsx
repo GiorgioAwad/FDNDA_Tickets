@@ -1722,10 +1722,12 @@ export function TicketTypeManager({
                                             }
                                         />
                                         <span>
-                                            Permitir varios ingresos por día (ej. ORO)
+                                            Permitir varios ingresos por día (doble asistencia)
                                             <span className="block text-[11px] font-normal text-gray-500">
-                                                No se bloquea el reingreso del mismo día y cada escaneo cuenta como
+                                                No se bloquea el reingreso del mismo día y cada ingreso cuenta como
                                                 1 clase del cupo mensual. Solo aplica a membresías (con cupo mensual).
+                                                En planes con horario semanal (BRONCE/PLATA) el tope es 2 ingresos/día;
+                                                sin horario (ORO) no hay tope en el escáner QR.
                                             </span>
                                         </span>
                                     </label>

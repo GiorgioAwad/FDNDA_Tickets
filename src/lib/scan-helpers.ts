@@ -259,9 +259,13 @@ export const isMembershipTicket = (ticket: ScanTicket): boolean => {
 }
 
 /**
- * Membresía con varios ingresos por día (ej. ORO): no se bloquea el reingreso del
- * mismo día y cada escaneo cuenta como 1 clase del cupo mensual (se cuenta por
- * scans VALID del mes). Solo aplica a membresías (monthlyClassLimit).
+ * Membresía con varios ingresos por día ("doble asistencia"): no se bloquea el
+ * reingreso del mismo día y cada escaneo cuenta como 1 clase del cupo mensual
+ * (se cuenta por scans VALID del mes). Solo aplica a membresías
+ * (monthlyClassLimit). Se habilita por TicketType con `allowMultipleDailyScans`
+ * (ORO de fábrica; BRONCE/PLATA cuando se prende el flag). En planes con horario
+ * semanal el escáner QR aplica además el tope de 2/día del panel manual; en
+ * planes sin horario (ORO, acceso libre) el QR no aplica tope.
  */
 export const membershipAllowsMultipleDailyScans = (ticket: ScanTicket): boolean =>
     isMembershipTicket(ticket) && ticket.ticketType.allowMultipleDailyScans === true
@@ -661,13 +665,15 @@ export const isWithinEventRange = (ticket: ScanTicket, today: string): boolean =
  * Info de membresía lista para mostrar en el panel de asistencia manual del staff:
  * plan, categoría (adultos/niños), frecuencia y horario del mes en curso. Para
  * ORO (acceso libre) no hay horario semanal → `freeAccess = true` y el resto va
- * en null. Función PURA (sin Prisma): los conteos de scans del mes/día para ORO
- * se calculan en la ruta. Reutiliza `getEffectiveScheduleSelection` (horario del
- * mes efectivo) y los formateadores de `membership-schedule.ts`.
+ * en null. Función PURA (sin Prisma): los conteos de scans del mes/día para
+ * planes con varios ingresos se calculan en la ruta. Reutiliza
+ * `getEffectiveScheduleSelection` (horario del mes efectivo) y los formateadores
+ * de `membership-schedule.ts`.
  */
 export interface MembershipDisplay {
     isMembership: boolean
-    isOro: boolean
+    /** Varios ingresos por día (doble asistencia): ORO y BRONCE/PLATA con el flag. */
+    multiDaily: boolean
     /** Etiqueta corta del plan: "ORO" | "BRONCE" | "BRONCE 2×" | "PLATA" | "Membresía". */
     planLabel: string
     /** "Adultos" / "Niños (…)" o null si no aplica. */
@@ -694,22 +700,25 @@ export const buildMembershipDisplay = (
 ): MembershipDisplay | null => {
     const isMembership = isMembershipTicket(ticket)
     if (!isMembership) return null
-    // ORO = membresía con varios ingresos por día (requiere cupo mensual). Mismo
-    // criterio que el escáner y las rutas, para que las tres capas coincidan.
-    const isOro = membershipAllowsMultipleDailyScans(ticket)
+    // Varios ingresos por día (doble asistencia). Mismo criterio que el escáner
+    // y las rutas, para que las tres capas coincidan.
+    const multiDaily = membershipAllowsMultipleDailyScans(ticket)
 
     const anchor = getMembershipAnchor(ticket)
     const monthIndex = anchor ? getMembershipPeriod(today, anchor)?.index ?? 0 : 0
     const selection = getEffectiveScheduleSelection(ticket, monthIndex)
 
+    // La etiqueta del plan sale del horario (BRONCE/PLATA); "ORO" solo cuando el
+    // plan tiene varios ingresos y NO tiene horario semanal (acceso libre). Así,
+    // prender el flag en BRONCE/PLATA no los re-etiqueta como ORO.
     const scheduleKey = ticket.ticketType.membershipScheduleKey ?? selection?.profileKey ?? null
-    const planLabel = isOro
-        ? "ORO"
-        : (scheduleKey ? SCHEDULE_KEY_PLAN_LABEL[scheduleKey] : undefined) ?? "Membresía"
+    const planLabel =
+        (scheduleKey ? SCHEDULE_KEY_PLAN_LABEL[scheduleKey] : undefined) ??
+        (multiDaily ? "ORO" : "Membresía")
 
     return {
         isMembership,
-        isOro,
+        multiDaily,
         planLabel,
         categoryLabel: selection?.categoryLabel ?? null,
         frequencyLabel: selection?.frequencyLabel ?? null,

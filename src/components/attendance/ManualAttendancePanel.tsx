@@ -16,14 +16,15 @@ export interface AttendanceEventOption {
 
 interface MembershipInfo {
     isMembership: boolean
-    isOro: boolean
+    /** Varios ingresos por día (doble asistencia): ORO y BRONCE/PLATA con el flag. */
+    multiDaily: boolean
     planLabel: string
     categoryLabel: string | null
     frequencyLabel: string | null
     scheduleText: string | null
     daysLabel: string | null
     freeAccess: boolean
-    /** Solo ORO: tope e ingresos de hoy. */
+    /** Solo planes con varios ingresos: tope e ingresos de hoy. */
     dailyLimit?: number
     dailyUsed?: number
 }
@@ -143,16 +144,16 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                 setResults((prev) =>
                     prev.map((t) => {
                         if (t.id !== ticket.id) return t
-                        const isOro = t.membership?.isOro === true
+                        const multiDaily = t.membership?.multiDaily === true
                         const dailyLimit = t.membership?.dailyLimit ?? 2
                         const nextDailyUsed =
                             typeof data.dailyUsed === "number" ? data.dailyUsed : t.membership?.dailyUsed
                         const nextMembership = t.membership
                             ? { ...t.membership, dailyUsed: nextDailyUsed }
                             : t.membership
-                        // ORO: mantener "AVAILABLE" mientras queden ingresos del día,
-                        // para que el botón siga disponible para el 2º ingreso.
-                        const dailyExhausted = isOro ? (nextDailyUsed ?? 0) >= dailyLimit : true
+                        // Doble asistencia: mantener "AVAILABLE" mientras queden ingresos
+                        // del día, para que el botón siga disponible para el 2º ingreso.
+                        const dailyExhausted = multiDaily ? (nextDailyUsed ?? 0) >= dailyLimit : true
                         return {
                             ...t,
                             attendance: data.attendance,
@@ -252,10 +253,10 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                         const mark = markResults[ticket.id]
                         const isMarking = markingId === ticket.id
                         const membership = ticket.membership
-                        const isOro = membership?.isOro === true
+                        const multiDaily = membership?.multiDaily === true
                         const dailyUsed = membership?.dailyUsed ?? 0
                         const dailyLimit = membership?.dailyLimit ?? 2
-                        const canMark = isOro
+                        const canMark = multiDaily
                             ? dailyUsed < dailyLimit &&
                               (ticket.attendance.total <= 0 || ticket.attendance.remaining > 0)
                             : ticket.todayStatus !== "USED" && ticket.attendance.remaining > 0
@@ -317,7 +318,7 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                                         )}
                                                     </>
                                                 )}
-                                                {isOro && (
+                                                {multiDaily && (
                                                     <p className="text-xs text-gray-600">
                                                         <span className="text-gray-400">Ingresos hoy:</span>{" "}
                                                         {dailyUsed}/{dailyLimit}
@@ -349,7 +350,7 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
 
                                     {/* Status & Action */}
                                     <div className="flex items-center gap-2 sm:flex-col sm:items-end">
-                                        {ticket.todayStatus === "USED" && !mark && !isOro && (
+                                        {ticket.todayStatus === "USED" && !mark && !multiDaily && (
                                             <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
                                                 <CheckCircle2 className="h-3 w-3 mr-1" />
                                                 Ya registrado hoy
@@ -389,7 +390,7 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                                 ) : (
                                                     <UserCheck className="h-4 w-4" />
                                                 )}
-                                                {isOro && dailyUsed >= 1 ? "Marcar 2º ingreso" : "Marcar Asistencia"}
+                                                {multiDaily && dailyUsed >= 1 ? "Marcar 2º ingreso" : "Marcar Asistencia"}
                                             </Button>
                                         )}
                                     </div>

@@ -14,7 +14,9 @@ import {
 } from "@/lib/scan-helpers"
 import { getTodayDateString } from "@/lib/qr"
 
-const ORO_MAX_DAILY_SCANS = 2
+// Tope del panel manual para membresías con varios ingresos por día (ORO,
+// BRONCE/PLATA con doble asistencia). Debe coincidir con lookup/route.ts.
+const MEMBERSHIP_MAX_DAILY_SCANS = 2
 
 export const runtime = "nodejs"
 
@@ -110,9 +112,9 @@ export async function POST(request: NextRequest) {
                 // Info de membresía (plan/horario/frecuencia) para mostrar en la tarjeta.
                 const display = buildMembershipDisplay(scanTicket, today)
 
-                // ORO (varios ingresos por día): el cupo se cuenta por SCANS VALID del
-                // mes (no por entitlements-día). Se expone también el conteo del día
-                // para el tope de 2/día del panel manual.
+                // Varios ingresos por día (ORO, BRONCE/PLATA con doble asistencia):
+                // el cupo se cuenta por SCANS VALID del mes (no por entitlements-día).
+                // Se expone también el conteo del día para el tope de 2/día del panel.
                 let membership:
                     | (MembershipDisplay & { dailyLimit?: number; dailyUsed?: number })
                     | null = display
@@ -145,7 +147,7 @@ export async function POST(request: NextRequest) {
                         used: monthlyUsed,
                         remaining: limit > 0 ? Math.max(limit - monthlyUsed, 0) : 0,
                     }
-                    membership = { ...display, dailyLimit: ORO_MAX_DAILY_SCANS, dailyUsed }
+                    membership = { ...display, dailyLimit: MEMBERSHIP_MAX_DAILY_SCANS, dailyUsed }
                 }
 
                 return {

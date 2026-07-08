@@ -86,7 +86,7 @@ test("buildMembershipDisplay shows plan, frequency and schedule for BRONCE", () 
     )
     assert.ok(display)
     assert.equal(display!.isMembership, true)
-    assert.equal(display!.isOro, false)
+    assert.equal(display!.multiDaily, false)
     assert.equal(display!.planLabel, "BRONCE")
     assert.equal(display!.categoryLabel, "Adultos")
     assert.equal(display!.frequencyLabel, "Lunes, Miércoles y Viernes")
@@ -118,11 +118,32 @@ test("buildMembershipDisplay marks ORO as free access with no schedule", () => {
         TODAY
     )
     assert.ok(display)
-    assert.equal(display!.isOro, true)
+    assert.equal(display!.multiDaily, true)
     assert.equal(display!.planLabel, "ORO")
     assert.equal(display!.freeAccess, true)
     assert.equal(display!.frequencyLabel, null)
     assert.equal(display!.scheduleText, null)
+})
+
+test("buildMembershipDisplay keeps plan label for BRONCE with doble asistencia", () => {
+    // BRONCE con allowMultipleDailyScans (doble asistencia habilitada): la
+    // etiqueta sigue siendo BRONCE (no se re-etiqueta como ORO) y conserva su
+    // horario, pero multiDaily habilita el 2º ingreso en el panel.
+    const display = buildMembershipDisplay(
+        makeTicket({
+            name: "Membresía BRONCE",
+            monthlyClassLimit: 12,
+            allowMultipleDailyScans: true,
+            membershipScheduleKey: "BRONCE",
+            membershipSchedule: bronceLmvSchedule,
+        }),
+        TODAY
+    )
+    assert.ok(display)
+    assert.equal(display!.multiDaily, true)
+    assert.equal(display!.planLabel, "BRONCE")
+    assert.equal(display!.freeAccess, false)
+    assert.equal(display!.daysLabel, "Lun, Mié, Vie")
 })
 
 test("buildMembershipDisplay falls back to 'Membresía' without schedule key", () => {
