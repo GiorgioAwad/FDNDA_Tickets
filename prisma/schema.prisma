@@ -168,6 +168,7 @@ model User {
   orders           Order[]
   tickets          Ticket[]
   scans            Scan[]           @relation("StaffScans")
+  registeredMembershipGuestPasses MembershipGuestPass[] @relation("MembershipGuestPassStaff")
   createdEvents    Event[]          @relation("EventCreator")
   courtesyBatches  CourtesyBatch[]
   claimedCourtesy  CourtesyTicket[] @relation("ClaimedBy")
@@ -298,6 +299,7 @@ model Event {
   ticketTypes     TicketType[]
   tickets         Ticket[]
   scans           Scan[]
+  membershipGuestPasses MembershipGuestPass[]
   courtesyBatches CourtesyBatch[]
   discountCodes   DiscountCode[]
 
@@ -521,6 +523,8 @@ model Ticket {
   membershipFreeze MembershipFreeze?
   // Bolsa de piscina libre: reservas de visita del titular (draw-down de créditos).
   poolReservations PoolVisitReservation[]
+  // Pases gratuitos registrados por staff para acompañantes de membresías ORO.
+  membershipGuestPasses MembershipGuestPass[]
 
   @@index([eventId])
   @@index([userId])
@@ -634,6 +638,29 @@ model Scan {
   @@index([staffId])
   @@index([scannedAt])
   @@map("scans")
+}
+
+// Cada membresía ORO incluye hasta 3 pases gratuitos durante la vigencia del
+// ticket. `number` (1..3) y el índice único hacen que el límite sea seguro aun
+// cuando dos operadores registran pases al mismo tiempo.
+model MembershipGuestPass {
+  id           String   @id @default(cuid())
+  ticketId     String
+  staffId      String
+  eventId      String
+  number       Int
+  date         DateTime @db.Date
+  registeredAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  staff  User   @relation("MembershipGuestPassStaff", fields: [staffId], references: [id])
+  event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, number])
+  @@index([eventId, date])
+  @@index([staffId])
+  @@index([registeredAt])
+  @@map("membership_guest_passes")
 }
 
 // ==================== DISCOUNT CODES ====================

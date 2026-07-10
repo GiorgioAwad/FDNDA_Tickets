@@ -13,6 +13,11 @@ import {
     membershipAllowsMultipleDailyScans,
 } from "@/lib/scan-helpers"
 import { getTodayDateString } from "@/lib/qr"
+import {
+    buildMembershipGuestPassSummary,
+    isGoldMembershipDisplay,
+    type MembershipGuestPassSummary,
+} from "@/lib/membership-guest-pass"
 
 // Tope del panel manual para membresías con varios ingresos por día (ORO,
 // BRONCE/PLATA con doble asistencia). Debe coincidir con lookup/route.ts.
@@ -65,6 +70,7 @@ export async function POST(request: NextRequest) {
                 ticketType: true,
                 entitlements: { orderBy: { date: "asc" } },
                 monthlySchedules: true,
+                _count: { select: { membershipGuestPasses: true } },
                 user: { select: { name: true, dni: true } },
             },
             take: 20,
@@ -116,8 +122,20 @@ export async function POST(request: NextRequest) {
                 // el cupo se cuenta por SCANS VALID del mes (no por entitlements-día).
                 // Se expone también el conteo del día para el tope de 2/día del panel.
                 let membership:
-                    | (MembershipDisplay & { dailyLimit?: number; dailyUsed?: number })
+                    | (MembershipDisplay & {
+                          dailyLimit?: number
+                          dailyUsed?: number
+                          guestPasses?: MembershipGuestPassSummary
+                      })
                     | null = display
+
+                const guestPasses = isGoldMembershipDisplay(display)
+                    ? buildMembershipGuestPassSummary(ticket._count.membershipGuestPasses)
+                    : undefined
+
+                if (membership && guestPasses) {
+                    membership = { ...membership, guestPasses }
+                }
 
                 if (display && membershipAllowsMultipleDailyScans(scanTicket)) {
                     const anchor = getMembershipAnchor(scanTicket)
@@ -147,7 +165,12 @@ export async function POST(request: NextRequest) {
                         used: monthlyUsed,
                         remaining: limit > 0 ? Math.max(limit - monthlyUsed, 0) : 0,
                     }
-                    membership = { ...display, dailyLimit: MEMBERSHIP_MAX_DAILY_SCANS, dailyUsed }
+                    membership = {
+                        ...display,
+                        dailyLimit: MEMBERSHIP_MAX_DAILY_SCANS,
+                        dailyUsed,
+                        ...(guestPasses ? { guestPasses } : {}),
+                    }
                 }
 
                 return {

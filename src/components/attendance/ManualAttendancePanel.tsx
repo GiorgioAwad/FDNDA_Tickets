@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Search, UserCheck, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react"
+import { Search, UserCheck, UserPlus, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react"
 
 export interface AttendanceEventOption {
     id: string
@@ -27,6 +27,8 @@ interface MembershipInfo {
     /** Solo planes con varios ingresos: tope e ingresos de hoy. */
     dailyLimit?: number
     dailyUsed?: number
+    /** Beneficio acumulado de acompañantes para membresías ORO. */
+    guestPasses?: { limit: number; used: number; remaining: number }
 }
 
 interface TicketResult {
@@ -73,6 +75,8 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
     const [searching, setSearching] = useState(false)
     const [markingId, setMarkingId] = useState<string | null>(null)
     const [markResults, setMarkResults] = useState<Record<string, MarkResult>>({})
+    const [registeringGuestPassId, setRegisteringGuestPassId] = useState<string | null>(null)
+    const [guestPassResults, setGuestPassResults] = useState<Record<string, MarkResult>>({})
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     // Search tickets
@@ -177,6 +181,64 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
         }
     }
 
+    const handleRegisterGuestPass = async (ticket: TicketResult) => {
+        const guestPasses = ticket.membership?.guestPasses
+        if (!guestPasses || guestPasses.remaining <= 0) return
+
+        const confirmed = window.confirm(
+            `¿Registrar un pase gratis para un acompañante de ${ticket.attendeeName || "esta membresía"}? ` +
+                `Después quedarán ${guestPasses.remaining - 1}.`
+        )
+        if (!confirmed) return
+
+        setRegisteringGuestPassId(ticket.id)
+        try {
+            const res = await fetch("/api/scans/guest-pass", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ticketId: ticket.id, eventId: selectedEventId }),
+            })
+            const data = await res.json()
+            const success = res.ok && data.success === true
+
+            setGuestPassResults((prev) => ({
+                ...prev,
+                [ticket.id]: {
+                    ticketId: ticket.id,
+                    success,
+                    message: data.message || data.error || "No se pudo registrar el pase gratis",
+                },
+            }))
+
+            if (data.guestPasses) {
+                setResults((prev) =>
+                    prev.map((current) =>
+                        current.id === ticket.id && current.membership
+                            ? {
+                                  ...current,
+                                  membership: {
+                                      ...current.membership,
+                                      guestPasses: data.guestPasses,
+                                  },
+                              }
+                            : current
+                    )
+                )
+            }
+        } catch {
+            setGuestPassResults((prev) => ({
+                ...prev,
+                [ticket.id]: {
+                    ticketId: ticket.id,
+                    success: false,
+                    message: "Error de conexión",
+                },
+            }))
+        } finally {
+            setRegisteringGuestPassId(null)
+        }
+    }
+
     const formatDate = (dateStr: string) => {
         return new Date(dateStr).toLocaleDateString("es-PE", {
             day: "2-digit",
@@ -208,6 +270,7 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                             setSelectedEventId(e.target.value)
                             setResults([])
                             setMarkResults({})
+                            setGuestPassResults({})
                             setQuery("")
                         }}
                     >
@@ -251,7 +314,9 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                     </p>
                     {results.map((ticket) => {
                         const mark = markResults[ticket.id]
+                        const guestPassMark = guestPassResults[ticket.id]
                         const isMarking = markingId === ticket.id
+                        const isRegisteringGuestPass = registeringGuestPassId === ticket.id
                         const membership = ticket.membership
                         const multiDaily = membership?.multiDaily === true
                         const dailyUsed = membership?.dailyUsed ?? 0
@@ -265,7 +330,7 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                             <div
                                 key={ticket.id}
                                 className={`bg-white rounded-xl border p-4 transition-colors ${
-                                    mark?.success ? "border-green-200 bg-green-50/50" : ""
+                                    mark?.success || guestPassMark?.success ? "border-green-200 bg-green-50/50" : ""
                                 }`}
                             >
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -324,6 +389,14 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                                         {dailyUsed}/{dailyLimit}
                                                     </p>
                                                 )}
+                                                {membership.guestPasses && (
+                                                    <p className="text-xs font-medium text-amber-700">
+                                                        Pases gratis: {membership.guestPasses.used}/{membership.guestPasses.limit}
+                                                        {membership.guestPasses.remaining > 0
+                                                            ? ` (${membership.guestPasses.remaining} disponibles)`
+                                                            : " (agotados)"}
+                                                    </p>
+                                                )}
                                             </div>
                                         )}
 
@@ -378,6 +451,22 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                                 {mark.message}
                                             </Badge>
                                         )}
+                                        {guestPassMark && (
+                                            <Badge
+                                                className={
+                                                    guestPassMark.success
+                                                        ? "bg-amber-100 text-amber-800 border-amber-200"
+                                                        : "bg-red-100 text-red-800 border-red-200"
+                                                }
+                                            >
+                                                {guestPassMark.success ? (
+                                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                                ) : (
+                                                    <XCircle className="h-3 w-3 mr-1" />
+                                                )}
+                                                {guestPassMark.message}
+                                            </Badge>
+                                        )}
                                         {canMark && (
                                             <Button
                                                 size="sm"
@@ -392,6 +481,27 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                                 )}
                                                 {multiDaily && dailyUsed >= 1 ? "Marcar 2º ingreso" : "Marcar Asistencia"}
                                             </Button>
+                                        )}
+                                        {membership?.guestPasses && membership.guestPasses.remaining > 0 && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => handleRegisterGuestPass(ticket)}
+                                                disabled={isRegisteringGuestPass}
+                                                className="gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-50"
+                                            >
+                                                {isRegisteringGuestPass ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                ) : (
+                                                    <UserPlus className="h-4 w-4" />
+                                                )}
+                                                Registrar pase gratis
+                                            </Button>
+                                        )}
+                                        {membership?.guestPasses?.remaining === 0 && !guestPassMark && (
+                                            <Badge className="bg-gray-100 text-gray-600 border-gray-200">
+                                                3 pases gratis utilizados
+                                            </Badge>
                                         )}
                                     </div>
                                 </div>
