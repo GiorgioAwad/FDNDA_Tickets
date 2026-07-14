@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { getPoolFreeSelectableDates, isPoolFreeEventCategory } from "@/lib/pool-free"
+import { usesTicketDateCapacity } from "@/lib/ticket-date-capacity"
 import { formatPrice } from "@/lib/utils"
 import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { Info, ShoppingCart, Minus, Plus, Gift, CheckCircle, AlertCircle, Ticket, Calendar, Clock, ChevronRight } from "lucide-react"
@@ -30,6 +31,7 @@ export type TicketTypeClient = {
     description?: string | null
     price: number
     capacity: number
+    capacityByDate?: boolean
     sold: number
     isActive?: boolean
     isPackage?: boolean | null
@@ -324,6 +326,12 @@ export default function TicketPurchaseCard({
     const ticketMeta = useMemo(() => {
         return ticketTypesWithLiveStock.map((ticket) => {
             const usesDailyCapacity = isPoolFreeEventCategory(eventCategory)
+            const usesDateCapacity = usesTicketDateCapacity({
+                eventCategory,
+                capacityByDate: ticket.capacityByDate,
+            })
+            const requiresConfiguredInventory =
+                eventCategory === "EVENTO" && ticket.capacityByDate === true
             const schedule = parseTicketScheduleConfig(ticket.validDays)
             let normalizedDates = normalizeScheduleDatesForEventRange(
                 schedule.dates,
@@ -354,21 +362,16 @@ export default function TicketPurchaseCard({
                     })
                     .filter(Boolean) as Array<[string, DateInventoryClient]>
             )
-            const available = usesDailyCapacity
-                ? (ticket.capacity === 0 ? null : ticket.capacity)
-                : (ticket.capacity === 0 ? null : ticket.capacity - ticket.sold)
-            const maxQty = available === null ? MAX_UNLIMITED_QTY : Math.max(0, available)
             const hasNoUpcomingDates =
                 schedule.dates.length > 0 && normalizedDates.length === 0
-            const soldOut = usesDailyCapacity
-                ? ticket.isActive === false || hasNoUpcomingDates
-                : ticket.isActive === false || hasNoUpcomingDates || (available !== null && available <= 0)
             const dateStates = normalizedDates.map((date) => {
                 const inventory = inventoryByDate.get(date)
-                const capacity = inventory?.capacity ?? ticket.capacity
+                const capacity = inventory?.capacity ?? (requiresConfiguredInventory ? 0 : ticket.capacity)
                 const sold = inventory?.sold ?? 0
-                const isEnabled = ticket.isActive !== false && (inventory?.isEnabled ?? true)
-                const dateSoldOut = capacity !== 0 && sold >= capacity
+                const isEnabled =
+                    ticket.isActive !== false &&
+                    (inventory?.isEnabled ?? !requiresConfiguredInventory)
+                const dateSoldOut = !isEnabled || (capacity !== 0 && sold >= capacity)
 
                 return {
                     date,
@@ -379,12 +382,24 @@ export default function TicketPurchaseCard({
                     available: capacity === 0 ? null : Math.max(0, capacity - sold),
                 }
             })
+            const selectableDateStates = dateStates.filter((date) => !date.soldOut)
+            const dailyAvailable = selectableDateStates.some((date) => date.available === null)
+                ? null
+                : Math.max(0, ...selectableDateStates.map((date) => date.available ?? 0))
+            const available = usesDateCapacity
+                ? dailyAvailable
+                : (ticket.capacity === 0 ? null : ticket.capacity - ticket.sold)
+            const maxQty = available === null ? MAX_UNLIMITED_QTY : Math.max(0, available)
+            const soldOut = usesDateCapacity
+                ? ticket.isActive === false || hasNoUpcomingDates || selectableDateStates.length === 0
+                : ticket.isActive === false || hasNoUpcomingDates || (available !== null && available <= 0)
             return {
                 ticket,
                 available,
                 maxQty,
                 soldOut,
                 usesDailyCapacity,
+                usesDateCapacity,
                 dateStates,
                 schedule: {
                     ...schedule,
@@ -552,6 +567,16 @@ export default function TicketPurchaseCard({
                         slots: selectedDate
                             ? metadata.schedule.slots?.filter((slot) => slot.date === selectedDate)
                             : metadata.schedule.slots,
+                        dateAvailability: Object.fromEntries(
+                            metadata.dateStates.map((dateState) => [
+                                dateState.date,
+                                {
+                                    available: dateState.available,
+                                    isEnabled: dateState.isEnabled && !dateState.soldOut,
+                                },
+                            ])
+                        ),
+                        usesDateCapacity: metadata.usesDateCapacity,
                         // Para ACADEMIA el paquete es flexible: el comprador no preselecciona
                         // fechas, las N clases se consumen en cualquier dia del rango. Para
                         // otros paquetes (full-day, paquete de turnos) si exigimos seleccion.

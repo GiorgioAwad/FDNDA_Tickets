@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { invalidateTicketTypeCache } from "@/lib/cache"
-import { buildTicketValidDaysPayload, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
+import {
+    buildTicketValidDaysPayload,
+    extractTicketValidDates,
+    parseTicketScheduleConfig,
+} from "@/lib/ticket-schedule"
 import { getMembershipScheduleProfile } from "@/lib/membership-schedule"
 import { isPoolFreeEventCategory } from "@/lib/pool-free"
 import { getAbioCatalogConfig } from "@/lib/abio-catalog"
 import { Prisma } from "@prisma/client"
 import { parseDateOnly } from "@/lib/utils"
+import { assertDateCapacityNotBelowSold } from "@/lib/ticket-date-inventory"
 
 export const runtime = "nodejs"
 
@@ -31,8 +36,8 @@ const getTicketTypeErrorMessage = (error: unknown, fallback: string): string => 
         return `${fallback} (${error.code})`
     }
 
-    if (process.env.NODE_ENV !== "production" && error instanceof Error && error.message) {
-        return `${fallback}: ${error.message}`
+    if (error instanceof Error && error.message) {
+        return error.message
     }
 
     return fallback
@@ -128,6 +133,61 @@ const normalizeBenefits = (value: unknown): Prisma.InputJsonValue | null => {
     return items.length > 0 ? (items as unknown as Prisma.InputJsonValue) : null
 }
 
+type NormalizedDateCapacity = {
+    dateKey: string
+    date: Date
+    capacity: number
+    isEnabled: boolean
+}
+
+const normalizeDateCapacities = (
+    value: unknown,
+    validDays: unknown,
+    eventStartDate: Date,
+    eventEndDate: Date
+): NormalizedDateCapacity[] => {
+    const configuredDates = extractTicketValidDates(validDays)
+    if (configuredDates.length === 0) {
+        throw new Error("Los cupos diarios requieren al menos un día válido")
+    }
+    if (!Array.isArray(value)) {
+        throw new Error("Debes configurar el cupo de cada día válido")
+    }
+
+    const configuredSet = new Set(configuredDates)
+    const rows = new Map<string, NormalizedDateCapacity>()
+    for (const raw of value) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+            throw new Error("La configuración de cupos diarios es inválida")
+        }
+        const record = raw as Record<string, unknown>
+        const dateKey = typeof record.date === "string" ? record.date.trim() : ""
+        if (!configuredSet.has(dateKey) || rows.has(dateKey)) {
+            throw new Error(`El día ${dateKey || "indicado"} no pertenece a esta entrada`)
+        }
+        const date = parseDateOnly(dateKey)
+        if (date < parseDateOnly(eventStartDate.toISOString().slice(0, 10)) || date > parseDateOnly(eventEndDate.toISOString().slice(0, 10))) {
+            throw new Error(`El día ${dateKey} está fuera del rango del evento`)
+        }
+        const capacity = Number(record.capacity)
+        if (!Number.isInteger(capacity) || capacity < 0) {
+            throw new Error(`El cupo de ${dateKey} debe ser un entero mayor o igual a cero`)
+        }
+        rows.set(dateKey, {
+            dateKey,
+            date,
+            capacity,
+            isEnabled: record.isEnabled === undefined ? true : Boolean(record.isEnabled),
+        })
+    }
+
+    const missing = configuredDates.filter((date) => !rows.has(date))
+    if (missing.length > 0) {
+        throw new Error(`Falta configurar el cupo de: ${missing.join(", ")}`)
+    }
+    return configuredDates.map((date) => rows.get(date)!)
+}
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -146,6 +206,8 @@ export async function POST(request: NextRequest) {
             description,
             price,
             capacity,
+            capacityByDate,
+            dateCapacities,
             isPackage,
             packageDaysCount,
             monthlyClassLimit,
@@ -184,6 +246,8 @@ export async function POST(request: NextRequest) {
                 id: true,
                 category: true,
                 servilexSucursalCode: true,
+                startDate: true,
+                endDate: true,
             },
         })
 
@@ -303,20 +367,31 @@ export async function POST(request: NextRequest) {
         }
 
         const packageDays = normalizePackageDaysCount(packageDaysCount)
-        const ticketType = await prisma.ticketType.create({
+        const normalizedValidDays = normalizeValidDays(validDays)
+        const resolvedCapacityByDate = event.category === "EVENTO" && Boolean(capacityByDate)
+        const normalizedDateCapacities = resolvedCapacityByDate
+            ? normalizeDateCapacities(
+                  dateCapacities,
+                  normalizedValidDays,
+                  event.startDate,
+                  event.endDate
+              )
+            : []
+        const ticketType = await prisma.$transaction((tx) => tx.ticketType.create({
             data: {
                 eventId,
                 name,
                 description: normalizeDescription(description),
                 price: Number(price),
                 capacity: Number(capacity),
+                capacityByDate: resolvedCapacityByDate,
                 isPackage: Boolean(isPackage),
                 packageDaysCount: Boolean(isPackage) ? packageDays : null,
                 monthlyClassLimit: normalizeMonthlyLimit(monthlyClassLimit),
                 membershipDurationMonths: normalizeDurationMonths(membershipDurationMonths),
                 allowMultipleDailyScans: Boolean(allowMultipleDailyScans),
                 membershipScheduleKey: normalizeScheduleKey(membershipScheduleKey, resolvedSucursalCode),
-                validDays: normalizeValidDays(validDays),
+                validDays: normalizedValidDays,
                 sortOrder: sortOrder !== undefined ? Number(sortOrder) : 0,
                 isActive: isActive === undefined ? true : Boolean(isActive),
                 originalPrice: normalizeOptionalPrice(originalPrice),
@@ -334,8 +409,21 @@ export async function POST(request: NextRequest) {
                 servilexExtraConfig: resolvedExtraConfig,
                 servilexServiceId: resolvedServiceId,
                 servilexBindingId: resolvedBindingId,
+                dateInventories: resolvedCapacityByDate
+                    ? {
+                          create: normalizedDateCapacities.map((row) => ({
+                              date: row.date,
+                              capacity: row.capacity,
+                              sold: 0,
+                              isEnabled: row.isEnabled,
+                          })),
+                      }
+                    : undefined,
             },
-        })
+            include: {
+                dateInventories: { orderBy: { date: "asc" } },
+            },
+        }))
 
         await invalidateTicketTypeCache(event.id)
 
@@ -370,6 +458,8 @@ export async function PUT(request: NextRequest) {
             description,
             price,
             capacity,
+            capacityByDate,
+            dateCapacities,
             isPackage,
             packageDaysCount,
             monthlyClassLimit,
@@ -465,10 +555,14 @@ export async function PUT(request: NextRequest) {
             where: { id },
             select: {
                 eventId: true,
+                capacityByDate: true,
+                validDays: true,
                 event: {
                     select: {
                         category: true,
                         servilexSucursalCode: true,
+                        startDate: true,
+                        endDate: true,
                     },
                 },
             },
@@ -491,6 +585,7 @@ export async function PUT(request: NextRequest) {
             description?: string | null
             price?: number
             capacity?: number
+            capacityByDate?: boolean
             isPackage?: boolean
             packageDaysCount?: number | null
             monthlyClassLimit?: number | null
@@ -523,6 +618,13 @@ export async function PUT(request: NextRequest) {
         }
         if (price !== undefined) data.price = Number(price)
         if (capacity !== undefined) data.capacity = Number(capacity)
+        const resolvedCapacityByDate =
+            currentTicketType.event.category === "EVENTO"
+                ? capacityByDate !== undefined
+                    ? Boolean(capacityByDate)
+                    : currentTicketType.capacityByDate
+                : false
+        if (capacityByDate !== undefined) data.capacityByDate = resolvedCapacityByDate
         if (isPackage !== undefined) data.isPackage = Boolean(isPackage)
         if (sortOrder !== undefined) data.sortOrder = Number(sortOrder)
         if (isActive !== undefined) data.isActive = Boolean(isActive)
@@ -642,19 +744,85 @@ export async function PUT(request: NextRequest) {
             data.packageDaysCount = packageEnabled === false ? null : packageDays
         }
 
-        const ticketType = await prisma.ticketType.update({
-            where: { id },
-            data,
-        })
-
-        if (capacity !== undefined && isPoolFreeEventCategory(currentTicketType.event.category)) {
-            await prisma.$executeRaw(Prisma.sql`
-                UPDATE "ticket_type_date_inventories"
-                SET "capacity" = ${Number(capacity)},
-                    "updatedAt" = CURRENT_TIMESTAMP
-                WHERE "ticketTypeId" = ${ticketType.id}
-            `)
+        const effectiveValidDays = data.validDays ?? currentTicketType.validDays
+        if (resolvedCapacityByDate && validDays !== undefined && dateCapacities === undefined) {
+            throw new Error("Debes enviar el cupo de cada día válido")
         }
+        const normalizedDateCapacities =
+            resolvedCapacityByDate && dateCapacities !== undefined
+                ? normalizeDateCapacities(
+                      dateCapacities,
+                      effectiveValidDays,
+                      currentTicketType.event.startDate,
+                      currentTicketType.event.endDate
+                  )
+                : null
+
+        const ticketType = await prisma.$transaction(async (tx) => {
+            if (normalizedDateCapacities) {
+                const existing = await tx.ticketTypeDateInventory.findMany({
+                    where: { ticketTypeId: id },
+                    select: { date: true, sold: true },
+                })
+                const soldByDate = new Map(
+                    existing.map((row) => [row.date.toISOString().slice(0, 10), row.sold])
+                )
+                for (const row of normalizedDateCapacities) {
+                    const sold = soldByDate.get(row.dateKey) ?? 0
+                    assertDateCapacityNotBelowSold(row.dateKey, row.capacity, sold)
+                }
+            }
+
+            const updated = await tx.ticketType.update({
+                where: { id },
+                data,
+            })
+
+            if (normalizedDateCapacities) {
+                for (const row of normalizedDateCapacities) {
+                    await tx.ticketTypeDateInventory.upsert({
+                        where: {
+                            ticketTypeId_date: {
+                                ticketTypeId: id,
+                                date: row.date,
+                            },
+                        },
+                        update: {
+                            capacity: row.capacity,
+                            isEnabled: row.isEnabled,
+                        },
+                        create: {
+                            ticketTypeId: id,
+                            date: row.date,
+                            capacity: row.capacity,
+                            sold: 0,
+                            isEnabled: row.isEnabled,
+                        },
+                    })
+                }
+                await tx.ticketTypeDateInventory.updateMany({
+                    where: {
+                        ticketTypeId: id,
+                        date: { notIn: normalizedDateCapacities.map((row) => row.date) },
+                    },
+                    data: { isEnabled: false },
+                })
+            }
+
+            if (capacity !== undefined && isPoolFreeEventCategory(currentTicketType.event.category)) {
+                await tx.$executeRaw(Prisma.sql`
+                    UPDATE "ticket_type_date_inventories"
+                    SET "capacity" = ${Number(capacity)},
+                        "updatedAt" = CURRENT_TIMESTAMP
+                    WHERE "ticketTypeId" = ${updated.id}
+                `)
+            }
+
+            return tx.ticketType.findUniqueOrThrow({
+                where: { id },
+                include: { dateInventories: { orderBy: { date: "asc" } } },
+            })
+        })
 
         await invalidateTicketTypeCache(ticketType.eventId)
 

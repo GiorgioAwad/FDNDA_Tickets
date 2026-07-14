@@ -91,6 +91,9 @@ export default function CheckoutPage() {
     const [appliedDiscount, setAppliedDiscount] = useState<AppliedDiscount | null>(null)
     const [discountAmount, setDiscountAmount] = useState(0)
     const [todayDateKey, setTodayDateKey] = useState("")
+    const [liveDateAvailabilityByTicketType, setLiveDateAvailabilityByTicketType] = useState<
+        Record<string, Record<string, { available: number | null; isEnabled: boolean }>>
+    >({})
     const [eventCategoriesById, setEventCategoriesById] = useState<Record<string, EventCategory>>({})
     const categoryRequestsRef = useRef(new Set<string>())
     // Config de inicio de membresía por evento (fija / rango), cargada del API.
@@ -105,6 +108,66 @@ export default function CheckoutPage() {
         const interval = window.setInterval(updateToday, 60_000)
         return () => window.clearInterval(interval)
     }, [])
+
+    useEffect(() => {
+        const eventIds = Array.from(new Set(items.map((item) => item.eventId).filter(Boolean)))
+        if (eventIds.length === 0) return
+        let cancelled = false
+
+        const refreshStock = async () => {
+            const responses = await Promise.all(
+                eventIds.map(async (eventId) => {
+                    try {
+                        const response = await fetch(`/api/events/${encodeURIComponent(eventId)}/stock`, {
+                            cache: "no-store",
+                        })
+                        if (!response.ok) return []
+                        const payload = await response.json() as {
+                            data?: Array<{
+                                id: string
+                                dateInventories?: Array<{
+                                    date: string
+                                    sold: number
+                                    capacity: number
+                                    isEnabled: boolean
+                                }>
+                            }>
+                        }
+                        return Array.isArray(payload.data) ? payload.data : []
+                    } catch {
+                        return []
+                    }
+                })
+            )
+            if (cancelled) return
+
+            const next: Record<string, Record<string, { available: number | null; isEnabled: boolean }>> = {}
+            for (const ticketType of responses.flat()) {
+                next[ticketType.id] = Object.fromEntries(
+                    (ticketType.dateInventories ?? []).map((inventory) => {
+                        const date = inventory.date.slice(0, 10)
+                        return [date, {
+                            available:
+                                inventory.capacity === 0
+                                    ? null
+                                    : Math.max(0, inventory.capacity - inventory.sold),
+                            isEnabled:
+                                inventory.isEnabled &&
+                                (inventory.capacity === 0 || inventory.sold < inventory.capacity),
+                        }]
+                    })
+                )
+            }
+            setLiveDateAvailabilityByTicketType(next)
+        }
+
+        void refreshStock()
+        const interval = window.setInterval(() => void refreshStock(), 10_000)
+        return () => {
+            cancelled = true
+            window.clearInterval(interval)
+        }
+    }, [items])
 
     useEffect(() => {
         const eventIds = Array.from(
@@ -172,15 +235,27 @@ export default function CheckoutPage() {
         []
     )
 
+    const getDateAvailability = useCallback(
+        (item: (typeof items)[number], date: string) => {
+            if (!item.scheduleConfig?.usesDateCapacity) return undefined
+            return liveDateAvailabilityByTicketType[item.ticketTypeId]?.[date]
+                ?? item.scheduleConfig.dateAvailability?.[date]
+        },
+        [liveDateAvailabilityByTicketType]
+    )
+
     const getSelectableDates = useCallback(
-        (item: (typeof items)[number]) =>
-            item.scheduleConfig
-                ? getCurrentOrFutureScheduleDates(
-                      item.scheduleConfig.dates,
-                      todayDateKey || getLimaDateKey()
-                  )
-                : [],
-        [todayDateKey]
+        (item: (typeof items)[number]) => {
+            if (!item.scheduleConfig) return []
+            return getCurrentOrFutureScheduleDates(
+                item.scheduleConfig.dates,
+                todayDateKey || getLimaDateKey()
+            ).filter((date) => {
+                const availability = getDateAvailability(item, date)
+                return !availability || availability.isEnabled
+            })
+        },
+        [getDateAvailability, todayDateKey]
     )
 
     const getEventCategory = useCallback(
@@ -459,6 +534,28 @@ export default function CheckoutPage() {
         })
     }, [getRequiredSelections, getSelectableDates, items])
 
+    const hasExceededDateCapacity = useMemo(() => {
+        return items.some((item) => {
+            if (!item.scheduleConfig?.usesDateCapacity) return false
+            const requiredSelections = getRequiredSelections(item)
+            const counts = new Map<string, number>()
+
+            for (const attendee of item.attendees) {
+                for (const selection of (attendee.scheduleSelections ?? []).slice(0, requiredSelections)) {
+                    if (!selection.date) continue
+                    counts.set(selection.date, (counts.get(selection.date) ?? 0) + 1)
+                }
+            }
+
+            return Array.from(counts).some(([date, count]) => {
+                const availability = getDateAvailability(item, date)
+                if (!availability) return false
+                return !availability.isEnabled ||
+                    (availability.available !== null && count > availability.available)
+            })
+        })
+    }, [getDateAvailability, getRequiredSelections, items])
+
     const handleApplyDiscount = async () => {
         if (!discountCode.trim()) return
 
@@ -507,6 +604,11 @@ export default function CheckoutPage() {
     const handlePayment = async () => {
         if (status !== "authenticated") {
             setShowAuthModal(true)
+            return
+        }
+
+        if (hasExceededDateCapacity) {
+            setError("Una de las fechas elegidas ya no tiene cupos suficientes. Elige otra fecha o reduce la cantidad.")
             return
         }
 
@@ -989,6 +1091,12 @@ export default function CheckoutPage() {
                                                 const requiredSelections = getRequiredSelections(item)
                                                 const scheduleConfig = item.scheduleConfig
                                                 const selectableDates = getSelectableDates(item)
+                                                const displayedDates = scheduleConfig
+                                                    ? getCurrentOrFutureScheduleDates(
+                                                          scheduleConfig.dates,
+                                                          todayDateKey || getLimaDateKey()
+                                                      )
+                                                    : []
                                                 const itemKey = getCartLineKey(item)
                                                 const hasLockedSingleDate =
                                                     scheduleConfig?.dates.length === 1 &&
@@ -1357,11 +1465,15 @@ export default function CheckoutPage() {
                                                                                     className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                                                                                 >
                                                                                     <option value="">Seleccionar dia</option>
-                                                                                    {selectableDates.map((date) => (
-                                                                                        <option key={date} value={date}>
-                                                                                            {formatDate(date, { dateStyle: "full" })}
-                                                                                        </option>
-                                                                                    ))}
+                                                                                    {displayedDates.map((date) => {
+                                                                                        const selectable = selectableDates.includes(date)
+                                                                                        return (
+                                                                                            <option key={date} value={date} disabled={!selectable}>
+                                                                                                {formatDate(date, { dateStyle: "full" })}
+                                                                                                {!selectable ? " (sin cupo)" : ""}
+                                                                                            </option>
+                                                                                        )
+                                                                                    })}
                                                                                 </select>
                                                                             </div>
                                                                             {scheduleConfig.shifts.length > 0 && (scheduleConfig.requireShiftSelection ?? true) && (
@@ -1541,7 +1653,7 @@ export default function CheckoutPage() {
                                             size="lg"
                                             onClick={handlePayment}
                                             loading={loading}
-                                            disabled={hasMissingAttendeeData || hasMissingScheduleSelections || hasMissingMembershipStart || hasMissingMembershipSchedule || hasMissingBillingData}
+                                            disabled={hasMissingAttendeeData || hasMissingScheduleSelections || hasExceededDateCapacity || hasMissingMembershipStart || hasMissingMembershipSchedule || hasMissingBillingData}
                                         >
                                             <CreditCard className="h-4 w-4 mr-2" />
                                             Pagar {formatPrice(finalTotal)}
@@ -1560,6 +1672,11 @@ export default function CheckoutPage() {
                                         {!hasMissingBillingData && !hasMissingAttendeeData && hasMissingScheduleSelections && (
                                             <p className="text-xs text-amber-600 text-center">
                                                 Completa los dias y turnos (si aplica) para cada entrada
+                                            </p>
+                                        )}
+                                        {!hasMissingBillingData && !hasMissingAttendeeData && !hasMissingScheduleSelections && hasExceededDateCapacity && (
+                                            <p className="text-xs text-amber-600 text-center">
+                                                Una fecha elegida está cerrada o no tiene cupos suficientes
                                             </p>
                                         )}
                                         {!hasMissingBillingData && !hasMissingAttendeeData && !hasMissingScheduleSelections && hasMissingMembershipStart && (

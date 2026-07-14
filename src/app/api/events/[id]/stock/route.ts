@@ -19,6 +19,7 @@ export async function GET(
                 id: true,
                 sold: true,
                 capacity: true,
+                capacityByDate: true,
                 isActive: true,
                 updatedAt: true,
                 dateInventories: {

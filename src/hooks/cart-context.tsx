@@ -8,8 +8,15 @@ export interface CartScheduleConfig {
     dates: string[]
     shifts: string[]
     slots?: CartScheduleSlot[]
+    dateAvailability?: Record<string, CartDateAvailability>
+    usesDateCapacity?: boolean
     requiredDays: number | null
     requireShiftSelection: boolean
+}
+
+export interface CartDateAvailability {
+    available: number | null
+    isEnabled: boolean
 }
 
 export interface CartScheduleSlot {
@@ -226,6 +233,27 @@ const normalizeScheduleConfig = (input: unknown): CartScheduleConfig | undefined
                 ? !shiftOptionalRaw
                 : true
 
+    const dateAvailability = Object.fromEntries(
+        Object.entries(
+            record.dateAvailability && typeof record.dateAvailability === "object"
+                ? (record.dateAvailability as Record<string, unknown>)
+                : {}
+        ).flatMap(([date, value]) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !value || typeof value !== "object") {
+                return []
+            }
+            const availability = value as Record<string, unknown>
+            const available = availability.available
+            if (available !== null && (typeof available !== "number" || !Number.isFinite(available))) {
+                return []
+            }
+            return [[date, {
+                available: available === null ? null : Math.max(0, Math.floor(available)),
+                isEnabled: availability.isEnabled !== false,
+            }]]
+        })
+    )
+
     if (dates.length === 0 && shifts.length === 0 && requiredDays === null) {
         return undefined
     }
@@ -234,6 +262,8 @@ const normalizeScheduleConfig = (input: unknown): CartScheduleConfig | undefined
         dates,
         shifts,
         slots,
+        dateAvailability,
+        usesDateCapacity: record.usesDateCapacity === true,
         requiredDays,
         requireShiftSelection,
     }

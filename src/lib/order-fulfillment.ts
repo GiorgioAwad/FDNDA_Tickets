@@ -7,9 +7,14 @@ import { parseMembershipScheduleSelection } from "@/lib/membership-schedule"
 import { getTodayDateString, formatDateUTC } from "@/lib/qr"
 import { buildNaturalPersonFullName } from "@/lib/billing"
 import { buildServilexInvoiceSnapshots } from "@/lib/servilex"
-import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
+import { isCoveredByIssuedAcMatricula } from "@/lib/servilex-invoice-guard"
 import { isPoolBagTicketType } from "@/lib/pool-bag"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
+import {
+    buildTicketDateReservationCounts,
+    getRequiredTicketDateSelections,
+    usesTicketDateCapacity,
+} from "@/lib/ticket-date-capacity"
 import { Prisma } from "@prisma/client"
 
 export interface FulfillOrderResult {
@@ -278,6 +283,13 @@ async function syncServilexInvoices(
         const legacyGroupKey = snapshot.legacyGroupKey || snapshot.groupKey
 
         if (snapshot.groupKey !== legacyGroupKey && issuedGroupKeys.has(legacyGroupKey)) {
+            continue
+        }
+
+        if (
+            snapshot.indicator === "AC" &&
+            isCoveredByIssuedAcMatricula(snapshot.groupKey, issuedGroupKeys)
+        ) {
             continue
         }
 
@@ -627,14 +639,20 @@ export async function fulfillPaidOrder({
                     packageDaysCount: ticketType.packageDaysCount,
                 })
 
-                if (isPoolFreeEventCategory(ticketType.event.category) && !isBag) {
-                    const reservationCounts = buildPoolFreeReservationCounts({
+                if (
+                    usesTicketDateCapacity({
+                        eventCategory: ticketType.event.category,
+                        capacityByDate: ticketType.capacityByDate,
+                    }) && !isBag
+                ) {
+                    const reservationCounts = buildTicketDateReservationCounts({
                         attendees: Array.isArray(item.attendeeData) ? item.attendeeData : [],
                         quantity: item.quantity,
                         validDays: ticketType.validDays,
                         eventStartDate: ticketType.event.startDate,
                         eventEndDate: ticketType.event.endDate,
                         ticketLabel: ticketType.name,
+                        requiredSelections: getRequiredTicketDateSelections(ticketType),
                     })
 
                     await reserveTicketTypeDateInventory(tx, {
@@ -642,6 +660,9 @@ export async function fulfillPaidOrder({
                         templateCapacity: ticketType.capacity,
                         reservations: reservationCounts,
                         ticketLabel: ticketType.name,
+                        requireConfigured:
+                            ticketType.event.category === "EVENTO" &&
+                            ticketType.capacityByDate,
                     })
 
                     await tx.ticketType.update({

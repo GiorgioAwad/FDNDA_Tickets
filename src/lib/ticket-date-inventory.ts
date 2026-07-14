@@ -1,6 +1,18 @@
 import { Prisma } from "@prisma/client"
 import { parseDateOnly } from "@/lib/utils"
 
+export function assertDateCapacityNotBelowSold(
+    dateKey: string,
+    capacity: number,
+    sold: number
+): void {
+    if (capacity > 0 && capacity < sold) {
+        throw new Error(
+            `El cupo de ${dateKey} no puede ser menor que lo ya vendido (${sold})`
+        )
+    }
+}
+
 const reserveExistingDateInventory = async (
     tx: Prisma.TransactionClient,
     ticketTypeId: string,
@@ -26,6 +38,7 @@ export async function reserveTicketTypeDateInventory(
         templateCapacity: number
         reservations: Map<string, number>
         ticketLabel: string
+        requireConfigured?: boolean
     }
 ) {
     for (const [dateKey, quantity] of input.reservations) {
@@ -41,7 +54,9 @@ export async function reserveTicketTypeDateInventory(
             continue
         }
 
-        const inserted = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        const inserted = input.requireConfigured
+            ? []
+            : await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
             INSERT INTO "ticket_type_date_inventories"
                 ("id", "ticketTypeId", "date", "capacity", "sold", "isEnabled", "createdAt", "updatedAt")
             SELECT
@@ -62,12 +77,14 @@ export async function reserveTicketTypeDateInventory(
             continue
         }
 
-        const retried = await reserveExistingDateInventory(
-            tx,
-            input.ticketTypeId,
-            dateValue,
-            quantity
-        )
+        const retried = input.requireConfigured
+            ? []
+            : await reserveExistingDateInventory(
+                  tx,
+                  input.ticketTypeId,
+                  dateValue,
+                  quantity
+              )
 
         if (retried.length === 0) {
             throw new Error(

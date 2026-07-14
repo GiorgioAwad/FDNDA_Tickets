@@ -2,8 +2,13 @@ import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { fulfillPaidOrder } from "@/lib/order-fulfillment"
 import { onTicketSold } from "@/lib/cached-queries"
-import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
+import { isPoolBagTicketType } from "@/lib/pool-bag"
 import { releaseTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
+import {
+    buildTicketDateReservationCounts,
+    getRequiredTicketDateSelections,
+    usesTicketDateCapacity,
+} from "@/lib/ticket-date-capacity"
 
 type IzipayStoredSource = "db" | "ipn" | "query"
 
@@ -153,6 +158,9 @@ export async function cancelIzipayOrder(input: {
                         eventId: true,
                         validDays: true,
                         name: true,
+                        capacityByDate: true,
+                        isPackage: true,
+                        packageDaysCount: true,
                         event: {
                             select: {
                                 category: true,
@@ -181,14 +189,25 @@ export async function cancelIzipayOrder(input: {
             const ticketType = item.ticketType
             const ticketTypeId = item.ticketTypeId
 
-            if (isPoolFreeEventCategory(ticketType.event.category)) {
-                const reservationCounts = buildPoolFreeReservationCounts({
+            const isBag = isPoolBagTicketType({
+                eventCategory: ticketType.event.category,
+                isPackage: ticketType.isPackage,
+                packageDaysCount: ticketType.packageDaysCount,
+            })
+            if (
+                usesTicketDateCapacity({
+                    eventCategory: ticketType.event.category,
+                    capacityByDate: ticketType.capacityByDate,
+                }) && !isBag
+            ) {
+                const reservationCounts = buildTicketDateReservationCounts({
                     attendees: Array.isArray(item.attendeeData) ? item.attendeeData : [],
                     quantity: item.quantity,
                     validDays: ticketType.validDays,
                     eventStartDate: ticketType.event.startDate,
                     eventEndDate: ticketType.event.endDate,
                     ticketLabel: ticketType.name,
+                    requiredSelections: getRequiredTicketDateSelections(ticketType),
                     strict: false,
                 })
 

@@ -30,6 +30,7 @@ interface TicketType {
     description?: string | null
     price: number
     capacity: number
+    capacityByDate?: boolean
     sold?: number
     isActive?: boolean
     isPackage?: boolean
@@ -93,6 +94,7 @@ const buildEmptyFormData = (sucursalCode = DEFAULT_ABIO_EVENT_SUCURSAL_CODE): Pa
     description: "",
     price: 0,
     capacity: 100,
+    capacityByDate: false,
     isPackage: false,
     packageDaysCount: 0,
     monthlyClassLimit: null,
@@ -271,7 +273,11 @@ export function TicketTypeManager({
         buildEmptyFormData(eventSucursal.code)
     )
     const [capacityInput, setCapacityInput] = useState("100")
+    const [dateCapacityInputs, setDateCapacityInputs] = useState<Record<string, string>>({})
+    const [bulkDateCapacity, setBulkDateCapacity] = useState("100")
     const usesDailyCapacity = eventCategory === "PISCINA_LIBRE"
+    const usesEventDateCapacity =
+        eventCategory === "EVENTO" && entryMode === "shift" && formData.capacityByDate === true
 
     const [showPoolGenerator, setShowPoolGenerator] = useState(false)
     const [poolStartHour, setPoolStartHour] = useState(6)
@@ -347,6 +353,17 @@ export function TicketTypeManager({
             return next
         })
     }, [currentShiftOptions, entryMode, requireShiftSelection, selectedValidDays])
+
+    useEffect(() => {
+        if (!usesEventDateCapacity) return
+        setDateCapacityInputs((prev) => {
+            const next: Record<string, string> = {}
+            for (const date of selectedValidDays) {
+                next[date] = prev[date] ?? bulkDateCapacity
+            }
+            return next
+        })
+    }, [bulkDateCapacity, selectedValidDays, usesEventDateCapacity])
 
     const isShiftTicketType = (ticket: TicketType) => {
         const schedule = parseTicketScheduleConfig(ticket.validDays)
@@ -583,6 +600,8 @@ export function TicketTypeManager({
     const resetForm = () => {
         setFormData(buildEmptyFormData(eventSucursal.code))
         setCapacityInput("100")
+        setDateCapacityInputs({})
+        setBulkDateCapacity("100")
         setSelectedValidDays([])
         setShiftEntries([])
         setDateShiftSelections({})
@@ -607,6 +626,8 @@ export function TicketTypeManager({
                 : {}
         setFormData({ ...empty, ...academiaDefaults })
         setCapacityInput("100")
+        setDateCapacityInputs({})
+        setBulkDateCapacity("100")
         setSelectedValidDays([])
         setShiftEntries([])
         setDateShiftSelections({})
@@ -619,10 +640,13 @@ export function TicketTypeManager({
         setEntryMode("shift")
         setFormData({
             ...buildEmptyFormData(eventSucursal.code),
+            capacityByDate: eventCategory === "EVENTO",
             isPackage: false,
             packageDaysCount: 0,
         })
         setCapacityInput("100")
+        setDateCapacityInputs({})
+        setBulkDateCapacity("100")
         setSelectedValidDays([])
         setShiftEntries([])
         setDateShiftSelections({})
@@ -635,10 +659,13 @@ export function TicketTypeManager({
         setEntryMode("shift")
         setFormData({
             ...buildEmptyFormData(eventSucursal.code),
+            capacityByDate: eventCategory === "EVENTO",
             isPackage: false,
             packageDaysCount: 1,
         })
         setCapacityInput("100")
+        setDateCapacityInputs(Object.fromEntries(dateOptions.map((date) => [date, "100"])))
+        setBulkDateCapacity("100")
         setSelectedValidDays([...dateOptions])
         setShiftEntries([])
         setDateShiftSelections({})
@@ -666,6 +693,7 @@ export function TicketTypeManager({
             servilexExtraConfig: { cantidad: 10 },
         })
         setCapacityInput("0")
+        setDateCapacityInputs({})
         setSelectedValidDays([])
         setShiftEntries([])
         setDateShiftSelections({})
@@ -794,6 +822,23 @@ export function TicketTypeManager({
             })
             : []
 
+        const dateCapacities = usesEventDateCapacity
+            ? selectedDays.map((date) => {
+                  const raw = (dateCapacityInputs[date] ?? "").trim()
+                  const value = raw === "" ? NaN : Number(raw)
+                  return { date, capacity: value, isEnabled: true }
+              })
+            : undefined
+
+        if (
+            dateCapacities?.some(
+                (row) => !Number.isInteger(row.capacity) || row.capacity < 0
+            )
+        ) {
+            alert("Completa un cupo entero mayor o igual a 0 para cada día")
+            return
+        }
+
         setLoading(true)
         try {
             const url = "/api/ticket-types"
@@ -801,10 +846,13 @@ export function TicketTypeManager({
             const servilexFormData = {
                 ...formData,
                 servilexSucursalCode: eventSucursal.code,
+                capacityByDate: usesEventDateCapacity,
+                dateCapacities,
             }
+            const storedCapacity = usesEventDateCapacity ? 0 : capacityNumber
             const body = editingId
-                ? { ...servilexFormData, id: editingId, capacity: capacityNumber, validDays: validDaysPayload }
-                : { ...servilexFormData, eventId, capacity: capacityNumber, validDays: validDaysPayload }
+                ? { ...servilexFormData, id: editingId, capacity: storedCapacity, validDays: validDaysPayload }
+                : { ...servilexFormData, eventId, capacity: storedCapacity, validDays: validDaysPayload }
 
             const response = await fetch(url, {
                 method,
@@ -1580,22 +1628,24 @@ export function TicketTypeManager({
                                     onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium">
-                                    {usesDailyCapacity ? "Capacidad por dia" : "Capacidad (manual)"}
-                                </label>
-                                <Input
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    value={capacityInput}
-                                    onChange={(e) => {
-                                        const next = e.target.value.replace(/\D+/g, "")
-                                        setCapacityInput(next)
-                                        setFormData({ ...formData, capacity: next === "" ? 0 : Number(next) })
-                                    }}
-                                />
-                            </div>
+                            {!usesEventDateCapacity && (
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium">
+                                        {usesDailyCapacity ? "Capacidad por dia" : "Capacidad (manual)"}
+                                    </label>
+                                    <Input
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        value={capacityInput}
+                                        onChange={(e) => {
+                                            const next = e.target.value.replace(/\D+/g, "")
+                                            setCapacityInput(next)
+                                            setFormData({ ...formData, capacity: next === "" ? 0 : Number(next) })
+                                        }}
+                                    />
+                                </div>
+                            )}
                             {isAcademia && entryMode === "standard" ? (
                                 <div className="space-y-2">
                                     <label className="text-xs font-medium">
@@ -1647,6 +1697,27 @@ export function TicketTypeManager({
                                 </div>
                             )}
                         </div>
+                        {eventCategory === "EVENTO" && entryMode === "shift" && (
+                            <label className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                                <input
+                                    type="checkbox"
+                                    className="mt-0.5 h-4 w-4"
+                                    checked={Boolean(formData.capacityByDate)}
+                                    onChange={(e) =>
+                                        setFormData((prev) => ({
+                                            ...prev,
+                                            capacityByDate: e.target.checked,
+                                        }))
+                                    }
+                                />
+                                <span>
+                                    <span className="block font-medium">Usar cupos por día</span>
+                                    <span className="block text-xs text-blue-700">
+                                        Todos los turnos de esta entrada comparten el cupo configurado para cada fecha.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
                         {formData.isPackage && (
                             <div className="text-xs text-gray-600">
                                 {isAcademia && entryMode === "standard"
@@ -2208,6 +2279,67 @@ export function TicketTypeManager({
                                         <div className="text-xs text-gray-500">
                                             {selectedValidDays.length} de {dateOptions.length} días seleccionados
                                         </div>
+                                        {usesEventDateCapacity && selectedValidDays.length > 0 && (
+                                            <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/60 p-3">
+                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                                                    <div>
+                                                        <div className="text-xs font-semibold text-blue-900">Cupos por día</div>
+                                                        <div className="text-[11px] text-blue-700">
+                                                            0 significa ilimitado. El cupo es compartido por todos los turnos.
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-end gap-2">
+                                                        <div>
+                                                            <label className="text-[11px] text-blue-700">Aplicar a todos</label>
+                                                            <Input
+                                                                type="text"
+                                                                inputMode="numeric"
+                                                                pattern="[0-9]*"
+                                                                className="h-8 w-24 bg-white"
+                                                                value={bulkDateCapacity}
+                                                                onChange={(e) => setBulkDateCapacity(e.target.value.replace(/\D+/g, ""))}
+                                                            />
+                                                        </div>
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="h-8 bg-white"
+                                                            onClick={() =>
+                                                                setDateCapacityInputs(
+                                                                    Object.fromEntries(selectedValidDays.map((date) => [date, bulkDateCapacity]))
+                                                                )
+                                                            }
+                                                        >
+                                                            Aplicar
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                                <div className="max-h-64 space-y-2 overflow-y-auto">
+                                                    {Array.from(new Set(selectedValidDays))
+                                                        .sort((a, b) => a.localeCompare(b))
+                                                        .map((date) => (
+                                                            <div key={`capacity-${date}`} className="flex items-center justify-between gap-3 rounded-md border bg-white px-3 py-2">
+                                                                <span className="text-xs font-medium text-gray-700">
+                                                                    {formatDate(date, { dateStyle: "medium" })}
+                                                                </span>
+                                                                <Input
+                                                                    type="text"
+                                                                    inputMode="numeric"
+                                                                    pattern="[0-9]*"
+                                                                    className="h-8 w-24"
+                                                                    value={dateCapacityInputs[date] ?? ""}
+                                                                    onChange={(e) => {
+                                                                        const value = e.target.value.replace(/\D+/g, "")
+                                                                        setDateCapacityInputs((prev) => ({ ...prev, [date]: value }))
+                                                                    }}
+                                                                    aria-label={`Cupo para ${date}`}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </>
                                 ) : (
                                     <div className="text-xs text-gray-500">
@@ -2511,7 +2643,9 @@ export function TicketTypeManager({
                                             </div>
                                             <div className="text-sm text-gray-500 break-words">
                                                 {formatPrice(ticket.price)} • {ticket.sold || 0} vendidos
-                                                {usesDailyCapacity
+                                                {ticket.capacityByDate
+                                                    ? " totales · cupos configurados por día"
+                                                    : usesDailyCapacity
                                                     ? ` totales · capacidad diaria ${ticket.capacity}`
                                                     : ` / ${ticket.capacity} vendidos`}
                                             </div>
@@ -2565,6 +2699,20 @@ export function TicketTypeManager({
                                                     })
                                                     setIsAdding(false)
                                                     setCapacityInput(String(ticket.capacity ?? 0))
+                                                    const initialDateCapacities = Object.fromEntries(
+                                                        schedule.dates.map((date) => [
+                                                            date,
+                                                            String(inventoryByDate.get(date)?.capacity ?? ticket.capacity ?? 0),
+                                                        ])
+                                                    )
+                                                    setDateCapacityInputs(initialDateCapacities)
+                                                    setBulkDateCapacity(
+                                                        String(
+                                                            schedule.dates.length > 0
+                                                                ? inventoryByDate.get(schedule.dates[0])?.capacity ?? ticket.capacity ?? 0
+                                                                : ticket.capacity ?? 0
+                                                        )
+                                                    )
                                                     setSelectedValidDays(schedule.dates)
                                                     setShiftEntries(schedule.shifts.map(parseShiftString))
                                                     setDateShiftSelections(

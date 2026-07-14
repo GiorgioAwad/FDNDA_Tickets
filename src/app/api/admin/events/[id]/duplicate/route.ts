@@ -217,6 +217,7 @@ export async function POST(
                         currency: tt.currency,
                         capacity: tt.capacity,
                         sold: 0,
+                        capacityByDate: tt.capacityByDate,
                         isPackage: tt.isPackage,
                         packageDaysCount: tt.packageDaysCount,
                         monthlyClassLimit: tt.monthlyClassLimit,

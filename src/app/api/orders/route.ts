@@ -6,9 +6,13 @@ import { buildBillingSnapshot, buildNaturalPersonFullName } from "@/lib/billing"
 import { rateLimit } from "@/lib/rate-limit"
 import { createOrderSchema } from "@/lib/validations"
 import { onTicketSold } from "@/lib/cached-queries"
-import { buildPoolFreeReservationCounts, isPoolFreeEventCategory } from "@/lib/pool-free"
+import { isPoolFreeEventCategory } from "@/lib/pool-free"
 import { isPoolBagTicketType } from "@/lib/pool-bag"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
+import {
+    buildTicketDateReservationCounts,
+    usesTicketDateCapacity,
+} from "@/lib/ticket-date-capacity"
 import { validateMembershipStartDate, resolveMembershipStartSetup } from "@/lib/membership-config"
 import {
     getMembershipScheduleProfile,
@@ -172,12 +176,13 @@ export async function POST(request: NextRequest) {
             // concurrentes ~2-2.5x). La atomicidad se mantiene: todo va en la misma
             // transaccion, asi que si una reserva falla, la orden hace rollback.
             const simpleReserves: Array<{ ticketTypeId: string; quantity: number; name: string }> = []
-            const poolReserves: Array<{
+            const dateReserves: Array<{
                 ticketTypeId: string
                 quantity: number
                 templateCapacity: number
-                reservations: ReturnType<typeof buildPoolFreeReservationCounts>
+                reservations: ReturnType<typeof buildTicketDateReservationCounts>
                 ticketLabel: string
+                requireConfigured: boolean
             }> = []
 
             if (discountCodeId) {
@@ -247,7 +252,8 @@ export async function POST(request: NextRequest) {
                     }
                 }
 
-                const usesDailyCapacity = isPoolFreeEventCategory(eventConfig.category)
+                const usesPoolDailyCapacity = isPoolFreeEventCategory(eventConfig.category)
+                let usesDateCapacity = false
 
                 let reservedTicketType:
                     | {
@@ -256,6 +262,7 @@ export async function POST(request: NextRequest) {
                         price: Prisma.Decimal
                         eventId: string
                         capacity: number
+                        capacityByDate: boolean
                         isPackage: boolean
                         packageDaysCount: number | null
                         membershipScheduleKey: string | null
@@ -271,7 +278,7 @@ export async function POST(request: NextRequest) {
                     }
                     | undefined
 
-                if (usesDailyCapacity) {
+                if (usesPoolDailyCapacity) {
                     const ticketType = await tx.ticketType.findUnique({
                         where: { id: item.ticketTypeId },
                         select: {
@@ -280,6 +287,7 @@ export async function POST(request: NextRequest) {
                             price: true,
                             eventId: true,
                             capacity: true,
+                            capacityByDate: true,
                             isPackage: true,
                             packageDaysCount: true,
                             membershipScheduleKey: true,
@@ -325,23 +333,7 @@ export async function POST(request: NextRequest) {
                             name: ticketType.name,
                         })
                     } else {
-                        const reservationCounts = buildPoolFreeReservationCounts({
-                            attendees: attendeeData,
-                            quantity: item.quantity,
-                            validDays: ticketType.validDays,
-                            eventStartDate: eventConfig.startDate,
-                            eventEndDate: eventConfig.endDate,
-                            ticketLabel: ticketType.name,
-                        })
-
-                        // Reserva diferida (ver simpleReserves/poolReserves arriba).
-                        poolReserves.push({
-                            ticketTypeId: ticketType.id,
-                            quantity: item.quantity,
-                            templateCapacity: ticketType.capacity,
-                            reservations: reservationCounts,
-                            ticketLabel: ticketType.name,
-                        })
+                        usesDateCapacity = true
                     }
 
                     reservedTicketType = ticketType
@@ -355,6 +347,7 @@ export async function POST(request: NextRequest) {
                             price: Prisma.Decimal
                             eventId: string
                             capacity: number
+                            capacityByDate: boolean
                             sold: number
                             isActive: boolean
                             isPackage: boolean
@@ -373,7 +366,7 @@ export async function POST(request: NextRequest) {
                         }>
                     >(Prisma.sql`
                         SELECT
-                            "id", "name", "price", "eventId", "capacity", "sold", "isActive",
+                            "id", "name", "price", "eventId", "capacity", "capacityByDate", "sold", "isActive",
                             "isPackage", "packageDaysCount", "membershipScheduleKey", "validDays",
                             "servilexEnabled", "servilexIndicator", "servilexSucursalCode",
                             "servilexServiceCode", "servilexDisciplineCode", "servilexScheduleCode",
@@ -396,18 +389,25 @@ export async function POST(request: NextRequest) {
                         throw new Error(`El tipo de entrada "${row.name}" no esta disponible`)
                     }
 
-                    // Chequeo suave de stock para fallar temprano con mensaje claro.
-                    // El control real anti-sobreventa es el UPDATE atomico diferido.
-                    if (row.capacity !== 0 && row.sold + item.quantity > row.capacity) {
-                        throw new Error(`El tipo de entrada "${row.name}" esta agotado`)
-                    }
-
                     reservedTicketType = row
-                    simpleReserves.push({
-                        ticketTypeId: item.ticketTypeId,
-                        quantity: item.quantity,
-                        name: row.name,
+                    usesDateCapacity = usesTicketDateCapacity({
+                        eventCategory: eventConfig.category,
+                        capacityByDate: row.capacityByDate,
                     })
+
+                    if (!usesDateCapacity) {
+                        // Chequeo suave de stock para fallar temprano con mensaje claro.
+                        // El control real anti-sobreventa es el UPDATE atomico diferido.
+                        if (row.capacity !== 0 && row.sold + item.quantity > row.capacity) {
+                            throw new Error(`El tipo de entrada "${row.name}" esta agotado`)
+                        }
+
+                        simpleReserves.push({
+                            ticketTypeId: item.ticketTypeId,
+                            quantity: item.quantity,
+                            name: row.name,
+                        })
+                    }
                 }
 
                 const scheduleConfig = parseTicketScheduleConfig(reservedTicketType.validDays)
@@ -499,6 +499,29 @@ export async function POST(request: NextRequest) {
                             ...attendee,
                             scheduleSelections,
                         }
+                    })
+                }
+
+                if (usesDateCapacity) {
+                    const reservationCounts = buildTicketDateReservationCounts({
+                        attendees: attendeeData,
+                        quantity: item.quantity,
+                        validDays: reservedTicketType.validDays,
+                        eventStartDate: eventConfig.startDate,
+                        eventEndDate: eventConfig.endDate,
+                        ticketLabel: reservedTicketType.name,
+                        requiredSelections: requiredScheduleSelections || 1,
+                    })
+
+                    dateReserves.push({
+                        ticketTypeId: reservedTicketType.id,
+                        quantity: item.quantity,
+                        templateCapacity: reservedTicketType.capacity,
+                        reservations: reservationCounts,
+                        ticketLabel: reservedTicketType.name,
+                        requireConfigured:
+                            eventConfig.category === "EVENTO" &&
+                            reservedTicketType.capacityByDate,
                     })
                 }
 
@@ -731,12 +754,13 @@ export async function POST(request: NextRequest) {
                 }
             }
 
-            for (const r of poolReserves) {
+            for (const r of dateReserves) {
                 await reserveTicketTypeDateInventory(tx, {
                     ticketTypeId: r.ticketTypeId,
                     templateCapacity: r.templateCapacity,
                     reservations: r.reservations,
                     ticketLabel: r.ticketLabel,
+                    requireConfigured: r.requireConfigured,
                 })
 
                 await tx.ticketType.update({

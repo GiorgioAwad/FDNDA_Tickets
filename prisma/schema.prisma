@@ -332,6 +332,11 @@ model TicketType {
   currency         String   @default("PEN")
   capacity         Int      @default(0) // 0 = unlimited
   sold             Int      @default(0)
+  // EVENTO: si true, el cupo se controla por fecha mediante
+  // TicketTypeDateInventory. Se mantiene false por defecto para que las
+  // entradas legacy sigan usando capacity/sold globales. PISCINA_LIBRE conserva
+  // su comportamiento diario por categoría aunque este flag sea false.
+  capacityByDate   Boolean  @default(false)
   isPackage        Boolean  @default(false)
   packageDaysCount Int?     // Number of days for package tickets
   // Membresías: cupo de clases por mes. Si está presente, el control de

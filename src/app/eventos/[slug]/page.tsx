@@ -201,6 +201,7 @@ export default async function EventDetailPage({ params, searchParams }: EventPag
         description: ticket.description,
         price: Number(ticket.price),
         capacity: ticket.capacity,
+        capacityByDate: ticket.capacityByDate,
         sold: ticket.sold,
         isActive: ticket.isActive,
         isPackage: ticket.isPackage,
