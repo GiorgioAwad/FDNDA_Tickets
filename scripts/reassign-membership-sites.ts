@@ -381,4 +381,8 @@ main()
         } catch {
             // El error principal ya fue reportado; no ocultarlo por el cierre del pool.
         }
+        // El adaptador Neon mantiene temporizadores internos aun después de
+        // desconectar Prisma. Este es un CLI de una sola ejecución: terminar de
+        // forma explícita evita que el modo consulta o --apply quede colgado.
+        process.exit(process.exitCode ?? 0)
     })
