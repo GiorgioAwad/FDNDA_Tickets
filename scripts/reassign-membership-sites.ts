@@ -139,6 +139,7 @@ async function main() {
         spec: ReassignmentSpec
         attendeeData: PrismaTypes.InputJsonValue
         membershipSchedule: PrismaTypes.InputJsonValue
+        alreadyApplied: boolean
         before: Record<string, unknown>
     }> = []
 
@@ -204,14 +205,23 @@ async function main() {
         if (!orderItem) fail(`${spec.label}: OrderItem no encontrado`)
         if (!sourceType || !targetType) fail(`${spec.label}: tipo origen o destino no encontrado`)
 
+        const isSourceState =
+            ticket.eventId === spec.sourceEventId &&
+            ticket.ticketTypeId === spec.sourceTicketTypeId &&
+            orderItem.ticketTypeId === spec.sourceTicketTypeId
+        const isTargetState =
+            ticket.eventId === spec.targetEventId &&
+            ticket.ticketTypeId === spec.targetTicketTypeId &&
+            orderItem.ticketTypeId === spec.targetTicketTypeId
+        if (!isSourceState && !isTargetState) {
+            fail(`${spec.label}: ticket y OrderItem no están íntegramente en la sede origen ni en la destino`)
+        }
+
         assertEqual(ticket.orderId, spec.orderId, `${spec.label}: orden del ticket`)
-        assertEqual(ticket.eventId, spec.sourceEventId, `${spec.label}: evento origen del ticket`)
-        assertEqual(ticket.ticketTypeId, spec.sourceTicketTypeId, `${spec.label}: tipo origen del ticket`)
         assertEqual(ticket.status, "ACTIVE", `${spec.label}: estado del ticket`)
         assertEqual(dateKey(ticket.membershipStartDate), spec.expectedStartDate, `${spec.label}: inicio`)
         assertEqual(ticket.order.status, "PAID", `${spec.label}: estado de la orden`)
         assertEqual(orderItem.orderId, spec.orderId, `${spec.label}: orden del item`)
-        assertEqual(orderItem.ticketTypeId, spec.sourceTicketTypeId, `${spec.label}: tipo origen del item`)
         assertEqual(orderItem.quantity, 1, `${spec.label}: cantidad del item`)
         assertEqual(Number(orderItem.unitPrice), spec.expectedPrice, `${spec.label}: precio unitario`)
         assertEqual(Number(orderItem.subtotal), spec.expectedPrice, `${spec.label}: subtotal`)
@@ -225,8 +235,10 @@ async function main() {
         assertEqual(sourceType.monthlyClassLimit, targetType.monthlyClassLimit, `${spec.label}: límite mensual equivalente`)
         assertEqual(sourceType.membershipDurationMonths, targetType.membershipDurationMonths, `${spec.label}: duración equivalente`)
         assertEqual(sourceType.isPackage, targetType.isPackage, `${spec.label}: modalidad equivalente`)
-        if (sourceType.sold < 1) fail(`${spec.label}: el contador sold de origen ya está en cero`)
-        if (targetType.capacity !== 0 && targetType.sold + 1 > targetType.capacity) {
+        if (isSourceState && sourceType.sold < 1) {
+            fail(`${spec.label}: el contador sold de origen ya está en cero`)
+        }
+        if (isSourceState && targetType.capacity !== 0 && targetType.sold + 1 > targetType.capacity) {
             fail(`${spec.label}: el tipo destino no tiene cupo global`)
         }
         if (ticket.monthlySchedules.length > 0) {
@@ -270,7 +282,9 @@ async function main() {
             spec,
             attendeeData: updatedAttendeeData,
             membershipSchedule: targetMembershipSchedule as unknown as PrismaTypes.InputJsonValue,
+            alreadyApplied: isTargetState,
             before: {
+                state: isTargetState ? "already_applied" : "source",
                 ticketEventId: ticket.eventId,
                 ticketTypeId: ticket.ticketTypeId,
                 sourceSold: sourceType.sold,
@@ -296,13 +310,19 @@ async function main() {
     })) }, null, 2))
 
     if (!APPLY) {
-        console.log("Consulta validada. No se realizó ninguna escritura. Usa --apply para aplicar ambas correcciones en una transacción.")
+        const pending = prepared.filter((entry) => !entry.alreadyApplied).length
+        console.log(
+            pending === 0
+                ? "Consulta validada. Ambas correcciones ya están aplicadas; no se realizó ninguna escritura."
+                : `Consulta validada. Hay ${pending} corrección(es) pendiente(s); no se realizó ninguna escritura. Usa --apply para aplicarlas en una transacción.`
+        )
         return
     }
 
     await prisma.$transaction(async (tx) => {
         for (const entry of prepared) {
             const { spec } = entry
+            if (entry.alreadyApplied) continue
             const decremented = await tx.ticketType.updateMany({
                 where: { id: spec.sourceTicketTypeId, eventId: spec.sourceEventId, sold: { gt: 0 } },
                 data: { sold: { decrement: 1 } },
