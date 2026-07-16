@@ -19,6 +19,7 @@ export interface TicketCardItemProps {
     eventVenue: string
     discipline?: string | null
     bannerUrl?: string | null
+    scheduleLabel?: string | null
     isPast?: boolean
     index?: number
     groupIndex?: number
@@ -45,6 +46,7 @@ export function TicketCardItem({
     eventVenue,
     discipline,
     bannerUrl,
+    scheduleLabel,
     isPast = false,
     index = 0,
     groupIndex,
@@ -123,7 +125,7 @@ export function TicketCardItem({
                         <div className="space-y-1.5 text-sm text-muted-foreground">
                             <div className="flex items-center gap-2">
                                 <Calendar className="h-3.5 w-3.5 text-fdnda-secondary shrink-0" />
-                                <span>{formatDate(eventStartDate)}</span>
+                                <span>{scheduleLabel ?? formatDate(eventStartDate)}</span>
                             </div>
                             <div className="flex items-center gap-2">
                                 <MapPin className="h-3.5 w-3.5 text-fdnda-secondary shrink-0" />

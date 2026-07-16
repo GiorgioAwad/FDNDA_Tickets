@@ -6,48 +6,16 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { TicketCardItem } from "@/components/tickets/TicketCardItem"
 import { formatDate, getEventActiveThreshold } from "@/lib/utils"
+import type { ScheduleSelection } from "@/lib/ticket-schedule"
 import {
-    normalizeScheduleSelections,
-    type ScheduleSelection,
-} from "@/lib/ticket-schedule"
+    alignSelectionsToTicketDates,
+    buildTicketDateGroupKey,
+    findTicketScheduleSelections,
+    mergeGroupScheduleSelections,
+} from "@/lib/ticket-grouping"
 import { ArrowLeft, Sparkles, CheckCircle2 } from "lucide-react"
 
 export const dynamic = "force-dynamic"
-
-type RawAttendee = { name?: unknown; dni?: unknown; scheduleSelections?: unknown }
-
-const normalizeKey = (value: unknown) =>
-    typeof value === "string" ? value.trim().toLowerCase().replace(/\s+/g, " ") : ""
-
-const normalizeDni = (value: unknown) =>
-    typeof value === "string" ? value.trim().toUpperCase().replace(/\s+/g, "") : ""
-
-function findAttendeeSelections(
-    attendees: unknown,
-    name: string | null,
-    dni: string | null
-): ScheduleSelection[] {
-    if (!Array.isArray(attendees)) return []
-    const targetName = normalizeKey(name)
-    const targetDni = normalizeDni(dni)
-
-    let best: { score: number; selections: ScheduleSelection[] } | null = null
-    for (const raw of attendees) {
-        if (!raw || typeof raw !== "object") continue
-        const record = raw as RawAttendee
-        const candidateName = normalizeKey(record.name)
-        const candidateDni = normalizeDni(record.dni)
-        const selections = normalizeScheduleSelections(record.scheduleSelections)
-        let score = selections.length > 0 ? 1 : 0
-        if (targetDni && candidateDni && targetDni === candidateDni) score += 4
-        if (targetName && candidateName && targetName === candidateName) score += 2
-        if (!best || score > best.score) {
-            best = { score, selections }
-        }
-    }
-
-    return best?.selections ?? []
-}
 
 function formatScheduleLabel(selections: ScheduleSelection[]): string | null {
     if (selections.length === 0) return null
@@ -69,14 +37,6 @@ function formatScheduleLabel(selections: ScheduleSelection[]): string | null {
         : `${uniqueDates.length} días`
 }
 
-function buildScheduleKey(selections: ScheduleSelection[]): string {
-    if (selections.length === 0) return "no-schedule"
-    return selections
-        .map((s) => `${s.date}|${(s.shift ?? "").trim()}`)
-        .sort()
-        .join(";")
-}
-
 // Las fechas @db.Date se guardan a mediodía UTC del día civil; leer en UTC evita
 // el desfase de zona horaria al construir la clave "YYYY-MM-DD".
 function entitlementDateKey(date: Date): string {
@@ -94,9 +54,9 @@ export default async function MyTicketsPage() {
     }
 
     const tickets = await prisma.ticket.findMany({
-        // Ocultar entradas canceladas: un carnet anulado no debe aparecer en la
-        // cuenta del usuario (ni mostrarse como tarjeta). El escáner ya las rechaza.
-        where: { userId: user.id, status: { not: "CANCELLED" } },
+        // Se consultan también las canceladas para conservar la posición original
+        // ticket/asistente; se eliminan después de reconstruir su fecha comprada.
+        where: { userId: user.id },
         include: {
             event: true,
             ticketType: true,
@@ -107,7 +67,8 @@ export default async function MyTicketsPage() {
             order: {
                 select: {
                     orderItems: {
-                        select: { ticketTypeId: true, attendeeData: true },
+                        select: { id: true, ticketTypeId: true, attendeeData: true },
+                        orderBy: { id: "asc" },
                     },
                 },
             },
@@ -120,6 +81,7 @@ export default async function MyTicketsPage() {
         orderBy: [
             { event: { startDate: "asc" } },
             { createdAt: "asc" },
+            { id: "asc" },
         ],
     })
 
@@ -130,44 +92,54 @@ export default async function MyTicketsPage() {
     type EnrichedTicket = (typeof tickets)[number] & {
         scheduleKey: string
         scheduleLabel: string | null
+        scheduleSelections: ScheduleSelection[]
+        hasSpecificSchedule: boolean
         used: boolean
     }
 
+    const ticketTypePositions = new Map<string, number>()
     const enriched: EnrichedTicket[] = tickets.map((ticket) => {
-        // Piscina libre: la fecha de cada entrada vive en su propio entitlement.
-        // Cada horario es un ticketType distinto, así que comprar el mismo horario
-        // en varias fechas crea varios orderItems con el mismo ticketTypeId; el match
-        // por attendeeData (asistente sin nombre/DNI) era ambiguo y agrupaba todas las
-        // entradas bajo la fecha del primer orderItem. Agrupar por el entitlement real
-        // del ticket muestra cada entrada en su día correcto.
-        const isPoolFree = ticket.event.category === "PISCINA_LIBRE"
-        let selections: ScheduleSelection[]
-        if (isPoolFree && ticket.entitlements.length > 0) {
-            selections = ticket.entitlements.map((entitlement) => ({
-                date: entitlementDateKey(entitlement.date),
-                shift: "",
-            }))
-        } else {
-            const matchingItem = ticket.order.orderItems.find(
-                (item) => item.ticketTypeId === ticket.ticketTypeId
-            )
-            selections = findAttendeeSelections(
-                matchingItem?.attendeeData,
-                ticket.attendeeName,
-                ticket.attendeeDni
-            )
-        }
+        const positionKey = `${ticket.orderId}::${ticket.ticketTypeId}`
+        const attendeeIndex = ticketTypePositions.get(positionKey) ?? 0
+        ticketTypePositions.set(positionKey, attendeeIndex + 1)
+
+        const attendees = ticket.order.orderItems
+            .filter((item) => item.ticketTypeId === ticket.ticketTypeId)
+            .flatMap((item) => Array.isArray(item.attendeeData) ? item.attendeeData : [])
+        const storedSelections = findTicketScheduleSelections({
+            attendees,
+            attendeeName: ticket.attendeeName,
+            attendeeDni: ticket.attendeeDni,
+            attendeeIndex,
+        })
+        const ticketDates = ticket.entitlements.map((entitlement) =>
+            entitlementDateKey(entitlement.date)
+        )
+        // Entitlements identify the exact dates issued to this ticket, while
+        // attendeeData contributes its selected turn. Only use them as a schedule
+        // when the purchase actually selected dates (or for piscina libre).
+        const hasSpecificSchedule =
+            storedSelections.length > 0 ||
+            (ticket.event.category === "PISCINA_LIBRE" && ticketDates.length > 0)
+        const selections = hasSpecificSchedule
+            ? alignSelectionsToTicketDates(storedSelections, ticketDates)
+            : []
+        const scheduleKey = buildTicketDateGroupKey(selections)
+
         return {
             ...ticket,
-            scheduleKey: buildScheduleKey(selections),
+            scheduleKey: scheduleKey ?? ticket.id,
             scheduleLabel: formatScheduleLabel(selections),
+            scheduleSelections: selections,
+            hasSpecificSchedule: scheduleKey !== null,
             used: ticket.scans.length > 0,
         }
-    })
+    }).filter((ticket) => ticket.status !== "CANCELLED")
 
     type TicketGroup = {
         key: string
         eventTitle: string
+        eventStartDate: Date
         scheduleLabel: string | null
         tickets: EnrichedTicket[]
     }
@@ -175,20 +147,34 @@ export default async function MyTicketsPage() {
     const buildGroups = (items: EnrichedTicket[]): TicketGroup[] => {
         const groups = new Map<string, TicketGroup>()
         for (const ticket of items) {
-            const key = `${ticket.eventId}::${ticket.scheduleKey}`
+            const key = ticket.hasSpecificSchedule
+                ? `${ticket.eventId}::date::${ticket.scheduleKey}`
+                : `${ticket.eventId}::ticket::${ticket.id}`
             const existing = groups.get(key)
             if (existing) {
                 existing.tickets.push(ticket)
+                existing.scheduleLabel = formatScheduleLabel(
+                    mergeGroupScheduleSelections(
+                        existing.tickets.map((groupedTicket) => groupedTicket.scheduleSelections)
+                    )
+                )
             } else {
                 groups.set(key, {
                     key,
                     eventTitle: ticket.event.title,
+                    eventStartDate: ticket.event.startDate,
                     scheduleLabel: ticket.scheduleLabel,
                     tickets: [ticket],
                 })
             }
         }
-        return Array.from(groups.values())
+        return Array.from(groups.values()).sort((left, right) => {
+            const eventComparison = left.eventStartDate.getTime() - right.eventStartDate.getTime()
+            if (eventComparison !== 0) return eventComparison
+            return (left.tickets[0]?.scheduleKey ?? "").localeCompare(
+                right.tickets[0]?.scheduleKey ?? ""
+            )
+        })
     }
 
     const upcomingGroups = buildGroups(
@@ -219,6 +205,7 @@ export default async function MyTicketsPage() {
                 eventVenue={ticket.event.venue}
                 discipline={ticket.event.discipline}
                 bannerUrl={ticket.event.bannerUrl}
+                scheduleLabel={ticket.scheduleLabel}
                 isPast={isPast}
                 index={idx}
                 groupIndex={isGrouped ? idx + 1 : undefined}
@@ -240,7 +227,7 @@ export default async function MyTicketsPage() {
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <p className="text-[11px] font-bold uppercase tracking-widest text-coral">
-                            {total} entradas en grupo
+                            {total} entradas agrupadas por fecha
                         </p>
                         <h3 className="font-display text-base sm:text-lg font-bold">
                             {group.eventTitle}
@@ -312,7 +299,7 @@ export default async function MyTicketsPage() {
                                 Mis <span className="text-gradient-coral">entradas</span>
                             </h1>
                             <p className="text-muted-foreground mt-1 text-sm sm:text-base">
-                                {tickets.length} {tickets.length === 1 ? "entrada" : "entradas"} en total · {upcomingCount} próximas
+                                {enriched.length} {enriched.length === 1 ? "entrada" : "entradas"} en total · {upcomingCount} próximas
                             </p>
                         </div>
                         <Link href="/eventos">
@@ -323,7 +310,7 @@ export default async function MyTicketsPage() {
                     </div>
                 </div>
 
-                {tickets.length === 0 ? (
+                {enriched.length === 0 ? (
                     <EmptyState
                         variant="no-tickets"
                         title="Aún no tienes entradas"
