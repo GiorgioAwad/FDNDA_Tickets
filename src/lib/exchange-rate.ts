@@ -4,7 +4,7 @@ import { USD_TO_PEN_FALLBACK } from "@/lib/commission-rates"
 
 const BCRP_SERIES_VENTA = "PD04640PD"
 const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hora
-const FETCH_TIMEOUT_MS = 6_000
+const FETCH_TIMEOUT_MS = 12_000 // BCRP hace un handshake TLS lento (~3s) y desde el VPS se pasa de 6s
 
 let cached: { rate: number; fetchedAt: number; source: ExchangeRateSource } | null = null
 
@@ -69,7 +69,8 @@ async function fetchFromBcrp(): Promise<number> {
 }
 
 async function fetchFromApisNetPe(): Promise<number> {
-    const url = "https://api.apis.net.pe/v2/sunat/tipo-cambio"
+    // El endpoint v2 gratuito fue deprecado (404, ahora exige token). El v1 sigue abierto.
+    const url = "https://api.apis.net.pe/v1/tipo-cambio-sunat"
     const res = await fetchWithTimeout(url)
     if (!res.ok) throw new Error(`apis.net.pe responded ${res.status}`)
     const data = (await res.json()) as { compra?: number | string; venta?: number | string }
