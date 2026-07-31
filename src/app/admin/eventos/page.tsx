@@ -112,11 +112,15 @@ export default async function AdminEventsPage() {
     const activeThreshold = getEventActiveThreshold()
     const activeEvents = events.filter((event) => new Date(event.endDate) >= activeThreshold && event.isPublished).length
 
-    const upcomingEvents = events.filter((event) => new Date(event.startDate) > new Date())
-    const ongoingEvents = events.filter((event) => {
-        const now = new Date()
-        return new Date(event.startDate) <= now && new Date(event.endDate) >= now
-    })
+    // Las tres secciones se clasifican contra el MISMO umbral (dia civil de Lima,
+    // ver getEventActiveThreshold). Con `new Date()` un evento en su ultimo dia
+    // dejaba de ser "en curso" a las 7am Lima pero todavia no era "pasado", asi
+    // que no caia en ninguna seccion y desaparecia del listado.
+    const upcomingEvents = events.filter((event) => new Date(event.startDate) > activeThreshold)
+    const ongoingEvents = events.filter(
+        (event) =>
+            new Date(event.startDate) <= activeThreshold && new Date(event.endDate) >= activeThreshold
+    )
     const pastEvents = events.filter((event) => new Date(event.endDate) < activeThreshold)
 
     const financeByEvent = new Map(
@@ -240,7 +244,7 @@ export default async function AdminEventsPage() {
                 <div>
                     <h2 className="mb-3 text-lg font-semibold text-gray-500">Pasados ({pastEvents.length})</h2>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {pastEvents.slice(0, 6).map((event) => (
+                        {pastEvents.map((event) => (
                             <EventCard key={event.id} event={event} status="past" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} poolOccupancy={poolOccupancyByEvent.get(event.id) ?? null} />
                         ))}
                     </div>

@@ -77,6 +77,7 @@ export default async function AdminDashboardPage() {
               lastMonthSummary: { _sum: { totalAmount: Prisma.Decimal | null } }
               recentOrders: RecentOrder[]
               upcomingEvents: ActiveEvent[]
+              finishedEvents: ActiveEvent[]
               todayScans: number
           }
         | null = null
@@ -92,6 +93,7 @@ export default async function AdminDashboardPage() {
             lastMonthSummary,
             recentOrders,
             upcomingEvents,
+            finishedEvents,
             todayScans,
         ] = await Promise.all([
             prisma.user.count({ where: { role: "USER" } }),
@@ -139,6 +141,19 @@ export default async function AdminDashboardPage() {
                     _count: { select: { tickets: true } }
                 }
             }) as Promise<ActiveEvent[]>,
+            // Eventos ya terminados: siguen visibles en el panel (los mas recientes
+            // primero) para poder entrar a su detalle sin buscarlos en /admin/eventos.
+            prisma.event.findMany({
+                where: {
+                    endDate: { lt: getEventActiveThreshold() },
+                    isPublished: true
+                },
+                take: 3,
+                orderBy: { endDate: "desc" },
+                include: {
+                    _count: { select: { tickets: true } }
+                }
+            }) as Promise<ActiveEvent[]>,
             prisma.scan.count({
                 where: {
                     scannedAt: {
@@ -159,6 +174,7 @@ export default async function AdminDashboardPage() {
             lastMonthSummary,
             recentOrders,
             upcomingEvents,
+            finishedEvents,
             todayScans,
         }
     } catch (error) {
@@ -191,8 +207,16 @@ export default async function AdminDashboardPage() {
         lastMonthSummary,
         recentOrders,
         upcomingEvents,
+        finishedEvents,
         todayScans,
     } = dashboardData
+
+    // El panel lista primero los eventos vigentes y luego los ya finalizados,
+    // que antes desaparecian por completo al pasar su fecha de fin.
+    const dashboardEvents: Array<{ event: ActiveEvent; isFinished: boolean }> = [
+        ...upcomingEvents.map((event) => ({ event, isFinished: false })),
+        ...finishedEvents.map((event) => ({ event, isFinished: true })),
+    ]
 
     const grossRevenue = Number(paidSummary._sum.totalAmount ?? 0)
     const completedOrdersCount = paidSummary._count._all
@@ -327,12 +351,12 @@ export default async function AdminDashboardPage() {
                     </CardContent>
                 </Card>
 
-                {/* Upcoming events */}
+                {/* Upcoming + recently finished events */}
                 <Card className="overflow-hidden">
                     <CardHeader className="flex flex-row items-center justify-between pb-3">
                         <div>
-                            <CardTitle className="font-display text-lg">Próximos eventos</CardTitle>
-                            <CardDescription>Activos y publicados</CardDescription>
+                            <CardTitle className="font-display text-lg">Eventos</CardTitle>
+                            <CardDescription>Activos y finalizados recientes</CardDescription>
                         </div>
                         <Link href="/admin/eventos">
                             <Button variant="ghost" size="sm" className="text-fdnda-secondary hover:text-fdnda-primary">
@@ -341,13 +365,13 @@ export default async function AdminDashboardPage() {
                         </Link>
                     </CardHeader>
                     <CardContent>
-                        {upcomingEvents.length > 0 ? (
+                        {dashboardEvents.length > 0 ? (
                             <div className="space-y-2">
-                                {upcomingEvents.map((event) => (
+                                {dashboardEvents.map(({ event, isFinished }) => (
                                     <Link
                                         key={event.id}
                                         href={`/admin/eventos/${event.id}`}
-                                        className="block p-3 rounded-xl border border-border bg-card hover:border-fdnda-secondary/50 hover:bg-fdnda-light/30 transition-all group"
+                                        className={`block p-3 rounded-xl border border-border bg-card hover:border-fdnda-secondary/50 hover:bg-fdnda-light/30 transition-all group ${isFinished ? "opacity-75" : ""}`}
                                     >
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="flex-1 min-w-0">
@@ -359,6 +383,11 @@ export default async function AdminDashboardPage() {
                                                     <Badge variant="outline" className="text-[10px]">
                                                         {formatDate(event.startDate)}
                                                     </Badge>
+                                                    {isFinished && (
+                                                        <Badge variant="secondary" className="text-[10px]">
+                                                            Finalizado
+                                                        </Badge>
+                                                    )}
                                                     <span className="text-[10px] text-muted-foreground">
                                                         · {event._count.tickets} entradas
                                                     </span>
@@ -370,7 +399,7 @@ export default async function AdminDashboardPage() {
                                 ))}
                             </div>
                         ) : (
-                            <EmptyState variant="no-events" title="Sin eventos próximos" description="Crea uno nuevo para empezar." className="py-8" />
+                            <EmptyState variant="no-events" title="Sin eventos" description="Crea uno nuevo para empezar." className="py-8" />
                         )}
                     </CardContent>
                 </Card>
