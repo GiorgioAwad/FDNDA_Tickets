@@ -25,6 +25,9 @@ export interface CachedEvent {
     mode: string
     isPublished: boolean
     visibility: "PUBLIC" | "PRIVATE"
+    // Siempre null: es el secreto que abre los eventos PRIVATE y este payload
+    // se sirve por una API publica y se guarda en Redis. Quien necesita el token
+    // (el gate de /eventos/[slug] y el panel admin) lo lee directo de Prisma.
     accessToken: string | null
     discipline: string | null
     // Config de inicio de membresía (ISO o null). Ver membership-config.
@@ -85,7 +88,7 @@ export async function getCachedEvent(eventId: string): Promise<CachedEvent | nul
                 mode: event.mode,
                 isPublished: event.isPublished,
                 visibility: event.visibility,
-                accessToken: event.accessToken,
+                accessToken: null,
                 discipline: event.discipline,
                 membershipStartFixed: event.membershipStartFixed
                     ? event.membershipStartFixed.toISOString()
@@ -130,7 +133,7 @@ export async function getCachedEventBySlug(slug: string): Promise<CachedEvent | 
                 mode: event.mode,
                 isPublished: event.isPublished,
                 visibility: event.visibility,
-                accessToken: event.accessToken,
+                accessToken: null,
                 discipline: event.discipline,
                 membershipStartFixed: event.membershipStartFixed
                     ? event.membershipStartFixed.toISOString()

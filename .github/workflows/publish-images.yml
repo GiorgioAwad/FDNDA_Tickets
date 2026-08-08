@@ -55,6 +55,7 @@ jobs:
             NEXT_PUBLIC_APP_URL=${{ steps.vars.outputs.app_url }}
             NEXT_PUBLIC_APP_NAME=${{ vars.NEXT_PUBLIC_APP_NAME || 'Ticketing FDNDA' }}
             NEXT_PUBLIC_PAYMENTS_MODE=${{ vars.NEXT_PUBLIC_PAYMENTS_MODE || 'izipay' }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

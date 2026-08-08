@@ -1,5 +1,6 @@
 "use client"
 
+import * as Sentry from "@sentry/nextjs"
 import { useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -12,7 +13,11 @@ export default function GlobalError({
     error: Error & { digest?: string }
     reset: () => void
 }) {
+    // Este boundary atrapa todo lo que no tiene error.tsx propio (/scanner,
+    // /mi-cuenta, /checkout, ...). Sin captureException los fallos de cliente
+    // no dejaban rastro en ningun lado: solo quedaban en la consola del usuario.
     useEffect(() => {
+        Sentry.captureException(error)
         console.error("Global app error:", error)
     }, [error])
 

@@ -39,6 +39,13 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/",
   },
+  // El sitio es monolingue en español. Pedimos explicitamente que Google
+  // Translate no lo traduzca: al reemplazar los nodos de texto rompe la
+  // reconciliacion de React y tumba la pagina con el error boundary raiz
+  // ("Algo salio mal"). Va junto con translate="no" en <html>.
+  other: {
+    google: "notranslate",
+  },
   // Verificacion de Google Search Console por meta tag (sin tocar DNS).
   // Setear GOOGLE_SITE_VERIFICATION en el entorno con el codigo que da GSC.
   ...(process.env.GOOGLE_SITE_VERIFICATION
@@ -116,7 +123,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" className={`${sans.variable} ${display.variable}`}>
+    <html lang="es" translate="no" className={`${sans.variable} ${display.variable}`}>
       <body className="font-sans antialiased">
         <script
           type="application/ld+json"

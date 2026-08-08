@@ -11,6 +11,16 @@ export const runtime = "nodejs"
 
 const PUBLIC_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=300"
 
+// Este GET es publico (sin auth) y ademas se cachea en el CDN, asi que nunca
+// puede devolver accessToken: es el secreto que abre los eventos PRIVATE. Lo
+// quitamos aca y no solo en cached-queries porque (a) el fallback a DB directa
+// devuelve el evento entero y (b) las entradas ya guardadas en Redis todavia
+// traen el token hasta que expiran.
+function withoutAccessToken<T extends object>(data: T): Omit<T, "accessToken"> {
+    const { accessToken: _accessToken, ...rest } = data as T & { accessToken?: unknown }
+    return rest as Omit<T, "accessToken">
+}
+
 // GET /api/events/[id] - Get event details
 export async function GET(
     request: NextRequest,
@@ -27,7 +37,7 @@ export async function GET(
             if (cachedEvent) {
                 return NextResponse.json({
                     success: true,
-                    data: cachedEvent,
+                    data: withoutAccessToken(cachedEvent),
                 }, {
                     headers: {
                         "Cache-Control": PUBLIC_CACHE_CONTROL,
@@ -59,7 +69,7 @@ export async function GET(
 
         return NextResponse.json({
             success: true,
-            data: event,
+            data: withoutAccessToken(event),
         }, {
             headers: {
                 "Cache-Control": PUBLIC_CACHE_CONTROL,

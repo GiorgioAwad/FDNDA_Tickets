@@ -27,10 +27,15 @@ COPY . .
 ARG NEXT_PUBLIC_APP_URL
 ARG NEXT_PUBLIC_APP_NAME="Ticketing FDNDA"
 ARG NEXT_PUBLIC_PAYMENTS_MODE="mock"
+# Sentry del lado del cliente: el DSN se inlinea en el bundle en tiempo de build,
+# asi que NO alcanza con tenerlo en .env.production del VPS (eso es runtime).
+# Si llega vacio, Sentry.init queda con dsn undefined y no reporta (igual que hoy).
+ARG NEXT_PUBLIC_SENTRY_DSN=""
 
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 ENV NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME}
 ENV NEXT_PUBLIC_PAYMENTS_MODE=${NEXT_PUBLIC_PAYMENTS_MODE}
+ENV NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Next.js collects anonymous telemetry; disable it
