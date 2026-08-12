@@ -176,6 +176,7 @@ model User {
   complaintBookEntries ComplaintBookEntry[]
   uploadedAssets   UploadedAsset[]
   billingProfile   UserBillingProfile?
+  promoPopups      PromoPopup[]
 
   @@map("users")
 }
@@ -1015,4 +1016,24 @@ model MerchVariant {
   @@unique([productId, size])
   @@index([productId, isActive])
   @@map("merch_variants")
+}
+
+model PromoPopup {
+  id           String   @id @default("default")
+  isActive     Boolean  @default(false)
+  eyebrow      String?
+  kicker       String?
+  title        String
+  description  String?
+  imageUrl     String?
+  linkUrl      String?
+  linkLabel    String?
+  mediaCaption String?
+  sections     String[] @default([])
+  updatedAt    DateTime @updatedAt
+  updatedById  String?
+
+  updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("promo_popups")
 }
