@@ -5,6 +5,7 @@ import {
     isBlockedPromoPath,
     isPromoVisibleOnPath,
     resolvePromoImage,
+    validatePromoPopupInput,
 } from "./promo-popup"
 
 test("extractYoutubeId acepta los formatos de enlace de YouTube", () => {
@@ -100,4 +101,70 @@ test("las rutas bloqueadas ganan incluso con TODO_PUBLICO", () => {
 
 test("sin secciones el popup no se muestra en ningun lado", () => {
     assert.equal(isPromoVisibleOnPath([], "/"), false)
+})
+
+const validInput = {
+    isActive: true,
+    eyebrow: "Estreno FDNDA",
+    kicker: "Voces del Agua",
+    title: "Conoce a la nadadora más rápida",
+    description: "Rafaela Fernandini comparte el camino detrás de sus récords.",
+    imageUrl: null,
+    linkUrl: "https://www.youtube.com/watch?v=AbSRrPAz4Zo",
+    linkLabel: "Ver ahora en YouTube",
+    mediaCaption: "Temporada 1 · Episodio 1",
+    sections: ["INICIO", "EVENTOS", "MERCH"],
+}
+
+test("validatePromoPopupInput acepta una config completa", () => {
+    assert.deepEqual(validatePromoPopupInput(validInput), {})
+})
+
+test("validatePromoPopupInput acepta un popup sin enlace", () => {
+    const errors = validatePromoPopupInput({
+        ...validInput,
+        linkUrl: null,
+        linkLabel: null,
+        imageUrl: "https://assets.ticketingfdnda.pe/promo/arte.jpg",
+    })
+    assert.deepEqual(errors, {})
+})
+
+test("validatePromoPopupInput exige titulo y secciones si esta activo", () => {
+    const errors = validatePromoPopupInput({
+        ...validInput,
+        title: "   ",
+        sections: [],
+    })
+    assert.ok(errors.title)
+    assert.ok(errors.sections)
+})
+
+test("validatePromoPopupInput no exige nada si esta apagado", () => {
+    const errors = validatePromoPopupInput({
+        ...validInput,
+        isActive: false,
+        title: "",
+        sections: [],
+    })
+    assert.deepEqual(errors, {})
+})
+
+test("validatePromoPopupInput exige etiqueta cuando hay enlace", () => {
+    const errors = validatePromoPopupInput({ ...validInput, linkLabel: "  " })
+    assert.ok(errors.linkLabel)
+})
+
+test("validatePromoPopupInput rechaza enlaces que no son http(s)", () => {
+    assert.ok(validatePromoPopupInput({ ...validInput, linkUrl: "javascript:alert(1)" }).linkUrl)
+    assert.ok(validatePromoPopupInput({ ...validInput, linkUrl: "no soy una url" }).linkUrl)
+    assert.ok(validatePromoPopupInput({ ...validInput, linkUrl: "/eventos" }).linkUrl)
+})
+
+test("validatePromoPopupInput rechaza imagenes que no son http(s)", () => {
+    assert.ok(validatePromoPopupInput({ ...validInput, imageUrl: "javascript:alert(1)" }).imageUrl)
+})
+
+test("validatePromoPopupInput rechaza secciones desconocidas", () => {
+    assert.ok(validatePromoPopupInput({ ...validInput, sections: ["INICIO", "PISCINA"] }).sections)
 })

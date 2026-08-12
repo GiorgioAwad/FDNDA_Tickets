@@ -107,3 +107,68 @@ export function isPromoVisibleOnPath(sections: string[], pathname: string): bool
         ([section, prefix]) => sections.includes(section) && matchesPrefix(pathname, prefix)
     )
 }
+
+export interface PromoPopupInput {
+    isActive: boolean
+    eyebrow: string | null
+    kicker: string | null
+    title: string
+    description: string | null
+    imageUrl: string | null
+    linkUrl: string | null
+    linkLabel: string | null
+    mediaCaption: string | null
+    sections: string[]
+}
+
+export type PromoPopupErrors = Partial<Record<keyof PromoPopupInput, string>>
+
+function isAbsoluteHttpUrl(value: string): boolean {
+    try {
+        const parsed = new URL(value)
+        return parsed.protocol === "http:" || parsed.protocol === "https:"
+    } catch {
+        return false
+    }
+}
+
+function isBlank(value: string | null | undefined): boolean {
+    return !value || value.trim().length === 0
+}
+
+/**
+ * Valida la config del popup. Solo exige contenido cuando esta activo: un
+ * popup apagado puede quedarse a medio llenar sin bloquear el guardado.
+ */
+export function validatePromoPopupInput(input: PromoPopupInput): PromoPopupErrors {
+    const errors: PromoPopupErrors = {}
+
+    if (input.isActive && isBlank(input.title)) {
+        errors.title = "El título es obligatorio para activar el popup."
+    }
+
+    if (input.isActive && input.sections.length === 0) {
+        errors.sections = "Elige al menos una sección donde mostrar el popup."
+    }
+
+    const unknown = input.sections.filter(
+        (section) => !(PROMO_SECTIONS as readonly string[]).includes(section)
+    )
+    if (unknown.length > 0) {
+        errors.sections = `Sección no válida: ${unknown.join(", ")}.`
+    }
+
+    if (!isBlank(input.linkUrl) && !isAbsoluteHttpUrl(input.linkUrl!.trim())) {
+        errors.linkUrl = "El enlace debe ser una URL completa que empiece con http:// o https://."
+    }
+
+    if (!isBlank(input.linkUrl) && isBlank(input.linkLabel)) {
+        errors.linkLabel = "Escribe el texto del botón, por ejemplo \"Ver ahora en YouTube\"."
+    }
+
+    if (!isBlank(input.imageUrl) && !isAbsoluteHttpUrl(input.imageUrl!.trim())) {
+        errors.imageUrl = "La imagen debe ser una URL completa que empiece con http:// o https://."
+    }
+
+    return errors
+}
