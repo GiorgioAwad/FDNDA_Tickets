@@ -100,6 +100,10 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
+        hostname: "i.ytimg.com",
+      },
+      {
+        protocol: "https",
         hostname: "**.r2.dev",
       },
       {
