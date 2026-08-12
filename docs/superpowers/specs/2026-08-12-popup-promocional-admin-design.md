@@ -39,8 +39,9 @@ impide.
 ## Modelo de datos
 
 Modelo nuevo en `prisma/schema.prisma`, con una sola fila de id fijo
-`"default"`. La fila se crea sola en el primer guardado (`upsert`), no hace
-falta seed.
+`"default"`. La fila se siembra en la propia migracion con el contenido actual
+de "Voces del Agua" (ver "Contenido inicial"), y a partir de ahi el `PUT` del
+admin la actualiza con `upsert`.
 
 ```prisma
 model PromoPopup {
@@ -69,6 +70,43 @@ mas adelante no requiere migracion. Es el primer `String[]` del schema; Neon es
 Postgres y lo soporta de forma nativa.
 
 `User` necesita la relacion inversa `promoPopups PromoPopup[]`.
+
+### Contenido inicial
+
+El popup que hoy corre en produccion no puede desaparecer durante el deploy.
+El `INSERT` va dentro del mismo archivo de migracion que crea la tabla, no en
+un script aparte: queda atomico con el `CREATE TABLE`, corre una sola vez, y
+no agrega un paso manual al deploy que alguien pueda olvidar.
+
+Los valores salen tal cual del componente actual:
+
+```sql
+INSERT INTO "promo_popups" (
+  "id", "isActive", "eyebrow", "kicker", "title", "description",
+  "imageUrl", "linkUrl", "linkLabel", "mediaCaption", "sections", "updatedAt"
+) VALUES (
+  'default',
+  true,
+  'Estreno FDNDA',
+  'Voces del Agua',
+  'Conoce a la nadadora más rápida de la historia del Perú',
+  'Rafaela Fernandini comparte el camino detrás de sus récords: disciplina, perseverancia y la pasión de representar al Perú.',
+  NULL,
+  'https://www.youtube.com/watch?v=AbSRrPAz4Zo',
+  'Ver ahora en YouTube',
+  'Temporada 1 · Episodio 1',
+  ARRAY['INICIO','EVENTOS','MERCH'],
+  NOW()
+);
+```
+
+`imageUrl` va en `NULL` a proposito: la miniatura se deriva del enlace de
+YouTube, igual que hoy.
+
+El unico efecto visible del cambio es que la clave de `sessionStorage` deja de
+ser `fdnda-promo-voces-del-agua-AbSRrPAz4Zo` y pasa a depender de `updatedAt`.
+Quien ya lo hubiera cerrado en su sesion actual lo vera una vez mas despues
+del deploy. Es aceptable y se corrige solo.
 
 Valores validos de `sections`: `INICIO`, `EVENTOS`, `MERCH`, `MI_CUENTA`,
 `TODO_PUBLICO`. Se listan los cinco desde el inicio aunque hoy solo se usen
@@ -272,7 +310,8 @@ Las migraciones corren desde la imagen `tools`, no desde el git del VPS: hay
 que confirmar que `TOOLS_IMAGE` apunte al tag recien publicado antes de
 correrla.
 
-Tras el deploy, la fila `default` no existe todavia y `isActive` arranca en
-false, o sea que el popup no se muestra hasta que un admin lo configure y lo
-active. El contenido de "Voces del Agua" se vuelve a cargar a mano desde el
-formulario.
+Tras el deploy el popup sigue mostrando "Voces del Agua" sin intervencion de
+nadie, porque la migracion siembra la fila con ese contenido y con
+`isActive = true`. La verificacion post-deploy es abrir el sitio en incognito y
+comprobar que se ve igual que antes, y entrar a `/admin/configuracion` para
+confirmar que el formulario aparece cargado con esos mismos valores.
