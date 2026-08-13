@@ -25,7 +25,25 @@ export default function PromoPopup() {
             .then((res) => (res.ok ? res.json() : null))
             .then((result) => {
                 if (cancelled || !result?.promo) return
-                setPromo(result.promo)
+
+                const fetchedPromo: PromoApiPayload = result.promo
+
+                // Se lee sessionStorage aca, antes de pintar nada, para que el
+                // primer render con `promo` ya poblado traiga el estado de cierre
+                // correcto. Si esto viviera en un efecto aparte que reacciona a la
+                // llegada del promo, habria un render intermedio con el modal
+                // abierto (scroll bloqueado, foco robado) que recien se cerraria
+                // en el siguiente ciclo.
+                let dismissed = false
+                try {
+                    const storageKey = `fdnda-promo-${fetchedPromo.version}`
+                    dismissed = Boolean(window.sessionStorage.getItem(storageKey))
+                } catch {
+                    // El popup sigue funcionando aunque el navegador bloquee sessionStorage.
+                }
+
+                setPromo(fetchedPromo)
+                setIsDismissed(dismissed)
             })
             .catch(() => {
                 // Si falla, simplemente no se muestra el popup.
@@ -39,16 +57,6 @@ export default function PromoPopup() {
     // La clave depende de la version (el updatedAt de la fila): si el admin
     // edita el contenido, el popup vuelve a salir aunque ya lo hubieran cerrado.
     const storageKey = promo ? `fdnda-promo-${promo.version}` : null
-
-    useEffect(() => {
-        if (!storageKey) return
-        try {
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration of persisted UI preference
-            if (window.sessionStorage.getItem(storageKey)) setIsDismissed(true)
-        } catch {
-            // El popup sigue funcionando aunque el navegador bloquee sessionStorage.
-        }
-    }, [storageKey])
 
     const dismiss = useCallback(() => {
         if (storageKey) {
