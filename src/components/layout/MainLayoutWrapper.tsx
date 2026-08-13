@@ -5,7 +5,7 @@ import { Header } from "./Header"
 import { Footer } from "./Footer"
 import CartFloatingButton from "@/components/cart/CartFloatingButton"
 import MerchCartFloatingButton from "@/components/merch/MerchCartFloatingButton"
-import VocesDelAguaPopup from "@/components/home/VocesDelAguaPopup"
+import PromoPopup from "@/components/promo/PromoPopup"
 
 export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
     const pathname = usePathname()
@@ -19,7 +19,7 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
     // Para el resto del sitio, renderizamos el layout completo
     return (
         <div className="flex min-h-screen flex-col overflow-x-hidden">
-            <VocesDelAguaPopup />
+            <PromoPopup />
             <Header />
             <main className="flex-1 overflow-x-hidden">{children}</main>
             <CartFloatingButton />
