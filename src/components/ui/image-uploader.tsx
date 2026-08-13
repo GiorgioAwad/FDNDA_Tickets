@@ -19,7 +19,7 @@ import {
 interface ImageUploaderProps {
     value: string
     onChange: (url: string) => void
-    type?: "banner" | "logo" | "image" | "merch"
+    type?: "banner" | "logo" | "image" | "merch" | "promo"
     label?: string
     placeholder?: string
     showUrlInput?: boolean

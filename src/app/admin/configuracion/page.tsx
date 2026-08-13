@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -12,7 +11,6 @@ import {
     Shield,
     Bell,
     Palette,
-    Save,
     CheckCircle,
     Info,
     Database,
@@ -28,9 +26,9 @@ import {
     getFixedFeePerTxPen,
 } from "@/lib/commission-rates"
 import { AbioCatalogControls } from "@/components/admin/AbioCatalogControls"
+import { PromoPopupSettings } from "@/components/admin/PromoPopupSettings"
 
 export default function ConfiguracionPage() {
-    const [saved, setSaved] = useState(false)
     const [usdRate, setUsdRate] = useState<number>(USD_TO_PEN_FALLBACK)
     const [usdRateSource, setUsdRateSource] = useState<"BCRP" | "SUNAT" | "fallback">("fallback")
     const [usdRateFetchedAt, setUsdRateFetchedAt] = useState<string | null>(null)
@@ -54,11 +52,6 @@ export default function ConfiguracionPage() {
     }, [])
 
     const fixedFeePerTx = getFixedFeePerTxPen(usdRate)
-
-    const handleSave = () => {
-        setSaved(true)
-        setTimeout(() => setSaved(false), 3000)
-    }
 
     return (
         <div className="space-y-6">
@@ -276,22 +269,7 @@ export default function ConfiguracionPage() {
                 </CardContent>
             </Card>
 
-            {/* Save Button */}
-            <div className="flex justify-end">
-                <Button onClick={handleSave} className="gap-2">
-                    {saved ? (
-                        <>
-                            <CheckCircle className="h-4 w-4" />
-                            Guardado
-                        </>
-                    ) : (
-                        <>
-                            <Save className="h-4 w-4" />
-                            Guardar Cambios
-                        </>
-                    )}
-                </Button>
-            </div>
+            <PromoPopupSettings />
         </div>
     )
 }
