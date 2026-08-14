@@ -15,14 +15,19 @@ export default function PromoPopup() {
     const closeButtonRef = useRef<HTMLButtonElement>(null)
     const [promo, setPromo] = useState<PromoApiPayload | null>(null)
     const [isDismissed, setIsDismissed] = useState(false)
+    const hasFetchedRef = useRef(false)
 
-    // Una sola peticion por montaje. No depende de pathname: navegar dentro del
-    // sitio no debe volver a pedirla. Se evalua el pathname de montaje una sola
-    // vez: en rutas bloqueadas (checkout, scanner, tesoreria, login, etc.) el
-    // popup nunca puede mostrarse, asi que ni vale la pena pedir la API. Es la
-    // ruta publica de mayor volumen y el VPS es de 1 vCPU.
+    // A lo sumo una peticion por montaje (hasFetchedRef). MainLayoutWrapper
+    // monta este componente una sola vez y lo mantiene montado al navegar
+    // entre rutas no-admin, asi que si la sesion arranca en una ruta
+    // bloqueada (checkout, scanner, tesoreria, login, etc.) hay que seguir
+    // reaccionando a los cambios de pathname: recien cuando el usuario entra
+    // a una ruta elegible se pide la API, una unica vez. Es la ruta publica
+    // de mayor volumen y el VPS es de 1 vCPU.
     useEffect(() => {
+        if (hasFetchedRef.current) return
         if (isBlockedPromoPath(pathname)) return
+        hasFetchedRef.current = true
 
         let cancelled = false
 
@@ -57,8 +62,7 @@ export default function PromoPopup() {
         return () => {
             cancelled = true
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [pathname])
 
     // La clave depende de la version (el updatedAt de la fila): si el admin
     // edita el contenido, el popup vuelve a salir aunque ya lo hubieran cerrado.

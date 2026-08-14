@@ -135,10 +135,14 @@ function isAbsoluteHttpUrl(value: string): boolean {
 // `buildLocalPublicUrl` en storage.ts devuelve una ruta root-relativa
 // (`/uploads/...`) cuando el proveedor de almacenamiento cae a `local` y no
 // hay NEXT_PUBLIC_APP_URL configurado (caso tipico en dev). Se acepta esa
-// forma para imageUrl, pero solo si empieza con un unico "/": "//evil.com" es
-// una URL protocol-relative que apunta a otro host y debe seguir rechazada.
+// forma para imageUrl, pero solo si empieza con un unico "/": tanto "//evil.com"
+// (protocol-relative) como "/\evil.com" (el parser de URL del navegador
+// normaliza la barra invertida a "/") resuelven a un host externo y deben
+// seguir rechazados. Tabs y saltos de linea tambien los ignora el parser
+// antes de resolver, asi que se limpian antes de evaluar.
 function isRootRelativePath(value: string): boolean {
-    return value.startsWith("/") && !value.startsWith("//")
+    const normalized = value.replace(/[\t\n\r]/g, "")
+    return normalized.startsWith("/") && !/^\/[/\\]/.test(normalized)
 }
 
 function isBlank(value: string | null | undefined): boolean {

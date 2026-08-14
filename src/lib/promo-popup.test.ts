@@ -174,6 +174,20 @@ test("validatePromoPopupInput rechaza una URL protocol-relative aunque parezca r
     assert.ok(validatePromoPopupInput({ ...validInput, imageUrl: "//evil.com/x.jpg" }).imageUrl)
 })
 
+test("validatePromoPopupInput rechaza una barra invertida como segundo caracter", () => {
+    // El parser de URL del navegador normaliza "\" a "/", asi que
+    // "/\evil.com/x.jpg" resuelve a "https://evil.com/x.jpg".
+    assert.equal(new URL("/\\evil.com/x.jpg", "https://ticketingfdnda.pe").hostname, "evil.com")
+    assert.ok(validatePromoPopupInput({ ...validInput, imageUrl: "/\\evil.com/x.jpg" }).imageUrl)
+})
+
+test("validatePromoPopupInput rechaza un tab intercalado que resuelva al mismo host externo", () => {
+    // El parser de URL del navegador ignora tabs antes de resolver, asi que
+    // "/\t/evil.com/x.jpg" tambien resuelve a "https://evil.com/x.jpg".
+    assert.equal(new URL("/\t/evil.com/x.jpg", "https://ticketingfdnda.pe").hostname, "evil.com")
+    assert.ok(validatePromoPopupInput({ ...validInput, imageUrl: "/\t/evil.com/x.jpg" }).imageUrl)
+})
+
 test("validatePromoPopupInput rechaza secciones desconocidas", () => {
     assert.ok(validatePromoPopupInput({ ...validInput, sections: ["INICIO", "PISCINA"] }).sections)
 })
