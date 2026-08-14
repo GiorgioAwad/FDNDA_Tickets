@@ -4,9 +4,37 @@ import {
     extractYoutubeId,
     isBlockedPromoPath,
     isPromoVisibleOnPath,
+    parsePromoEventInput,
     resolvePromoImage,
     validatePromoPopupInput,
 } from "./promo-popup"
+
+test("parsePromoEventInput acepta eventos anonimos validos", () => {
+    const input = {
+        version: "2026-08-14T12:00:00.000Z",
+        sessionId: "550e8400-e29b-41d4-a716-446655440000",
+        kind: "CLICK",
+        source: "cta",
+        pathname: "/eventos/natacion",
+    }
+
+    assert.deepEqual(parsePromoEventInput(input), input)
+})
+
+test("parsePromoEventInput rechaza fuentes, versiones y rutas manipuladas", () => {
+    const valid = {
+        version: "2026-08-14T12:00:00.000Z",
+        sessionId: "550e8400-e29b-41d4-a716-446655440000",
+        kind: "CLOSE",
+        source: "escape",
+        pathname: "/",
+    }
+
+    assert.equal(parsePromoEventInput({ ...valid, source: "cta" }), null)
+    assert.equal(parsePromoEventInput({ ...valid, version: "ayer" }), null)
+    assert.equal(parsePromoEventInput({ ...valid, pathname: "https://otro-sitio.test" }), null)
+    assert.equal(parsePromoEventInput({ ...valid, sessionId: "corta" }), null)
+})
 
 test("extractYoutubeId acepta los formatos de enlace de YouTube", () => {
     assert.equal(extractYoutubeId("https://www.youtube.com/watch?v=AbSRrPAz4Zo"), "AbSRrPAz4Zo")

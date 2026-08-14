@@ -1034,6 +1034,27 @@ model PromoPopup {
   updatedById  String?
 
   updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  events PromoPopupEvent[]
 
   @@map("promo_popups")
+}
+
+model PromoPopupEvent {
+  id        String   @id @default(cuid())
+  promoId   String
+  version   DateTime
+  sessionId String
+  kind      String
+  source    String?
+  pathname  String
+  createdAt DateTime @default(now())
+
+  promo PromoPopup @relation(fields: [promoId], references: [id], onDelete: Cascade)
+
+  // Cada sesion aporta como maximo una impresion, un clic y un cierre por
+  // version. Esto hace que las tasas sean estables aunque React reintente un
+  // efecto o el navegador repita una solicitud.
+  @@unique([promoId, version, sessionId, kind])
+  @@index([promoId, version, createdAt])
+  @@map("promo_popup_events")
 }

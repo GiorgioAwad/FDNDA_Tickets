@@ -7,6 +7,67 @@ export interface PromoImage {
     fit: "cover" | "contain"
 }
 
+export const PROMO_EVENT_SOURCES = {
+    IMPRESSION: ["automatic"],
+    CLICK: ["media", "cta"],
+    CLOSE: ["close_button", "continue_button", "backdrop", "escape"],
+} as const
+
+export type PromoEventKind = keyof typeof PROMO_EVENT_SOURCES
+
+export interface PromoEventInput {
+    version: string
+    sessionId: string
+    kind: PromoEventKind
+    source: string
+    pathname: string
+}
+
+/**
+ * Valida la telemetria publica antes de escribirla. No se recopilan cookies,
+ * IPs ni datos personales: sessionId es un identificador aleatorio por
+ * version del popup y pathname solo admite una ruta local corta.
+ */
+export function parsePromoEventInput(value: unknown): PromoEventInput | null {
+    if (!value || typeof value !== "object") return null
+
+    const input = value as Record<string, unknown>
+    if (typeof input.version !== "string") return null
+    const versionDate = new Date(input.version)
+    if (!Number.isFinite(versionDate.getTime()) || versionDate.toISOString() !== input.version) {
+        return null
+    }
+
+    if (
+        typeof input.sessionId !== "string" ||
+        !/^[A-Za-z0-9_-]{16,80}$/.test(input.sessionId)
+    ) {
+        return null
+    }
+
+    if (typeof input.kind !== "string" || !(input.kind in PROMO_EVENT_SOURCES)) return null
+    const kind = input.kind as PromoEventKind
+    const allowedSources = PROMO_EVENT_SOURCES[kind] as readonly string[]
+    if (typeof input.source !== "string" || !allowedSources.includes(input.source)) return null
+
+    if (
+        typeof input.pathname !== "string" ||
+        input.pathname.length > 200 ||
+        !input.pathname.startsWith("/") ||
+        input.pathname.startsWith("//")
+    ) {
+        return null
+    }
+
+    return {
+        version: input.version,
+        sessionId: input.sessionId,
+        kind,
+        source: input.source,
+        pathname: input.pathname,
+    }
+}
+
 // Rutas donde el popup no debe salir nunca: paneles internos, el camino de
 // compra y las pantallas de autenticacion. Manda sobre TODO_PUBLICO.
 const BLOCKED_PREFIXES = [

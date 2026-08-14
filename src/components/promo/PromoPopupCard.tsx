@@ -19,8 +19,8 @@ interface PromoPopupCardProps {
     data: PromoPopupCardData
     /** "preview" quita el boton de cerrar: en el admin no hay nada que cerrar. */
     variant?: "modal" | "preview"
-    onClose?: () => void
-    onLinkClick?: () => void
+    onClose?: (source: "close_button" | "continue_button") => void
+    onLinkClick?: (source: "media" | "cta") => void
     closeButtonRef?: React.Ref<HTMLButtonElement>
 }
 
@@ -76,7 +76,7 @@ export function PromoPopupCard({
                 <button
                     ref={closeButtonRef}
                     type="button"
-                    onClick={onClose}
+                    onClick={() => onClose?.("close_button")}
                     aria-label="Cerrar anuncio"
                     className="absolute right-3 top-3 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white shadow-lg backdrop-blur-md transition hover:scale-105 hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black/50"
                 >
@@ -89,7 +89,7 @@ export function PromoPopupCard({
                     href={data.linkUrl!}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={onLinkClick}
+                    onClick={() => onLinkClick?.("media")}
                     aria-label={`${data.linkLabel}: ${data.title}`}
                     className={mediaClassName}
                 >
@@ -134,7 +134,7 @@ export function PromoPopupCard({
                         href={data.linkUrl!}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={onLinkClick}
+                        onClick={() => onLinkClick?.("cta")}
                         className="mt-6 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-3 text-center text-sm font-bold text-white shadow-lg shadow-red-600/25 transition hover:-translate-y-0.5 hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
                     >
                         {data.linkLabel}
@@ -145,7 +145,7 @@ export function PromoPopupCard({
                 {isModal ? (
                     <button
                         type="button"
-                        onClick={onClose}
+                        onClick={() => onClose?.("continue_button")}
                         className="mt-3 min-h-11 rounded-xl px-4 text-sm font-semibold text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fdnda-primary focus-visible:ring-offset-2"
                     >
                         Seguir viendo entradas
