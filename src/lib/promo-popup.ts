@@ -132,6 +132,15 @@ function isAbsoluteHttpUrl(value: string): boolean {
     }
 }
 
+// `buildLocalPublicUrl` en storage.ts devuelve una ruta root-relativa
+// (`/uploads/...`) cuando el proveedor de almacenamiento cae a `local` y no
+// hay NEXT_PUBLIC_APP_URL configurado (caso tipico en dev). Se acepta esa
+// forma para imageUrl, pero solo si empieza con un unico "/": "//evil.com" es
+// una URL protocol-relative que apunta a otro host y debe seguir rechazada.
+function isRootRelativePath(value: string): boolean {
+    return value.startsWith("/") && !value.startsWith("//")
+}
+
 function isBlank(value: string | null | undefined): boolean {
     return !value || value.trim().length === 0
 }
@@ -166,8 +175,11 @@ export function validatePromoPopupInput(input: PromoPopupInput): PromoPopupError
         errors.linkLabel = "Escribe el texto del botón, por ejemplo \"Ver ahora en YouTube\"."
     }
 
-    if (!isBlank(input.imageUrl) && !isAbsoluteHttpUrl(input.imageUrl!.trim())) {
-        errors.imageUrl = "La imagen debe ser una URL completa que empiece con http:// o https://."
+    if (!isBlank(input.imageUrl)) {
+        const trimmedImageUrl = input.imageUrl!.trim()
+        if (!isAbsoluteHttpUrl(trimmedImageUrl) && !isRootRelativePath(trimmedImageUrl)) {
+            errors.imageUrl = "La imagen debe ser una URL completa que empiece con http:// o https://."
+        }
     }
 
     return errors

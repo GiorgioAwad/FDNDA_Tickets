@@ -5,11 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
-    Settings,
     CreditCard,
     Mail,
     Shield,
-    Bell,
     Palette,
     CheckCircle,
     Info,

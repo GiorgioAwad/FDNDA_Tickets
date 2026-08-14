@@ -37,4 +37,4 @@ INSERT INTO "promo_popups" (
     'Temporada 1 · Episodio 1',
     ARRAY['INICIO','EVENTOS','MERCH'],
     NOW()
-);
+) ON CONFLICT ("id") DO NOTHING;

@@ -115,6 +115,7 @@ export function PromoPopupSettings() {
         setIsSaving(true)
         setErrors({})
         setSaved(false)
+        setLoadError(null)
 
         try {
             const res = await fetch("/api/admin/promo-popup", {

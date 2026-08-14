@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { isPromoVisibleOnPath } from "@/lib/promo-popup"
+import { isBlockedPromoPath, isPromoVisibleOnPath } from "@/lib/promo-popup"
 import { PromoPopupCard, type PromoPopupCardData } from "./PromoPopupCard"
 
 interface PromoApiPayload extends PromoPopupCardData {
@@ -17,8 +17,13 @@ export default function PromoPopup() {
     const [isDismissed, setIsDismissed] = useState(false)
 
     // Una sola peticion por montaje. No depende de pathname: navegar dentro del
-    // sitio no debe volver a pedirla.
+    // sitio no debe volver a pedirla. Se evalua el pathname de montaje una sola
+    // vez: en rutas bloqueadas (checkout, scanner, tesoreria, login, etc.) el
+    // popup nunca puede mostrarse, asi que ni vale la pena pedir la API. Es la
+    // ruta publica de mayor volumen y el VPS es de 1 vCPU.
     useEffect(() => {
+        if (isBlockedPromoPath(pathname)) return
+
         let cancelled = false
 
         fetch("/api/promo-popup")
@@ -52,6 +57,7 @@ export default function PromoPopup() {
         return () => {
             cancelled = true
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
     // La clave depende de la version (el updatedAt de la fila): si el admin

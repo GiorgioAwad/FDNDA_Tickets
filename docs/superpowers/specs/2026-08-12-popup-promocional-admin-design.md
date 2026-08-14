@@ -310,6 +310,33 @@ Las migraciones corren desde la imagen `tools`, no desde el git del VPS: hay
 que confirmar que `TOOLS_IMAGE` apunte al tag recien publicado antes de
 correrla.
 
+**Orden obligatorio: `migrate` antes que `up -d app`.** El popup ya corre en
+produccion y el objetivo es que no desaparezca durante el deploy. Si se
+levanta la app nueva antes de correr la migracion, `prisma.promoPopup.findUnique`
+lanza contra una tabla que no existe, el `catch` de `GET /api/promo-popup`
+devuelve `{ promo: null }`, y el popup desaparece del sitio hasta que la
+migracion corra. La migracion es aditiva (crea una tabla nueva, no toca
+ninguna existente), asi que correrla primero con la imagen vieja del contenedor
+`app` todavia arriba es seguro: la imagen vieja ni siquiera sabe que la tabla
+existe.
+
+```bash
+# 1. Migrar primero, con la app vieja todavia sirviendo trafico.
+docker compose --profile tools -f docker-compose.prod.yml \
+  --env-file .env.production run --rm migrate
+
+# 2. Recien despues, levantar la imagen nueva.
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d app
+```
+
+**El contenido del popup vive unicamente en el `INSERT` de esta migracion.**
+Cualquier camino que cree la tabla `promo_popups` sin ejecutar ese `INSERT`
+(un `prisma db push`, un re-baseline de migraciones, restaurar un dump sin la
+fila) deja la tabla vacia y el popup apagado, sin ningun error ni log que lo
+delate: `findUnique` simplemente no encuentra la fila `'default'` y el
+endpoint publico devuelve `{ promo: null }` como si estuviera inactivo a
+proposito. Verificar contenido, no solo existencia de tabla.
+
 Tras el deploy el popup sigue mostrando "Voces del Agua" sin intervencion de
 nadie, porque la migracion siembra la fila con ese contenido y con
 `isActive = true`. La verificacion post-deploy es abrir el sitio en incognito y

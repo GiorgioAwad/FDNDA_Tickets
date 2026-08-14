@@ -165,6 +165,15 @@ test("validatePromoPopupInput rechaza imagenes que no son http(s)", () => {
     assert.ok(validatePromoPopupInput({ ...validInput, imageUrl: "javascript:alert(1)" }).imageUrl)
 })
 
+test("validatePromoPopupInput acepta una ruta root-relativa del uploader local", () => {
+    const errors = validatePromoPopupInput({ ...validInput, imageUrl: "/uploads/foo.jpg" })
+    assert.equal(errors.imageUrl, undefined)
+})
+
+test("validatePromoPopupInput rechaza una URL protocol-relative aunque parezca root-relativa", () => {
+    assert.ok(validatePromoPopupInput({ ...validInput, imageUrl: "//evil.com/x.jpg" }).imageUrl)
+})
+
 test("validatePromoPopupInput rechaza secciones desconocidas", () => {
     assert.ok(validatePromoPopupInput({ ...validInput, sections: ["INICIO", "PISCINA"] }).sections)
 })
