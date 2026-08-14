@@ -16,6 +16,14 @@ export default function PromoPopup() {
     const [promo, setPromo] = useState<PromoApiPayload | null>(null)
     const [isDismissed, setIsDismissed] = useState(false)
     const hasFetchedRef = useRef(false)
+    const isMountedRef = useRef(true)
+
+    useEffect(() => {
+        isMountedRef.current = true
+        return () => {
+            isMountedRef.current = false
+        }
+    }, [])
 
     // A lo sumo una peticion por montaje (hasFetchedRef). MainLayoutWrapper
     // monta este componente una sola vez y lo mantiene montado al navegar
@@ -29,12 +37,10 @@ export default function PromoPopup() {
         if (isBlockedPromoPath(pathname)) return
         hasFetchedRef.current = true
 
-        let cancelled = false
-
         fetch("/api/promo-popup")
             .then((res) => (res.ok ? res.json() : null))
             .then((result) => {
-                if (cancelled || !result?.promo) return
+                if (!isMountedRef.current || !result?.promo) return
 
                 const fetchedPromo: PromoApiPayload = result.promo
 
@@ -58,10 +64,6 @@ export default function PromoPopup() {
             .catch(() => {
                 // Si falla, simplemente no se muestra el popup.
             })
-
-        return () => {
-            cancelled = true
-        }
     }, [pathname])
 
     // La clave depende de la version (el updatedAt de la fila): si el admin
