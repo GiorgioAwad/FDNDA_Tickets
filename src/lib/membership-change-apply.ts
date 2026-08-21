@@ -64,7 +64,9 @@ export async function applyMembershipChange(
             data: { sold: { decrement: 1 } },
         })
         if (decremented.count !== 1) {
-            throw new Error("No se pudo descontar el cupo del tipo origen; el carnet no se movio.")
+            throw new MembershipChangeAbort(
+                "No se pudo descontar el cupo del tipo origen; el carnet no se movio."
+            )
         }
     }
     if (writes.soldIncrementTypeId) {
@@ -77,7 +79,9 @@ export async function applyMembershipChange(
             RETURNING "id"
         `)
         if (!incremented[0]) {
-            throw new Error("No se pudo reservar el cupo del tipo destino; el carnet no se movio.")
+            throw new MembershipChangeAbort(
+                "No se pudo reservar el cupo del tipo destino; el carnet no se movio."
+            )
         }
     }
 
