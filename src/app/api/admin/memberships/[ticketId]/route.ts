@@ -25,6 +25,7 @@ import {
     getMembershipAnchor,
     getMembershipPeriod,
 } from "@/lib/scan-helpers"
+import { getAcMatriculaFromGroupKey } from "@/lib/servilex-invoice-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -53,6 +54,20 @@ export async function GET(
         })
         if (!record) {
             return NextResponse.json({ success: false, error: "Carnet no encontrado" }, { status: 404 })
+        }
+
+        // Mismo criterio que el listado (api/admin/memberships/route.ts): sin
+        // cupo mensual ni duracion, el ticket no es un carnet de membresia. Sin
+        // este filtro, una entrada comun de evento entra igual y candidateTypes
+        // termina sugiriendo "cambios de sede" sin sentido.
+        const isMembership =
+            (record.ticketType.monthlyClassLimit ?? 0) > 0 &&
+            (record.ticketType.membershipDurationMonths ?? 0) > 0
+        if (!isMembership) {
+            return NextResponse.json(
+                { success: false, error: "Este ticket no es un carnet de membresia" },
+                { status: 404 }
+            )
         }
 
         const today = getTodayDateString()
@@ -105,7 +120,17 @@ export async function GET(
         const snapshot = toChangeSnapshot(record)
         const matricula = snapshot ? getAttendeeMatricula(snapshot.orderItem.attendeeData) : null
         const provider = record.order.provider.trim().toUpperCase()
-        const issuedInvoice = record.order.invoices.find((invoice) => invoice.status === "ISSUED")
+        // En una orden familiar (varios asistentes) puede haber varias boletas:
+        // cruzar por matricula para no mostrarle a este carnet el numero de
+        // boleta de OTRO alumno de la misma orden. getAcMatriculaFromGroupKey
+        // devuelve en MAYUSCULAS.
+        const issuedInvoice = matricula
+            ? record.order.invoices.find(
+                  (invoice) =>
+                      invoice.status === "ISSUED" &&
+                      getAcMatriculaFromGroupKey(invoice.servilexGroupKey) === matricula.toUpperCase()
+              )
+            : undefined
 
         // Destinos posibles: mismo evento (franja = tipo, VMT) y otros eventos
         // de membresia (cambio de sede). La equivalencia la valida el
