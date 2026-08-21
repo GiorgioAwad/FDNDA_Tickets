@@ -23,6 +23,7 @@ import {
     type MembershipScheduleInput,
     type MembershipScheduleSelection,
 } from "@/lib/membership-schedule"
+import { getAcMatriculaFromGroupKey } from "@/lib/servilex-invoice-guard"
 
 // ── Snapshot ──────────────────────────────────────────────────────────────────
 
@@ -313,17 +314,184 @@ function planScheduleChange(
     }
 }
 
-// Andamio: la Task 3 lo reemplaza por la implementacion real. Lanza a
-// proposito en vez de devolver un plan vacio — un `{ ok: false, blockers: [] }`
-// se veria en la UI como "no se puede, sin motivo" y podria pasar inadvertido
-// si la Task 3 nunca aterriza.
+/**
+ * Providers cuyas ordenes NO generan comprobante: la venta se cobro fuera de la
+ * web y no se emite boleta. Lista explicita a proposito — agregar una pasarela
+ * nueva debe ser anadir una fila aqui, no descubrir el hueco en produccion.
+ */
+const PROVIDERS_SIN_BOLETA = new Set(["PRESENCIAL", "COURTESY"])
+
+/** Providers que bloquean cualquier correccion. */
+const PROVIDERS_BLOQUEADOS = new Set(["MOCK"])
+
+function invoiceBlockers(snapshot: MembershipChangeSnapshot): MembershipChangeBlocker[] {
+    const provider = snapshot.order.provider.trim().toUpperCase()
+
+    if (PROVIDERS_BLOQUEADOS.has(provider)) {
+        return [
+            {
+                code: "ORDER_PROVIDER_MOCK",
+                message:
+                    "La orden es de pagos simulados (MOCK) en produccion. Esa entrada se anula, no se le reasigna sede.",
+            },
+        ]
+    }
+    // Venta presencial o cortesia: no se emite boleta. No se consulta nada.
+    if (PROVIDERS_SIN_BOLETA.has(provider)) return []
+
+    const matricula = getAttendeeMatricula(snapshot.orderItem.attendeeData)
+    if (matricula === null) return [] // ya lo reporta ATTENDEE_DATA_INVALID
+
+    const issued = snapshot.order.invoices.some(
+        (invoice) =>
+            invoice.status === "ISSUED" &&
+            getAcMatriculaFromGroupKey(invoice.servilexGroupKey) === matricula.toUpperCase()
+    )
+    if (issued) return []
+
+    return [
+        {
+            code: "INVOICE_MISSING",
+            message: `No se encontro boleta emitida para la matricula ${matricula}. Una orden pagada sin boleta significa que la emision ABIO fallo o la matricula no cuadra: eso se arregla antes de mover la sede.`,
+        },
+    ]
+}
+
+/** Campos en los que el tipo destino debe ser identico para no tocar la boleta. */
+function equivalenceBlockers(
+    source: MembershipTicketTypeSnapshot,
+    target: MembershipTicketTypeSnapshot
+): MembershipChangeBlocker[] {
+    const diffs: string[] = []
+    if (source.price !== target.price) diffs.push(`precio (${source.price} vs ${target.price})`)
+    if (source.monthlyClassLimit !== target.monthlyClassLimit) {
+        diffs.push(`clases al mes (${source.monthlyClassLimit} vs ${target.monthlyClassLimit})`)
+    }
+    if (source.membershipDurationMonths !== target.membershipDurationMonths) {
+        diffs.push(
+            `duracion (${source.membershipDurationMonths} vs ${target.membershipDurationMonths})`
+        )
+    }
+    if (source.isPackage !== target.isPackage) diffs.push("modalidad de paquete")
+    if (source.membershipScheduleKey !== target.membershipScheduleKey) {
+        diffs.push(`plan (${source.membershipScheduleKey} vs ${target.membershipScheduleKey})`)
+    }
+    if (diffs.length === 0) return []
+    return [
+        {
+            code: "TARGET_NOT_EQUIVALENT",
+            message: `El tipo destino no es equivalente al origen en: ${diffs.join(", ")}. La orden y la boleta no se tocan, asi que el destino tiene que valer exactamente lo mismo.`,
+        },
+    ]
+}
+
 function planTransfer(
     snapshot: MembershipChangeSnapshot,
     targetType: MembershipTicketTypeSnapshot,
     scheduleInput: MembershipScheduleInput | null
 ): MembershipChangePlan {
-    void snapshot
-    void targetType
-    void scheduleInput
-    throw new Error("planTransfer aun no esta implementado")
+    const { sourceType } = snapshot
+    const blockers = [...commonBlockers(snapshot), ...invoiceBlockers(snapshot)]
+
+    if (targetType.id === sourceType.id) {
+        blockers.push({
+            code: "TARGET_SAME_AS_SOURCE",
+            message: "El tipo destino es el mismo que el actual.",
+        })
+        return { ok: false, blockers }
+    }
+
+    blockers.push(...equivalenceBlockers(sourceType, targetType))
+
+    if (!targetType.isActive) {
+        blockers.push({ code: "TARGET_INACTIVE", message: "El tipo destino esta desactivado." })
+    }
+    if (targetType.capacity !== 0 && targetType.sold + 1 > targetType.capacity) {
+        blockers.push({
+            code: "TARGET_FULL",
+            message: `El tipo destino no tiene cupo: ${targetType.sold} vendidos de ${targetType.capacity}.`,
+        })
+    }
+    if (sourceType.sold < 1) {
+        blockers.push({
+            code: "SOURCE_SOLD_EMPTY",
+            message: "El contador de vendidos del tipo origen ya esta en cero; descontar lo dejaria negativo.",
+        })
+    }
+
+    // Horario: solo aplica si la sede destino tiene catalogo. En VMT la franja
+    // ES el tipo, asi que no hay nada que reescribir.
+    const targetProfile = getMembershipScheduleProfile(
+        targetType.sucursalCode,
+        targetType.membershipScheduleKey
+    )
+    const beforeSelection = parseMembershipScheduleSelection(snapshot.ticket.membershipSchedule)
+    let afterSelection: MembershipScheduleSelection | null = null
+
+    if (targetProfile) {
+        const input =
+            scheduleInput ??
+            (beforeSelection
+                ? {
+                      category: beforeSelection.category,
+                      frequency: beforeSelection.frequency,
+                      hours: Object.fromEntries(
+                          beforeSelection.groups.map((g) => [g.id, `${g.start}-${g.end}`])
+                      ),
+                  }
+                : null)
+        const result = validateMembershipScheduleSelection(
+            targetProfile,
+            input,
+            targetType.sucursalCode ?? ""
+        )
+        if (!result.ok) {
+            blockers.push({
+                code: scheduleInput ? "SCHEDULE_INVALID" : "SCHEDULE_REQUIRED",
+                message: scheduleInput
+                    ? result.error
+                    : `El horario actual no existe en el catalogo de la sede destino (${result.error}). Elige uno nuevo para completar el cambio.`,
+            })
+        } else {
+            afterSelection = result.selection
+        }
+    }
+
+    if (blockers.length > 0) return { ok: false, blockers }
+
+    const sameEvent = sourceType.eventId === targetType.eventId
+    const writes: MembershipChangeWrites = {
+        ticket: { ticketTypeId: targetType.id },
+        orderItem: { ticketTypeId: targetType.id },
+        soldDecrementTypeId: sourceType.id,
+        soldIncrementTypeId: targetType.id,
+    }
+    if (!sameEvent) writes.ticket.eventId = targetType.eventId
+    if (afterSelection) {
+        writes.ticket.membershipSchedule = afterSelection
+        const attendee = asRecord((snapshot.orderItem.attendeeData as unknown[])[0])
+        writes.orderItem.attendeeData = [{ ...attendee, membershipSchedule: afterSelection }]
+    }
+
+    return {
+        ok: true,
+        kind: "TRANSFER",
+        label: sameEvent ? "Cambio de horario (la franja es el tipo de entrada)" : "Cambio de sede",
+        before: buildState(
+            sourceType,
+            beforeSelection,
+            normalizeSessions(snapshot.ticket.membershipSchedule),
+            sourceType.sold,
+            targetType.sold
+        ),
+        after: buildState(
+            targetType,
+            afterSelection ?? beforeSelection,
+            sessionKeys(afterSelection ?? beforeSelection),
+            sourceType.sold - 1,
+            targetType.sold + 1
+        ),
+        writes,
+        fingerprint: buildMembershipChangeFingerprint(snapshot),
+    }
 }

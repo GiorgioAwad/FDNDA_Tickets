@@ -7,6 +7,7 @@ import {
     type MembershipChangeSnapshot,
     type MembershipTicketTypeSnapshot,
 } from "@/lib/membership-transfer"
+import type { MembershipScheduleInput } from "@/lib/membership-schedule"
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -219,4 +220,362 @@ test("el fingerprint cambia si el contador sold del tipo origen cambia", () => {
         buildMembershipChangeFingerprint(baseSnapshot()),
         buildMembershipChangeFingerprint(sold)
     )
+})
+
+// ── TRANSFER ──────────────────────────────────────────────────────────────────
+
+// Campo de Marte (01), PLATA L-V. Equivalente en todo salvo la sede: es el
+// destino valido de un carnet PLATA de VIDENA.
+const CDM_PLATA_TYPE: MembershipTicketTypeSnapshot = {
+    id: "tt-cdm-plata",
+    eventId: "ev-cdm",
+    sucursalCode: "01",
+    name: "MEMBRESIA SEMESTRAL PLATA",
+    price: 1240,
+    capacity: 0,
+    sold: 10,
+    isActive: true,
+    isPackage: false,
+    monthlyClassLimit: 20,
+    membershipDurationMonths: 6,
+    membershipScheduleKey: "PLATA",
+}
+
+const VIDENA_PLATA_TYPE: MembershipTicketTypeSnapshot = {
+    ...CDM_PLATA_TYPE,
+    id: "tt-videna-plata",
+    eventId: "ev-videna",
+    sucursalCode: "03",
+    sold: 25,
+}
+
+/** Caso Jose Vasquez: compro VIDENA, asiste en CDM; L-V 7-8am existe en ambas. */
+function plataSnapshot(): MembershipChangeSnapshot {
+    return {
+        ticket: {
+            id: "tk-2",
+            status: "ACTIVE",
+            eventId: "ev-videna",
+            ticketTypeId: "tt-videna-plata",
+            membershipSchedule: {
+                profileKey: "PLATA",
+                sucursalCode: "03",
+                category: "ADULTOS",
+                categoryLabel: "Adultos",
+                frequency: "LV",
+                frequencyLabel: "Lun a Vie",
+                sessions: [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: "07:00", end: "08:00" })),
+                groups: [
+                    { id: "main", label: "Lun a Vie", weekdays: [1, 2, 3, 4, 5], start: "07:00", end: "08:00" },
+                ],
+            },
+            monthlyScheduleCount: 0,
+        },
+        order: {
+            id: "or-2",
+            status: "PAID",
+            provider: "IZIPAY",
+            invoices: [
+                {
+                    id: "inv-2",
+                    status: "ISSUED",
+                    servilexGroupKey: "AC:03:matricula:7300631",
+                    invoiceNumber: "B001-999",
+                },
+            ],
+        },
+        orderItem: {
+            id: "oi-2",
+            ticketTypeId: "tt-videna-plata",
+            attendeeData: [{ matricula: "7300631", name: "Jose Francisco Vasquez Hiyo" }],
+        },
+        sourceType: VIDENA_PLATA_TYPE,
+    }
+}
+
+function transferPlan(
+    snapshot: MembershipChangeSnapshot,
+    targetType: MembershipTicketTypeSnapshot = CDM_PLATA_TYPE,
+    scheduleInput: MembershipScheduleInput | null = null
+) {
+    return planMembershipChange(snapshot, { kind: "TRANSFER", targetType, scheduleInput })
+}
+
+function transferBlockers(
+    snapshot: MembershipChangeSnapshot,
+    targetType: MembershipTicketTypeSnapshot = CDM_PLATA_TYPE
+) {
+    const plan = transferPlan(snapshot, targetType)
+    assert.equal(plan.ok, false)
+    if (plan.ok) return []
+    return plan.blockers.map((b) => b.code)
+}
+
+test("TRANSFER entre eventos mueve tipo, evento y cupo", () => {
+    const plan = transferPlan(plataSnapshot())
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.kind, "TRANSFER")
+    assert.equal(plan.label, "Cambio de sede")
+    assert.equal(plan.writes.ticket.eventId, "ev-cdm")
+    assert.equal(plan.writes.ticket.ticketTypeId, "tt-cdm-plata")
+    assert.equal(plan.writes.orderItem.ticketTypeId, "tt-cdm-plata")
+    assert.equal(plan.writes.soldDecrementTypeId, "tt-videna-plata")
+    assert.equal(plan.writes.soldIncrementTypeId, "tt-cdm-plata")
+})
+
+test("TRANSFER reescribe el horario con la sucursal destino", () => {
+    const plan = transferPlan(plataSnapshot())
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    // Mismas horas, pero la seleccion queda sellada con la sede nueva.
+    assert.equal(plan.writes.ticket.membershipSchedule?.sucursalCode, "01")
+    assert.deepEqual(plan.after.sessions, [
+        "1:07:00-08:00",
+        "2:07:00-08:00",
+        "3:07:00-08:00",
+        "4:07:00-08:00",
+        "5:07:00-08:00",
+    ])
+})
+
+test("TRANSFER exige horario nuevo si el actual no existe en la sede destino", () => {
+    const snapshot = plataSnapshot()
+    // 23:00-00:00 no esta en el catalogo PLATA de ninguna sede.
+    snapshot.ticket.membershipSchedule = {
+        profileKey: "PLATA",
+        sucursalCode: "03",
+        category: "ADULTOS",
+        categoryLabel: "Adultos",
+        frequency: "LV",
+        frequencyLabel: "Lun a Vie",
+        sessions: [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: "23:00", end: "00:00" })),
+        groups: [
+            { id: "main", label: "Lun a Vie", weekdays: [1, 2, 3, 4, 5], start: "23:00", end: "00:00" },
+        ],
+    }
+    assert.ok(transferBlockers(snapshot).includes("SCHEDULE_REQUIRED"))
+})
+
+test("TRANSFER acepta el horario nuevo cuando se indica", () => {
+    const snapshot = plataSnapshot()
+    const plan = transferPlan(snapshot, CDM_PLATA_TYPE, {
+        category: "ADULTOS",
+        frequency: "LV",
+        hours: { main: "08:00-09:00" },
+    })
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.deepEqual(plan.after.sessions, [
+        "1:08:00-09:00",
+        "2:08:00-09:00",
+        "3:08:00-09:00",
+        "4:08:00-09:00",
+        "5:08:00-09:00",
+    ])
+})
+
+test("TRANSFER bloquea si el destino cuesta distinto", () => {
+    assert.ok(
+        transferBlockers(plataSnapshot(), { ...CDM_PLATA_TYPE, price: 890 }).includes(
+            "TARGET_NOT_EQUIVALENT"
+        )
+    )
+})
+
+test("TRANSFER bloquea si el destino tiene otro cupo mensual de clases", () => {
+    assert.ok(
+        transferBlockers(plataSnapshot(), { ...CDM_PLATA_TYPE, monthlyClassLimit: 12 }).includes(
+            "TARGET_NOT_EQUIVALENT"
+        )
+    )
+})
+
+test("TRANSFER bloquea si el destino dura distinto", () => {
+    assert.ok(
+        transferBlockers(plataSnapshot(), {
+            ...CDM_PLATA_TYPE,
+            membershipDurationMonths: 12,
+        }).includes("TARGET_NOT_EQUIVALENT")
+    )
+})
+
+test("TRANSFER bloquea si el destino es paquete y el origen no", () => {
+    assert.ok(
+        transferBlockers(plataSnapshot(), { ...CDM_PLATA_TYPE, isPackage: true }).includes(
+            "TARGET_NOT_EQUIVALENT"
+        )
+    )
+})
+
+test("TRANSFER bloquea si el destino es de otro plan", () => {
+    assert.ok(
+        transferBlockers(plataSnapshot(), {
+            ...CDM_PLATA_TYPE,
+            membershipScheduleKey: "BRONCE",
+        }).includes("TARGET_NOT_EQUIVALENT")
+    )
+})
+
+test("TRANSFER bloquea si el destino esta inactivo", () => {
+    assert.ok(
+        transferBlockers(plataSnapshot(), { ...CDM_PLATA_TYPE, isActive: false }).includes(
+            "TARGET_INACTIVE"
+        )
+    )
+})
+
+test("TRANSFER bloquea si el destino esta lleno", () => {
+    assert.ok(
+        transferBlockers(plataSnapshot(), { ...CDM_PLATA_TYPE, capacity: 10, sold: 10 }).includes(
+            "TARGET_FULL"
+        )
+    )
+})
+
+test("TRANSFER permite capacity 0 (sin tope) aunque sold sea alto", () => {
+    const plan = transferPlan(plataSnapshot(), { ...CDM_PLATA_TYPE, capacity: 0, sold: 9999 })
+    assert.equal(plan.ok, true)
+})
+
+test("TRANSFER bloquea si el contador sold del origen ya esta en cero", () => {
+    const snapshot = plataSnapshot()
+    snapshot.sourceType = { ...VIDENA_PLATA_TYPE, sold: 0 }
+    assert.ok(transferBlockers(snapshot).includes("SOURCE_SOLD_EMPTY"))
+})
+
+test("TRANSFER bloquea si el destino es el mismo tipo que el origen", () => {
+    assert.ok(transferBlockers(plataSnapshot(), VIDENA_PLATA_TYPE).includes("TARGET_SAME_AS_SOURCE"))
+})
+
+// ── Comprobante segun el origen de la venta ───────────────────────────────────
+
+test("IZIPAY sin boleta emitida de la matricula bloquea", () => {
+    const snapshot = plataSnapshot()
+    snapshot.order.invoices = []
+    assert.ok(transferBlockers(snapshot).includes("INVOICE_MISSING"))
+})
+
+test("IZIPAY con boleta de OTRA matricula bloquea", () => {
+    const snapshot = plataSnapshot()
+    snapshot.order.invoices = [
+        { id: "inv-x", status: "ISSUED", servilexGroupKey: "AC:03:matricula:0000001", invoiceNumber: "B001-1" },
+    ]
+    assert.ok(transferBlockers(snapshot).includes("INVOICE_MISSING"))
+})
+
+test("IZIPAY con boleta no emitida bloquea", () => {
+    const snapshot = plataSnapshot()
+    snapshot.order.invoices = [
+        { id: "inv-y", status: "PENDING", servilexGroupKey: "AC:03:matricula:7300631", invoiceNumber: null },
+    ]
+    assert.ok(transferBlockers(snapshot).includes("INVOICE_MISSING"))
+})
+
+test("PRESENCIAL no consulta comprobantes: en venta presencial no se emite boleta", () => {
+    const snapshot = plataSnapshot()
+    snapshot.order.provider = "PRESENCIAL"
+    snapshot.order.invoices = []
+    const plan = transferPlan(snapshot)
+    assert.equal(plan.ok, true)
+})
+
+test("COURTESY no consulta comprobantes", () => {
+    const snapshot = plataSnapshot()
+    snapshot.order.provider = "COURTESY"
+    snapshot.order.invoices = []
+    const plan = transferPlan(snapshot)
+    assert.equal(plan.ok, true)
+})
+
+test("MOCK bloquea: viene del incidente de pagos simulados en produccion", () => {
+    const snapshot = plataSnapshot()
+    snapshot.order.provider = "MOCK"
+    assert.ok(transferBlockers(snapshot).includes("ORDER_PROVIDER_MOCK"))
+})
+
+test("un provider desconocido exige boleta, como IZIPAY", () => {
+    const snapshot = plataSnapshot()
+    snapshot.order.provider = "PASARELA_NUEVA"
+    snapshot.order.invoices = []
+    assert.ok(transferBlockers(snapshot).includes("INVOICE_MISSING"))
+})
+
+// ── TRANSFER dentro del mismo evento (VMT) ────────────────────────────────────
+
+const VMT_LMV_4PM: MembershipTicketTypeSnapshot = {
+    id: "tt-vmt-lmv-4pm",
+    eventId: "ev-vmt",
+    sucursalCode: "04",
+    name: "LUN - MIE - VIE 4PM A 5PM",
+    price: 700,
+    capacity: 30,
+    sold: 12,
+    isActive: true,
+    isPackage: false,
+    monthlyClassLimit: 12,
+    membershipDurationMonths: 6,
+    membershipScheduleKey: null,
+}
+
+const VMT_MJS_5PM: MembershipTicketTypeSnapshot = {
+    ...VMT_LMV_4PM,
+    id: "tt-vmt-mjs-5pm",
+    name: "MAR - JUE - SAB 5PM A 6PM",
+    sold: 8,
+}
+
+function vmtSnapshot(): MembershipChangeSnapshot {
+    return {
+        ticket: {
+            id: "tk-3",
+            status: "ACTIVE",
+            eventId: "ev-vmt",
+            ticketTypeId: "tt-vmt-lmv-4pm",
+            membershipSchedule: null,
+            monthlyScheduleCount: 0,
+        },
+        order: {
+            id: "or-3",
+            status: "PAID",
+            provider: "PRESENCIAL",
+            invoices: [],
+        },
+        orderItem: {
+            id: "oi-3",
+            ticketTypeId: "tt-vmt-lmv-4pm",
+            attendeeData: [{ matricula: "9001122", name: "Alumno VMT" }],
+        },
+        sourceType: VMT_LMV_4PM,
+    }
+}
+
+test("TRANSFER dentro del mismo evento se etiqueta como cambio de horario", () => {
+    const plan = transferPlan(vmtSnapshot(), VMT_MJS_5PM)
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.label, "Cambio de horario (la franja es el tipo de entrada)")
+    assert.equal(plan.writes.ticket.ticketTypeId, "tt-vmt-mjs-5pm")
+    // Mismo evento: no se reescribe eventId.
+    assert.equal(plan.writes.ticket.eventId, undefined)
+    assert.equal(plan.writes.soldDecrementTypeId, "tt-vmt-lmv-4pm")
+    assert.equal(plan.writes.soldIncrementTypeId, "tt-vmt-mjs-5pm")
+})
+
+test("TRANSFER en sede sin catalogo no toca membershipSchedule", () => {
+    const plan = transferPlan(vmtSnapshot(), VMT_MJS_5PM)
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.writes.ticket.membershipSchedule, undefined)
+    assert.equal(plan.writes.orderItem.attendeeData, undefined)
+})
+
+test("TRANSFER refleja los contadores sold de origen y destino en el plan", () => {
+    const plan = transferPlan(vmtSnapshot(), VMT_MJS_5PM)
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.before.sourceSold, 12)
+    assert.equal(plan.before.targetSold, 8)
+    assert.equal(plan.after.sourceSold, 11)
+    assert.equal(plan.after.targetSold, 9)
 })
