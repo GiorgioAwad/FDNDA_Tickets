@@ -19,6 +19,18 @@ const BASE_LMV_3PM = {
     groups: [{ id: "main", label: "Lun, Mie y Vie", weekdays: [1, 3, 5] as const, start: "15:00", end: "16:00" }],
 }
 
+// Sesiones en orden inverso para probar que el sort realmente funciona
+const BASE_LMV_REVERSE = {
+    profileKey: "BRONCE",
+    sucursalCode: "03",
+    category: "ADULTOS" as const,
+    categoryLabel: "Adultos",
+    frequency: "LMV" as const,
+    frequencyLabel: "Lun - Mie - Vie",
+    sessions: [5, 3, 1].map((weekday) => ({ weekday: weekday as 1 | 3 | 5, start: "16:00", end: "17:00" })),
+    groups: [{ id: "main", label: "Lun, Mie y Vie", weekdays: [1, 3, 5] as const, start: "16:00", end: "17:00" }],
+}
+
 function ticket(overrides: Partial<OccupancyTicketSnapshot> = {}): OccupancyTicketSnapshot {
     return {
         id: "tk-1",
@@ -75,6 +87,7 @@ test("un carnet marcado como no contable se excluye", () => {
         planTotals: [{ ticketTypeId: "tt-bronce", name: "BRONCE", capacity: 100, sold: 1 }],
     })
     assert.equal(occupancy.slots.length, 0)
+    assert.equal(occupancy.dayLoad.length, 0)
 })
 
 test("la carga por dia y hora suma todos los planes", () => {
@@ -124,9 +137,23 @@ test("un carnet sin horario semanal cuenta solo en su plan (caso VMT)", () => {
 
 test("las franjas salen ordenadas por dia y hora", () => {
     const occupancy = buildMembershipOccupancy({
-        tickets: [ticket()],
-        planTotals: [{ ticketTypeId: "tt-bronce", name: "BRONCE", capacity: 100, sold: 1 }],
+        tickets: [
+            // Primer ticket con sesiones en orden inverso (5, 3, 1) se insertaría en ese orden
+            ticket({
+                id: "tk-reverse",
+                baseSchedule: BASE_LMV_REVERSE,
+                ticketTypeName: "MEMBRESIA ADULTOS",
+            }),
+            // Segundo ticket con sesiones en orden ascendente (1, 3, 5)
+            ticket({ id: "tk-normal" }),
+        ],
+        planTotals: [
+            { ticketTypeId: "tt-bronce", name: "BRONCE", capacity: 100, sold: 2 },
+        ],
     })
     const keys = occupancy.slots.map((s) => `${s.weekday}:${s.start}`)
-    assert.deepEqual(keys, [...keys].sort())
+    // Sin el .sort(), resultaría en orden de inserción del Map: 5,3,1 del primer ticket, luego 1,3,5 del segundo
+    // Con el .sort(), sale en orden ascendente: 1,3,5,1,3,5 (agrupado por categoría después de día/hora)
+    const sorted = [...keys].sort()
+    assert.deepEqual(keys, sorted, `slots deben estar ordenadas por dia y hora. Got: ${keys.join(", ")}, expected: ${sorted.join(", ")}`)
 })
