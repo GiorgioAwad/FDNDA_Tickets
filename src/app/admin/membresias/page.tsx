@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import {
     AlertCircle,
     CalendarClock,
@@ -498,9 +499,12 @@ export default function AdminMembershipsPage() {
                                                             {membership.monthlyClassLimit} clases/mes -{" "}
                                                             {durationLabel(membership.durationMonths)}
                                                         </p>
-                                                        <p className="font-mono text-xs text-gray-500">
+                                                        <Link
+                                                            href={`/admin/membresias/${membership.id}`}
+                                                            className="font-mono text-xs text-blue-600 hover:underline"
+                                                        >
                                                             {compactCode(membership.ticketCode)}
-                                                        </p>
+                                                        </Link>
                                                         {membership.freeze && (
                                                             <Badge variant="warning">
                                                                 Congelada {membership.freeze.month}
