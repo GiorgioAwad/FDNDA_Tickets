@@ -11,6 +11,38 @@ import type { MembershipChangePlan } from "@/lib/membership-transfer"
 
 type Tx = Prisma.TransactionClient
 
+/**
+ * Error de negocio: bloqueos que aparecieron al replanificar dentro de la
+ * transaccion, huella (fingerprint) desactualizada, o snapshot irreconstruible.
+ * Se distingue por tipo (no por texto) de cualquier otro fallo -Prisma,
+ * deadlock, timeout, JSON malformado- para que la ruta que llama pueda
+ * devolver 409 con el mensaje real SOLO en este caso, y 500 generico (sin
+ * filtrar el detalle interno) en cualquier otro.
+ */
+export class MembershipChangeAbort extends Error {
+    constructor(message: string) {
+        super(message)
+        this.name = "MembershipChangeAbort"
+    }
+}
+
+/**
+ * Toma un lock de fila sobre el ticket ANTES de releer su estado dentro de la
+ * transaccion. Sin este lock, dos "Aplicar" concurrentes sobre el mismo
+ * carnet (un doble clic basta) pueden releer el mismo estado en READ
+ * COMMITTED, pasar ambos la comparacion de huella, y aplicar el cambio dos
+ * veces -en TRANSFER eso mueve el cupo dos veces con un solo carnet movido,
+ * sin que las guardas de `sold`/capacidad lo detecten (cada una ve una fila
+ * valida). Debe llamarse al inicio de la transaccion, antes de cualquier
+ * lectura de negocio -lo reutilizan tanto el cambio de horario como el de
+ * sede/tipo.
+ */
+export async function lockMembershipTicket(tx: Tx, ticketId: string): Promise<void> {
+    await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`SELECT "id" FROM "tickets" WHERE "id" = ${ticketId} FOR UPDATE`
+    )
+}
+
 export async function applyMembershipChange(
     tx: Tx,
     args: {
