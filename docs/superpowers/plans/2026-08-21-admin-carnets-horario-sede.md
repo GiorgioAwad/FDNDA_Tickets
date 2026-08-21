@@ -20,6 +20,14 @@
 - Formato del codigo existente: 4 espacios de indentacion, sin punto y coma final, comillas dobles.
 - Los scripts `scripts/set-membership-schedule.ts`, `scripts/change-academia-schedule.ts` y `scripts/reassign-membership-sites.ts` NO se borran: siguen siendo la salida para los casos que el panel bloquea a proposito.
 - Comando de tests: `npx tsx --test "src/lib/*.test.ts"`. Baseline al 2026-08-21: 167 tests en verde.
+- **Base de datos.** `.env` apunta a PRODUCCION. La base de desarrollo es la de
+  STAGING y vive en `.env.local` (gitignored). `npm run dev` la toma solo porque
+  Next.js le da precedencia a `.env.local` sobre `.env` — o sea, el navegador ya
+  pega contra staging sin hacer nada. Pero el CLI de Prisma NO: `prisma.config.ts`
+  carga unicamente `.env`. Todo comando de Prisma que escriba va prefijado con:
+  `DATABASE_URL="$(grep -h '^DATABASE_URL' .env.local | tail -1 | sed -E 's/^DATABASE_URL=//; s/^"//; s/"$//')"`.
+  Nunca correr `prisma migrate dev`, `db push` ni `migrate reset` — ninguno, en
+  ninguna base. Nunca abrir ni imprimir el contenido de `.env.local`.
 - Cada tarea termina con commit. Mensajes en espanol, en imperativo, con prefijo `feat:` / `test:` / `refactor:`.
 
 ---
@@ -103,17 +111,87 @@ Expected: `The schema at prisma/schema.prisma is valid`.
 
 Si falla por relacion inversa faltante, el mensaje nombra el modelo — agregar el campo que pida y repetir.
 
-- [ ] **Step 6: Generar la migracion**
+- [ ] **Step 6: Escribir la migracion a mano**
 
-Run: `npx prisma migrate dev --name membership_admin_changes --create-only`
-Expected: crea `prisma/migrations/<timestamp>_membership_admin_changes/migration.sql`.
+NO uses `prisma migrate dev` en ninguna de sus formas. Dos razones: el datasource
+no declara `shadowDatabaseUrl`, y Neon no deja crear la base sombra desde una
+conexion pooler — fallaria. Y ademas `migrate dev` puede ofrecer RESETEAR la base
+cuando detecta drift, sin stdin para responder que no.
 
-`--create-only` a proposito: se revisa el SQL antes de aplicarlo. Abrir el archivo y confirmar que crea el tipo `MembershipChangeKind`, la tabla `membership_admin_changes`, el indice `(ticketId, createdAt)` y las dos foreign keys — la de `ticketId` con `ON DELETE RESTRICT`.
+Las migraciones de este proyecto se escriben a mano. Crear
+`prisma/migrations/20260821120000_membership_admin_changes/migration.sql` con
+exactamente este contenido:
 
-- [ ] **Step 7: Aplicar la migracion en local y regenerar el cliente**
+```sql
+-- CreateEnum
+CREATE TYPE "MembershipChangeKind" AS ENUM ('SCHEDULE', 'TRANSFER');
 
-Run: `npx prisma migrate dev`
-Expected: aplica la migracion y corre `prisma generate`.
+-- CreateTable
+CREATE TABLE "membership_admin_changes" (
+    "id" TEXT NOT NULL,
+    "ticketId" TEXT NOT NULL,
+    "actorId" TEXT NOT NULL,
+    "kind" "MembershipChangeKind" NOT NULL,
+    "reason" TEXT NOT NULL,
+    "before" JSONB NOT NULL,
+    "after" JSONB NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "membership_admin_changes_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "membership_admin_changes_ticketId_createdAt_idx"
+ON "membership_admin_changes"("ticketId", "createdAt");
+
+-- AddForeignKey
+ALTER TABLE "membership_admin_changes"
+ADD CONSTRAINT "membership_admin_changes_ticketId_fkey"
+FOREIGN KEY ("ticketId") REFERENCES "tickets"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "membership_admin_changes"
+ADD CONSTRAINT "membership_admin_changes_actorId_fkey"
+FOREIGN KEY ("actorId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+```
+
+Antes de darla por buena, confirmar que los nombres de tabla referenciados son
+los reales: `grep -n '@@map' prisma/schema.prisma` para `Ticket` y `User`. Si el
+mapeo no es `tickets` / `users`, corregir las foreign keys.
+
+- [ ] **Step 7: Aplicar la migracion contra staging y regenerar el cliente**
+
+La base de desarrollo es la de STAGING, cableada en `.env.local`. `prisma.config.ts`
+carga solo `.env` (que apunta a PRODUCCION), asi que hay que pasar la variable de
+forma explicita. `dotenv` no pisa `process.env`, por eso el prefijo gana:
+
+```bash
+DATABASE_URL="$(grep -h '^DATABASE_URL' .env.local | tail -1 | sed -E 's/^DATABASE_URL=//; s/^"//; s/"$//')" \
+  npx prisma migrate deploy
+```
+
+Expected: aplica 3 migraciones — las dos pendientes del popup
+(`20260812120000_add_promo_popup`, `20260814120000_add_promo_popup_metrics`, que ya
+estaban mergeadas y sin desplegar) y la nueva. `migrate deploy` es forward-only:
+nunca resetea.
+
+Luego regenerar el cliente (no toca la base):
+
+```bash
+npx prisma generate
+```
+
+Verificar que quedo aplicada:
+
+```bash
+DATABASE_URL="$(grep -h '^DATABASE_URL' .env.local | tail -1 | sed -E 's/^DATABASE_URL=//; s/^"//; s/"$//')" \
+  npx prisma migrate status
+```
+
+Expected: `Database schema is up to date!`.
+
+NUNCA correr un comando de Prisma que escriba sin ese prefijo: sin el, va contra
+produccion.
 
 - [ ] **Step 8: Confirmar que los tests siguen verdes**
 
