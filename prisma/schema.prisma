@@ -177,6 +177,7 @@ model User {
   uploadedAssets   UploadedAsset[]
   billingProfile   UserBillingProfile?
   promoPopups      PromoPopup[]
+  membershipAdminChanges MembershipAdminChange[]
 
   @@map("users")
 }
@@ -531,6 +532,8 @@ model Ticket {
   poolReservations PoolVisitReservation[]
   // Pases gratuitos registrados por staff para acompañantes de membresías ORO.
   membershipGuestPasses MembershipGuestPass[]
+  // Correcciones administrativas de horario/sede hechas desde el panel.
+  adminChanges MembershipAdminChange[]
 
   @@index([eventId])
   @@index([userId])
@@ -1057,4 +1060,31 @@ model PromoPopupEvent {
   @@unique([promoId, version, sessionId, kind])
   @@index([promoId, version, createdAt])
   @@map("promo_popup_events")
+}
+
+// ==================== AUDITORIA DE CORRECCIONES DE MEMBRESIA ====================
+
+enum MembershipChangeKind {
+  SCHEDULE // horario semanal base (CM 01 / VIDENA 03)
+  TRANSFER // movido de TicketType: mismo evento = horario VMT, otro = sede
+}
+
+// Rastro de las correcciones administrativas de horario/sede hechas desde el
+// panel. onDelete: Restrict a proposito — el resto de relaciones de Ticket usan
+// Cascade porque son estado vigente; esto es historia y no se borra.
+model MembershipAdminChange {
+  id        String               @id @default(cuid())
+  ticketId  String
+  actorId   String
+  kind      MembershipChangeKind
+  reason    String               @db.Text
+  before    Json
+  after     Json
+  createdAt DateTime             @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  actor  User   @relation(fields: [actorId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("membership_admin_changes")
 }
