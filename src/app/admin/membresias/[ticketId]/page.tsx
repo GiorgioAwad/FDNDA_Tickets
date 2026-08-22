@@ -7,7 +7,7 @@ import { AlertCircle, ArrowLeft, CalendarClock, History, MapPin, RefreshCw } fro
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ScheduleActions } from "./ScheduleActions"
+import { ScheduleActions, type Plan } from "./ScheduleActions"
 import type { MembershipDetail } from "./types"
 
 const ACCESS_LABEL: Record<MembershipDetail["diagnosis"]["accessStatus"], string> = {
@@ -35,11 +35,24 @@ export default function MembershipDetailPage({
 }) {
     const { ticketId } = use(params)
     const [detail, setDetail] = useState<MembershipDetail | null>(null)
+    // Solo cubre la carga INICIAL (todavia no hay nada que pintar). Las
+    // recargas posteriores (boton "Actualizar", o tras aplicar un cambio) son
+    // en segundo plano: si reusaran esta bandera, la ficha entera se
+    // reemplazaria por "Cargando carnet…" y desmontaria ScheduleActions antes
+    // de que el admin llegue a ver la confirmacion del cambio que acaba de
+    // aplicar (Tarea 10, hallazgo 2).
     const [loading, setLoading] = useState(true)
+    const [refreshing, setRefreshing] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    // Ultimo cambio aplicado con exito para este carnet. Vive aca (no dentro
+    // de ScheduleActions) precisamente para sobrevivir a la recarga de la
+    // ficha: un cambio de sede cambia `detail.ticketType.id`, y el efecto de
+    // reset de ScheduleActions limpiaria cualquier estado de confirmacion que
+    // viviera adentro.
+    const [appliedChange, setAppliedChange] = useState<Plan | null>(null)
 
     const load = useCallback(async () => {
-        setLoading(true)
+        setRefreshing(true)
         setError(null)
         try {
             const response = await fetch(`/api/admin/memberships/${ticketId}`, { cache: "no-store" })
@@ -50,6 +63,7 @@ export default function MembershipDetailPage({
             setError(err instanceof Error ? err.message : "Error desconocido")
         } finally {
             setLoading(false)
+            setRefreshing(false)
         }
     }, [ticketId])
 
@@ -57,8 +71,14 @@ export default function MembershipDetailPage({
         void load()
     }, [load])
 
+    // Un carnet nuevo (navegacion a otro ticketId) no deberia arrastrar la
+    // confirmacion del carnet anterior.
+    useEffect(() => {
+        setAppliedChange(null)
+    }, [ticketId])
+
     if (loading) return <div className="p-6 text-sm text-slate-500">Cargando carnet…</div>
-    if (error) {
+    if (error && !detail) {
         return (
             <div className="p-6">
                 <div className="flex items-center gap-2 rounded-lg bg-red-50 p-4 text-sm text-red-700">
@@ -82,11 +102,18 @@ export default function MembershipDetailPage({
                     <ArrowLeft className="h-4 w-4" />
                     Volver a membresias
                 </Link>
-                <Button variant="outline" size="sm" onClick={() => void load()}>
-                    <RefreshCw className="mr-2 h-4 w-4" />
+                <Button variant="outline" size="sm" disabled={refreshing} onClick={() => void load()}>
+                    <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
                     Actualizar
                 </Button>
             </div>
+
+            {error ? (
+                <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                    <AlertCircle className="h-4 w-4" />
+                    {error}
+                </div>
+            ) : null}
 
             {/* 1. Quien es y que compro */}
             <Card>
@@ -180,7 +207,18 @@ export default function MembershipDetailPage({
             </Card>
 
             {/* 3. Acciones */}
-            <ScheduleActions detail={detail} onApplied={() => void load()} />
+            <ScheduleActions
+                detail={detail}
+                appliedChange={appliedChange}
+                onApplied={(plan) => {
+                    // Se guarda ANTES de recargar: la recarga es en segundo
+                    // plano (no desmonta esta seccion), pero si el fetch
+                    // demora, el admin ve la confirmacion de inmediato en vez
+                    // de esperar al round-trip.
+                    setAppliedChange(plan)
+                    void load()
+                }}
+            />
 
             {/* 4. Historial */}
             <Card>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { AlertCircle, AlertTriangle, CheckCircle2, Clock, Repeat } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -11,17 +11,24 @@ import type { DetailCandidateType, MembershipDetail } from "./types"
 
 // El plan exitoso (`ok: true`) de membership-transfer.ts: se reutiliza el tipo
 // real en vez de duplicar su forma a mano, para no desincronizarse si el
-// planificador cambia campos.
-type Plan = Extract<MembershipChangePlan, { ok: true }>
+// planificador cambia campos. Se exporta: page.tsx lo necesita para guardar
+// el ultimo cambio aplicado (Tarea 10, hallazgo 2).
+export type Plan = Extract<MembershipChangePlan, { ok: true }>
 
 type Mode = "schedule" | "transfer"
 
 export function ScheduleActions({
     detail,
+    appliedChange,
     onApplied,
 }: {
     detail: MembershipDetail
-    onApplied: () => void
+    // Ultimo cambio aplicado con exito para ESTE carnet, dueno de page.tsx.
+    // Vive en el padre para sobrevivir a la recarga de la ficha (Tarea 10,
+    // hallazgo 2): si viviera aca, el reset por `detail.ticketType.id` de mas
+    // abajo lo borraria justo despues de aplicar un cambio de sede.
+    appliedChange: Plan | null
+    onApplied: (plan: Plan) => void
 }) {
     const hasProfile = detail.scheduleProfile !== null
     const [mode, setMode] = useState<Mode>(hasProfile ? "schedule" : "transfer")
@@ -30,20 +37,29 @@ export function ScheduleActions({
     const [hours, setHours] = useState<Record<string, string>>(detail.currentScheduleInput.hours)
     const [targetTypeId, setTargetTypeId] = useState("")
     const [reason, setReason] = useState("")
-    // El plan previsualizado (o, tras aplicar, el REPLANIFICADO que de verdad
-    // se escribio). `applied` distingue una cosa de la otra para no dejar
-    // aplicar dos veces el mismo plan sin una vista previa nueva de por medio.
+    // El plan PREVISUALIZADO, nunca el aplicado: en cuanto `send(false)` tiene
+    // exito se limpia (ver mas abajo). Que este en null es, a la vez, la
+    // proteccion contra doble aplicacion sin una vista previa nueva de por
+    // medio -no hace falta un booleano `applied` aparte.
     const [plan, setPlan] = useState<Plan | null>(null)
-    const [applied, setApplied] = useState(false)
     const [blockers, setBlockers] = useState<MembershipChangeBlocker[]>([])
     const [error, setError] = useState<string | null>(null)
     const [busy, setBusy] = useState(false)
     const [occupancy, setOccupancy] = useState<Record<string, number>>({})
 
+    // Token de secuencia: solo la respuesta de la peticion MAS RECIENTE puede
+    // tocar el estado. Sin esto, si el admin cambia la seleccion mientras una
+    // vista previa esta en vuelo, la respuesta tardia puede repoblar `plan`
+    // con el resultado de una seleccion vieja que ya nadie ve en pantalla
+    // (Tarea 10, hallazgo 1). Se complementa -no reemplaza- con deshabilitar
+    // el formulario completo mientras `busy`.
+    const requestSeqRef = useRef(0)
+
     // Si el carnet cambio de tipo (se aplico un cambio de sede/horario-tipo),
     // los valores locales quedan referidos al tipo VIEJO: categoria, hora,
     // lista de candidatos, y hasta si corresponde mostrar el selector en
     // cascada. Se reinicia todo desde el `detail` fresco que trae el reload.
+    // La confirmacion de "aplicado" no se toca aca: la dueña es page.tsx.
     useEffect(() => {
         setMode(detail.scheduleProfile !== null ? "schedule" : "transfer")
         setCategory(detail.currentScheduleInput.category ?? "")
@@ -51,41 +67,63 @@ export function ScheduleActions({
         setHours(detail.currentScheduleInput.hours)
         setTargetTypeId("")
         setPlan(null)
-        setApplied(false)
         setBlockers([])
         setError(null)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [detail.ticketType.id])
 
+    const selectedTargetType = useMemo(
+        () => detail.candidateTypes.find((t) => t.id === targetTypeId) ?? null,
+        [detail.candidateTypes, targetTypeId]
+    )
+
     // Ocupacion de la sede que se esta mirando, para no mandar a nadie a una
     // franja llena. Clave: "weekday|start-end".
     const occupancyEventId = useMemo(() => {
         if (mode === "schedule") return detail.event.id
-        return detail.candidateTypes.find((t) => t.id === targetTypeId)?.eventId ?? ""
-    }, [mode, targetTypeId, detail])
+        return selectedTargetType?.eventId ?? ""
+    }, [mode, selectedTargetType, detail.event.id])
 
     useEffect(() => {
+        // Se limpia de entrada: si no, mientras llega la respuesta del evento
+        // NUEVO se siguen viendo los numeros del evento anterior (Tarea 10,
+        // hallazgo menor).
+        setOccupancy({})
         if (!occupancyEventId) return
         let cancelled = false
         void (async () => {
-            const response = await fetch(
-                `/api/admin/membership-occupancy?eventId=${occupancyEventId}`,
-                { cache: "no-store" }
-            )
-            const payload = await response.json()
-            if (cancelled || !payload.success || !payload.data.occupancy) return
-            const map: Record<string, number> = {}
-            for (const cell of payload.data.occupancy.dayLoad) {
-                map[`${cell.weekday}|${cell.start}-${cell.end}`] = cell.total
+            try {
+                const response = await fetch(
+                    `/api/admin/membership-occupancy?eventId=${occupancyEventId}`,
+                    { cache: "no-store" }
+                )
+                if (!response.ok) return
+                const payload = await response.json()
+                if (cancelled || !payload.success || !payload.data.occupancy) return
+                const map: Record<string, number> = {}
+                for (const cell of payload.data.occupancy.dayLoad) {
+                    map[`${cell.weekday}|${cell.start}-${cell.end}`] = cell.total
+                }
+                setOccupancy(map)
+            } catch {
+                // Fetch caido o respuesta no-JSON: se deja la ocupacion en 0
+                // (ya limpiada arriba) en vez de una promesa rechazada sin
+                // manejar (Tarea 10, hallazgo menor).
             }
-            setOccupancy(map)
         })()
         return () => {
             cancelled = true
         }
     }, [occupancyEventId])
 
-    const activeProfile = detail.scheduleProfile
+    // La cascada de horas y la ocupacion tienen que mirar el catalogo del
+    // tipo que de verdad va a regir despues del cambio: en "schedule" es el
+    // tipo ACTUAL (se edita en el sitio); en "transfer" es el tipo DESTINO
+    // elegido -sus horas pueden no tener nada que ver con las del origen
+    // (Tarea 10, hallazgo 3). Sin destino elegido no hay cascada que mostrar,
+    // igual que cuando el destino no tiene catalogo (la franja ES el tipo).
+    const activeProfile =
+        mode === "transfer" ? (selectedTargetType?.scheduleProfile ?? null) : detail.scheduleProfile
     const activeCategory = activeProfile?.categories.find((c) => c.id === category) ?? null
     const activeFrequency = activeCategory?.frequencies.find((f) => f.id === frequency) ?? null
 
@@ -94,7 +132,6 @@ export function ScheduleActions({
     // mandar. No se reinicia el motivo: no cambia lo que se escribiria.
     const reset = () => {
         setPlan(null)
-        setApplied(false)
         setBlockers([])
         setError(null)
     }
@@ -123,6 +160,7 @@ export function ScheduleActions({
     }
 
     const send = async (preview: boolean) => {
+        const seq = ++requestSeqRef.current
         setBusy(true)
         setBlockers([])
         setError(null)
@@ -132,37 +170,60 @@ export function ScheduleActions({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body(preview)),
             })
-            const payload = await response.json()
+            let payload: {
+                success: boolean
+                data?: { plan: Plan }
+                blockers?: MembershipChangeBlocker[]
+                error?: string
+            }
+            try {
+                payload = await response.json()
+            } catch {
+                // Respuesta no-JSON (por ejemplo una pagina de error HTML):
+                // sin esto, response.json() revienta con un SyntaxError del
+                // navegador en ingles (Tarea 10, hallazgo menor).
+                if (seq !== requestSeqRef.current) return
+                setError("No se pudo interpretar la respuesta del servidor.")
+                setPlan(null)
+                return
+            }
+            // Ignora respuestas obsoletas: una peticion mas nueva ya esta en
+            // vuelo o ya resolvio (Tarea 10, hallazgo 1).
+            if (seq !== requestSeqRef.current) return
             if (!payload.success) {
                 // Bloqueo de reglas de negocio: 409 con `blockers`, SIN
                 // `error`. Cada mensaje ya viene en espanol y redactado para
                 // el admin, se muestra tal cual. Un fallo de verdad (500, u
                 // otro rechazo previo a la planificacion) trae `error` en su
-                // lugar y no `blockers`.
-                if (Array.isArray(payload.blockers)) {
+                // lugar y no `blockers`. Un `blockers` vacio (no deberia
+                // pasar, pero si pasa) no debe dejar la pantalla muda: cae al
+                // mensaje generico.
+                if (Array.isArray(payload.blockers) && payload.blockers.length > 0) {
                     setBlockers(payload.blockers)
                 } else {
-                    setError(payload.error ?? "No se pudo completar la operacion")
+                    setError(payload.error ?? "No se pudo completar la operacion.")
                 }
                 setPlan(null)
-                setApplied(false)
                 return
             }
-            const resultPlan = payload.data.plan as Plan
-            setPlan(resultPlan)
+            const resultPlan = (payload.data as { plan: Plan }).plan
             if (preview) {
-                setApplied(false)
+                setPlan(resultPlan)
             } else {
-                // La respuesta trae el plan REPLANIFICADO dentro de la
-                // transaccion -el que de verdad se escribio-, no el de esta
-                // vista previa: se muestra ese.
-                setApplied(true)
-                onApplied()
+                // Se limpia el plan: ya se aplico, y sin un plan en pantalla
+                // "Aplicar cambio" queda deshabilitado hasta la proxima vista
+                // previa. La confirmacion (con el plan REPLANIFICADO que de
+                // verdad se escribio dentro de la transaccion) la guarda el
+                // padre, que sobrevive a la recarga de la ficha.
+                setPlan(null)
+                onApplied(resultPlan)
             }
         } catch (err) {
+            if (seq !== requestSeqRef.current) return
             setError(err instanceof Error ? err.message : "Error de red")
+            setPlan(null)
         } finally {
-            setBusy(false)
+            if (seq === requestSeqRef.current) setBusy(false)
         }
     }
 
@@ -180,6 +241,7 @@ export function ScheduleActions({
                         <Button
                             variant={mode === "schedule" ? "default" : "outline"}
                             size="sm"
+                            disabled={busy}
                             onClick={() => {
                                 setMode("schedule")
                                 reset()
@@ -191,6 +253,7 @@ export function ScheduleActions({
                     <Button
                         variant={mode === "transfer" ? "default" : "outline"}
                         size="sm"
+                        disabled={busy}
                         onClick={() => {
                             setMode("transfer")
                             reset()
@@ -208,8 +271,17 @@ export function ScheduleActions({
                         <select
                             className="mt-1 w-full rounded-md border border-slate-300 p-2"
                             value={targetTypeId}
+                            disabled={busy}
                             onChange={(e) => {
                                 setTargetTypeId(e.target.value)
+                                // El catalogo de horas del nuevo destino no
+                                // tiene por que parecerse al del anterior
+                                // (Tarea 10, hallazgo 3): se limpia la
+                                // cascada en vez de arrastrar una seleccion
+                                // que puede no existir alla.
+                                setCategory("")
+                                setFrequency("")
+                                setHours({})
                                 reset()
                             }}
                         >
@@ -238,6 +310,7 @@ export function ScheduleActions({
                             <select
                                 className="mt-1 w-full rounded-md border border-slate-300 p-2"
                                 value={category}
+                                disabled={busy}
                                 onChange={(e) => {
                                     setCategory(e.target.value)
                                     setFrequency("")
@@ -258,7 +331,7 @@ export function ScheduleActions({
                             <select
                                 className="mt-1 w-full rounded-md border border-slate-300 p-2"
                                 value={frequency}
-                                disabled={!activeCategory}
+                                disabled={busy || !activeCategory}
                                 onChange={(e) => {
                                     setFrequency(e.target.value)
                                     setHours({})
@@ -282,6 +355,7 @@ export function ScheduleActions({
                                 <select
                                     className="mt-1 w-full rounded-md border border-slate-300 p-2"
                                     value={hours[group.id] ?? ""}
+                                    disabled={busy}
                                     onChange={(e) => {
                                         setHours({ ...hours, [group.id]: e.target.value })
                                         reset()
@@ -290,7 +364,16 @@ export function ScheduleActions({
                                     <option value="">Selecciona…</option>
                                     {group.hours.map((hour) => {
                                         const value = `${hour.start}-${hour.end}`
-                                        const load = occupancy[`${group.weekdays[0]}|${value}`] ?? 0
+                                        // Peor caso entre TODOS los dias del
+                                        // grupo, no solo el primero: en un
+                                        // grupo multi-dia (ej. PLATA L-V) solo
+                                        // mirar weekdays[0] subestima el dia
+                                        // mas lleno (Tarea 10, hallazgo menor).
+                                        const load = group.weekdays.reduce(
+                                            (max, weekday) =>
+                                                Math.max(max, occupancy[`${weekday}|${value}`] ?? 0),
+                                            0
+                                        )
                                         return (
                                             <option key={value} value={value}>
                                                 {hour.start} - {hour.end} · {load} en la franja
@@ -309,6 +392,7 @@ export function ScheduleActions({
                     </span>
                     <Input
                         value={reason}
+                        disabled={busy}
                         onChange={(e) => setReason(e.target.value)}
                         placeholder="Ej. compro CDM por error, asiste en VIDENA"
                         className="mt-1"
@@ -336,20 +420,22 @@ export function ScheduleActions({
                     </p>
                 ) : null}
 
-                {plan ? (
-                    <div
-                        className={
-                            applied
-                                ? "space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3"
-                                : "space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3"
-                        }
-                    >
-                        <p className={`font-medium ${applied ? "text-sky-900" : "text-emerald-900"}`}>
-                            {applied ? `Aplicado · ${plan.label}` : plan.label}
-                        </p>
+                {appliedChange ? (
+                    <div className="space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3">
+                        <p className="font-medium text-sky-900">Aplicado · {appliedChange.label}</p>
                         <div className="grid gap-2 sm:grid-cols-2">
-                            <PlanColumn title="Antes" state={plan.before} tone={applied ? "sky" : "emerald"} />
-                            <PlanColumn title="Despues" state={plan.after} tone={applied ? "sky" : "emerald"} />
+                            <PlanColumn title="Antes" state={appliedChange.before} tone="sky" />
+                            <PlanColumn title="Despues" state={appliedChange.after} tone="sky" />
+                        </div>
+                    </div>
+                ) : null}
+
+                {plan ? (
+                    <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                        <p className="font-medium text-emerald-900">{plan.label}</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                            <PlanColumn title="Antes" state={plan.before} tone="emerald" />
+                            <PlanColumn title="Despues" state={plan.after} tone="emerald" />
                         </div>
                     </div>
                 ) : null}
@@ -359,7 +445,7 @@ export function ScheduleActions({
                         Previsualizar
                     </Button>
                     <Button
-                        disabled={busy || plan === null || applied || reason.trim().length < 5}
+                        disabled={busy || plan === null || reason.trim().length < 5}
                         onClick={() => void send(false)}
                     >
                         <CheckCircle2 className="mr-2 h-4 w-4" />

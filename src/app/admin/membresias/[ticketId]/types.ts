@@ -18,6 +18,11 @@ export interface DetailTicketType {
 export interface DetailCandidateType extends DetailTicketType {
     eventTitle: string
     sameEvent: boolean
+    // Perfil de horario del tipo DESTINO, no del actual: la cascada de un
+    // cambio de sede tiene que ofrecer las horas que existen alla, que no son
+    // las mismas que las del tipo de origen (Tarea 10, hallazgo 3). Null en
+    // sedes sin catalogo (la franja ES el tipo, ej. VMT).
+    scheduleProfile: ScheduleProfile | null
 }
 
 export interface DetailHistoryRow {

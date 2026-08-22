@@ -225,6 +225,15 @@ export async function GET(
                     ...toTicketTypeSnapshot(type),
                     eventTitle: type.event.title,
                     sameEvent: type.eventId === record.eventId,
+                    // Perfil de horario del tipo DESTINO (Tarea 10, hallazgo
+                    // 3): el catalogo de horas depende de la sede+plan de CADA
+                    // candidato, no del tipo actual. Null en sedes sin
+                    // catalogo (la franja ES el tipo, ej. VMT), y eso es
+                    // correcto: ahi no hay cascada que ofrecer.
+                    scheduleProfile: getMembershipScheduleProfile(
+                        type.event.servilexSucursalCode,
+                        type.membershipScheduleKey
+                    ),
                 })),
                 history,
             },
