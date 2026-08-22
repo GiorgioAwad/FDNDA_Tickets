@@ -7,6 +7,7 @@ import { AlertCircle, ArrowLeft, CalendarClock, History, MapPin, RefreshCw } fro
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ScheduleActions } from "./ScheduleActions"
 import type { MembershipDetail } from "./types"
 
 const ACCESS_LABEL: Record<MembershipDetail["diagnosis"]["accessStatus"], string> = {
@@ -179,6 +180,7 @@ export default function MembershipDetailPage({
             </Card>
 
             {/* 3. Acciones */}
+            <ScheduleActions detail={detail} onApplied={() => void load()} />
 
             {/* 4. Historial */}
             <Card>
