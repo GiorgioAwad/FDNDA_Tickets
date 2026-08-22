@@ -308,16 +308,24 @@ export default function AdminMembershipsPage() {
                         Usuarios con tickets de membresia pagados en cualquier sede.
                     </p>
                 </div>
-                <Button
-                    type="button"
-                    variant="outline"
-                    onClick={loadMemberships}
-                    disabled={loading}
-                    className="w-full md:w-auto"
-                >
-                    <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-                    Actualizar
-                </Button>
+                <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
+                    <Link
+                        href="/admin/membresias/cupos"
+                        className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                        Ocupacion por franja
+                    </Link>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={loadMemberships}
+                        disabled={loading}
+                        className="w-full md:w-auto"
+                    >
+                        <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+                        Actualizar
+                    </Button>
+                </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
