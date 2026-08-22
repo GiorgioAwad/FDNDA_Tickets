@@ -232,6 +232,24 @@ export function extractTicketValidDates(validDays: unknown): string[] {
     return parseTicketScheduleConfig(validDays).dates
 }
 
+/**
+ * Calendario cerrado de academia: todas las fechas configuradas forman parte
+ * del paquete y el comprador no debe elegirlas una por una.
+ */
+export function getFixedAcademiaScheduleDates(input: {
+    eventCategory: string | null | undefined
+    isPackage: boolean | null | undefined
+    packageDaysCount: number | null | undefined
+    validDays: unknown
+}): string[] {
+    if (input.eventCategory !== "ACADEMIA" || !input.isPackage) return []
+
+    const schedule = parseTicketScheduleConfig(input.validDays)
+    if (schedule.shifts.length > 0 || schedule.dates.length === 0) return []
+    if (input.packageDaysCount !== schedule.dates.length) return []
+    return schedule.dates
+}
+
 export function extractTicketShiftOptions(validDays: unknown): string[] {
     return parseTicketScheduleConfig(validDays).shifts
 }

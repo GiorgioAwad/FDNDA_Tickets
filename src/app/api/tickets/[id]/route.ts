@@ -467,11 +467,12 @@ export async function GET(
             ...entitlementDates,
             ...purchasedDateKeys,
         ])
+        const isWithinTicketRange = isWithinEventRange || dateBoundDates.has(dateStr)
         const isAllowedPurchasedDate =
-            !usesPurchasedDates || (isWithinEventRange && dateBoundDates.has(dateStr))
+            !usesPurchasedDates || (isWithinTicketRange && dateBoundDates.has(dateStr))
         let hasEntitlement = isPackage
             ? usedCount < packageDaysCount! && isAllowedPurchasedDate
-            : (isWithinEventRange && entitlementDates.includes(dateStr))
+            : (isWithinTicketRange && entitlementDates.includes(dateStr))
 
         if (isFixedTerm && membershipAccess.status !== "OK") {
             hasEntitlement = false
@@ -511,7 +512,7 @@ export async function GET(
             } else if (isFixedTerm && membershipAccess.status === "EXPIRED") {
                 reasonParts.push(`Membresía vencida desde ${membershipAccess.expiryStr}`)
             }
-            if (!isWithinEventRange) {
+            if (!isWithinTicketRange) {
                 reasonParts.push(`Fecha ${dateStr} fuera del rango del evento (${eventStart} a ${eventEnd})`)
             }
             if (entitlementDates.length === 0) {

@@ -128,6 +128,7 @@ export async function POST(request: NextRequest) {
 
         const isPiscina = ticket.event?.category === "PISCINA_LIBRE"
         const clasesLabel = isPiscina ? "asistencias" : "clases"
+        const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
 
         const validDays = generateEntitlements(ticket)
         if (validDays.length > 0) {
@@ -172,6 +173,9 @@ export async function POST(request: NextRequest) {
         // - El resto de eventos permite ingresar cualquier día dentro del rango del evento.
         //   Esto cubre el fallback "compró su entrada para un día pero asiste otro día".
         const withinEventRange = isWithinEventRange(ticket, today)
+        // Las fechas explícitas del tipo pueden extenderse unos días más allá
+        // del rango general del evento (p. ej., el último sábado del ciclo).
+        const withinConfiguredSchedule = scheduleConfig.dates.includes(today)
         // Membresías a término fijo (anual/semestral): la vigencia se desacopla del
         // rango del evento. Aplica blackout enero/febrero (freeze + extend) y la
         // ventana inicio→expiración anclada a la fecha elegida por el comprador.
@@ -227,7 +231,7 @@ export async function POST(request: NextRequest) {
                 })
             }
             // status OK → continúa con el flujo normal (cupo mensual, etc.)
-        } else if (!fixedTermMembership && !withinEventRange) {
+        } else if (!fixedTermMembership && !withinEventRange && !withinConfiguredSchedule) {
             await logScan(ticket.id, user.id, eventId, "EXPIRED", "Fecha fuera del rango del evento")
             return NextResponse.json({
                 success: false,
@@ -397,7 +401,6 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        const scheduleConfig = parseTicketScheduleConfig(ticket.ticketType.validDays)
         const strictDateSchedule = scheduleConfig.dates.length > 0
         const configuredShifts = getShiftOptionsForDate(scheduleConfig, today)
         const requiresShiftSelection = scheduleConfig.requireShiftSelection && configuredShifts.length > 0
@@ -670,7 +673,7 @@ export async function POST(request: NextRequest) {
                 strictDateSchedule,
                 isPackageLike,
                 usesPurchasedDates,
-            }) || (!isPiscina && withinEventRange) || override
+            }) || (!strictDateSchedule && !isPiscina && withinEventRange) || override
         if (!entitlement && canReassign) {
             const availableEntitlement = ticket.entitlements.find((e) => e.status === "AVAILABLE")
 
