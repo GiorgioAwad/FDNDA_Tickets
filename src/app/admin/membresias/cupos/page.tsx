@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { AlertCircle, ArrowLeft, BarChart3 } from "lucide-react"
 
@@ -70,8 +70,15 @@ export default function MembershipOccupancyPage() {
     // que responde el endpoint, asi que no hace falta distinguirlas.
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    // Id de peticion monotonico: si el admin cambia de evento con una
+    // respuesta anterior todavia en vuelo y las respuestas llegan fuera de
+    // orden, cualquier escritura de estado de una peticion que ya no es la
+    // vigente se descarta. Sin esto se puede pintar la ocupacion del evento
+    // anterior mientras el selector ya muestra el nuevo.
+    const requestIdRef = useRef(0)
 
     const load = useCallback(async (id: string) => {
+        const requestId = ++requestIdRef.current
         setLoading(true)
         setError(null)
         try {
@@ -80,16 +87,18 @@ export default function MembershipOccupancyPage() {
                 cache: "no-store",
             })
             const payload = (await response.json()) as OccupancyApiResponse
+            if (requestId !== requestIdRef.current) return // superada por una peticion mas nueva
             if (!response.ok || !payload.success || !payload.data) {
                 throw new Error(payload.error ?? "No se pudo cargar la ocupacion")
             }
             setEvents(payload.data.events)
             setOccupancy(payload.data.occupancy)
         } catch (loadError) {
+            if (requestId !== requestIdRef.current) return // superada por una peticion mas nueva
             setError(loadError instanceof Error ? loadError.message : "Error inesperado")
             setOccupancy(null)
         } finally {
-            setLoading(false)
+            if (requestId === requestIdRef.current) setLoading(false)
         }
     }, [])
 
@@ -102,8 +111,22 @@ export default function MembershipOccupancyPage() {
     const planTotals = occupancy?.planTotals ?? []
     const hasSelection = Boolean(eventId)
     const hasOccupancyRows = slots.length > 0 || dayLoad.length > 0
+    // planTotals no depende de la vigencia de hoy (es capacity/sold del
+    // TicketType), asi que sirve para saber si el evento tiene ventas de
+    // verdad aunque las tablas por franja esten vacias.
+    const hasSales = planTotals.some((plan) => plan.sold > 0)
     const showNoEventNotice = !hasSelection && !loading && !error
-    const showEmptyEventNotice = hasSelection && !loading && !error && occupancy !== null && !hasOccupancyRows
+    const showEmptyEventNotice =
+        hasSelection && !loading && !error && occupancy !== null && !hasOccupancyRows && !hasSales
+    // Hay carnets vendidos (planTotals lo confirma) pero ninguno aporto una
+    // franja: puede ser porque los planes de esta sede no usan horario
+    // semanal (el tipo de entrada ES la franja, como en VMT) o porque el
+    // carnet vigente no tiene un horario resuelto para hoy. No se puede
+    // distinguir con certeza sin tocar el endpoint (cerrado), asi que el
+    // texto cubre ambos motivos en vez de afirmar "no hay carnets vigentes
+    // hoy" -- que aqui seria falso y contradiria la tabla de abajo.
+    const showNoScheduleProfileNotice =
+        hasSelection && !loading && !error && occupancy !== null && !hasOccupancyRows && hasSales
 
     return (
         <div className="space-y-6 p-6">
@@ -166,6 +189,16 @@ export default function MembershipOccupancyPage() {
             {showEmptyEventNotice ? (
                 <p className="text-sm text-slate-500">
                     Este evento no tiene carnets vigentes hoy: no hay ocupacion que mostrar.
+                </p>
+            ) : null}
+
+            {showNoScheduleProfileNotice ? (
+                <p className="text-sm text-slate-500">
+                    Este evento tiene carnets vendidos (ver &quot;Cupo por plan&quot; abajo), pero
+                    ninguno aporta una franja horaria hoy: puede ser porque sus planes no usan
+                    horario semanal (la franja es el propio tipo de entrada, como en VMT) o porque
+                    el carnet vigente no tiene un horario resuelto para hoy. Aqui no hay una matriz
+                    por dia y hora que mostrar.
                 </p>
             ) : null}
 
