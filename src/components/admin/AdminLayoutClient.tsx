@@ -73,6 +73,7 @@ const adminNavigation: NavGroup[] = [
         title: "Reportes",
         items: [
             { label: "Reportes", href: "/admin/reportes", icon: FileText },
+            { label: "Cupos y horarios", href: "/admin/reportes/cupos", icon: CalendarClock },
             { label: "Reporte merch", href: "/admin/reportes/merch", icon: ShoppingBag },
             { label: "Reclamos", href: "/admin/reclamos", icon: AlertCircle },
             { label: "Estadísticas", href: "/admin/estadisticas", icon: BarChart3 },
@@ -291,6 +292,7 @@ function AdminTopBar({ onMenuClick, title }: AdminTopBarProps) {
         if (pathname.includes("/cortesias")) return "Cortesías"
         if (pathname.includes("/ingresos")) return "Ingresos"
         if (pathname.includes("/membresias")) return "Membresias"
+        if (pathname.includes("/reportes/cupos")) return "Cupos y horarios"
         if (pathname.includes("/reportes/merch")) return "Reporte merch"
         if (pathname.includes("/merch/pedidos")) return "Pedidos merch"
         if (pathname.includes("/reportes")) return "Reportes"

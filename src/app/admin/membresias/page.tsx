@@ -310,7 +310,7 @@ export default function AdminMembershipsPage() {
                 </div>
                 <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
                     <Link
-                        href="/admin/membresias/cupos"
+                        href="/admin/reportes/cupos"
                         className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     >
                         Ocupacion por franja

@@ -98,7 +98,6 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
             <EventDashboard
                 eventId={event.id}
                 ticketTypes={ticketTypeOptions}
-                hasMembershipSchedules={event.ticketTypes.some((ticketType) => Boolean(ticketType.membershipScheduleKey))}
             />
             {isPoolFreeEventCategory(event.category) && (
                 <PoolDayCupos

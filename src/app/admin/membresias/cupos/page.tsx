@@ -22,7 +22,24 @@ const WEEKDAY_LABEL: Record<number, string> = {
 interface EventOption {
     id: string
     title: string
+    category: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA"
     servilexSucursalCode: string
+}
+
+interface CapacityRow {
+    id: string
+    ticketTypeId: string
+    ticketTypeName: string
+    categoryLabel: string
+    frequencyLabel: string
+    dateLabel: string
+    scheduleLabel: string
+    occupied: number
+    capacity: number
+    available: number | null
+    soldTotal: number
+    scopeLabel: "Plan completo" | "Fecha" | "Tipo de entrada"
+    status: "ACTIVE" | "INACTIVE" | "CLOSED" | "MISSING_SCHEDULE"
 }
 
 interface SlotRow {
@@ -90,6 +107,7 @@ interface OccupancyApiResponse {
         events: EventOption[]
         event: EventOption | null
         occupancy: OccupancyPayload | null
+        capacityRows?: CapacityRow[]
     }
 }
 
@@ -98,6 +116,7 @@ export default function MembershipOccupancyPage() {
     const [events, setEvents] = useState<EventOption[]>([])
     const [eventId, setEventId] = useState(() => searchParams.get("eventId") ?? "")
     const [occupancy, setOccupancy] = useState<OccupancyPayload | null>(null)
+    const [capacityRows, setCapacityRows] = useState<CapacityRow[]>([])
     const [query, setQuery] = useState("")
     const [category, setCategory] = useState("all")
     const [frequency, setFrequency] = useState("all")
@@ -130,10 +149,12 @@ export default function MembershipOccupancyPage() {
             }
             setEvents(payload.data.events)
             setOccupancy(payload.data.occupancy)
+            setCapacityRows(payload.data.capacityRows ?? [])
         } catch (loadError) {
             if (requestId !== requestIdRef.current) return // superada por una peticion mas nueva
             setError(loadError instanceof Error ? loadError.message : "Error inesperado")
             setOccupancy(null)
+            setCapacityRows([])
         } finally {
             if (requestId === requestIdRef.current) setLoading(false)
         }
@@ -146,72 +167,70 @@ export default function MembershipOccupancyPage() {
     const slots = occupancy?.slots ?? []
     const dayLoad = occupancy?.dayLoad ?? []
     const planTotals = occupancy?.planTotals ?? []
-    const scheduleRows = useMemo(() => occupancy?.scheduleRows ?? [], [occupancy?.scheduleRows])
     const selectedEvent = events.find((event) => event.id === eventId) ?? null
     const categoryOptions = useMemo(
-        () => [...new Set(scheduleRows.map((row) => row.categoryLabel))].sort((a, b) => a.localeCompare(b, "es")),
-        [scheduleRows]
+        () => [...new Set(capacityRows.map((row) => row.categoryLabel))].sort((a, b) => a.localeCompare(b, "es")),
+        [capacityRows]
     )
     const frequencyOptions = useMemo(
-        () => [...new Set(scheduleRows.map((row) => row.frequencyLabel))].sort((a, b) => a.localeCompare(b, "es")),
-        [scheduleRows]
+        () => [...new Set(capacityRows.map((row) => row.frequencyLabel))].sort((a, b) => a.localeCompare(b, "es")),
+        [capacityRows]
     )
-    const filteredScheduleRows = useMemo(() => {
+    const filteredCapacityRows = useMemo(() => {
         const term = query.trim().toLocaleLowerCase("es")
-        return scheduleRows.filter((row) => {
+        return capacityRows.filter((row) => {
             if (category !== "all" && row.categoryLabel !== category) return false
             if (frequency !== "all" && row.frequencyLabel !== frequency) return false
             if (!term) return true
-            return [row.ticketTypeName, row.categoryLabel, row.frequencyLabel, row.groupLabel, row.label]
+            return [row.ticketTypeName, row.categoryLabel, row.frequencyLabel, row.dateLabel, row.scheduleLabel]
                 .join(" ")
                 .toLocaleLowerCase("es")
                 .includes(term)
         })
-    }, [category, frequency, query, scheduleRows])
+    }, [capacityRows, category, frequency, query])
 
     const exportReport = async () => {
-        if (!occupancy || !selectedEvent) return
+        if (!occupancy || !selectedEvent || capacityRows.length === 0) return
         setExporting(true)
         try {
             const XLSX = await import("xlsx")
             const workbook = XLSX.utils.book_new()
             const scheduleSheet = XLSX.utils.json_to_sheet(
-                scheduleRows.map((row) => ({
+                capacityRows.map((row) => ({
                     Evento: selectedEvent.title,
-                    Plan: row.ticketTypeName,
-                    Duracion: durationLabel(row.durationMonths),
+                    "Entrada o plan": row.ticketTypeName,
                     Categoria: row.categoryLabel,
                     Frecuencia: row.frequencyLabel,
-                    Dias: row.groupLabel,
-                    Horario: row.label,
-                    "Inscritos vigentes": row.enrolled,
-                    "Cupo global del plan": row.capacityInPlan === 0 ? "Ilimitado" : row.capacityInPlan,
-                    "Vendidos del plan": row.soldInPlan,
-                    "Disponibles del plan": row.availableInPlan ?? "Ilimitado",
-                    "Carnets vigentes del plan": row.currentMembersInPlan,
-                    "Clases por mes": row.monthlyClassLimit ?? "",
-                    "Precio S/": row.price ?? "",
-                    Estado: row.isActive ? "Activo" : "Inactivo",
+                    "Fecha o dias": row.dateLabel,
+                    "Horario o turno": row.scheduleLabel,
+                    Ocupados: row.occupied,
+                    Cupo: row.capacity === 0 ? "Ilimitado" : row.capacity,
+                    Libres: row.available ?? "Ilimitado",
+                    "Alcance del cupo": row.scopeLabel,
+                    "Vendidos totales": row.soldTotal,
+                    Estado: capacityStatusLabel(row.status),
                 }))
             )
             scheduleSheet["!cols"] = [
-                { wch: 38 }, { wch: 42 }, { wch: 14 }, { wch: 22 }, { wch: 28 },
-                { wch: 28 }, { wch: 24 }, { wch: 18 }, { wch: 22 }, { wch: 18 },
-                { wch: 22 }, { wch: 24 }, { wch: 16 }, { wch: 12 }, { wch: 12 },
+                { wch: 38 }, { wch: 44 }, { wch: 20 }, { wch: 24 }, { wch: 34 },
+                { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 },
+                { wch: 18 }, { wch: 18 },
             ]
-            XLSX.utils.book_append_sheet(workbook, scheduleSheet, "Cupos por horario")
+            XLSX.utils.book_append_sheet(workbook, scheduleSheet, "Cupos y horarios")
 
-            const loadSheet = XLSX.utils.json_to_sheet(
-                dayLoad.map((cell) => ({
-                    Dia: WEEKDAY_LABEL[cell.weekday] ?? cell.weekday,
-                    Horario: cell.label,
-                    Alumnos: cell.total,
-                }))
-            )
-            XLSX.utils.book_append_sheet(workbook, loadSheet, "Carga por dia y hora")
+            if (dayLoad.length > 0) {
+                const loadSheet = XLSX.utils.json_to_sheet(
+                    dayLoad.map((cell) => ({
+                        Dia: WEEKDAY_LABEL[cell.weekday] ?? cell.weekday,
+                        Horario: cell.label,
+                        Alumnos: cell.total,
+                    }))
+                )
+                XLSX.utils.book_append_sheet(workbook, loadSheet, "Carga por dia y hora")
+            }
 
-            const planSheet = XLSX.utils.json_to_sheet(
-                planTotals.map((plan) => ({
+            if (planTotals.length > 0) {
+                const planSheet = XLSX.utils.json_to_sheet(planTotals.map((plan) => ({
                     Plan: plan.name,
                     Duracion: durationLabel(plan.durationMonths),
                     "Carnets vigentes": plan.currentMembers,
@@ -221,18 +240,16 @@ export default function MembershipOccupancyPage() {
                     "Clases por mes": plan.monthlyClassLimit ?? "",
                     "Precio S/": plan.price ?? "",
                     Estado: plan.isActive ? "Activo" : "Inactivo",
-                }))
-            )
-            XLSX.utils.book_append_sheet(workbook, planSheet, "Cupo por plan")
+                })))
+                XLSX.utils.book_append_sheet(workbook, planSheet, "Cupo por plan")
+            }
 
             const noteSheet = XLSX.utils.aoa_to_sheet([
                 ["Reporte", `Cupos, horarios y frecuencias - ${selectedEvent.title}`],
                 ["Generado", new Date().toLocaleString("es-PE", { timeZone: "America/Lima" })],
-                ["Fuente", "Carnets ACTIVE con orden PAID y horario efectivo del mes actual"],
-                ["Carnets vigentes", occupancy.currentMembers],
-                ["Sin horario por regularizar", occupancy.missingSchedule],
+                ["Fuente", "Inventario aplicado por la plataforma segun la categoria y configuracion del evento"],
                 [],
-                ["Importante", "El disponible mostrado es global por plan. La plataforma no tiene un aforo independiente por franja horaria."],
+                ["Importante", "La columna Alcance indica si el cupo se controla por plan completo, por fecha o por tipo de entrada."],
             ])
             noteSheet["!cols"] = [{ wch: 34 }, { wch: 110 }]
             XLSX.utils.book_append_sheet(workbook, noteSheet, "Leyenda")
@@ -245,39 +262,25 @@ export default function MembershipOccupancyPage() {
         }
     }
     const hasSelection = Boolean(eventId)
-    const hasOccupancyRows = slots.length > 0 || dayLoad.length > 0
-    // planTotals no depende de la vigencia de hoy (es capacity/sold del
-    // TicketType), asi que sirve para saber si el evento tiene ventas de
-    // verdad aunque las tablas por franja esten vacias.
-    const hasSales = planTotals.some((plan) => plan.sold > 0)
     const showNoEventNotice = !hasSelection && !loading && !error
     const showEmptyEventNotice =
-        hasSelection && !loading && !error && occupancy !== null && !hasOccupancyRows && !hasSales
-    // Hay carnets vendidos (planTotals lo confirma) pero ninguno aporto una
-    // franja: puede ser porque los planes de esta sede no usan horario
-    // semanal (el tipo de entrada ES la franja, como en VMT) o porque el
-    // carnet vigente no tiene un horario resuelto para hoy. No se puede
-    // distinguir con certeza sin tocar el endpoint (cerrado), asi que el
-    // texto cubre ambos motivos en vez de afirmar "no hay carnets vigentes
-    // hoy" -- que aqui seria falso y contradiria la tabla de abajo.
-    const showNoScheduleProfileNotice =
-        hasSelection && !loading && !error && occupancy !== null && !hasOccupancyRows && hasSales
+        hasSelection && !loading && !error && occupancy !== null && capacityRows.length === 0
 
     return (
         <div className="space-y-6 p-6">
             <div className="flex items-center justify-between">
                 <Link
-                    href="/admin/membresias"
+                    href={eventId ? `/admin/eventos/${eventId}` : "/admin/eventos"}
                     className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
                 >
                     <ArrowLeft className="h-4 w-4" />
-                    Volver a membresias
+                    {eventId ? "Volver al evento" : "Volver a eventos"}
                 </Link>
                 <Button
                     type="button"
                     variant="outline"
                     onClick={() => void exportReport()}
-                    disabled={!occupancy || exporting || loading}
+                    disabled={!occupancy || capacityRows.length === 0 || exporting || loading}
                     className="gap-2"
                 >
                     <Download className="h-4 w-4" />
@@ -289,7 +292,7 @@ export default function MembershipOccupancyPage() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <BarChart3 className="h-5 w-5" />
-                        Ocupacion por franja
+                        Cupos y horarios
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm">
@@ -309,9 +312,9 @@ export default function MembershipOccupancyPage() {
                         </select>
                     </label>
                     <p className="max-w-3xl text-slate-600">
-                        Consulta el catalogo completo de horarios, incluso las franjas sin inscritos,
-                        usando el horario efectivo del mes actual. Los cupos libres corresponden al
-                        plan completo; hoy no existe un aforo independiente por horario.
+                        Consulta cupos ocupados y libres usando el inventario real que aplica cada
+                        evento. La columna Alcance indica si el limite corresponde al plan completo,
+                        a una fecha concreta o al tipo de entrada.
                     </p>
                 </CardContent>
             </Card>
@@ -327,43 +330,35 @@ export default function MembershipOccupancyPage() {
 
             {showNoEventNotice ? (
                 <p className="text-sm text-slate-500">
-                    Selecciona un evento para ver su ocupacion por franja.
+                    Selecciona un evento para ver sus cupos y horarios.
                 </p>
             ) : null}
 
             {showEmptyEventNotice ? (
                 <p className="text-sm text-slate-500">
-                    Este evento no tiene carnets vigentes hoy: no hay ocupacion que mostrar.
+                    Este evento todavia no tiene tipos de entrada para reportar.
                 </p>
             ) : null}
 
-            {showNoScheduleProfileNotice ? (
-                <p className="text-sm text-slate-500">
-                    Este evento tiene carnets vendidos (ver &quot;Cupo por plan&quot; abajo), pero
-                    ninguno aporta una franja horaria hoy: puede ser porque sus planes no usan
-                    horario semanal (la franja es el propio tipo de entrada, como en VMT) o porque
-                    el carnet vigente no tiene un horario resuelto para hoy. Aqui no hay una matriz
-                    por dia y hora que mostrar.
-                </p>
-            ) : null}
-
-            {occupancy && scheduleRows.length > 0 ? (
+            {occupancy && capacityRows.length > 0 ? (
                 <>
                     <div className="grid overflow-hidden rounded-2xl bg-slate-950 text-white sm:grid-cols-3">
                         <div className="p-5 sm:border-r sm:border-white/10">
-                            <p className="text-sm text-slate-300">Carnets vigentes</p>
-                            <p className="mt-1 text-3xl font-semibold tabular-nums">{occupancy.currentMembers}</p>
+                            <p className="text-sm text-slate-300">Tipos de entrada</p>
+                            <p className="mt-1 text-3xl font-semibold tabular-nums">
+                                {new Set(capacityRows.map((row) => row.ticketTypeId)).size}
+                            </p>
                         </div>
                         <div className="border-t border-white/10 p-5 sm:border-r sm:border-t-0">
-                            <p className="text-sm text-slate-300">Franjas con ocupacion</p>
+                            <p className="text-sm text-slate-300">Filas con ocupacion</p>
                             <p className="mt-1 text-3xl font-semibold tabular-nums">
-                                {scheduleRows.filter((row) => row.status === "SCHEDULED" && row.enrolled > 0).length}
+                                {capacityRows.filter((row) => row.occupied > 0).length}
                             </p>
                         </div>
                         <div className="border-t border-white/10 p-5 sm:border-t-0">
-                            <p className="text-sm text-slate-300">Pendientes de horario</p>
-                            <p className={`mt-1 text-3xl font-semibold tabular-nums ${occupancy.missingSchedule > 0 ? "text-amber-300" : "text-emerald-300"}`}>
-                                {occupancy.missingSchedule}
+                            <p className="text-sm text-slate-300">Cupos sin tope</p>
+                            <p className="mt-1 text-3xl font-semibold tabular-nums text-emerald-300">
+                                {capacityRows.filter((row) => row.capacity === 0).length}
                             </p>
                         </div>
                     </div>
@@ -375,7 +370,7 @@ export default function MembershipOccupancyPage() {
                                 Cupos por horario y frecuencia
                             </CardTitle>
                             <p className="text-sm text-slate-500">
-                                {filteredScheduleRows.length} de {scheduleRows.length} filas del catalogo.
+                                {filteredCapacityRows.length} de {capacityRows.length} filas del evento.
                             </p>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -415,41 +410,49 @@ export default function MembershipOccupancyPage() {
                             </div>
 
                             <div className="overflow-x-auto rounded-xl border border-slate-200">
-                                <table className="min-w-[1040px] w-full text-left text-sm">
+                                <table className="min-w-[1240px] w-full text-left text-sm">
                                     <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                                         <tr>
-                                            <th className="px-4 py-3 font-semibold">Plan</th>
+                                            <th className="px-4 py-3 font-semibold">Entrada o plan</th>
                                             <th className="px-4 py-3 font-semibold">Categoria</th>
                                             <th className="px-4 py-3 font-semibold">Frecuencia</th>
-                                            <th className="px-4 py-3 font-semibold">Dias</th>
-                                            <th className="px-4 py-3 font-semibold">Horario</th>
+                                            <th className="px-4 py-3 font-semibold">Fecha o dias</th>
+                                            <th className="px-4 py-3 font-semibold">Horario o turno</th>
                                             <th className="px-4 py-3 text-right font-semibold">Ocupados</th>
-                                            <th className="px-4 py-3 text-right font-semibold">Vendidos plan</th>
-                                            <th className="px-4 py-3 text-right font-semibold">Libres plan</th>
+                                            <th className="px-4 py-3 text-right font-semibold">Cupo</th>
+                                            <th className="px-4 py-3 text-right font-semibold">Libres</th>
+                                            <th className="px-4 py-3 font-semibold">Alcance</th>
+                                            <th className="px-4 py-3 font-semibold">Estado</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredScheduleRows.map((row) => (
+                                        {filteredCapacityRows.map((row) => (
                                             <tr
-                                                key={`${row.ticketTypeId}-${row.category}-${row.frequency}-${row.groupLabel}-${row.label}-${row.status}`}
+                                                key={row.id}
                                                 className={`border-t border-slate-100 ${row.status === "MISSING_SCHEDULE" ? "bg-amber-50" : "hover:bg-slate-50/70"}`}
                                             >
                                                 <td className="max-w-[20rem] px-4 py-3 font-medium text-slate-900">{row.ticketTypeName}</td>
                                                 <td className="px-4 py-3 text-slate-700">{row.categoryLabel}</td>
                                                 <td className="px-4 py-3 text-slate-700">{row.frequencyLabel}</td>
-                                                <td className="px-4 py-3 text-slate-600">{row.groupLabel}</td>
-                                                <td className="whitespace-nowrap px-4 py-3 text-slate-700">{row.label}</td>
-                                                <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-950">{row.enrolled}</td>
-                                                <td className="px-4 py-3 text-right tabular-nums text-slate-700">{row.soldInPlan}</td>
+                                                <td className="px-4 py-3 text-slate-600">{row.dateLabel}</td>
+                                                <td className="px-4 py-3 text-slate-700">{row.scheduleLabel}</td>
+                                                <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-950">{row.occupied}</td>
+                                                <td className="px-4 py-3 text-right tabular-nums text-slate-700">
+                                                    {row.capacity === 0 ? "Ilimitado" : row.capacity}
+                                                </td>
                                                 <td className="px-4 py-3 text-right font-medium tabular-nums text-emerald-700">
-                                                    {row.availableInPlan ?? "Ilimitado"}
+                                                    {row.available ?? "Ilimitado"}
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-slate-600">{row.scopeLabel}</td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                                                    {capacityStatusLabel(row.status)}
                                                 </td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
                             </div>
-                            {filteredScheduleRows.length === 0 ? (
+                            {filteredCapacityRows.length === 0 ? (
                                 <p className="py-8 text-center text-sm text-slate-500">
                                     No hay filas que coincidan con estos filtros.
                                 </p>
@@ -527,6 +530,13 @@ function durationLabel(months: number | null): string {
     if (months === 6) return "Semestral"
     if (months === 12) return "Anual"
     return months ? `${months} meses` : "Sin duracion fija"
+}
+
+function capacityStatusLabel(status: CapacityRow["status"]): string {
+    if (status === "CLOSED") return "Cerrado"
+    if (status === "INACTIVE") return "Inactivo"
+    if (status === "MISSING_SCHEDULE") return "Horario pendiente"
+    return "Activo"
 }
 
 function limaDateKey(date: Date): string {

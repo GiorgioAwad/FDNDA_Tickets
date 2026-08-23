@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { OrderStatus, TicketStatus, UserRole } from "@prisma/client"
 
 import { getCurrentUser } from "@/lib/auth"
+import { buildEventCapacityReportRows } from "@/lib/event-capacity-report"
 import { toScanTicket } from "@/lib/membership-admin-snapshot"
 import { buildMembershipOccupancy, type OccupancyTicketSnapshot } from "@/lib/membership-occupancy"
 import { prisma } from "@/lib/prisma"
@@ -27,15 +28,17 @@ export async function GET(request: NextRequest) {
         }
         const eventId = new URL(request.url).searchParams.get("eventId")?.trim() ?? ""
 
-        // Eventos que venden membresias: al menos un tipo con cupo mensual y
-        // duracion fija. Sirve para poblar el selector.
+        // El reporte es transversal: el selector incluye membresias, academia,
+        // piscina libre y cualquier evento general creado en la plataforma.
         const events = await prisma.event.findMany({
-            where: {
-                ticketTypes: {
-                    some: { monthlyClassLimit: { gt: 0 }, membershipDurationMonths: { gt: 0 } },
-                },
+            select: {
+                id: true,
+                title: true,
+                category: true,
+                servilexSucursalCode: true,
+                startDate: true,
+                endDate: true,
             },
-            select: { id: true, title: true, servilexSucursalCode: true },
             orderBy: { startDate: "desc" },
         })
 
@@ -45,14 +48,14 @@ export async function GET(request: NextRequest) {
         const event = events.find((candidate) => candidate.id === eventId)
         if (!event) {
             return NextResponse.json(
-                { success: false, error: "Evento de membresias no encontrado" },
+                { success: false, error: "Evento no encontrado" },
                 { status: 404 }
             )
         }
 
         const today = getTodayDateString()
 
-        const [tickets, types] = await Promise.all([
+        const [tickets, types, eventDays] = await Promise.all([
             prisma.ticket.findMany({
                 where: {
                     eventId,
@@ -85,23 +88,32 @@ export async function GET(request: NextRequest) {
                 },
             }),
             prisma.ticketType.findMany({
-                where: {
-                    eventId,
-                    monthlyClassLimit: { gt: 0 },
-                    membershipDurationMonths: { gt: 0 },
-                },
+                where: { eventId },
                 select: {
                     id: true,
                     name: true,
                     capacity: true,
                     sold: true,
+                    capacityByDate: true,
+                    isPackage: true,
+                    packageDaysCount: true,
+                    validDays: true,
                     membershipScheduleKey: true,
                     membershipDurationMonths: true,
                     monthlyClassLimit: true,
                     price: true,
                     isActive: true,
+                    dateInventories: {
+                        select: { date: true, capacity: true, sold: true, isEnabled: true },
+                        orderBy: { date: "asc" },
+                    },
                 },
                 orderBy: { name: "asc" },
+            }),
+            prisma.eventDay.findMany({
+                where: { eventId },
+                select: { date: true, openTime: true, closeTime: true },
+                orderBy: { date: "asc" },
             }),
         ])
 
@@ -162,9 +174,14 @@ export async function GET(request: NextRequest) {
             }
         })
 
+        const membershipTypes = types.filter(
+            (type) =>
+                (type.monthlyClassLimit ?? 0) > 0 &&
+                (type.membershipDurationMonths ?? 0) > 0
+        )
         const occupancy = buildMembershipOccupancy({
             tickets: snapshots,
-            planTotals: types.map((type) => ({
+            planTotals: membershipTypes.map((type) => ({
                 ticketTypeId: type.id,
                 name: type.name,
                 capacity: type.capacity,
@@ -178,9 +195,23 @@ export async function GET(request: NextRequest) {
             sucursalCode: event.servilexSucursalCode,
         })
 
-        return NextResponse.json({ success: true, data: { events, event, occupancy, today } })
+        const capacityRows = buildEventCapacityReportRows({
+            event: {
+                category: event.category,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                eventDays,
+            },
+            ticketTypes: types,
+            membershipOccupancy: occupancy,
+        })
+
+        return NextResponse.json({
+            success: true,
+            data: { events, event, occupancy, capacityRows, today },
+        })
     } catch (error) {
-        console.error("Error al calcular la ocupacion de membresias:", error)
+        console.error("Error al calcular el reporte de cupos y horarios:", error)
         return NextResponse.json({ success: false, error: "Error interno" }, { status: 500 })
     }
 }
