@@ -27,7 +27,7 @@ import {
 } from "@/lib/membership-schedule"
 import { formatDate, formatPrice } from "@/lib/utils"
 import type { IzipayCheckoutConfig } from "@/lib/izipay"
-import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText } from "lucide-react"
+import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText, CalendarCheck } from "lucide-react"
 import AuthModal from "@/components/auth/AuthModal"
 import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
 
@@ -256,6 +256,28 @@ export default function CheckoutPage() {
             })
         },
         [getDateAvailability, todayDateKey]
+    )
+
+    const getEffectiveScheduleSelections = useCallback(
+        (
+            item: (typeof items)[number],
+            attendee: (typeof items)[number]["attendees"][number]
+        ) => {
+            if (item.scheduleConfig?.lockedDates) {
+                return item.scheduleConfig.dates.map((date) => {
+                    const shifts = getShiftOptionsForDate(item.scheduleConfig!, date)
+                    return {
+                        date,
+                        shift:
+                            shifts.length === 1 && item.scheduleConfig?.requireShiftSelection
+                                ? shifts[0]
+                                : "",
+                    }
+                })
+            }
+            return attendee.scheduleSelections ?? []
+        },
+        []
     )
 
     const getEventCategory = useCallback(
@@ -504,6 +526,7 @@ export default function CheckoutPage() {
         return items.some((item) => {
             const requiredSelections = getRequiredSelections(item)
             if (requiredSelections === 0) return false
+            if (item.scheduleConfig?.lockedDates) return false
 
             const requiresShift =
                 (item.scheduleConfig?.shifts.length || 0) > 0 &&
@@ -623,9 +646,12 @@ export default function CheckoutPage() {
                     quantity: item.quantity,
                     attendees: !collectsAttendeeIdentity(item)
                         ? item.attendees.map((attendee) => ({
-                              scheduleSelections: attendee.scheduleSelections,
+                              scheduleSelections: getEffectiveScheduleSelections(item, attendee),
                           }))
-                        : item.attendees,
+                        : item.attendees.map((attendee) => ({
+                              ...attendee,
+                              scheduleSelections: getEffectiveScheduleSelections(item, attendee),
+                          })),
                 })),
                 billing: {
                     documentType: billingData.documentType,
@@ -1102,6 +1128,9 @@ export default function CheckoutPage() {
                                                     scheduleConfig?.dates.length === 1 &&
                                                     selectableDates.length === 1 &&
                                                     scheduleConfig.shifts.length === 0
+                                                const hasLockedDates = Boolean(
+                                                    scheduleConfig?.lockedDates && scheduleConfig.dates.length > 0
+                                                )
                                                 const attendeeFullName = buildNaturalPersonFullName({
                                                     firstName: attendee.firstName,
                                                     secondName: attendee.secondName,
@@ -1403,7 +1432,7 @@ export default function CheckoutPage() {
                                                     </>
                                                     )}
 
-                                                        {requiredSelections > 0 && scheduleConfig && !hasLockedSingleDate && (
+                                                        {requiredSelections > 0 && scheduleConfig && !hasLockedDates && !hasLockedSingleDate && (
                                                         <div className="rounded-md border border-dashed border-gray-300 p-3 bg-white">
                                                             <p className="text-xs font-medium text-gray-700 mb-2">
                                                                 {scheduleConfig.shifts.length > 0 && !(scheduleConfig.requireShiftSelection ?? true)
@@ -1519,7 +1548,20 @@ export default function CheckoutPage() {
                                                             </div>
                                                         </div>
                                                     )}
-                                                    {requiredSelections > 0 && scheduleConfig && hasLockedSingleDate && (
+                                                    {requiredSelections > 0 && scheduleConfig && hasLockedDates && (
+                                                        <div className="flex items-start gap-2.5 rounded-lg bg-emerald-50 px-3 py-2.5 text-emerald-800">
+                                                            <CalendarCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                                                            <div className="text-xs leading-relaxed">
+                                                                <p className="font-semibold">
+                                                                    Inicio obligatorio: {formatDate(scheduleConfig.dates[0], { dateStyle: "full" })}
+                                                                </p>
+                                                                <p className="text-emerald-700">
+                                                                    Calendario fijo de {scheduleConfig.dates.length} clases. No necesitas elegir días.
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {requiredSelections > 0 && scheduleConfig && !hasLockedDates && hasLockedSingleDate && (
                                                         <div className="rounded-md border border-dashed border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
                                                             Fecha seleccionada para esta entrada:{" "}
                                                             <span className="font-medium">

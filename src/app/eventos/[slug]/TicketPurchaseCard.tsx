@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { getPoolFreeSelectableDates, isPoolFreeEventCategory } from "@/lib/pool-free"
 import { usesTicketDateCapacity } from "@/lib/ticket-date-capacity"
 import { formatPrice } from "@/lib/utils"
-import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
+import { getFixedAcademiaScheduleDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { Info, ShoppingCart, Minus, Plus, Gift, CheckCircle, AlertCircle, Ticket, Calendar, Clock, ChevronRight } from "lucide-react"
 import PlanTierCard from "./PlanTierCard"
 
@@ -530,6 +530,12 @@ export default function TicketPurchaseCard({
         const ticket = metadata.ticket
         if (maxQty <= 0) return
         const itemKey = selectedDate ? `${ticketId}:${selectedDate}` : ticketId
+        const fixedAcademiaDates = getFixedAcademiaScheduleDates({
+            eventCategory,
+            isPackage: ticket.isPackage,
+            packageDaysCount: ticket.packageDaysCount,
+            validDays: ticket.validDays,
+        })
 
         const currentQty = getCartQuantity(itemKey)
         const nextQty = Math.min(currentQty + 1, maxQty)
@@ -562,7 +568,11 @@ export default function TicketPurchaseCard({
                         requireShiftSelection: false,
                     }
                     : {
-                        dates: selectedDate ? [selectedDate] : metadata.schedule.dates,
+                        dates: selectedDate
+                            ? [selectedDate]
+                            : fixedAcademiaDates.length > 0
+                              ? fixedAcademiaDates
+                              : metadata.schedule.dates,
                         shifts: metadata.schedule.shifts,
                         slots: selectedDate
                             ? metadata.schedule.slots?.filter((slot) => slot.date === selectedDate)
@@ -577,14 +587,14 @@ export default function TicketPurchaseCard({
                             ])
                         ),
                         usesDateCapacity: metadata.usesDateCapacity,
-                        // Para ACADEMIA el paquete es flexible: el comprador no preselecciona
-                        // fechas, las N clases se consumen en cualquier dia del rango. Para
-                        // otros paquetes (full-day, paquete de turnos) si exigimos seleccion.
                         requiredDays:
-                            ticket.isPackage && eventCategory !== "ACADEMIA"
+                            fixedAcademiaDates.length > 0
+                                ? fixedAcademiaDates.length
+                                : ticket.isPackage && eventCategory !== "ACADEMIA"
                                 ? (ticket.packageDaysCount ?? null)
                                 : null,
                         requireShiftSelection: metadata.schedule.requireShiftSelection,
+                        lockedDates: fixedAcademiaDates.length > 0,
                     },
                 servilexEnabled: Boolean(ticket.servilexEnabled),
                 servilexIndicator: ticket.servilexIndicator || null,

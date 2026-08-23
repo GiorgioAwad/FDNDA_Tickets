@@ -20,6 +20,7 @@ import {
 } from "@/lib/membership-schedule"
 import { getTodayDateString, formatDateUTC } from "@/lib/qr"
 import {
+    getFixedAcademiaScheduleDates,
     getCurrentOrFutureScheduleDates,
     getShiftOptionsForDate,
     normalizeScheduleSelections,
@@ -412,6 +413,12 @@ export async function POST(request: NextRequest) {
 
                 const scheduleConfig = parseTicketScheduleConfig(reservedTicketType.validDays)
                 const selectableScheduleDates = getCurrentOrFutureScheduleDates(scheduleConfig.dates)
+                const fixedAcademiaDates = getFixedAcademiaScheduleDates({
+                    eventCategory: eventConfig.category,
+                    isPackage: reservedTicketType.isPackage,
+                    packageDaysCount: reservedTicketType.packageDaysCount,
+                    validDays: reservedTicketType.validDays,
+                })
                 const requiredScheduleSelections =
                     scheduleConfig.dates.length > 0
                         ? reservedTicketType.isPackage && reservedTicketType.packageDaysCount
@@ -448,58 +455,65 @@ export async function POST(request: NextRequest) {
                 }
 
                 if (requiredScheduleSelections > 0) {
-                    const availableDates = new Set(selectableScheduleDates)
-                    const requiresShift =
-                        scheduleConfig.requireShiftSelection && scheduleConfig.shifts.length > 0
-
-                    if (availableDates.size === 0) {
-                        throw new Error(`No hay fechas futuras disponibles para "${reservedTicketType.name}"`)
-                    }
-
-                    if (attendeeData.length < item.quantity) {
-                        throw new Error(`Selecciona dia${requiresShift ? " y turno" : ""} para cada entrada de "${reservedTicketType.name}"`)
-                    }
-
-                    attendeeData = attendeeData.slice(0, item.quantity).map((attendee) => {
-                        const selections = normalizeScheduleSelections(attendee.scheduleSelections)
-                        if (selections.length < requiredScheduleSelections) {
-                            throw new Error(`Selecciona dia${requiresShift ? " y turno" : ""} para "${reservedTicketType.name}"`)
-                        }
-
-                        const selectedDates = new Set<string>()
-                        const scheduleSelections: Array<{ date: string; shift?: string }> = []
-
-                        for (let i = 0; i < requiredScheduleSelections; i++) {
-                            const selection = selections[i]
-                            if (!selection?.date || !availableDates.has(selection.date)) {
-                                throw new Error(`Selecciona un dia valido para "${reservedTicketType.name}"`)
-                            }
-
-                            if (selectedDates.has(selection.date)) {
-                                throw new Error(`No repitas el mismo dia en "${reservedTicketType.name}"`)
-                            }
-                            selectedDates.add(selection.date)
-
-                            if (requiresShift) {
-                                const allowedShifts = getShiftOptionsForDate(scheduleConfig, selection.date)
-                                const selectedShift = selection.shift || ""
-                                if (
-                                    !selectedShift ||
-                                    !allowedShifts.some((shift) => shiftLabelsMatch(shift, selectedShift))
-                                ) {
-                                    throw new Error(`Selecciona un turno valido para "${reservedTicketType.name}"`)
-                                }
-                                scheduleSelections.push({ date: selection.date, shift: selectedShift })
-                            } else {
-                                scheduleSelections.push({ date: selection.date })
-                            }
-                        }
-
-                        return {
+                    if (fixedAcademiaDates.length > 0) {
+                        attendeeData = attendeeData.slice(0, item.quantity).map((attendee) => ({
                             ...attendee,
-                            scheduleSelections,
+                            scheduleSelections: fixedAcademiaDates.map((date) => ({ date })),
+                        }))
+                    } else {
+                        const availableDates = new Set(selectableScheduleDates)
+                        const requiresShift =
+                            scheduleConfig.requireShiftSelection && scheduleConfig.shifts.length > 0
+
+                        if (availableDates.size === 0) {
+                            throw new Error(`No hay fechas futuras disponibles para "${reservedTicketType.name}"`)
                         }
-                    })
+
+                        if (attendeeData.length < item.quantity) {
+                            throw new Error(`Selecciona dia${requiresShift ? " y turno" : ""} para cada entrada de "${reservedTicketType.name}"`)
+                        }
+
+                        attendeeData = attendeeData.slice(0, item.quantity).map((attendee) => {
+                            const selections = normalizeScheduleSelections(attendee.scheduleSelections)
+                            if (selections.length < requiredScheduleSelections) {
+                                throw new Error(`Selecciona dia${requiresShift ? " y turno" : ""} para "${reservedTicketType.name}"`)
+                            }
+
+                            const selectedDates = new Set<string>()
+                            const scheduleSelections: Array<{ date: string; shift?: string }> = []
+
+                            for (let i = 0; i < requiredScheduleSelections; i++) {
+                                const selection = selections[i]
+                                if (!selection?.date || !availableDates.has(selection.date)) {
+                                    throw new Error(`Selecciona un dia valido para "${reservedTicketType.name}"`)
+                                }
+
+                                if (selectedDates.has(selection.date)) {
+                                    throw new Error(`No repitas el mismo dia en "${reservedTicketType.name}"`)
+                                }
+                                selectedDates.add(selection.date)
+
+                                if (requiresShift) {
+                                    const allowedShifts = getShiftOptionsForDate(scheduleConfig, selection.date)
+                                    const selectedShift = selection.shift || ""
+                                    if (
+                                        !selectedShift ||
+                                        !allowedShifts.some((shift) => shiftLabelsMatch(shift, selectedShift))
+                                    ) {
+                                        throw new Error(`Selecciona un turno valido para "${reservedTicketType.name}"`)
+                                    }
+                                    scheduleSelections.push({ date: selection.date, shift: selectedShift })
+                                } else {
+                                    scheduleSelections.push({ date: selection.date })
+                                }
+                            }
+
+                            return {
+                                ...attendee,
+                                scheduleSelections,
+                            }
+                        })
+                    }
                 }
 
                 if (usesDateCapacity) {

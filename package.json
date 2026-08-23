@@ -10,6 +10,7 @@
     "worker": "tsx --tsconfig tsconfig.json scripts/worker-runner.mjs",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test \"src/lib/*.test.ts\"",
     "abio:batch": "tsx --tsconfig tsconfig.json scripts/abio-process-batch-once.mjs",
     "abio:log": "node scripts/abio-export-batch-log.mjs",
     "abio:remote-batch": "node scripts/abio-remote-batch.mjs",

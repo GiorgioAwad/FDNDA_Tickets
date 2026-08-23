@@ -12,6 +12,8 @@ export interface CartScheduleConfig {
     usesDateCapacity?: boolean
     requiredDays: number | null
     requireShiftSelection: boolean
+    /** Calendario cerrado: las fechas se asignan automáticamente y no se editan. */
+    lockedDates?: boolean
 }
 
 export interface CartDateAvailability {
@@ -266,6 +268,7 @@ const normalizeScheduleConfig = (input: unknown): CartScheduleConfig | undefined
         usesDateCapacity: record.usesDateCapacity === true,
         requiredDays,
         requireShiftSelection,
+        lockedDates: record.lockedDates === true,
     }
 }
 
@@ -294,14 +297,30 @@ const createDefaultScheduleSelection = (
 const createEmptySelections = (
     count: number,
     scheduleConfig?: CartScheduleConfig
-): CartScheduleSelection[] =>
-    Array.from({ length: count }, () => createDefaultScheduleSelection(scheduleConfig))
+): CartScheduleSelection[] => {
+    if (scheduleConfig?.lockedDates) {
+        return scheduleConfig.dates.slice(0, count).map((date) => {
+            const shiftOptions = getShiftOptionsForDate(scheduleConfig, date)
+            return {
+                date,
+                shift:
+                    shiftOptions.length === 1 && scheduleConfig.requireShiftSelection
+                        ? shiftOptions[0]
+                        : "",
+            }
+        })
+    }
+    return Array.from({ length: count }, () => createDefaultScheduleSelection(scheduleConfig))
+}
 
 const normalizeScheduleSelections = (
     input: unknown,
     scheduleConfig?: CartScheduleConfig
 ): CartScheduleSelection[] => {
     const required = getRequiredScheduleSelections(scheduleConfig)
+    if (scheduleConfig?.lockedDates) {
+        return createEmptySelections(required, scheduleConfig)
+    }
     const rawSelections = Array.isArray(input) ? input : []
     const selections = rawSelections
         .map((entry) => {
@@ -402,7 +421,29 @@ const normalizeCartItem = (input: unknown): CartItem | null => {
               ? Number(record.quantity)
               : 1
     const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? Math.floor(quantityRaw) : 1
-    const scheduleConfig = normalizeScheduleConfig(record.scheduleConfig)
+    const eventCategory =
+        record.eventCategory === "EVENTO" ||
+        record.eventCategory === "PISCINA_LIBRE" ||
+        record.eventCategory === "ACADEMIA"
+            ? record.eventCategory
+            : undefined
+    const parsedScheduleConfig = normalizeScheduleConfig(record.scheduleConfig)
+    // Migra carritos creados antes de que existiera `lockedDates`: en academia,
+    // un calendario sin turnos representa las clases fijas del paquete.
+    const inferLockedAcademiaDates =
+        eventCategory === "ACADEMIA" &&
+        Boolean(parsedScheduleConfig?.dates.length) &&
+        parsedScheduleConfig?.shifts.length === 0 &&
+        parsedScheduleConfig.requiredDays === null
+    const scheduleConfig = parsedScheduleConfig
+        ? {
+              ...parsedScheduleConfig,
+              lockedDates: parsedScheduleConfig.lockedDates || inferLockedAcademiaDates,
+              requiredDays: inferLockedAcademiaDates
+                  ? parsedScheduleConfig.dates.length
+                  : parsedScheduleConfig.requiredDays,
+          }
+        : undefined
 
     const rawAttendees = Array.isArray(record.attendees) ? record.attendees : []
     const attendees = rawAttendees
@@ -419,13 +460,6 @@ const normalizeCartItem = (input: unknown): CartItem | null => {
             : typeof record.price === "string"
               ? Number(record.price)
               : 0
-    const eventCategory =
-        record.eventCategory === "EVENTO" ||
-        record.eventCategory === "PISCINA_LIBRE" ||
-        record.eventCategory === "ACADEMIA"
-            ? record.eventCategory
-            : undefined
-
     return {
         lineKey,
         ticketTypeId,
@@ -574,9 +608,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             const targetKey = getCartItemKey(newItem)
             const existing = current.find((i) => getCartItemKey(i) === targetKey)
             if (existing) {
-                const scheduleConfig = existing.scheduleConfig ?? newItem.scheduleConfig
+                const scheduleConfig = newItem.scheduleConfig ?? existing.scheduleConfig
                 const newQuantity = existing.quantity + newItem.quantity
-                const attendees = [...existing.attendees]
+                const attendees = existing.attendees.map((attendee) =>
+                    normalizeAttendee(attendee, scheduleConfig)
+                )
                 if (newQuantity > attendees.length) {
                     for (let i = attendees.length; i < newQuantity; i++) {
                         attendees.push(createEmptyAttendee(scheduleConfig))
