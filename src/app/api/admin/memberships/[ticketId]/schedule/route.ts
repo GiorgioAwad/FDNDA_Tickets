@@ -8,7 +8,11 @@ import {
     lockMembershipTicket,
     MembershipChangeAbort,
 } from "@/lib/membership-change-apply"
-import { planMembershipChange } from "@/lib/membership-transfer"
+import {
+    isMembershipTicketType,
+    NOT_A_MEMBERSHIP_ERROR,
+    planMembershipChange,
+} from "@/lib/membership-transfer"
 import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
@@ -58,6 +62,16 @@ export async function POST(
         })
         if (!record) {
             return NextResponse.json({ success: false, error: "Carnet no encontrado" }, { status: 404 })
+        }
+        // Mismo criterio que la ficha: esta ruta escribe, asi que tiene que
+        // exigir lo mismo que el GET. `NO_SCHEDULE_PROFILE` no cubre el hueco —
+        // el horario semanal es independiente del cupo mensual, y una entrada
+        // que no es membresia pero cuelga de una sede con catalogo pasaria.
+        if (!isMembershipTicketType(record.ticketType)) {
+            return NextResponse.json(
+                { success: false, error: NOT_A_MEMBERSHIP_ERROR },
+                { status: 404 }
+            )
         }
         const snapshot = toChangeSnapshot(record)
         if (!snapshot) {

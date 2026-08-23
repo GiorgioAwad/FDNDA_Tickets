@@ -15,7 +15,12 @@ import {
     parseMembershipScheduleSelection,
     scheduleSelectionToInput,
 } from "@/lib/membership-schedule"
-import { getAttendeeMatricula } from "@/lib/membership-transfer"
+import {
+    isMembershipTicketType,
+    NOT_A_MEMBERSHIP_ERROR,
+    PROVIDERS_SIN_BOLETA,
+    resolveAttendeeMatricula,
+} from "@/lib/membership-transfer"
 import { prisma } from "@/lib/prisma"
 import { formatDateUTC, getTodayDateString } from "@/lib/qr"
 import {
@@ -35,9 +40,6 @@ async function requireAdmin() {
     return user?.role === UserRole.ADMIN
 }
 
-/** Providers cuya venta no emite boleta (ver membership-transfer.ts). */
-const PROVIDERS_SIN_BOLETA = new Set(["PRESENCIAL", "COURTESY"])
-
 export async function GET(
     _request: NextRequest,
     { params }: { params: Promise<{ ticketId: string }> }
@@ -56,16 +58,14 @@ export async function GET(
             return NextResponse.json({ success: false, error: "Carnet no encontrado" }, { status: 404 })
         }
 
-        // Mismo criterio que el listado (api/admin/memberships/route.ts): sin
-        // cupo mensual ni duracion, el ticket no es un carnet de membresia. Sin
-        // este filtro, una entrada comun de evento entra igual y candidateTypes
-        // termina sugiriendo "cambios de sede" sin sentido.
-        const isMembership =
-            (record.ticketType.monthlyClassLimit ?? 0) > 0 &&
-            (record.ticketType.membershipDurationMonths ?? 0) > 0
-        if (!isMembership) {
+        // Mismo criterio que el listado (api/admin/memberships/route.ts) y que
+        // las dos rutas de escritura: sin cupo mensual ni duracion, el ticket no
+        // es un carnet de membresia. Sin este filtro, una entrada comun de
+        // evento entra igual y candidateTypes termina sugiriendo "cambios de
+        // sede" sin sentido.
+        if (!isMembershipTicketType(record.ticketType)) {
             return NextResponse.json(
-                { success: false, error: "Este ticket no es un carnet de membresia" },
+                { success: false, error: NOT_A_MEMBERSHIP_ERROR },
                 { status: 404 }
             )
         }
@@ -118,12 +118,21 @@ export async function GET(
         )
 
         const snapshot = toChangeSnapshot(record)
-        const matricula = snapshot ? getAttendeeMatricula(snapshot.orderItem.attendeeData) : null
+        // Compra familiar: dos hermanos en el mismo plan son UN OrderItem con
+        // `quantity: 2` y dos asistentes. El cambio se sigue bloqueando (mover
+        // el ticketTypeId del item arrastraria al hermano), pero el diagnostico
+        // no puede mentir: se ubica al asistente de ESTE carnet por DNI y se
+        // cruza SU boleta.
+        const attendee = resolveAttendeeMatricula(
+            snapshot?.orderItem.attendeeData ?? null,
+            record.attendeeDni
+        )
+        const matricula = attendee.matricula
         const provider = record.order.provider.trim().toUpperCase()
-        // En una orden familiar (varios asistentes) puede haber varias boletas:
-        // cruzar por matricula para no mostrarle a este carnet el numero de
-        // boleta de OTRO alumno de la misma orden. getAcMatriculaFromGroupKey
-        // devuelve en MAYUSCULAS.
+        // En una orden con varios asistentes puede haber varias boletas: cruzar
+        // por matricula para no mostrarle a este carnet el numero de boleta de
+        // OTRO alumno de la misma orden. getAcMatriculaFromGroupKey devuelve en
+        // MAYUSCULAS.
         const issuedInvoice = matricula
             ? record.order.invoices.find(
                   (invoice) =>
@@ -131,6 +140,23 @@ export async function GET(
                       getAcMatriculaFromGroupKey(invoice.servilexGroupKey) === matricula.toUpperCase()
               )
             : undefined
+        // "Pendiente" solo puede decirse cuando de verdad se busco la boleta de
+        // este alumno y no aparecio. Si no se pudo ubicar al asistente (compra
+        // familiar sin DNI que desambigue) o ni siquiera al item de la orden, la
+        // ficha lo dice con todas sus letras en vez de inventar un faltante.
+        const invoicing = PROVIDERS_SIN_BOLETA.has(provider)
+            ? { kind: "sin_boleta" as const, label: "Venta presencial · sin boleta" }
+            : !snapshot
+              ? {
+                    kind: "indeterminado" as const,
+                    label: "La orden tiene varios items del mismo tipo de entrada: no se puede identificar la boleta de este carnet desde el panel. Se revisa y corrige por script.",
+                }
+              : attendee.isFamilyPurchase && matricula === null
+                ? {
+                      kind: "indeterminado" as const,
+                      label: `Compra familiar (${attendee.attendeeCount} asistentes en un mismo item) y el DNI del carnet no desambigua: la boleta existe pero no se puede ligar desde el panel. Se revisa y corrige por script.`,
+                  }
+                : { kind: "boleta" as const, invoiceNumber: issuedInvoice?.invoiceNumber ?? null }
 
         // Destinos posibles: mismo evento (franja = tipo, VMT) y otros eventos
         // de membresia (cambio de sede). La equivalencia la valida el
@@ -193,12 +219,7 @@ export async function GET(
                     buyerName: record.order.buyerName,
                     // En venta presencial y cortesia NO se emite boleta: se
                     // informa como dato plano, nunca como comprobante faltante.
-                    invoicing: PROVIDERS_SIN_BOLETA.has(provider)
-                        ? { kind: "sin_boleta" as const, label: "Venta presencial · sin boleta" }
-                        : {
-                              kind: "boleta" as const,
-                              invoiceNumber: issuedInvoice?.invoiceNumber ?? null,
-                          },
+                    invoicing,
                 },
                 diagnosis: {
                     today,
@@ -216,6 +237,16 @@ export async function GET(
                         parseMembershipScheduleSelection(record.membershipSchedule)
                     ),
                     monthlyScheduleCount: record.monthlySchedules.length,
+                    // Lo que de verdad le paso al carnet en la puerta. El
+                    // diagnostico de arriba dice que DEBERIA pasar hoy; esto
+                    // dice que paso. `scannedAt` va en ISO y la ficha lo
+                    // formatea en hora local.
+                    recentScans: record.scans.map((scan) => ({
+                        id: scan.id,
+                        scannedAt: scan.scannedAt.toISOString(),
+                        result: scan.result,
+                        notes: scan.notes,
+                    })),
                 },
                 scheduleProfile: profile,
                 currentScheduleInput: scheduleSelectionToInput(

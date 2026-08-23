@@ -13,7 +13,12 @@ import {
     lockMembershipTicket,
     MembershipChangeAbort,
 } from "@/lib/membership-change-apply"
-import { planMembershipChange, type MembershipChangeIntent } from "@/lib/membership-transfer"
+import {
+    isMembershipTicketType,
+    NOT_A_MEMBERSHIP_ERROR,
+    planMembershipChange,
+    type MembershipChangeIntent,
+} from "@/lib/membership-transfer"
 import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
@@ -78,6 +83,17 @@ export async function POST(
         if (!targetRecord) {
             return NextResponse.json(
                 { success: false, error: "Tipo de entrada destino no encontrado" },
+                { status: 404 }
+            )
+        }
+        // Mismo criterio que la ficha: esta ruta mueve el `ticketTypeId` y el
+        // `sold` entre tipos. Sin este filtro un ADMIN podria, con una request
+        // a mano, mover de evento una entrada que no es membresia y arrastrarle
+        // el contador de vendidos. Aqui no hay ni siquiera un requisito de
+        // perfil de horario que lo tapara por accidente.
+        if (!isMembershipTicketType(record.ticketType)) {
+            return NextResponse.json(
+                { success: false, error: NOT_A_MEMBERSHIP_ERROR },
                 { status: 404 }
             )
         }
