@@ -4,6 +4,8 @@ import {
     planMembershipChange,
     buildMembershipChangeFingerprint,
     getAttendeeMatricula,
+    isMembershipTicketType,
+    resolveAttendeeMatricula,
     type MembershipChangeSnapshot,
     type MembershipTicketTypeSnapshot,
 } from "@/lib/membership-transfer"
@@ -92,6 +94,79 @@ test("getAttendeeMatricula devuelve null si no es un arreglo", () => {
 
 test("getAttendeeMatricula devuelve null si el asistente no tiene matricula", () => {
     assert.equal(getAttendeeMatricula([{ name: "Sin matricula" }]), null)
+})
+
+// ── resolveAttendeeMatricula (compra familiar) ────────────────────────────────
+
+test("resolveAttendeeMatricula devuelve la matricula del unico asistente", () => {
+    const result = resolveAttendeeMatricula([{ matricula: "2299469", dni: "12345678" }], "87654321")
+    assert.equal(result.matricula, "2299469")
+    assert.equal(result.attendeeCount, 1)
+    assert.equal(result.isFamilyPurchase, false)
+})
+
+test("resolveAttendeeMatricula ubica al hermano correcto por DNI", () => {
+    const result = resolveAttendeeMatricula(
+        [
+            { matricula: "1000001", dni: "11111111", name: "Hermano A" },
+            { matricula: "1000002", dni: "22222222", name: "Hermano B" },
+        ],
+        "22222222"
+    )
+    assert.equal(result.matricula, "1000002")
+    assert.equal(result.attendeeCount, 2)
+    // Sigue siendo compra familiar aunque se haya podido desambiguar: el
+    // transfer se bloquea igual, solo el diagnostico mejora.
+    assert.equal(result.isFamilyPurchase, true)
+})
+
+test("resolveAttendeeMatricula no adivina si el carnet no trae DNI", () => {
+    const result = resolveAttendeeMatricula(
+        [
+            { matricula: "1000001", dni: "11111111" },
+            { matricula: "1000002", dni: "22222222" },
+        ],
+        null
+    )
+    assert.equal(result.matricula, null)
+    assert.equal(result.isFamilyPurchase, true)
+})
+
+test("resolveAttendeeMatricula no adivina si dos asistentes comparten el DNI", () => {
+    const result = resolveAttendeeMatricula(
+        [
+            { matricula: "1000001", dni: "11111111" },
+            { matricula: "1000002", dni: "11111111" },
+        ],
+        "11111111"
+    )
+    assert.equal(result.matricula, null)
+    assert.equal(result.isFamilyPurchase, true)
+})
+
+test("resolveAttendeeMatricula sobre un attendeeData vacio no reporta compra familiar", () => {
+    const result = resolveAttendeeMatricula(null, "11111111")
+    assert.equal(result.matricula, null)
+    assert.equal(result.attendeeCount, 0)
+    assert.equal(result.isFamilyPurchase, false)
+})
+
+// ── isMembershipTicketType ────────────────────────────────────────────────────
+
+test("isMembershipTicketType exige cupo mensual Y duracion", () => {
+    assert.equal(
+        isMembershipTicketType({ monthlyClassLimit: 12, membershipDurationMonths: 6 }),
+        true
+    )
+    assert.equal(
+        isMembershipTicketType({ monthlyClassLimit: 12, membershipDurationMonths: null }),
+        false
+    )
+    assert.equal(
+        isMembershipTicketType({ monthlyClassLimit: null, membershipDurationMonths: 6 }),
+        false
+    )
+    assert.equal(isMembershipTicketType({ monthlyClassLimit: 0, membershipDurationMonths: 0 }), false)
 })
 
 // ── SCHEDULE: camino feliz ────────────────────────────────────────────────────
@@ -220,6 +295,87 @@ test("el fingerprint cambia si el contador sold del tipo origen cambia", () => {
         buildMembershipChangeFingerprint(baseSnapshot()),
         buildMembershipChangeFingerprint(sold)
     )
+})
+
+// ── Fingerprint: la intencion, no solo el estado ──────────────────────────────
+
+test("el fingerprint es estable para la misma intencion de horario", () => {
+    const intent = {
+        kind: "SCHEDULE" as const,
+        scheduleInput: { category: "NINOS", frequency: "LMV", hours: { main: "15:00-16:00" } },
+    }
+    assert.equal(
+        buildMembershipChangeFingerprint(baseSnapshot(), intent),
+        buildMembershipChangeFingerprint(baseSnapshot(), intent)
+    )
+})
+
+test("el fingerprint no depende del orden de las claves de horas", () => {
+    const a = {
+        kind: "SCHEDULE" as const,
+        scheduleInput: { category: "NINOS", frequency: "LMV", hours: { a: "07:00-08:00", b: "08:00-09:00" } },
+    }
+    const b = {
+        kind: "SCHEDULE" as const,
+        scheduleInput: { category: "NINOS", frequency: "LMV", hours: { b: "08:00-09:00", a: "07:00-08:00" } },
+    }
+    assert.equal(
+        buildMembershipChangeFingerprint(baseSnapshot(), a),
+        buildMembershipChangeFingerprint(baseSnapshot(), b)
+    )
+})
+
+test("el fingerprint cambia si cambia la hora elegida", () => {
+    assert.notEqual(
+        buildMembershipChangeFingerprint(baseSnapshot(), {
+            kind: "SCHEDULE",
+            scheduleInput: { category: "NINOS", frequency: "LMV", hours: { main: "15:00-16:00" } },
+        }),
+        buildMembershipChangeFingerprint(baseSnapshot(), {
+            kind: "SCHEDULE",
+            scheduleInput: { category: "NINOS", frequency: "LMV", hours: { main: "16:00-17:00" } },
+        })
+    )
+})
+
+test("el fingerprint cambia si cambia el tipo de entrada destino", () => {
+    assert.notEqual(
+        buildMembershipChangeFingerprint(plataSnapshot(), {
+            kind: "TRANSFER",
+            targetType: CDM_PLATA_TYPE,
+            scheduleInput: null,
+        }),
+        buildMembershipChangeFingerprint(plataSnapshot(), {
+            kind: "TRANSFER",
+            targetType: { ...CDM_PLATA_TYPE, id: "tt-otra-sede" },
+            scheduleInput: null,
+        })
+    )
+})
+
+test("el plan de horario sella su intencion en la huella que devuelve", () => {
+    // Es la huella que la UI reenvia al aplicar: si el body cambia la seleccion
+    // entre la vista previa y el "Aplicar", la replanificacion produce otra
+    // huella y la ruta aborta en vez de escribir algo que nadie previsualizo.
+    const a = planMembershipChange(baseSnapshot(), {
+        kind: "SCHEDULE",
+        scheduleInput: { category: "NINOS", frequency: "LMV", hours: { main: "15:00-16:00" } },
+    })
+    const b = planMembershipChange(baseSnapshot(), {
+        kind: "SCHEDULE",
+        scheduleInput: { category: "NINOS", frequency: "LMV", hours: { main: "16:00-17:00" } },
+    })
+    assert.equal(a.ok && b.ok, true)
+    if (!a.ok || !b.ok) return
+    assert.notEqual(a.fingerprint, b.fingerprint)
+})
+
+test("el plan de transfer sella el tipo destino en la huella que devuelve", () => {
+    const a = transferPlan(plataSnapshot(), CDM_PLATA_TYPE)
+    const b = transferPlan(plataSnapshot(), { ...CDM_PLATA_TYPE, id: "tt-cdm-plata-2" })
+    assert.equal(a.ok && b.ok, true)
+    if (!a.ok || !b.ok) return
+    assert.notEqual(a.fingerprint, b.fingerprint)
 })
 
 // ── TRANSFER ──────────────────────────────────────────────────────────────────
@@ -446,6 +602,33 @@ test("TRANSFER bloquea si el contador sold del origen ya esta en cero", () => {
 
 test("TRANSFER bloquea si el destino es el mismo tipo que el origen", () => {
     assert.ok(transferBlockers(plataSnapshot(), VIDENA_PLATA_TYPE).includes("TARGET_SAME_AS_SOURCE"))
+})
+
+// ── Deriva entre Ticket.eventId y TicketType.eventId ──────────────────────────
+
+test("TRANSFER bloquea si el carnet y su tipo de entrada apuntan a eventos distintos", () => {
+    const snapshot = plataSnapshot()
+    // El carnet quedo en otro evento que su propio tipo (deriva previa).
+    snapshot.ticket.eventId = "ev-cdm"
+    assert.ok(transferBlockers(snapshot).includes("TICKET_EVENT_DRIFT"))
+})
+
+test("con deriva, el destino en el evento del ticket NO se toma por 'mismo evento'", () => {
+    // Sin el bloqueo, `sameEvent` decidido contra sourceType.eventId daria
+    // false y el plan reescribiria el ticketTypeId dejando el eventId roto: el
+    // carnet quedaria a medio mover, en silencio.
+    const snapshot = plataSnapshot()
+    snapshot.ticket.eventId = "ev-cdm"
+    const plan = transferPlan(snapshot, CDM_PLATA_TYPE)
+    assert.equal(plan.ok, false)
+})
+
+test("sin deriva, el mismo evento del ticket no reescribe eventId", () => {
+    const plan = transferPlan(plataSnapshot(), { ...CDM_PLATA_TYPE, eventId: "ev-videna" })
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.writes.ticket.eventId, undefined)
+    assert.equal(plan.label, "Cambio de horario (la franja es el tipo de entrada)")
 })
 
 // ── Comprobante segun el origen de la venta ───────────────────────────────────

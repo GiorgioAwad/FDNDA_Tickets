@@ -91,6 +91,7 @@ export type MembershipChangeBlockerCode =
     | "ORDER_NOT_PAID"
     | "ATTENDEE_DATA_INVALID"
     | "HAS_MONTHLY_SCHEDULES"
+    | "TICKET_EVENT_DRIFT"
     | "NO_SCHEDULE_PROFILE"
     | "SCHEDULE_INVALID"
     | "SCHEDULE_REQUIRED"
@@ -155,16 +156,104 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /**
+ * Un ticket es carnet de membresia cuando su tipo tiene cupo mensual de clases
+ * Y duracion en meses.
+ *
+ * Vive aqui, en un solo sitio, porque las TRES rutas del panel (ficha, cambio
+ * de horario, cambio de tipo/sede) tienen que rechazar exactamente lo mismo. Si
+ * solo lo exigiera la ficha, un ADMIN podria mover de evento —con una request a
+ * mano— una entrada que no es membresia y arrastrarle el `sold`.
+ * `NO_SCHEDULE_PROFILE` no tapa ese hueco: el horario semanal es independiente
+ * del cupo mensual (ver `hasWeeklySchedule` en scan-helpers.ts) y en TRANSFER no
+ * hay ni siquiera requisito de perfil.
+ */
+export function isMembershipTicketType(type: {
+    monthlyClassLimit: number | null
+    membershipDurationMonths: number | null
+}): boolean {
+    return (type.monthlyClassLimit ?? 0) > 0 && (type.membershipDurationMonths ?? 0) > 0
+}
+
+/** Texto del 404 que devuelven las tres rutas cuando el ticket no es membresia. */
+export const NOT_A_MEMBERSHIP_ERROR = "Este ticket no es un carnet de membresia"
+
+/**
+ * Providers cuyas ordenes NO generan comprobante: la venta se cobro fuera de la
+ * web y no se emite boleta. Lista explicita a proposito — agregar una pasarela
+ * nueva debe ser anadir una fila aqui, no descubrir el hueco en produccion.
+ *
+ * Se exporta porque es POLITICA de comprobantes, no un helper del planificador:
+ * la ficha del admin la usa para etiquetar el origen de la venta. Duplicada,
+ * la ficha y el planificador podrian decir cosas distintas del mismo carnet.
+ */
+export const PROVIDERS_SIN_BOLETA = new Set(["PRESENCIAL", "COURTESY"])
+
+function readMatricula(entry: unknown): string | null {
+    const matricula = asRecord(entry).matricula
+    if (typeof matricula !== "string" && typeof matricula !== "number") return null
+    const text = String(matricula).trim()
+    return text.length > 0 ? text : null
+}
+
+function normalizeDoc(value: unknown): string {
+    if (typeof value !== "string" && typeof value !== "number") return ""
+    return String(value).trim().toUpperCase()
+}
+
+/**
  * Matricula del unico asistente del item. Es lo que liga el carnet con su
  * comprobante ABIO. Devuelve null si el item no trae exactamente una persona
  * con matricula — en los scripts esto va hardcodeado por caso.
  */
 export function getAttendeeMatricula(attendeeData: unknown): string | null {
     if (!Array.isArray(attendeeData) || attendeeData.length !== 1) return null
-    const matricula = asRecord(attendeeData[0]).matricula
-    if (typeof matricula !== "string" && typeof matricula !== "number") return null
-    const text = String(matricula).trim()
-    return text.length > 0 ? text : null
+    return readMatricula(attendeeData[0])
+}
+
+export interface AttendeeMatriculaResolution {
+    /** Matricula del asistente de ESTE carnet, o null si no se pudo ubicar. */
+    matricula: string | null
+    /** Cuantas personas cubre el item de la orden. */
+    attendeeCount: number
+    /** El item cubre a mas de una persona: dos hermanos en una compra familiar. */
+    isFamilyPurchase: boolean
+}
+
+/**
+ * Ubica la matricula del asistente que corresponde a UN carnet concreto.
+ *
+ * Cuando dos hermanos compran el mismo plan eso es un solo OrderItem con
+ * `quantity: 2` y dos asistentes: `getAttendeeMatricula` devuelve null y el
+ * cambio se bloquea (mover el `ticketTypeId` del item arrastraria al hermano),
+ * pero el DIAGNOSTICO igual tiene que decir la verdad sobre la boleta. Aqui se
+ * desambigua por DNI contra `Ticket.attendeeDni`; si no alcanza, se informa que
+ * es una compra familiar en vez de mentir con "boleta pendiente".
+ */
+export function resolveAttendeeMatricula(
+    attendeeData: unknown,
+    attendeeDni: string | null
+): AttendeeMatriculaResolution {
+    if (!Array.isArray(attendeeData) || attendeeData.length === 0) {
+        return { matricula: null, attendeeCount: 0, isFamilyPurchase: false }
+    }
+    if (attendeeData.length === 1) {
+        return {
+            matricula: readMatricula(attendeeData[0]),
+            attendeeCount: 1,
+            isFamilyPurchase: false,
+        }
+    }
+    const dni = normalizeDoc(attendeeDni)
+    // Sin DNI en el carnet, o con dos asistentes que comparten el mismo, no hay
+    // forma de decidir cual de las boletas es la de este alumno.
+    const matches = dni
+        ? attendeeData.filter((entry) => normalizeDoc(asRecord(entry).dni) === dni)
+        : []
+    return {
+        matricula: matches.length === 1 ? readMatricula(matches[0]) : null,
+        attendeeCount: attendeeData.length,
+        isFamilyPurchase: true,
+    }
 }
 
 function normalizeSessions(value: unknown): string[] {
@@ -177,11 +266,37 @@ function sessionKeys(selection: MembershipScheduleSelection | null): string[] {
 }
 
 /**
- * Huella del estado que el plan da por cierto. La ruta compara la huella de la
- * vista previa con la recalculada dentro de la transaccion: si difieren, el
- * carnet cambio entremedio y se aborta en vez de escribir.
+ * Forma comparable de una seleccion de horario pedida por el admin. Las horas
+ * van ordenadas por clave a proposito: la misma eleccion no puede producir dos
+ * huellas distintas solo porque el JSON llego con las claves en otro orden.
  */
-export function buildMembershipChangeFingerprint(snapshot: MembershipChangeSnapshot): string {
+function normalizeScheduleIntent(input: MembershipScheduleInput | null | undefined) {
+    if (!input) return null
+    const hours = input.hours ?? {}
+    return {
+        c: input.category ?? null,
+        f: input.frequency ?? null,
+        h: Object.keys(hours)
+            .sort()
+            .map((key) => [key, hours[key]]),
+    }
+}
+
+/**
+ * Huella del estado que el plan da por cierto Y de la intencion que se
+ * previsualizo. La ruta compara la huella de la vista previa con la recalculada
+ * dentro de la transaccion: si difieren, se aborta en vez de escribir.
+ *
+ * La intencion (tipo destino + seleccion de horario) entra en la huella porque
+ * la ruta compara y despues REPLANIFICA con la `selection` del body actual: sin
+ * esto, lo unico que impide aplicar algo distinto de lo previsualizado es que
+ * el cliente limpie la vista previa al tocar el formulario. Una pestana vieja o
+ * un reintento programatico lo reintroduce.
+ */
+export function buildMembershipChangeFingerprint(
+    snapshot: MembershipChangeSnapshot,
+    intent?: MembershipChangeIntent
+): string {
     return JSON.stringify({
         t: snapshot.ticket.status,
         e: snapshot.ticket.eventId,
@@ -192,6 +307,13 @@ export function buildMembershipChangeFingerprint(snapshot: MembershipChangeSnaps
         p: snapshot.order.provider,
         oi: snapshot.orderItem.ticketTypeId,
         sold: snapshot.sourceType.sold,
+        i: intent
+            ? {
+                  k: intent.kind,
+                  tt: intent.kind === "TRANSFER" ? intent.targetType.id : null,
+                  s: normalizeScheduleIntent(intent.scheduleInput),
+              }
+            : null,
     })
 }
 
@@ -251,14 +373,15 @@ export function planMembershipChange(
     snapshot: MembershipChangeSnapshot,
     intent: MembershipChangeIntent
 ): MembershipChangePlan {
-    if (intent.kind === "SCHEDULE") return planScheduleChange(snapshot, intent.scheduleInput)
-    return planTransfer(snapshot, intent.targetType, intent.scheduleInput ?? null)
+    if (intent.kind === "SCHEDULE") return planScheduleChange(snapshot, intent)
+    return planTransfer(snapshot, intent)
 }
 
 function planScheduleChange(
     snapshot: MembershipChangeSnapshot,
-    scheduleInput: MembershipScheduleInput
+    intent: Extract<MembershipChangeIntent, { kind: "SCHEDULE" }>
 ): MembershipChangePlan {
+    const scheduleInput = intent.scheduleInput
     const blockers = commonBlockers(snapshot)
     const { sourceType } = snapshot
 
@@ -300,7 +423,13 @@ function planScheduleChange(
             sourceType.sold,
             null
         ),
-        after: buildState(sourceType, result.selection, sessionKeys(result.selection), sourceType.sold, null),
+        after: buildState(
+            sourceType,
+            result.selection,
+            sessionKeys(result.selection),
+            sourceType.sold,
+            null
+        ),
         writes: {
             ticket: { membershipSchedule: result.selection },
             // Las dos escrituras van juntas: Ticket.membershipSchedule es lo que
@@ -310,16 +439,9 @@ function planScheduleChange(
                 attendeeData: [{ ...attendee, membershipSchedule: result.selection }],
             },
         },
-        fingerprint: buildMembershipChangeFingerprint(snapshot),
+        fingerprint: buildMembershipChangeFingerprint(snapshot, intent),
     }
 }
-
-/**
- * Providers cuyas ordenes NO generan comprobante: la venta se cobro fuera de la
- * web y no se emite boleta. Lista explicita a proposito — agregar una pasarela
- * nueva debe ser anadir una fila aqui, no descubrir el hueco en produccion.
- */
-const PROVIDERS_SIN_BOLETA = new Set(["PRESENCIAL", "COURTESY"])
 
 /** Providers que bloquean cualquier correccion. */
 const PROVIDERS_BLOQUEADOS = new Set(["MOCK"])
@@ -387,11 +509,25 @@ function equivalenceBlockers(
 
 function planTransfer(
     snapshot: MembershipChangeSnapshot,
-    targetType: MembershipTicketTypeSnapshot,
-    scheduleInput: MembershipScheduleInput | null
+    intent: Extract<MembershipChangeIntent, { kind: "TRANSFER" }>
 ): MembershipChangePlan {
+    const targetType = intent.targetType
+    const scheduleInput = intent.scheduleInput ?? null
     const { sourceType } = snapshot
     const blockers = [...commonBlockers(snapshot), ...invoiceBlockers(snapshot)]
+
+    // Deriva previa entre las dos fuentes de "en que evento esta el carnet":
+    // lo que se escribe es `Ticket.eventId`, pero el tipo de entrada trae el
+    // suyo. Si ya no coinciden, mover el `ticketTypeId` y decidir el `eventId`
+    // contra cualquiera de las dos deja medio movimiento en silencio.
+    // scripts/change-academia-schedule.ts afirmaba esta igualdad antes de tocar
+    // nada; aqui es un bloqueo.
+    if (snapshot.ticket.eventId !== sourceType.eventId) {
+        blockers.push({
+            code: "TICKET_EVENT_DRIFT",
+            message: `El carnet apunta al evento ${snapshot.ticket.eventId} pero su tipo de entrada pertenece al evento ${sourceType.eventId}. Con esa inconsistencia el cambio no procede: requiere revision manual antes de mover nada.`,
+        })
+    }
 
     if (targetType.id === sourceType.id) {
         blockers.push({
@@ -459,7 +595,10 @@ function planTransfer(
 
     if (blockers.length > 0) return { ok: false, blockers }
 
-    const sameEvent = sourceType.eventId === targetType.eventId
+    // Contra `ticket.eventId`, que es LO QUE SE ESCRIBE, no contra
+    // `sourceType.eventId`. Llegados aqui el bloqueo de deriva ya garantizo que
+    // son el mismo valor, pero la decision tiene que colgar de la fuente real.
+    const sameEvent = snapshot.ticket.eventId === targetType.eventId
     const writes: MembershipChangeWrites = {
         ticket: { ticketTypeId: targetType.id },
         orderItem: { ticketTypeId: targetType.id },
@@ -492,6 +631,6 @@ function planTransfer(
             targetType.sold + 1
         ),
         writes,
-        fingerprint: buildMembershipChangeFingerprint(snapshot),
+        fingerprint: buildMembershipChangeFingerprint(snapshot, intent),
     }
 }
