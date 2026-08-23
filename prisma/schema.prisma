@@ -86,6 +86,7 @@ enum InvoiceStatus {
   FAILED
   FAILED_RETRYABLE
   FAILED_REQUIRES_REVIEW
+  DISCARDED
 }
 
 enum DocumentType {
@@ -915,20 +916,23 @@ model Invoice {
   buyerLastNamePaternal String?
   buyerLastNameMaternal String?
   // Provider integration
-  traceId          String?       @unique
-  requestPayload   String?       @db.Text
-  requestSignature String?
-  httpStatus       Int?
-  reciboHash       String?
-  providerResponse Json?         // Response from ABIO/Servilex
-  pdfUrl           String?       // URL of the issued document PDF
-  sentToProvider   Boolean       @default(false)
-  retryCount       Int           @default(0)
-  lastError        String?
-  sentAt           DateTime?
-  issuedAt         DateTime?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  traceId                 String?       @unique
+  requestPayload          String?       @db.Text
+  requestSignature        String?
+  httpStatus              Int?
+  reciboHash              String?
+  providerResponse        Json? // Response from ABIO/Servilex
+  pdfUrl                  String? // URL of the issued document PDF
+  sentToProvider          Boolean       @default(false)
+  retryCount              Int           @default(0)
+  lastError               String?
+  sentAt                  DateTime?
+  issuedAt                DateTime?
+  discardedAt             DateTime?
+  discardedReason         String?
+  discardedByUserId       String?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
 
   // Relations
   order Order @relation(fields: [orderId], references: [id])

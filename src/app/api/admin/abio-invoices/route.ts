@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 const VALID_STATUSES: InvoiceStatus[] = [
+    "DISCARDED",
     "PENDING",
     "PROCESSING",
     "ISSUED",
@@ -15,12 +16,7 @@ const VALID_STATUSES: InvoiceStatus[] = [
     "FAILED_REQUIRES_REVIEW",
 ]
 
-const PROBLEM_STATUSES: InvoiceStatus[] = [
-    "PENDING",
-    "FAILED",
-    "FAILED_RETRYABLE",
-    "FAILED_REQUIRES_REVIEW",
-]
+const PROBLEM_STATUSES: InvoiceStatus[] = ["PENDING", "FAILED", "FAILED_RETRYABLE", "FAILED_REQUIRES_REVIEW"]
 
 const DEFAULT_LIMIT = 100
 const MAX_LIMIT = 500
@@ -48,9 +44,7 @@ export async function GET(request: NextRequest) {
         const onlyProblemsParam = searchParams.get("onlyProblems") === "true"
         const searchTerm = searchParams.get("q")?.trim()
         const limitRaw = Number(searchParams.get("limit") ?? DEFAULT_LIMIT)
-        const limit = Number.isFinite(limitRaw)
-            ? Math.min(Math.max(Math.floor(limitRaw), 1), MAX_LIMIT)
-            : DEFAULT_LIMIT
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.floor(limitRaw), 1), MAX_LIMIT) : DEFAULT_LIMIT
 
         const where: Prisma.InvoiceWhereInput = {}
 
@@ -63,15 +57,28 @@ export async function GET(request: NextRequest) {
         if (searchTerm) {
             where.OR = [
                 { orderId: { contains: searchTerm, mode: "insensitive" } },
-                { invoiceNumber: { contains: searchTerm, mode: "insensitive" } },
+                {
+                    invoiceNumber: {
+                        contains: searchTerm,
+                        mode: "insensitive",
+                    },
+                },
                 { traceId: { contains: searchTerm, mode: "insensitive" } },
                 { buyerEmail: { contains: searchTerm, mode: "insensitive" } },
-                { buyerDocNumber: { contains: searchTerm, mode: "insensitive" } },
+                {
+                    buyerDocNumber: {
+                        contains: searchTerm,
+                        mode: "insensitive",
+                    },
+                },
                 { buyerName: { contains: searchTerm, mode: "insensitive" } },
                 {
                     order: {
                         user: {
-                            email: { contains: searchTerm, mode: "insensitive" },
+                            email: {
+                                contains: searchTerm,
+                                mode: "insensitive",
+                            },
                         },
                     },
                 },
@@ -103,7 +110,9 @@ export async function GET(request: NextRequest) {
             by: ["status"],
             _count: { _all: true },
             where: {
-                createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+                createdAt: {
+                    gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+                },
             },
         })
 
@@ -111,6 +120,9 @@ export async function GET(request: NextRequest) {
             success: true,
             data: {
                 invoices: invoices.map((invoice) => ({
+                    discardedAt: invoice.discardedAt ? invoice.discardedAt.toISOString() : null,
+                    discardedReason: invoice.discardedReason,
+                    discardedByUserId: invoice.discardedByUserId,
                     id: invoice.id,
                     orderId: invoice.orderId,
                     traceId: invoice.traceId,
@@ -151,15 +163,15 @@ export async function GET(request: NextRequest) {
                           }
                         : null,
                 })),
-                summary7d: counts.map((c) => ({ status: c.status, count: c._count._all })),
+                summary7d: counts.map((c) => ({
+                    status: c.status,
+                    count: c._count._all,
+                })),
                 limit,
             },
         })
     } catch (error) {
         console.error("Error fetching ABIO invoices:", error)
-        return NextResponse.json(
-            { success: false, error: "Error al obtener invoices" },
-            { status: 500 }
-        )
+        return NextResponse.json({ success: false, error: "Error al obtener invoices" }, { status: 500 })
     }
 }

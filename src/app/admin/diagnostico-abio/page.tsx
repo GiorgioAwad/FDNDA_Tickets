@@ -6,26 +6,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatPrice } from "@/lib/utils"
-import {
-    AlertTriangle,
-    CheckCircle2,
-    Clock,
-    FileWarning,
-    Loader2,
-    Receipt,
-    RefreshCw,
-    Search,
-} from "lucide-react"
+import { AlertTriangle, Ban, CheckCircle2, Clock, FileWarning, Loader2, Receipt, RefreshCw, Search } from "lucide-react"
 
 type Status =
-    | "PENDING"
-    | "PROCESSING"
-    | "ISSUED"
-    | "FAILED"
-    | "FAILED_RETRYABLE"
-    | "FAILED_REQUIRES_REVIEW"
+    "DISCARDED" | "PENDING" | "PROCESSING" | "ISSUED" | "FAILED" | "FAILED_RETRYABLE" | "FAILED_REQUIRES_REVIEW"
 
 interface InvoiceRow {
+    discardedAt: string | null
+    discardedReason: string | null
+    discardedByUserId: string | null
     id: string
     orderId: string
     traceId: string | null
@@ -74,7 +63,11 @@ interface ApiResponse {
     error?: string
 }
 
-const STATUS_FILTERS: { value: "ALL" | "ONLY_PROBLEMS" | Status; label: string }[] = [
+const STATUS_FILTERS: {
+    value: "ALL" | "ONLY_PROBLEMS" | Status
+    label: string
+}[] = [
+    { value: "DISCARDED", label: "Dados de baja" },
     { value: "ONLY_PROBLEMS", label: "Solo problemas" },
     { value: "ALL", label: "Todos" },
     { value: "ISSUED", label: "Emitidos OK" },
@@ -85,8 +78,17 @@ const STATUS_FILTERS: { value: "ALL" | "ONLY_PROBLEMS" | Status; label: string }
     { value: "FAILED_REQUIRES_REVIEW", label: "Requieren revisión" },
 ]
 
+const DISCARDABLE_STATUSES: Status[] = ["FAILED", "FAILED_RETRYABLE", "FAILED_REQUIRES_REVIEW"]
+
 function statusBadge(status: Status) {
     switch (status) {
+        case "DISCARDED":
+            return (
+                <Badge className="border-slate-300 bg-slate-100 text-slate-700">
+                    <Ban className="mr-1 h-3 w-3" />
+                    Dado de baja
+                </Badge>
+            )
         case "ISSUED":
             return (
                 <Badge className="bg-green-100 text-green-700 border-green-200">
@@ -163,6 +165,11 @@ export default function DiagnosticoAbioPage() {
     const [search, setSearch] = useState("")
     const [debouncedSearch, setDebouncedSearch] = useState("")
     const [expandedId, setExpandedId] = useState<string | null>(null)
+    const [discardingId, setDiscardingId] = useState<string | null>(null)
+    const [discardReason, setDiscardReason] = useState("")
+    const [discardLoadingId, setDiscardLoadingId] = useState<string | null>(null)
+    const [actionMessage, setActionMessage] = useState("")
+    const [actionError, setActionError] = useState("")
 
     useEffect(() => {
         const handle = setTimeout(() => setDebouncedSearch(search.trim()), 300)
@@ -201,6 +208,52 @@ export default function DiagnosticoAbioPage() {
         fetchInvoices()
     }, [fetchInvoices])
 
+    const startDiscard = (invoiceId: string) => {
+        setDiscardingId(invoiceId)
+        setDiscardReason("Reemitido y regularizado en otro momento")
+        setActionError("")
+        setActionMessage("")
+    }
+
+    const cancelDiscard = () => {
+        if (discardLoadingId) return
+        setDiscardingId(null)
+        setDiscardReason("")
+        setActionError("")
+    }
+
+    const discardInvoice = async (invoiceId: string) => {
+        const reason = discardReason.trim()
+        if (reason.length < 5) {
+            setActionError("Indica brevemente por que se da de baja.")
+            return
+        }
+
+        setDiscardLoadingId(invoiceId)
+        setActionError("")
+        setActionMessage("")
+        try {
+            const response = await fetch(`/api/admin/abio-invoices/${invoiceId}/discard`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason }),
+            })
+            const payload = await response.json()
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || "No se pudo dar de baja el comprobante.")
+            }
+
+            setDiscardingId(null)
+            setDiscardReason("")
+            setActionMessage("Comprobante dado de baja. Puedes consultarlo en el filtro Dados de baja.")
+            await fetchInvoices()
+        } catch (err) {
+            setActionError(err instanceof Error ? err.message : "No se pudo dar de baja el comprobante.")
+        } finally {
+            setDiscardLoadingId(null)
+        }
+    }
+
     const summaryByStatus = useMemo(() => {
         const map = new Map<Status, number>()
         for (const row of data?.summary7d ?? []) {
@@ -209,11 +262,36 @@ export default function DiagnosticoAbioPage() {
         return map
     }, [data?.summary7d])
 
-    const summaryCards: { status: Status; label: string; icon: React.ElementType; tone: string }[] = [
-        { status: "ISSUED", label: "Emitidos OK", icon: CheckCircle2, tone: "text-green-600 bg-green-100" },
-        { status: "FAILED_RETRYABLE", label: "Reintentando", icon: RefreshCw, tone: "text-amber-600 bg-amber-100" },
-        { status: "FAILED_REQUIRES_REVIEW", label: "Requieren revisión", icon: FileWarning, tone: "text-red-600 bg-red-100" },
-        { status: "PENDING", label: "Pendientes envío", icon: Clock, tone: "text-gray-600 bg-gray-100" },
+    const summaryCards: {
+        status: Status
+        label: string
+        icon: React.ElementType
+        tone: string
+    }[] = [
+        {
+            status: "ISSUED",
+            label: "Emitidos OK",
+            icon: CheckCircle2,
+            tone: "text-green-600 bg-green-100",
+        },
+        {
+            status: "FAILED_RETRYABLE",
+            label: "Reintentando",
+            icon: RefreshCw,
+            tone: "text-amber-600 bg-amber-100",
+        },
+        {
+            status: "FAILED_REQUIRES_REVIEW",
+            label: "Requieren revisión",
+            icon: FileWarning,
+            tone: "text-red-600 bg-red-100",
+        },
+        {
+            status: "PENDING",
+            label: "Pendientes envío",
+            icon: Clock,
+            tone: "text-gray-600 bg-gray-100",
+        },
     ]
 
     return (
@@ -225,13 +303,27 @@ export default function DiagnosticoAbioPage() {
                         Diagnóstico de comprobantes ABIO
                     </h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Cada comprobante (boleta/factura) enviado a Servilex/ABIO con su estado, error y respuesta del proveedor.
+                        Cada comprobante (boleta/factura) enviado a Servilex/ABIO con su estado, error y respuesta del
+                        proveedor.
                     </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={fetchInvoices} disabled={loading} className="gap-2">
                     <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                     Actualizar
                 </Button>
+            </div>
+
+            <div aria-live="polite">
+                {actionMessage ? (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                        {actionMessage}
+                    </div>
+                ) : null}
+                {actionError && !discardingId ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                        {actionError}
+                    </div>
+                ) : null}
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -315,6 +407,7 @@ export default function DiagnosticoAbioPage() {
                                 <tbody>
                                     {data.invoices.map((inv) => {
                                         const isExpanded = expandedId === inv.id
+                                        const canDiscard = DISCARDABLE_STATUSES.includes(inv.status)
                                         return (
                                             <Fragment key={inv.id}>
                                                 <tr className="border-b align-top hover:bg-gray-50">
@@ -359,7 +452,9 @@ export default function DiagnosticoAbioPage() {
                                                             {inv.indicator && (
                                                                 <div className="text-[10px] text-gray-500">
                                                                     {inv.indicator}
-                                                                    {inv.sucursalCode ? ` · Suc ${inv.sucursalCode}` : ""}
+                                                                    {inv.sucursalCode
+                                                                        ? ` · Suc ${inv.sucursalCode}`
+                                                                        : ""}
                                                                 </div>
                                                             )}
                                                         </div>
@@ -371,7 +466,8 @@ export default function DiagnosticoAbioPage() {
                                                             )}
                                                             {inv.buyerDocNumber && (
                                                                 <div className="text-xs text-gray-500 font-mono">
-                                                                    {inv.buyerDocType === "6" ? "RUC" : "DNI"}: {inv.buyerDocNumber}
+                                                                    {inv.buyerDocType === "6" ? "RUC" : "DNI"}:{" "}
+                                                                    {inv.buyerDocNumber}
                                                                 </div>
                                                             )}
                                                             {(inv.buyerEmail || inv.order?.user?.email) && (
@@ -387,7 +483,8 @@ export default function DiagnosticoAbioPage() {
                                                         </div>
                                                         {inv.order && inv.assignedTotal !== inv.order.totalAmount && (
                                                             <div className="text-[10px] text-gray-400">
-                                                                Order: {formatPrice(inv.order.totalAmount, inv.order.currency)}
+                                                                Order:{" "}
+                                                                {formatPrice(inv.order.totalAmount, inv.order.currency)}
                                                             </div>
                                                         )}
                                                     </td>
@@ -400,7 +497,15 @@ export default function DiagnosticoAbioPage() {
                                                         )}
                                                     </td>
                                                     <td className="py-3 max-w-md">
-                                                        {inv.lastError ? (
+                                                        {inv.status === "DISCARDED" ? (
+                                                            <div className="space-y-1 text-xs text-slate-700">
+                                                                <div className="font-medium">Baja registrada</div>
+                                                                <div className="break-words">{inv.discardedReason}</div>
+                                                                <div className="text-slate-500">
+                                                                    {formatTimestamp(inv.discardedAt)}
+                                                                </div>
+                                                            </div>
+                                                        ) : inv.lastError ? (
                                                             <div className="text-xs text-red-700 break-words">
                                                                 {inv.lastError}
                                                             </div>
@@ -433,7 +538,62 @@ export default function DiagnosticoAbioPage() {
                                                                     {isExpanded ? "Ocultar" : "Ver"} respuesta
                                                                 </button>
                                                             )}
+                                                            {canDiscard && discardingId !== inv.id && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => startDiscard(inv.id)}
+                                                                    className="inline-flex items-center gap-1 text-slate-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
+                                                                >
+                                                                    <Ban className="h-3 w-3" />
+                                                                    Dar de baja
+                                                                </button>
+                                                            )}
                                                         </div>
+                                                        {canDiscard && discardingId === inv.id && (
+                                                            <div className="mt-3 space-y-2 rounded-xl bg-slate-100 p-3">
+                                                                <label className="block text-xs font-medium text-slate-800">
+                                                                    Motivo de la baja
+                                                                </label>
+                                                                <Input
+                                                                    autoFocus
+                                                                    value={discardReason}
+                                                                    maxLength={500}
+                                                                    disabled={discardLoadingId === inv.id}
+                                                                    onChange={(event) =>
+                                                                        setDiscardReason(event.target.value)
+                                                                    }
+                                                                    aria-label="Motivo de la baja"
+                                                                />
+                                                                {actionError ? (
+                                                                    <p className="text-xs text-red-700">
+                                                                        {actionError}
+                                                                    </p>
+                                                                ) : null}
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="destructive"
+                                                                        disabled={discardLoadingId === inv.id}
+                                                                        onClick={() => void discardInvoice(inv.id)}
+                                                                    >
+                                                                        {discardLoadingId === inv.id ? (
+                                                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                                        ) : (
+                                                                            <Ban className="mr-2 h-4 w-4" />
+                                                                        )}
+                                                                        Confirmar baja
+                                                                    </Button>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline"
+                                                                        disabled={discardLoadingId === inv.id}
+                                                                        onClick={cancelDiscard}
+                                                                    >
+                                                                        Cancelar
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </td>
                                                 </tr>
                                                 {isExpanded && inv.providerResponse && (

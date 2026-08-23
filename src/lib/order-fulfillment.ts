@@ -15,7 +15,7 @@ import {
     getRequiredTicketDateSelections,
     usesTicketDateCapacity,
 } from "@/lib/ticket-date-capacity"
-import { Prisma } from "@prisma/client"
+import { Prisma, type InvoiceStatus } from "@prisma/client"
 
 export interface FulfillOrderResult {
     success: boolean
@@ -172,13 +172,7 @@ async function syncServilexInvoices(
         invoices: Array<{
             id: string
             servilexGroupKey: string
-            status:
-                | "PENDING"
-                | "PROCESSING"
-                | "ISSUED"
-                | "FAILED"
-                | "FAILED_RETRYABLE"
-                | "FAILED_REQUIRES_REVIEW"
+            status: InvoiceStatus
         }>
     }
 ) {
