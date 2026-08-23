@@ -28,6 +28,26 @@ const ACCESS_TONE: Record<MembershipDetail["diagnosis"]["accessStatus"], string>
     NOT_APPLICABLE: "bg-slate-100 text-slate-700",
 }
 
+type ScanResultCode = MembershipDetail["diagnosis"]["recentScans"][number]["result"]
+
+const SCAN_RESULT_LABEL: Record<ScanResultCode, string> = {
+    VALID: "Ingreso OK",
+    INVALID: "Rechazado",
+    ALREADY_USED: "Ya habia ingresado",
+    WRONG_DAY: "Dia u hora que no le toca",
+    WRONG_EVENT: "Sede o evento equivocado",
+    EXPIRED: "Vencido",
+}
+
+const SCAN_RESULT_TONE: Record<ScanResultCode, string> = {
+    VALID: "bg-emerald-100 text-emerald-800",
+    INVALID: "bg-red-100 text-red-800",
+    ALREADY_USED: "bg-amber-100 text-amber-800",
+    WRONG_DAY: "bg-amber-100 text-amber-800",
+    WRONG_EVENT: "bg-red-100 text-red-800",
+    EXPIRED: "bg-red-100 text-red-800",
+}
+
 export default function MembershipDetailPage({
     params,
 }: {
@@ -141,9 +161,9 @@ export default function MembershipDetailPage({
                     <Field
                         label="Origen"
                         value={
-                            order.invoicing.kind === "sin_boleta"
-                                ? order.invoicing.label
-                                : `Web · boleta ${order.invoicing.invoiceNumber ?? "pendiente"}`
+                            order.invoicing.kind === "boleta"
+                                ? `Web · boleta ${order.invoicing.invoiceNumber ?? "pendiente"}`
+                                : order.invoicing.label
                         }
                     />
                     <Field label="Total" value={`S/ ${order.totalAmount.toFixed(2)}`} />
@@ -170,7 +190,17 @@ export default function MembershipDetailPage({
                         ) : null}
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        <Field label="Vigencia" value={`${diagnosis.startStr} → ${diagnosis.expiryStr}`} />
+                        <Field
+                            label="Vigencia"
+                            // En NOT_APPLICABLE (carnet legacy sin ancla de
+                            // termino fijo) las dos fechas llegan vacias:
+                            // pintarlas dejaba una flecha sola sin explicacion.
+                            value={
+                                diagnosis.startStr && diagnosis.expiryStr
+                                    ? `${diagnosis.startStr} → ${diagnosis.expiryStr}`
+                                    : "Sin vigencia calculada (carnet sin termino fijo)"
+                            }
+                        />
                         <Field
                             label="Mes en curso"
                             value={
@@ -203,6 +233,39 @@ export default function MembershipDetailPage({
                             deja cambiar el horario base ni la sede: hay que resolverlo por script.
                         </p>
                     ) : null}
+
+                    {/* Lo que de verdad paso en la puerta, no lo que deberia
+                        pasar: un carnet que "esta bien" pero acumula WRONG_DAY
+                        es exactamente el que hay que corregir. */}
+                    <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">
+                            Ultimos escaneos
+                        </p>
+                        {diagnosis.recentScans.length === 0 ? (
+                            <p className="mt-1 text-slate-500">Este carnet nunca se escaneo.</p>
+                        ) : (
+                            <ul className="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200">
+                                {diagnosis.recentScans.map((scan) => (
+                                    <li
+                                        key={scan.id}
+                                        className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2"
+                                    >
+                                        <span className="text-slate-700">
+                                            {new Date(scan.scannedAt).toLocaleString("es-PE")}
+                                        </span>
+                                        <span
+                                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${SCAN_RESULT_TONE[scan.result]}`}
+                                        >
+                                            {SCAN_RESULT_LABEL[scan.result]}
+                                        </span>
+                                        {scan.notes ? (
+                                            <span className="text-slate-500">{scan.notes}</span>
+                                        ) : null}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
                 </CardContent>
             </Card>
 

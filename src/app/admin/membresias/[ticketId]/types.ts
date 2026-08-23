@@ -58,9 +58,15 @@ export interface MembershipDetail {
         // plano del origen del carnet, no una advertencia. Para el resto de
         // providers, invoiceNumber se cruza por matricula del asistente y
         // puede venir null legitimamente (matricula sin invoice emitido
-        // todavia, o sin matricula que cruzar).
+        // todavia).
+        //
+        // `indeterminado` es el caso en que la boleta EXISTE pero el panel no
+        // puede ligarla a este carnet: compra familiar (un OrderItem con varios
+        // asistentes) sin DNI que desambigue, u orden con varios items del
+        // mismo tipo. Ahi decir "pendiente" seria mentira.
         invoicing:
             | { kind: "sin_boleta"; label: string }
+            | { kind: "indeterminado"; label: string }
             | { kind: "boleta"; invoiceNumber: string | null }
     }
     diagnosis: {
@@ -80,6 +86,16 @@ export interface MembershipDetail {
         effectiveScheduleSummary: string
         baseScheduleSummary: string
         monthlyScheduleCount: number
+        // Ultimos escaneos del carnet, del mas reciente al mas antiguo. El
+        // diagnostico dice que DEBERIA pasarle hoy en la puerta; esto dice que
+        // le paso de verdad.
+        recentScans: Array<{
+            id: string
+            /** ISO 8601; la ficha lo formatea en hora local. */
+            scannedAt: string
+            result: "VALID" | "INVALID" | "ALREADY_USED" | "WRONG_DAY" | "WRONG_EVENT" | "EXPIRED"
+            notes: string | null
+        }>
     }
     scheduleProfile: ScheduleProfile | null
     currentScheduleInput: { category: string | null; frequency: string | null; hours: Record<string, string> }
