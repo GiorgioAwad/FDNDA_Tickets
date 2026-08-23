@@ -8,6 +8,7 @@ import {
     IZIPAY_EMBEDDED_CONTAINER_ID,
     type IzipayCheckoutConfig,
 } from "@/lib/izipay"
+import { isIzipayUserCancellationMessage } from "@/lib/izipay-client-response"
 
 interface IzipayCheckoutProps {
     authorization: string
@@ -51,6 +52,9 @@ const SDK_LOAD_ERROR_MESSAGE =
 
 const GENERIC_PAYMENT_ERROR_MESSAGE =
     "Izipay no pudo procesar el pago en este momento. Vuelve a intentarlo; si persiste, prueba con otro navegador o tarjeta."
+
+const PAYMENT_FORM_CLOSED_MESSAGE =
+    "Cerraste el formulario de pago. Puedes intentarlo nuevamente."
 
 const REDIRECT_TIMEOUT_MESSAGE =
     "No pudimos redirigirte a la pasarela de Izipay. Vuelve a intentarlo; si persiste, desactiva extensiones del navegador o prueba en modo incógnito."
@@ -281,6 +285,18 @@ export default function IzipayCheckout({
                         rawSdkMessage.toUpperCase() !== "OK"
 
                     if (shouldShowSdkError) {
+                        if (isIzipayUserCancellationMessage(rawSdkMessage)) {
+                            Sentry.addBreadcrumb({
+                                category: "payment",
+                                message: "Izipay checkout cerrado por el usuario",
+                                level: "info",
+                                data: { orderId, mode },
+                            })
+                            setError(PAYMENT_FORM_CLOSED_MESSAGE)
+                            onError?.(PAYMENT_FORM_CLOSED_MESSAGE)
+                            return
+                        }
+
                         const message = sanitizeIzipayUserMessage(rawSdkMessage)
                         setError(message)
                         onError?.(message)
