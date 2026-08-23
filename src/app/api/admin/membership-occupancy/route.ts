@@ -90,7 +90,17 @@ export async function GET(request: NextRequest) {
                     monthlyClassLimit: { gt: 0 },
                     membershipDurationMonths: { gt: 0 },
                 },
-                select: { id: true, name: true, capacity: true, sold: true },
+                select: {
+                    id: true,
+                    name: true,
+                    capacity: true,
+                    sold: true,
+                    membershipScheduleKey: true,
+                    membershipDurationMonths: true,
+                    monthlyClassLimit: true,
+                    price: true,
+                    isActive: true,
+                },
                 orderBy: { name: "asc" },
             }),
         ])
@@ -133,6 +143,7 @@ export async function GET(request: NextRequest) {
                 ticketTypeId: ticket.ticketTypeId,
                 ticketTypeName: ticket.ticketType.name,
                 planKey: ticket.ticketType.membershipScheduleKey,
+                durationMonths: ticket.ticketType.membershipDurationMonths,
                 baseSchedule: ticket.membershipSchedule,
                 monthlySchedules: ticket.monthlySchedules,
                 monthIndex: period?.index ?? 0,
@@ -158,7 +169,13 @@ export async function GET(request: NextRequest) {
                 name: type.name,
                 capacity: type.capacity,
                 sold: type.sold,
+                planKey: type.membershipScheduleKey,
+                durationMonths: type.membershipDurationMonths,
+                monthlyClassLimit: type.monthlyClassLimit,
+                price: Number(type.price),
+                isActive: type.isActive,
             })),
+            sucursalCode: event.servilexSucursalCode,
         })
 
         return NextResponse.json({ success: true, data: { events, event, occupancy, today } })

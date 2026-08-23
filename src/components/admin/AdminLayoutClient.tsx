@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { useCart } from "@/hooks/cart-context"
 import { cn } from "@/lib/utils"
 import {
+    Activity,
     AlertCircle,
     LayoutDashboard,
     Calendar,
@@ -82,6 +83,7 @@ const adminNavigation: NavGroup[] = [
     {
         title: "Sistema",
         items: [
+            { label: "Monitoreo", href: "/admin/monitoreo", icon: Activity },
             { label: "Usuarios", href: "/admin/usuarios", icon: Users },
             { label: "Configuración", href: "/admin/configuracion", icon: Settings },
         ],
@@ -295,6 +297,7 @@ function AdminTopBar({ onMenuClick, title }: AdminTopBarProps) {
         if (pathname.includes("/estadisticas")) return "Estadísticas"
         if (pathname.includes("/reclamos")) return "Reclamos"
         if (pathname.includes("/usuarios")) return "Usuarios"
+        if (pathname.includes("/monitoreo")) return "Monitoreo"
         if (pathname.includes("/configuracion")) return "Configuración"
         if (pathname.includes("/asistencia")) return "Asistencia"
         if (pathname.includes("/diagnostico-qr")) return "Diagnóstico QR"

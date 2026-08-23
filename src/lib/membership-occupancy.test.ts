@@ -112,9 +112,41 @@ test("los totales por plan salen del capacity y sold del tipo", () => {
         tickets: [],
         planTotals: [{ ticketTypeId: "tt-bronce", name: "BRONCE", capacity: 80, sold: 55 }],
     })
-    assert.deepEqual(occupancy.planTotals, [
-        { ticketTypeId: "tt-bronce", name: "BRONCE", capacity: 80, sold: 55, available: 25 },
-    ])
+    assert.equal(occupancy.planTotals[0].available, 25)
+    assert.equal(occupancy.planTotals[0].capacity, 80)
+    assert.equal(occupancy.planTotals[0].sold, 55)
+})
+
+test("el reporte incluye el catalogo completo y conserva las franjas en cero", () => {
+    const occupancy = buildMembershipOccupancy({
+        tickets: [ticket()],
+        planTotals: [{
+            ticketTypeId: "tt-bronce",
+            name: "MEMBRESIA SEMESTRAL BRONCE",
+            capacity: 100,
+            sold: 1,
+            planKey: "BRONCE",
+            durationMonths: 6,
+        }],
+        sucursalCode: "03",
+    })
+
+    const occupied = occupancy.scheduleRows.find(
+        (row) => row.category === "NINOS" && row.frequency === "LMV" && row.start === "16:00"
+    )
+    assert.equal(occupied?.enrolled, 1)
+    assert.ok(occupancy.scheduleRows.some((row) => row.status === "SCHEDULED" && row.enrolled === 0))
+    assert.equal(occupied?.availableInPlan, 99)
+})
+
+test("reporta por separado los carnets vigentes sin horario", () => {
+    const occupancy = buildMembershipOccupancy({
+        tickets: [ticket({ baseSchedule: null })],
+        planTotals: [{ ticketTypeId: "tt-bronce", name: "BRONCE", capacity: 10, sold: 1, planKey: "BRONCE" }],
+        sucursalCode: "03",
+    })
+    assert.equal(occupancy.missingSchedule, 1)
+    assert.equal(occupancy.scheduleRows.find((row) => row.status === "MISSING_SCHEDULE")?.enrolled, 1)
 })
 
 test("capacity 0 se reporta como sin tope", () => {

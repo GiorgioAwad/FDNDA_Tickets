@@ -23,6 +23,8 @@ function buildContentSecurityPolicy() {
 
   const connectSrc = [
     "'self'",
+    "https://*.ingest.sentry.io",
+    "https://*.ingest.us.sentry.io",
     "https://sandbox-checkout.izipay.pe",
     "https://checkout.izipay.pe",
     "https://sandbox-api-pw.izipay.pe",
@@ -189,6 +191,10 @@ export default withSentryConfig(nextConfig, {
     deleteSourcemapsAfterUpload: true,
   },
 
-  // Desactiva el logger para no agregar peso al bundle
-  disableLogger: true,
+  // Elimina el logger de Sentry del bundle de produccion.
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
 });

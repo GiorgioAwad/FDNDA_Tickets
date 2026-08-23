@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { formatPrice } from "@/lib/utils"
-import { DollarSign, Loader2, ShoppingCart, Ticket, Percent } from "lucide-react"
+import { CalendarClock, DollarSign, Loader2, ShoppingCart, Ticket, Percent } from "lucide-react"
+import Link from "next/link"
 
 interface TicketTypeOption {
     id: string
@@ -36,9 +37,10 @@ interface EventReportData {
 interface EventDashboardProps {
     eventId: string
     ticketTypes: TicketTypeOption[]
+    hasMembershipSchedules?: boolean
 }
 
-export function EventDashboard({ eventId, ticketTypes }: EventDashboardProps) {
+export function EventDashboard({ eventId, ticketTypes, hasMembershipSchedules = false }: EventDashboardProps) {
     const [data, setData] = useState<EventReportData | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState("")
@@ -130,6 +132,14 @@ export function EventDashboard({ eventId, ticketTypes }: EventDashboardProps) {
                             ))}
                         </select>
                     </div>
+                    {hasMembershipSchedules ? (
+                        <Button variant="outline" asChild>
+                            <Link href={`/admin/membresias/cupos?eventId=${eventId}`} className="gap-2">
+                                <CalendarClock className="h-4 w-4" />
+                                Cupos y horarios
+                            </Link>
+                        </Button>
+                    ) : null}
                     <Button variant="outline" asChild>
                         <a href={attendeeExportUrl}>Exportar asistentes</a>
                     </Button>
