@@ -38,6 +38,9 @@ export type TicketTypeSnapshotRecord = Prisma.TicketTypeGetPayload<{
     select: typeof ticketTypeSnapshotSelect
 }>
 
+/** Cuantos escaneos recientes trae la ficha del carnet. */
+export const MEMBERSHIP_RECENT_SCANS_LIMIT = 15
+
 export const membershipChangeInclude = {
     ticketType: { select: ticketTypeSnapshotSelect },
     event: {
@@ -72,6 +75,15 @@ export const membershipChangeInclude = {
     // Sin `shift`: TicketDayEntitlement no tiene esa columna. El horario del
     // carnet vive en Ticket.membershipSchedule, no por entitlement.
     entitlements: { select: { date: true, status: true } },
+    // Ultimos escaneos con su resultado: es la unica evidencia de que le pasa
+    // al carnet en la puerta de verdad, y la ficha la muestra al lado del
+    // diagnostico. Acotado a MEMBERSHIP_RECENT_SCANS_LIMIT: el historico
+    // completo de una membresia anual no cabe ni le sirve al admin.
+    scans: {
+        select: { id: true, scannedAt: true, result: true, notes: true },
+        orderBy: { scannedAt: "desc" },
+        take: MEMBERSHIP_RECENT_SCANS_LIMIT,
+    },
     user: { select: { id: true, name: true, email: true } },
 } satisfies Prisma.TicketInclude
 
