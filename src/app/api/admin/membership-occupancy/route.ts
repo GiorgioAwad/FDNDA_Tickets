@@ -126,6 +126,7 @@ export async function GET(request: NextRequest) {
 
             const anchor = getMembershipAnchor(scanTicket)
             const period = anchor ? getMembershipPeriod(today, anchor) : null
+            const access = getMembershipAccessStatus(scanTicket, today).status
 
             return {
                 id: ticket.id,
@@ -135,9 +136,18 @@ export async function GET(request: NextRequest) {
                 baseSchedule: ticket.membershipSchedule,
                 monthlySchedules: ticket.monthlySchedules,
                 monthIndex: period?.index ?? 0,
-                // Solo cuenta quien de verdad puede entrar hoy: descarta los que
-                // aun no inician, los vencidos y los congelados este mes.
-                counts: getMembershipAccessStatus(scanTicket, today).status === "OK",
+                // Cuenta quien de verdad ocupa un lugar en la piscina hoy:
+                // descarta los que aun no inician, los vencidos y los congelados
+                // este mes.
+                //
+                // NOT_APPLICABLE tambien cuenta. Ese estado no significa "no
+                // vigente" sino "no es membresia a termino fijo": son los
+                // carnets legacy sin ancla (getMembershipAccessStatus devuelve
+                // NOT_APPLICABLE y el escaner cae a la logica legacy, que los
+                // deja entrar). Tienen horario semanal y asisten, asi que
+                // ocupan cupo. Descartarlos subcontaba en silencio la matriz
+                // con la que el admin decide a donde mover a alguien.
+                counts: access === "OK" || access === "NOT_APPLICABLE",
             }
         })
 
