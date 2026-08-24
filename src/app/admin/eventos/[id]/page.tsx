@@ -6,10 +6,12 @@ import { EventDashboard } from "@/components/admin/EventDashboard"
 import { PoolDayCupos } from "@/components/admin/PoolDayCupos"
 import { DuplicateEventButton } from "@/components/admin/DuplicateEventButton"
 import { isPoolFreeEventCategory } from "@/lib/pool-free"
+import { getDuplicateScheduleFrequencies } from "@/lib/event-duplication-schedule"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 import type { TicketType } from "@prisma/client"
+
 export const dynamic = "force-dynamic"
 
 interface EditEventPageProps {
@@ -93,6 +95,7 @@ export default async function EditEventPage({ params }: EditEventPageProps) {
                     eventStartDate={event.startDate.toISOString()}
                     eventEndDate={event.endDate.toISOString()}
                     eventCategory={event.category}
+                    scheduleFrequencies={getDuplicateScheduleFrequencies(event.ticketTypes)}
                 />
             </div>
             <EventDashboard

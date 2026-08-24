@@ -7,6 +7,16 @@ import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { onEventUpdated } from "@/lib/cached-queries"
 import { parseTicketScheduleConfig, buildTicketValidDaysPayload } from "@/lib/ticket-schedule"
+import {
+    formatFrequencyLabel,
+    frequencyKeyFromDates,
+    getDuplicateScheduleFrequencies,
+    getFirstFrequencyDate,
+    isValidDateKey,
+    parseFrequencyKey,
+    remapDatesByFrequency,
+    weekdayOfDateKey,
+} from "@/lib/event-duplication-schedule"
 
 export const runtime = "nodejs"
 
@@ -16,20 +26,14 @@ type DuplicatePayload = {
     endDate?: string
     isPublished?: boolean
     remapByDayOfWeek?: boolean
+    frequencyStartDates?: Record<string, string>
 }
-
-const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
 
 function toDateKeyUTC(date: Date): string {
     const year = date.getUTCFullYear()
     const month = String(date.getUTCMonth() + 1).padStart(2, "0")
     const day = String(date.getUTCDate()).padStart(2, "0")
     return `${year}-${month}-${day}`
-}
-
-function dowOfDateKey(dateKey: string): number {
-    const [y, m, d] = dateKey.split("-").map(Number)
-    return new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay()
 }
 
 function listDateKeysBetween(start: Date, end: Date): string[] {
@@ -41,17 +45,6 @@ function listDateKeysBetween(start: Date, end: Date): string[] {
         cursor.setUTCDate(cursor.getUTCDate() + 1)
     }
     return out
-}
-
-function remapDatesByDow(sourceDates: string[], newDateKeys: string[]): string[] {
-    const sourceDows = new Set(
-        sourceDates
-            .filter((d) => DATE_KEY_RE.test(d))
-            .map((d) => dowOfDateKey(d))
-    )
-    if (sourceDows.size === 0) return []
-    const remapped = newDateKeys.filter((d) => sourceDows.has(dowOfDateKey(d)))
-    return Array.from(new Set(remapped)).sort()
 }
 
 function generateAccessToken(): string {
@@ -129,6 +122,48 @@ export async function POST(
 
         const newDateKeys = listDateKeysBetween(newStartDate, newEndDate)
         const newDateKeysSet = new Set(newDateKeys)
+        const availableFrequencies = getDuplicateScheduleFrequencies(source.ticketTypes)
+        const availableFrequencyKeys = new Set(availableFrequencies.map((frequency) => frequency.key))
+        const frequencyStartDates: Record<string, string> = {}
+
+        if (
+            body.frequencyStartDates !== undefined &&
+            (!body.frequencyStartDates || typeof body.frequencyStartDates !== "object" || Array.isArray(body.frequencyStartDates))
+        ) {
+            return NextResponse.json(
+                { success: false, error: "Las fechas de inicio por frecuencia no tienen un formato válido" },
+                { status: 400 }
+            )
+        }
+
+        for (const [frequencyKey, value] of Object.entries(body.frequencyStartDates ?? {})) {
+            const weekdays = parseFrequencyKey(frequencyKey)
+            if (!weekdays || !availableFrequencyKeys.has(frequencyKey)) {
+                return NextResponse.json(
+                    { success: false, error: "Se recibió una frecuencia que no existe en el evento origen" },
+                    { status: 400 }
+                )
+            }
+            if (!isValidDateKey(value) || value < startDateRaw || value > endDateRaw) {
+                return NextResponse.json(
+                    {
+                        success: false,
+                        error: `El inicio de ${formatFrequencyLabel(weekdays)} debe estar dentro del rango del nuevo evento`,
+                    },
+                    { status: 400 }
+                )
+            }
+            if (!getFirstFrequencyDate(weekdays, value, endDateRaw)) {
+                return NextResponse.json(
+                    {
+                        success: false,
+                        error: `No hay fechas de ${formatFrequencyLabel(weekdays)} desde el inicio seleccionado`,
+                    },
+                    { status: 400 }
+                )
+            }
+            frequencyStartDates[frequencyKey] = value
+        }
 
         const isPublished = Boolean(body.isPublished)
         const visibility = source.visibility
@@ -164,7 +199,7 @@ export async function POST(
 
             for (const day of source.eventDays) {
                 const sourceKey = toDateKeyUTC(day.date)
-                const candidates = newDateKeys.filter((k) => dowOfDateKey(k) === dowOfDateKey(sourceKey))
+                const candidates = newDateKeys.filter((key) => weekdayOfDateKey(key) === weekdayOfDateKey(sourceKey))
                 const targetKey = candidates[0]
                 if (!targetKey) continue
                 await tx.eventDay.create({
@@ -178,19 +213,21 @@ export async function POST(
                 })
             }
 
-            for (const tt of source.ticketTypes) {
-                const schedule = parseTicketScheduleConfig(tt.validDays)
+            for (const ticketType of source.ticketTypes) {
+                const schedule = parseTicketScheduleConfig(ticketType.validDays)
+                const frequencyKey = frequencyKeyFromDates(schedule.dates)
+                const frequencyStartDate = frequencyKey ? frequencyStartDates[frequencyKey] : undefined
                 let nextDates = schedule.dates
                 if (remap && schedule.dates.length > 0) {
-                    nextDates = remapDatesByDow(schedule.dates, newDateKeys)
+                    nextDates = remapDatesByFrequency(schedule.dates, newDateKeys, frequencyStartDate)
                 } else if (schedule.dates.length > 0) {
-                    nextDates = schedule.dates.filter((d) => newDateKeysSet.has(d))
+                    nextDates = schedule.dates.filter((date) => newDateKeysSet.has(date))
                 }
 
                 const nextSlotsByDate = new Map<string, string[]>()
                 for (const slot of schedule.slots ?? []) {
                     const targetDates = remap
-                        ? newDateKeys.filter((dateKey) => dowOfDateKey(dateKey) === dowOfDateKey(slot.date))
+                        ? remapDatesByFrequency([slot.date], newDateKeys, frequencyStartDate)
                         : nextDates.includes(slot.date)
                             ? [slot.date]
                             : []
@@ -211,48 +248,48 @@ export async function POST(
                 const newTicketType = await tx.ticketType.create({
                     data: {
                         eventId: event.id,
-                        name: tt.name,
-                        description: tt.description,
-                        price: tt.price,
-                        currency: tt.currency,
-                        capacity: tt.capacity,
+                        name: ticketType.name,
+                        description: ticketType.description,
+                        price: ticketType.price,
+                        currency: ticketType.currency,
+                        capacity: ticketType.capacity,
                         sold: 0,
-                        capacityByDate: tt.capacityByDate,
-                        isPackage: tt.isPackage,
-                        packageDaysCount: tt.packageDaysCount,
-                        monthlyClassLimit: tt.monthlyClassLimit,
-                        membershipDurationMonths: tt.membershipDurationMonths,
-                        allowMultipleDailyScans: tt.allowMultipleDailyScans,
-                        membershipScheduleKey: tt.membershipScheduleKey,
-                        originalPrice: tt.originalPrice,
-                        benefits: (tt.benefits ?? Prisma.JsonNull) as Prisma.InputJsonValue,
-                        isFeatured: tt.isFeatured,
-                        highlightLabel: tt.highlightLabel,
-                        accentColor: tt.accentColor,
+                        capacityByDate: ticketType.capacityByDate,
+                        isPackage: ticketType.isPackage,
+                        packageDaysCount: ticketType.packageDaysCount,
+                        monthlyClassLimit: ticketType.monthlyClassLimit,
+                        membershipDurationMonths: ticketType.membershipDurationMonths,
+                        allowMultipleDailyScans: ticketType.allowMultipleDailyScans,
+                        membershipScheduleKey: ticketType.membershipScheduleKey,
+                        originalPrice: ticketType.originalPrice,
+                        benefits: (ticketType.benefits ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+                        isFeatured: ticketType.isFeatured,
+                        highlightLabel: ticketType.highlightLabel,
+                        accentColor: ticketType.accentColor,
                         validDays: validDaysPayload as Prisma.InputJsonValue,
-                        servilexEnabled: tt.servilexEnabled,
-                        servilexIndicator: tt.servilexIndicator,
-                        servilexSucursalCode: tt.servilexSucursalCode,
-                        servilexServiceCode: tt.servilexServiceCode,
-                        servilexDisciplineCode: tt.servilexDisciplineCode,
-                        servilexScheduleCode: tt.servilexScheduleCode,
-                        servilexPoolCode: tt.servilexPoolCode,
-                        servilexExtraConfig: (tt.servilexExtraConfig ?? Prisma.JsonNull) as Prisma.InputJsonValue,
-                        servilexServiceId: tt.servilexServiceId,
-                        servilexBindingId: tt.servilexBindingId,
-                        isActive: tt.isActive,
-                        sortOrder: tt.sortOrder,
+                        servilexEnabled: ticketType.servilexEnabled,
+                        servilexIndicator: ticketType.servilexIndicator,
+                        servilexSucursalCode: ticketType.servilexSucursalCode,
+                        servilexServiceCode: ticketType.servilexServiceCode,
+                        servilexDisciplineCode: ticketType.servilexDisciplineCode,
+                        servilexScheduleCode: ticketType.servilexScheduleCode,
+                        servilexPoolCode: ticketType.servilexPoolCode,
+                        servilexExtraConfig: (ticketType.servilexExtraConfig ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+                        servilexServiceId: ticketType.servilexServiceId,
+                        servilexBindingId: ticketType.servilexBindingId,
+                        isActive: ticketType.isActive,
+                        sortOrder: ticketType.sortOrder,
                     },
                 })
 
                 const sourceInventoryByKey = new Map(
-                    tt.dateInventories.map((inv) => [toDateKeyUTC(inv.date), inv])
+                    ticketType.dateInventories.map((inventory) => [toDateKeyUTC(inventory.date), inventory])
                 )
-                const templateCapacity = tt.capacity
+                const templateCapacity = ticketType.capacity
                 for (const dateKey of nextDates) {
                     const sourceKey = remap
                         ? Array.from(sourceInventoryByKey.keys()).find(
-                              (k) => dowOfDateKey(k) === dowOfDateKey(dateKey)
+                              (key) => weekdayOfDateKey(key) === weekdayOfDateKey(dateKey)
                           )
                         : dateKey
                     const sourceInventory = sourceKey ? sourceInventoryByKey.get(sourceKey) : null
