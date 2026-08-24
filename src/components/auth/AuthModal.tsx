@@ -5,8 +5,8 @@ import { signIn } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
 import { Mail, Lock, User, AlertCircle, CheckCircle, X, Phone, CreditCard, Calendar, MapPin } from "lucide-react"
-import { DISTRITOS_LIMA } from "@/lib/distritos-lima"
 
 interface AuthModalProps {
     open: boolean
@@ -29,7 +29,7 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
         dni: "",
         phone: "",
         birthDate: "",
-        distrito: "",
+        ubigeo: "",
         email: "",
         password: "",
         confirmPassword: "",
@@ -87,8 +87,8 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
             return
         }
 
-        if (!registerData.distrito) {
-            setRegisterError("El distrito es obligatorio")
+        if (!registerData.ubigeo) {
+            setRegisterError("Selecciona tu departamento, provincia y distrito")
             return
         }
 
@@ -335,28 +335,23 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
                                         </div>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <label htmlFor="modal-reg-distrito" className="text-sm font-medium text-gray-700">
-                                            Distrito
-                                        </label>
-                                        <div className="relative">
-                                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
-                                            <select
-                                                id="modal-reg-distrito"
-                                                name="distrito"
-                                                value={registerData.distrito}
-                                                onChange={handleRegisterChange}
-                                                className="flex h-10 w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 appearance-none"
-                                                required
-                                            >
-                                                <option value="">Selecciona tu distrito</option>
-                                                {DISTRITOS_LIMA.map((distrito) => (
-                                                    <option key={distrito} value={distrito}>
-                                                        {distrito}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                    <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+                                        <div className="flex items-start gap-2.5">
+                                            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-fdnda-secondary" aria-hidden="true" />
+                                            <div>
+                                                <p className="text-sm font-semibold text-foreground">Ubicación de residencia</p>
+                                                <p className="text-xs leading-relaxed text-muted-foreground">
+                                                    Selecciona departamento, provincia y distrito.
+                                                </p>
+                                            </div>
                                         </div>
+                                        <UbigeoSelector
+                                            idPrefix="modal-register-location"
+                                            value={registerData.ubigeo}
+                                            onChange={(ubigeo) => setRegisterData((current) => ({ ...current, ubigeo }))}
+                                            stacked
+                                            required
+                                        />
                                     </div>
 
                                     <div className="space-y-2">

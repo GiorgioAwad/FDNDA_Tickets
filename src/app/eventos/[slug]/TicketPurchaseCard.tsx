@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { getPoolFreeSelectableDates, isPoolFreeEventCategory } from "@/lib/pool-free"
+import { isPoolBagTicketType, isPoolSlotTicketType } from "@/lib/pool-bag-classification"
 import { usesTicketDateCapacity } from "@/lib/ticket-date-capacity"
 import { formatPrice } from "@/lib/utils"
 import { getFixedAcademiaScheduleDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
@@ -79,6 +80,7 @@ type PoolDateOption = {
     date: string
     label: string
     hasSelectableSlots: boolean
+    availableSlots: number
     totalSlots: number
 }
 
@@ -325,11 +327,21 @@ export default function TicketPurchaseCard({
 
     const ticketMeta = useMemo(() => {
         return ticketTypesWithLiveStock.map((ticket) => {
-            const usesDailyCapacity = isPoolFreeEventCategory(eventCategory)
-            const usesDateCapacity = usesTicketDateCapacity({
+            const isPoolBag = isPoolBagTicketType({
                 eventCategory,
-                capacityByDate: ticket.capacityByDate,
+                isPackage: ticket.isPackage,
+                packageDaysCount: ticket.packageDaysCount,
             })
+            const usesDailyCapacity = isPoolSlotTicketType({
+                eventCategory,
+                isPackage: ticket.isPackage,
+            })
+            const usesDateCapacity =
+                !isPoolBag &&
+                usesTicketDateCapacity({
+                    eventCategory,
+                    capacityByDate: ticket.capacityByDate,
+                })
             const requiresConfiguredInventory =
                 eventCategory === "EVENTO" && ticket.capacityByDate === true
             const schedule = parseTicketScheduleConfig(ticket.validDays)
@@ -363,7 +375,9 @@ export default function TicketPurchaseCard({
                     .filter(Boolean) as Array<[string, DateInventoryClient]>
             )
             const hasNoUpcomingDates =
-                schedule.dates.length > 0 && normalizedDates.length === 0
+                !isPoolBag &&
+                schedule.dates.length > 0 &&
+                normalizedDates.length === 0
             const dateStates = normalizedDates.map((date) => {
                 const inventory = inventoryByDate.get(date)
                 const capacity = inventory?.capacity ?? (requiresConfiguredInventory ? 0 : ticket.capacity)
@@ -412,32 +426,40 @@ export default function TicketPurchaseCard({
     const poolSlotOptions = useMemo<PoolSlotOption[]>(() => {
         if (!isPoolFreeEventCategory(eventCategory)) return []
 
-        return ticketMeta.flatMap((entry) =>
-            entry.dateStates
-                .filter((dateState) => {
-                    if (!dateState.isEnabled) return false
-                    if (!limaClock) return true
-                    if (dateState.date < limaClock.dateKey) return false
-                    if (dateState.date > limaClock.dateKey) return true
-
-                    const startMinutes = getPoolSlotStartMinutes(entry.ticket)
-                    if (startMinutes === null) return true
-                    return startMinutes > limaClock.minutes
+        return ticketMeta
+            .filter((entry) =>
+                isPoolSlotTicketType({
+                    eventCategory,
+                    isPackage: entry.ticket.isPackage,
                 })
-                .map((dateState) => ({
-                    key: `${entry.ticket.id}:${dateState.date}`,
-                    ticketId: entry.ticket.id,
-                    date: dateState.date,
-                    label: getPoolSlotLabel(entry.ticket),
-                    startMinutes: getPoolSlotStartMinutes(entry.ticket),
-                    price: entry.ticket.price,
-                    selectable: !dateState.soldOut,
-                    ticketName: entry.ticket.name,
-                }))
-        ).sort((a, b) => {
-            if (a.date !== b.date) return a.date.localeCompare(b.date)
-            return (a.startMinutes ?? Infinity) - (b.startMinutes ?? Infinity)
-        })
+            )
+            .flatMap((entry) =>
+                entry.dateStates
+                    .filter((dateState) => {
+                        if (!dateState.isEnabled) return false
+                        if (!limaClock) return true
+                        if (dateState.date < limaClock.dateKey) return false
+                        if (dateState.date > limaClock.dateKey) return true
+
+                        const startMinutes = getPoolSlotStartMinutes(entry.ticket)
+                        if (startMinutes === null) return true
+                        return startMinutes > limaClock.minutes
+                    })
+                    .map((dateState) => ({
+                        key: `${entry.ticket.id}:${dateState.date}`,
+                        ticketId: entry.ticket.id,
+                        date: dateState.date,
+                        label: getPoolSlotLabel(entry.ticket),
+                        startMinutes: getPoolSlotStartMinutes(entry.ticket),
+                        price: entry.ticket.price,
+                        selectable: !dateState.soldOut,
+                        ticketName: entry.ticket.name,
+                    }))
+            )
+            .sort((a, b) => {
+                if (a.date !== b.date) return a.date.localeCompare(b.date)
+                return (a.startMinutes ?? Infinity) - (b.startMinutes ?? Infinity)
+            })
     }, [eventCategory, limaClock, ticketMeta])
 
     const poolDateOptions = useMemo<PoolDateOption[]>(() => {
@@ -459,6 +481,7 @@ export default function TicketPurchaseCard({
                 date,
                 label: formatPoolSlotDateLabel(date),
                 hasSelectableSlots: slots.some((slot) => slot.selectable),
+                availableSlots: slots.filter((slot) => slot.selectable).length,
                 totalSlots: slots.length,
             }))
     }, [eventCategory, poolSlotOptions])
@@ -515,7 +538,13 @@ export default function TicketPurchaseCard({
     // fecha/horario (las visitas se reservan luego desde "Mi cuenta").
     const bagTicketMeta = useMemo(() => {
         if (!isPoolFreeEventCategory(eventCategory)) return []
-        return ticketMeta.filter((entry) => Boolean(entry.ticket.isPackage))
+        return ticketMeta.filter((entry) =>
+            isPoolBagTicketType({
+                eventCategory,
+                isPackage: entry.ticket.isPackage,
+                packageDaysCount: entry.ticket.packageDaysCount,
+            })
+        )
     }, [eventCategory, ticketMeta])
 
     const getCartQuantity = (itemKey: string) => {
@@ -541,7 +570,11 @@ export default function TicketPurchaseCard({
         const nextQty = Math.min(currentQty + 1, maxQty)
         // Bolsa de piscina libre: paquete que NO pre-selecciona fechas (las visitas se
         // reservan luego desde "Mi cuenta"). Se compra como producto simple.
-        const isBag = eventCategory === "PISCINA_LIBRE" && Boolean(ticket.isPackage)
+        const isBag = isPoolBagTicketType({
+            eventCategory,
+            isPackage: ticket.isPackage,
+            packageDaysCount: ticket.packageDaysCount,
+        })
         if (currentQty === 0) {
             addItem({
                 lineKey: itemKey,
@@ -733,9 +766,15 @@ export default function TicketPurchaseCard({
             </div>
 
             <div className="flex flex-col items-center gap-3">
-                <Button asChild size="lg" className="w-full sm:w-auto sm:px-12" disabled={safeItemCount === 0 || academiaSaleClosed}>
-                    <Link href="/checkout">Ir a pagar</Link>
-                </Button>
+                {safeItemCount > 0 && !academiaSaleClosed ? (
+                    <Button asChild size="lg" className="w-full sm:w-auto sm:px-12">
+                        <Link href="/checkout">Ir a pagar</Link>
+                    </Button>
+                ) : (
+                    <Button size="lg" className="w-full sm:w-auto sm:px-12" disabled>
+                        Ir a pagar
+                    </Button>
+                )}
                 <div className="flex items-start gap-2 rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
                     <Info className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <span>Podrás crear tu cuenta o iniciar sesión al momento de pagar.</span>
@@ -864,9 +903,15 @@ export default function TicketPurchaseCard({
             )}
 
             <div className="space-y-3 pt-2">
-                <Button asChild className="w-full" size="lg" disabled={safeItemCount === 0}>
-                    <Link href="/checkout">Ir a pagar</Link>
-                </Button>
+                {safeItemCount > 0 ? (
+                    <Button asChild className="w-full" size="lg">
+                        <Link href="/checkout">Ir a pagar</Link>
+                    </Button>
+                ) : (
+                    <Button className="w-full" size="lg" disabled>
+                        Ir a pagar
+                    </Button>
+                )}
                 <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 text-blue-800 text-sm">
                     <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
                     <span>Podrás crear tu cuenta o iniciar sesión al momento de pagar.</span>
@@ -1041,7 +1086,9 @@ export default function TicketPurchaseCard({
                                                                             {option.label}
                                                                         </div>
                                                                         <div className="text-sm text-slate-500">
-                                                                            {option.totalSlots} horario{option.totalSlots === 1 ? "" : "s"} disponible{option.totalSlots === 1 ? "" : "s"}
+                                                                            {option.availableSlots > 0
+                                                                                ? `${option.availableSlots} horario${option.availableSlots === 1 ? "" : "s"} disponible${option.availableSlots === 1 ? "" : "s"}`
+                                                                                : `${option.totalSlots} horario${option.totalSlots === 1 ? "" : "s"} sin cupo`}
                                                                         </div>
                                                                     </div>
                                                                     {isSelected ? (

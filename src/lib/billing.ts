@@ -70,6 +70,62 @@ export interface BillingSnapshot {
 const normalizeSpaces = (value: string | null | undefined): string =>
     (value || "").replace(/\s+/g, " ").trim()
 
+export interface BillingValidationIssue {
+    field: Exclude<keyof BillingSnapshotInput, "documentType">
+    message: string
+}
+
+export function getBillingValidationIssues(
+    input: BillingSnapshotInput
+): BillingValidationIssue[] {
+    const issues: BillingValidationIssue[] = []
+    const value = (field: Exclude<keyof BillingSnapshotInput, "documentType">) =>
+        normalizeSpaces(input[field])
+
+    if (input.documentType === "BOLETA") {
+        if (!/^\d{8}$/.test(value("buyerDocNumber"))) {
+            issues.push({ field: "buyerDocNumber", message: "Ingresa un DNI válido de 8 dígitos." })
+        }
+    } else {
+        if (!/^\d{11}$/.test(value("buyerDocNumber"))) {
+            issues.push({ field: "buyerDocNumber", message: "Ingresa un RUC válido de 11 dígitos." })
+        }
+        if (value("buyerName").length < 2) {
+            issues.push({ field: "buyerName", message: "Ingresa la razón social." })
+        }
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value("buyerEmail"))) {
+        issues.push({
+            field: "buyerEmail",
+            message: "Ingresa un correo válido, por ejemplo nombre@correo.com.",
+        })
+    }
+    if (!/^\d{7,15}$/.test(value("buyerPhone"))) {
+        issues.push({ field: "buyerPhone", message: "Ingresa un celular válido de 7 a 15 dígitos." })
+    }
+    if (!/^\d{5,6}$/.test(value("buyerUbigeo"))) {
+        issues.push({ field: "buyerUbigeo", message: "Selecciona departamento, provincia y distrito." })
+    }
+    if (value("buyerAddress").length < 5) {
+        issues.push({ field: "buyerAddress", message: "Ingresa una dirección de al menos 5 caracteres." })
+    }
+
+    if (input.documentType === "BOLETA") {
+        if (value("buyerFirstName").length < 2) {
+            issues.push({ field: "buyerFirstName", message: "Ingresa el primer nombre." })
+        }
+        if (value("buyerLastNamePaternal").length < 2) {
+            issues.push({ field: "buyerLastNamePaternal", message: "Ingresa el apellido paterno." })
+        }
+        if (value("buyerLastNameMaternal").length < 2) {
+            issues.push({ field: "buyerLastNameMaternal", message: "Ingresa el apellido materno." })
+        }
+    }
+
+    return issues
+}
+
 export function buildNaturalPersonFullName(input: {
     firstName?: string | null
     secondName?: string | null

@@ -6,8 +6,8 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AuthShell } from "@/components/auth/AuthShell"
+import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
 import { Mail, Lock, User, AlertCircle, CheckCircle, Phone, CreditCard, Calendar, MapPin, Eye, EyeOff } from "lucide-react"
-import { DISTRITOS_LIMA } from "@/lib/distritos-lima"
 import { cn } from "@/lib/utils"
 
 function calculatePasswordStrength(pw: string): { score: number; label: string; color: string } {
@@ -28,7 +28,7 @@ export default function RegisterPage() {
         dni: "",
         phone: "",
         birthDate: "",
-        distrito: "",
+        ubigeo: "",
         email: "",
         password: "",
         confirmPassword: "",
@@ -64,8 +64,8 @@ export default function RegisterPage() {
             setLoading(false)
             return
         }
-        if (!formData.distrito) {
-            setError("El distrito es obligatorio")
+        if (!formData.ubigeo) {
+            setError("Selecciona tu departamento, provincia y distrito")
             setLoading(false)
             return
         }
@@ -160,25 +160,27 @@ export default function RegisterPage() {
                     </Field>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                    <Field id="birthDate" label="Nacimiento" icon={Calendar}>
-                        <Input id="birthDate" name="birthDate" type="date" value={formData.birthDate} onChange={handleChange} className="pl-10 h-11" required />
-                    </Field>
-                    <Field id="distrito" label="Distrito" icon={MapPin}>
-                        <select
-                            id="distrito"
-                            name="distrito"
-                            value={formData.distrito}
-                            onChange={handleChange}
-                            className="flex h-11 w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 appearance-none"
-                            required
-                        >
-                            <option value="">Selecciona</option>
-                            {DISTRITOS_LIMA.map((d) => (
-                                <option key={d} value={d}>{d}</option>
-                            ))}
-                        </select>
-                    </Field>
+                <Field id="birthDate" label="Fecha de nacimiento" icon={Calendar}>
+                    <Input id="birthDate" name="birthDate" type="date" value={formData.birthDate} onChange={handleChange} className="pl-10 h-11" required />
+                </Field>
+
+                <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+                    <div className="flex items-start gap-2.5">
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-fdnda-secondary" aria-hidden="true" />
+                        <div>
+                            <p className="text-sm font-semibold text-foreground">Ubicación de residencia</p>
+                            <p className="text-xs leading-relaxed text-muted-foreground">
+                                Selecciona los tres niveles para identificar correctamente tu distrito.
+                            </p>
+                        </div>
+                    </div>
+                    <UbigeoSelector
+                        idPrefix="register-location"
+                        value={formData.ubigeo}
+                        onChange={(ubigeo) => setFormData((current) => ({ ...current, ubigeo }))}
+                        stacked
+                        required
+                    />
                 </div>
 
                 <Field id="email" label="Email" icon={Mail}>

@@ -8,7 +8,7 @@ import { useCart } from "@/hooks/cart-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { buildNaturalPersonFullName } from "@/lib/billing"
+import { buildNaturalPersonFullName, getBillingValidationIssues } from "@/lib/billing"
 import {
     getCurrentOrFutureScheduleDates,
     getLimaDateKey,
@@ -503,24 +503,15 @@ export default function CheckoutPage() {
         [collectsAttendeeIdentity, items]
     )
 
-    const hasMissingBillingData = useMemo(() => {
-        if (!billingData.buyerDocNumber || !billingData.buyerAddress) return true
-        if (!billingData.buyerEmail || !/^\S+@\S+\.\S+$/.test(billingData.buyerEmail)) return true
-        if (!billingData.buyerPhone || !/^\d{7,15}$/.test(billingData.buyerPhone)) return true
-        if (!billingData.buyerUbigeo || !/^\d{5,6}$/.test(billingData.buyerUbigeo)) return true
-        if (billingData.documentType === "BOLETA" && !/^\d{8}$/.test(billingData.buyerDocNumber)) return true
-        if (billingData.documentType === "FACTURA") {
-            if (!/^\d{11}$/.test(billingData.buyerDocNumber)) return true
-            if (!billingData.buyerName || billingData.buyerName.trim().length < 2) return true
-            return false
-        }
-        return (
-            !billingData.buyerFirstName ||
-            !billingData.buyerLastNamePaternal ||
-            !billingData.buyerLastNameMaternal ||
-            !boletaFullName
-        )
-    }, [billingData, boletaFullName])
+    const billingValidationIssues = useMemo(
+        () => getBillingValidationIssues(billingData),
+        [billingData]
+    )
+    const billingIssueByField = useMemo(
+        () => new Map(billingValidationIssues.map((issue) => [issue.field, issue.message])),
+        [billingValidationIssues]
+    )
+    const hasMissingBillingData = billingValidationIssues.length > 0
 
     const hasMissingScheduleSelections = useMemo(() => {
         return items.some((item) => {
@@ -951,7 +942,14 @@ export default function CheckoutPage() {
                                             onChange={(e) => updateBillingData("buyerEmail", e.target.value)}
                                             placeholder="cliente@correo.com"
                                             className="bg-white"
+                                            aria-invalid={billingIssueByField.has("buyerEmail")}
+                                            aria-describedby={billingIssueByField.has("buyerEmail") ? "buyer-email-error" : undefined}
                                         />
+                                        {billingData.buyerEmail && billingIssueByField.has("buyerEmail") && (
+                                            <p id="buyer-email-error" className="mt-1 text-xs text-red-600">
+                                                {billingIssueByField.get("buyerEmail")}
+                                            </p>
+                                        )}
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-500 mb-1 block">Celular</label>
@@ -960,7 +958,14 @@ export default function CheckoutPage() {
                                             onChange={(e) => updateBillingData("buyerPhone", e.target.value.replace(/\D/g, "").slice(0, 15))}
                                             placeholder="999888777"
                                             className="bg-white"
+                                            aria-invalid={billingIssueByField.has("buyerPhone")}
+                                            aria-describedby={billingIssueByField.has("buyerPhone") ? "buyer-phone-error" : undefined}
                                         />
+                                        {billingData.buyerPhone && billingIssueByField.has("buyerPhone") && (
+                                            <p id="buyer-phone-error" className="mt-1 text-xs text-red-600">
+                                                {billingIssueByField.get("buyerPhone")}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 <div>
@@ -1004,11 +1009,11 @@ export default function CheckoutPage() {
                                                 />
                                             </div>
                                             <div>
-                                                <label className="text-xs text-gray-500 mb-1 block">Segundo nombre</label>
+                                                <label className="text-xs text-gray-500 mb-1 block">Segundo nombre (opcional)</label>
                                                 <Input
                                                     value={billingData.buyerSecondName}
                                                     onChange={(e) => updateBillingData("buyerSecondName", e.target.value)}
-                                                    placeholder="Carlos"
+                                                    placeholder="Opcional"
                                                     className="bg-white"
                                                 />
                                             </div>
@@ -1702,8 +1707,12 @@ export default function CheckoutPage() {
                                         </Button>
 
                                         {hasMissingBillingData && (
-                                            <p className="text-xs text-amber-600 text-center">
-                                                Completa los datos del comprobante de pago
+                                            <p
+                                                className="text-center text-xs text-amber-700"
+                                                role="alert"
+                                                aria-live="polite"
+                                            >
+                                                {billingValidationIssues[0]?.message}
                                             </p>
                                         )}
                                         {!hasMissingBillingData && hasMissingAttendeeData && (

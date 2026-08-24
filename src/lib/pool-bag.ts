@@ -9,26 +9,7 @@ import { shiftsMatch } from "@/lib/ticket-shift"
 // ticket_type_date_inventories y se guarda en PoolVisitReservation. Los "horarios"
 // son los TicketTypes NO-paquete del mismo evento (los slots vendibles sueltos).
 
-export function isPoolBagTicketType(input: {
-    eventCategory?: string | null
-    isPackage?: boolean | null
-    packageDaysCount?: number | null
-}): boolean {
-    return (
-        input.eventCategory === "PISCINA_LIBRE" &&
-        input.isPackage === true &&
-        typeof input.packageDaysCount === "number" &&
-        input.packageDaysCount > 0
-    )
-}
-
-// Slot de horario: TicketType de piscina libre vendible suelto (no-paquete).
-export function isPoolSlotTicketType(input: {
-    eventCategory?: string | null
-    isPackage?: boolean | null
-}): boolean {
-    return input.eventCategory === "PISCINA_LIBRE" && input.isPackage !== true
-}
+export { isPoolBagTicketType, isPoolSlotTicketType } from "@/lib/pool-bag-classification"
 
 export type PoolReservationStatusLike = "RESERVED" | "USED" | "CANCELLED"
 

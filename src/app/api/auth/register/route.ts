@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma"
 import { sendVerificationEmail } from "@/lib/email"
 import { randomBytes } from "crypto"
 import { rateLimit, getClientIP } from "@/lib/rate-limit"
+import { parseRegistrationLocation } from "@/lib/registration-location"
+
 export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
@@ -26,14 +28,23 @@ export async function POST(request: NextRequest) {
         const dni = String(body.dni || "").trim()
         const phone = String(body.phone || "").trim()
         const birthDate = body.birthDate ? String(body.birthDate).trim() : ""
-        const distrito = String(body.distrito || "").trim()
+        const ubigeo = String(body.ubigeo || "").trim()
 
-        if (!name || !email || !password || !dni || !phone || !birthDate || !distrito) {
+        if (!name || !email || !password || !dni || !phone || !birthDate) {
             return NextResponse.json(
                 { success: false, error: "Faltan datos requeridos" },
                 { status: 400 }
             )
         }
+
+        const location = parseRegistrationLocation(ubigeo)
+        if (!location) {
+            return NextResponse.json(
+                { success: false, error: "Selecciona un departamento, provincia y distrito válidos" },
+                { status: 400 }
+            )
+        }
+        const { departamento, provincia, distrito } = location
 
         // Validate DNI format (8 digits)
         if (!/^\d{8}$/.test(dni)) {
@@ -86,6 +97,8 @@ export async function POST(request: NextRequest) {
                     dni,
                     phone,
                     birthDate: parsedBirthDate,
+                    departamento,
+                    provincia,
                     distrito,
                     verifyToken,
                     emailVerifiedAt: null,
@@ -131,6 +144,8 @@ export async function POST(request: NextRequest) {
                 dni,
                 phone,
                 birthDate: parsedBirthDate,
+                departamento,
+                provincia,
                 distrito,
                 role: "USER",
                 verifyToken,

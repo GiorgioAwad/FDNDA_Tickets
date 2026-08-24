@@ -411,6 +411,11 @@ export async function POST(request: NextRequest) {
                     }
                 }
 
+                const isPoolBag = isPoolBagTicketType({
+                    eventCategory: eventConfig.category,
+                    isPackage: reservedTicketType.isPackage,
+                    packageDaysCount: reservedTicketType.packageDaysCount,
+                })
                 const scheduleConfig = parseTicketScheduleConfig(reservedTicketType.validDays)
                 const selectableScheduleDates = getCurrentOrFutureScheduleDates(scheduleConfig.dates)
                 const fixedAcademiaDates = getFixedAcademiaScheduleDates({
@@ -420,11 +425,13 @@ export async function POST(request: NextRequest) {
                     validDays: reservedTicketType.validDays,
                 })
                 const requiredScheduleSelections =
-                    scheduleConfig.dates.length > 0
-                        ? reservedTicketType.isPackage && reservedTicketType.packageDaysCount
-                            ? reservedTicketType.packageDaysCount
-                            : 1
-                        : 0
+                    isPoolBag
+                        ? 0
+                        : scheduleConfig.dates.length > 0
+                          ? reservedTicketType.isPackage && reservedTicketType.packageDaysCount
+                              ? reservedTicketType.packageDaysCount
+                              : 1
+                          : 0
                 // EVENTO y PISCINA_LIBRE no piden identidad del asistente (las
                 // entradas usan el nombre del comprador). Solo ACADEMIA exige
                 // nombre/DNI por asistente (ABIO/SUNAT).
