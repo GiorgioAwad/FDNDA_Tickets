@@ -90,6 +90,7 @@ export default function CheckoutPage() {
     const [discountError, setDiscountError] = useState("")
     const [appliedDiscount, setAppliedDiscount] = useState<AppliedDiscount | null>(null)
     const [discountAmount, setDiscountAmount] = useState(0)
+    const appliedDiscountCartSignatureRef = useRef("")
     const [todayDateKey, setTodayDateKey] = useState("")
     const [liveDateAvailabilityByTicketType, setLiveDateAvailabilityByTicketType] = useState<
         Record<string, Record<string, { available: number | null; isEnabled: boolean }>>
@@ -279,6 +280,31 @@ export default function CheckoutPage() {
         },
         []
     )
+
+    const discountCartSignature = useMemo(
+        () => JSON.stringify(items.map((item) => ({
+            ticketTypeId: item.ticketTypeId,
+            quantity: item.quantity,
+            unitPrice: item.price,
+            attendees: item.attendees.map((attendee) => ({
+                scheduleSelections: getEffectiveScheduleSelections(item, attendee),
+            })),
+        }))),
+        [getEffectiveScheduleSelections, items]
+    )
+
+    useEffect(() => {
+        if (
+            appliedDiscount &&
+            appliedDiscountCartSignatureRef.current &&
+            appliedDiscountCartSignatureRef.current !== discountCartSignature
+        ) {
+            setAppliedDiscount(null)
+            setDiscountAmount(0)
+            appliedDiscountCartSignatureRef.current = ""
+            setDiscountError("El carrito cambió. Vuelve a aplicar tu código de descuento.")
+        }
+    }, [appliedDiscount, discountCartSignature])
 
     const getEventCategory = useCallback(
         (item: (typeof items)[number]) =>
@@ -584,6 +610,14 @@ export default function CheckoutPage() {
                     code: discountCode,
                     eventId: items[0]?.eventId,
                     subtotal: total,
+                    items: items.map((item) => ({
+                        ticketTypeId: item.ticketTypeId,
+                        quantity: item.quantity,
+                        unitPrice: item.price,
+                        attendees: item.attendees.map((attendee) => ({
+                            scheduleSelections: getEffectiveScheduleSelections(item, attendee),
+                        })),
+                    })),
                 }),
             })
 
@@ -592,6 +626,7 @@ export default function CheckoutPage() {
             if (data.valid) {
                 setAppliedDiscount(data.discount)
                 setDiscountAmount(data.discountAmount)
+                appliedDiscountCartSignatureRef.current = discountCartSignature
                 setDiscountCode("")
             } else {
                 setDiscountError(data.error || "Codigo no valido")
@@ -606,6 +641,7 @@ export default function CheckoutPage() {
     const handleRemoveDiscount = () => {
         setAppliedDiscount(null)
         setDiscountAmount(0)
+        appliedDiscountCartSignatureRef.current = ""
     }
 
     const finalTotal = Math.max(0, total - discountAmount)

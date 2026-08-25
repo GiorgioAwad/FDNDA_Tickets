@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 import { rateLimit, getClientIP } from "@/lib/rate-limit"
+import { calculateDiscountAmount, getDiscountEligibleSubtotal } from "@/lib/discounts"
+import { formatDateUTC } from "@/lib/qr"
 
 export const runtime = "nodejs"
 
@@ -23,6 +25,7 @@ export async function POST(request: NextRequest) {
 
         const body = await request.json()
         const { code, eventId, subtotal } = body
+        const cartItems = Array.isArray(body.items) ? body.items : []
 
         if (!code) {
             return NextResponse.json(
@@ -35,6 +38,7 @@ export async function POST(request: NextRequest) {
             where: { code: code.toUpperCase() },
             include: {
                 event: { select: { id: true, title: true } },
+                ticketType: { select: { id: true, name: true } },
                 _count: { select: { usages: true } },
             },
         })
@@ -62,15 +66,42 @@ export async function POST(request: NextRequest) {
         }
 
         // Verificar si es específico para un evento
-        if (discountCode.eventId && eventId && discountCode.eventId !== eventId) {
+        if (discountCode.eventId && discountCode.eventId !== eventId) {
             return NextResponse.json({ 
                 valid: false, 
                 error: `Este código solo es válido para: ${discountCode.event?.title}` 
             })
         }
 
+        const validDateKey = discountCode.validDate
+            ? formatDateUTC(discountCode.validDate)
+            : null
+        const eligibleSubtotal = discountCode.ticketTypeId || validDateKey
+            ? getDiscountEligibleSubtotal({
+                items: cartItems,
+                ticketTypeId: discountCode.ticketTypeId,
+                validDate: validDateKey,
+            })
+            : Number(subtotal || 0)
+
+        if (eligibleSubtotal <= 0) {
+            const scope = [
+                discountCode.ticketType?.name,
+                validDateKey
+                    ? new Intl.DateTimeFormat("es-PE", { dateStyle: "long", timeZone: "UTC" })
+                        .format(discountCode.validDate!)
+                    : null,
+            ].filter(Boolean).join(" · ")
+            return NextResponse.json({
+                valid: false,
+                error: scope
+                    ? `Este código solo aplica a: ${scope}`
+                    : "Este código no aplica a las entradas seleccionadas",
+            })
+        }
+
         // Verificar compra mínima
-        if (discountCode.minPurchase && subtotal && subtotal < discountCode.minPurchase) {
+        if (discountCode.minPurchase && Number(subtotal || 0) < Number(discountCode.minPurchase)) {
             return NextResponse.json({ 
                 valid: false, 
                 error: `Compra mínima: S/ ${discountCode.minPurchase.toFixed(2)}` 
@@ -94,15 +125,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Calcular descuento
-        let discountAmount = 0
         const discountValue = Number(discountCode.value)
-        if (subtotal) {
-            if (discountCode.type === "PERCENTAGE") {
-                discountAmount = (subtotal * discountValue) / 100
-            } else {
-                discountAmount = Math.min(discountValue, subtotal)
-            }
-        }
+        const discountAmount = calculateDiscountAmount({
+            eligibleSubtotal,
+            type: discountCode.type,
+            value: discountValue,
+        })
 
         return NextResponse.json({
             valid: true,
@@ -113,6 +141,8 @@ export async function POST(request: NextRequest) {
                 value: discountValue,
                 description: discountCode.description,
                 eventId: discountCode.eventId,
+                ticketTypeId: discountCode.ticketTypeId,
+                validDate: validDateKey,
                 minPurchase: discountCode.minPurchase ? Number(discountCode.minPurchase) : null,
             },
             discountAmount,

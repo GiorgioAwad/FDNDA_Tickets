@@ -1,20 +1,27 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Gift, Copy, CheckCircle, Clock, History, Ticket, Percent, Tag, Plus, Trash2, Edit2, X, Eye, User, Mail, Calendar, QrCode, AlertCircle } from "lucide-react"
+import { formatLimaDateTimeInput, LIMA_TIME_ZONE } from "@/lib/discounts"
+import { extractTicketValidDates } from "@/lib/ticket-schedule"
 
 type TicketTypeSummary = {
     id: string
     name: string
+    validDays?: unknown
+    isActive?: boolean
 }
 
 type EventWithTicketTypes = {
     id: string
     title: string
+    startDate: string
+    endDate: string
+    eventDays?: Array<{ id: string; date: string }>
     ticketTypes: TicketTypeSummary[]
 }
 
@@ -74,6 +81,9 @@ type DiscountCode = {
     value: number
     eventId: string | null
     event: { id: string; title: string } | null
+    ticketTypeId: string | null
+    ticketType: { id: string; name: string } | null
+    validDate: string | null
     minPurchase: number | null
     maxUses: number | null
     maxUsesPerUser: number
@@ -106,12 +116,62 @@ export default function CourtesyPage() {
         type: "PERCENTAGE" as "PERCENTAGE" | "FIXED",
         value: 10,
         eventId: "",
+        ticketTypeId: "",
+        validDate: "",
         minPurchase: "",
         maxUses: "",
         maxUsesPerUser: 1,
         validFrom: "",
         validUntil: "",
     })
+
+    const discountEvent = useMemo(
+        () => events.find((event) => event.id === discountForm.eventId) ?? null,
+        [discountForm.eventId, events]
+    )
+    const discountTicketType = useMemo(
+        () => discountEvent?.ticketTypes.find((ticketType) => ticketType.id === discountForm.ticketTypeId) ?? null,
+        [discountEvent, discountForm.ticketTypeId]
+    )
+    const discountDateOptions = useMemo(() => {
+        if (!discountEvent) return []
+
+        const ticketDates = discountTicketType
+            ? extractTicketValidDates(discountTicketType.validDays)
+            : []
+        if (ticketDates.length > 0) return ticketDates
+
+        const eventDays = (discountEvent.eventDays ?? [])
+            .map((day) => day.date.slice(0, 10))
+            .filter(Boolean)
+        if (eventDays.length > 0) return Array.from(new Set(eventDays)).sort()
+
+        const start = discountEvent.startDate.slice(0, 10)
+        const end = discountEvent.endDate.slice(0, 10)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return []
+
+        const dates: string[] = []
+        const cursor = new Date(`${start}T12:00:00Z`)
+        const last = new Date(`${end}T12:00:00Z`)
+        while (cursor <= last && dates.length < 550) {
+            dates.push(cursor.toISOString().slice(0, 10))
+            cursor.setUTCDate(cursor.getUTCDate() + 1)
+        }
+        return dates
+    }, [discountEvent, discountTicketType])
+
+    const formatDiscountDate = (dateKey: string) =>
+        new Intl.DateTimeFormat("es-PE", {
+            dateStyle: "full",
+            timeZone: "UTC",
+        }).format(new Date(`${dateKey}T12:00:00Z`))
+
+    const formatDiscountValidity = (value: string) =>
+        new Intl.DateTimeFormat("es-PE", {
+            dateStyle: "medium",
+            timeStyle: "short",
+            timeZone: LIMA_TIME_ZONE,
+        }).format(new Date(value))
 
     const [formData, setFormData] = useState({
         eventId: "",
@@ -188,6 +248,8 @@ export default function CourtesyPage() {
             type: "PERCENTAGE",
             value: 10,
             eventId: "",
+            ticketTypeId: "",
+            validDate: "",
             minPurchase: "",
             maxUses: "",
             maxUsesPerUser: 1,
@@ -208,6 +270,8 @@ export default function CourtesyPage() {
                 type: discountForm.type,
                 value: discountForm.value,
                 eventId: discountForm.eventId || null,
+                ticketTypeId: discountForm.ticketTypeId || null,
+                validDate: discountForm.validDate || null,
                 minPurchase: discountForm.minPurchase ? parseFloat(discountForm.minPurchase) : null,
                 maxUses: discountForm.maxUses ? parseInt(discountForm.maxUses) : null,
                 maxUsesPerUser: discountForm.maxUsesPerUser,
@@ -250,11 +314,13 @@ export default function CourtesyPage() {
             type: discount.type,
             value: Number(discount.value),
             eventId: discount.eventId || "",
+            ticketTypeId: discount.ticketTypeId || "",
+            validDate: discount.validDate ? discount.validDate.split("T")[0] : "",
             minPurchase: discount.minPurchase?.toString() || "",
             maxUses: discount.maxUses?.toString() || "",
             maxUsesPerUser: discount.maxUsesPerUser ?? 1,
-            validFrom: discount.validFrom ? discount.validFrom.split("T")[0] : "",
-            validUntil: discount.validUntil ? discount.validUntil.split("T")[0] : "",
+            validFrom: discount.validFrom ? formatLimaDateTimeInput(discount.validFrom) : "",
+            validUntil: discount.validUntil ? formatLimaDateTimeInput(discount.validUntil) : "",
         })
         setShowDiscountForm(true)
     }
@@ -785,7 +851,7 @@ export default function CourtesyPage() {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-2">
                                             <label className="text-sm font-medium">Tipo de Descuento</label>
                                             <select
@@ -811,18 +877,71 @@ export default function CourtesyPage() {
                                                 required
                                             />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-medium">Evento (opcional)</label>
-                                            <select
-                                                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                                value={discountForm.eventId}
-                                                onChange={(e) => setDiscountForm({ ...discountForm, eventId: e.target.value })}
-                                            >
-                                                <option value="">Todos los eventos</option>
-                                                {events.map(e => (
-                                                    <option key={e.id} value={e.id}>{e.title}</option>
-                                                ))}
-                                            </select>
+                                    </div>
+
+                                    <div className="space-y-3 rounded-xl bg-blue-50/70 p-4">
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-blue-950">¿Dónde aplica?</h3>
+                                            <p className="mt-1 text-xs text-blue-800">
+                                                Déjalo en “Todos” para un código general, o limita progresivamente por evento, entrada y día.
+                                            </p>
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                            <div className="min-w-0 space-y-2">
+                                                <label htmlFor="discount-event" className="text-sm font-medium">Evento</label>
+                                                <select
+                                                    id="discount-event"
+                                                    className="h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                                    value={discountForm.eventId}
+                                                    onChange={(e) => setDiscountForm({
+                                                        ...discountForm,
+                                                        eventId: e.target.value,
+                                                        ticketTypeId: "",
+                                                        validDate: "",
+                                                    })}
+                                                >
+                                                    <option value="">Todos los eventos</option>
+                                                    {events.map((event) => (
+                                                        <option key={event.id} value={event.id}>{event.title}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="min-w-0 space-y-2">
+                                                <label htmlFor="discount-ticket-type" className="text-sm font-medium">Entrada</label>
+                                                <select
+                                                    id="discount-ticket-type"
+                                                    className="h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    value={discountForm.ticketTypeId}
+                                                    onChange={(e) => setDiscountForm({
+                                                        ...discountForm,
+                                                        ticketTypeId: e.target.value,
+                                                        validDate: "",
+                                                    })}
+                                                    disabled={!discountEvent}
+                                                >
+                                                    <option value="">Todas las entradas</option>
+                                                    {discountEvent?.ticketTypes
+                                                        .filter((ticketType) => ticketType.isActive !== false)
+                                                        .map((ticketType) => (
+                                                            <option key={ticketType.id} value={ticketType.id}>{ticketType.name}</option>
+                                                        ))}
+                                                </select>
+                                            </div>
+                                            <div className="min-w-0 space-y-2">
+                                                <label htmlFor="discount-valid-date" className="text-sm font-medium">Día</label>
+                                                <select
+                                                    id="discount-valid-date"
+                                                    className="h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    value={discountForm.validDate}
+                                                    onChange={(e) => setDiscountForm({ ...discountForm, validDate: e.target.value })}
+                                                    disabled={!discountEvent || discountDateOptions.length === 0}
+                                                >
+                                                    <option value="">Todos los días</option>
+                                                    {discountDateOptions.map((date) => (
+                                                        <option key={date} value={date}>{formatDiscountDate(date)}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -862,20 +981,23 @@ export default function CourtesyPage() {
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-2">
-                                            <label className="text-sm font-medium">Válido Desde</label>
+                                            <label className="text-sm font-medium">Válido desde <span className="font-normal text-gray-500">(hora Lima)</span></label>
                                             <Input
-                                                type="date"
+                                                type="datetime-local"
                                                 value={discountForm.validFrom}
                                                 onChange={(e) => setDiscountForm({ ...discountForm, validFrom: e.target.value })}
                                             />
+                                            <p className="text-xs text-gray-500">Si lo dejas vacío, empieza al crear el código.</p>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-medium">Válido Hasta (opcional)</label>
+                                            <label className="text-sm font-medium">Válido hasta <span className="font-normal text-gray-500">(hora Lima, opcional)</span></label>
                                             <Input
-                                                type="date"
+                                                type="datetime-local"
                                                 value={discountForm.validUntil}
                                                 onChange={(e) => setDiscountForm({ ...discountForm, validUntil: e.target.value })}
+                                                min={discountForm.validFrom || undefined}
                                             />
+                                            <p className="text-xs text-gray-500">El código funciona inclusive hasta este minuto.</p>
                                         </div>
                                     </div>
 
@@ -944,6 +1066,16 @@ export default function CourtesyPage() {
                                                         Solo: {discount.event.title}
                                                     </Badge>
                                                 )}
+                                                {discount.ticketType && (
+                                                    <Badge variant="outline">
+                                                        Entrada: {discount.ticketType.name}
+                                                    </Badge>
+                                                )}
+                                                {discount.validDate && (
+                                                    <Badge variant="outline">
+                                                        Día: {formatDiscountDate(discount.validDate.split("T")[0])}
+                                                    </Badge>
+                                                )}
                                                 {discount.minPurchase && (
                                                     <span className="text-gray-500">
                                                         Min: S/ {Number(discount.minPurchase).toFixed(2)}
@@ -959,7 +1091,7 @@ export default function CourtesyPage() {
                                             )}
                                             {discount.validUntil && (
                                                 <p className="text-xs text-gray-400">
-                                                    Válido hasta: {new Date(discount.validUntil).toLocaleDateString("es-PE")}
+                                                    Válido hasta: {formatDiscountValidity(discount.validUntil)} (hora Lima)
                                                 </p>
                                             )}
                                         </div>

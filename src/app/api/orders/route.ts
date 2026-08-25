@@ -27,6 +27,7 @@ import {
     normalizeShiftLabel,
     parseTicketScheduleConfig,
 } from "@/lib/ticket-schedule"
+import { calculateDiscountAmount, getDiscountEligibleSubtotal, type DiscountCartItem } from "@/lib/discounts"
 import { z } from "zod"
 
 export const runtime = "nodejs"
@@ -169,8 +170,11 @@ export async function POST(request: NextRequest) {
                 minPurchase: Prisma.Decimal | null
                 value: Prisma.Decimal
                 type: "PERCENTAGE" | "FIXED"
+                ticketTypeId: string | null
+                validDate: string | null
             } | null = null
             const orderItemsData: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] = []
+            const discountCartItems: DiscountCartItem[] = []
             // Reservas de stock DIFERIDAS: se ejecutan al final de la transaccion,
             // justo antes del COMMIT, para minimizar el tiempo que se sostiene el
             // lock de la fila del ticket type (sube el throughput de compras
@@ -224,6 +228,8 @@ export async function POST(request: NextRequest) {
                     minPurchase: discountCode.minPurchase,
                     value: discountCode.value,
                     type: discountCode.type,
+                    ticketTypeId: discountCode.ticketTypeId,
+                    validDate: discountCode.validDate ? formatDateUTC(discountCode.validDate) : null,
                 }
             }
 
@@ -686,6 +692,12 @@ export async function POST(request: NextRequest) {
                     subtotal,
                     attendeeData: attendeeData as Prisma.InputJsonValue,
                 })
+                discountCartItems.push({
+                    ticketTypeId: item.ticketTypeId,
+                    quantity: item.quantity,
+                    unitPrice: Number(reservedTicketType.price),
+                    attendees: attendeeData,
+                })
 
                 cacheInvalidations.add(`${eventId}:${item.ticketTypeId}`)
             }
@@ -695,16 +707,25 @@ export async function POST(request: NextRequest) {
                     ? Number(validatedDiscountCode.minPurchase)
                     : 0
                 const discountValue = Number(validatedDiscountCode.value)
+                const eligibleSubtotal = getDiscountEligibleSubtotal({
+                    items: discountCartItems,
+                    ticketTypeId: validatedDiscountCode.ticketTypeId,
+                    validDate: validatedDiscountCode.validDate,
+                })
 
                 if (minPurchase > 0 && totalAmount < minPurchase) {
                     throw new Error(`Compra minima requerida: S/ ${minPurchase.toFixed(2)}`)
                 }
 
-                if (validatedDiscountCode.type === "PERCENTAGE") {
-                    discountAmount = (totalAmount * discountValue) / 100
-                } else {
-                    discountAmount = Math.min(discountValue, totalAmount)
+                if (eligibleSubtotal <= 0) {
+                    throw new Error("El codigo de descuento no aplica a las entradas o fecha seleccionadas")
                 }
+
+                discountAmount = calculateDiscountAmount({
+                    eligibleSubtotal,
+                    type: validatedDiscountCode.type,
+                    value: discountValue,
+                })
             }
 
             const finalAmount = Math.max(0, totalAmount - discountAmount)

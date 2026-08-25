@@ -35,7 +35,7 @@ enum EventVisibility {
 }
 
 enum EventTicketLayout {
-  LIST  // Lista simple de entradas (default)
+  LIST // Lista simple de entradas (default)
   PLANS // Cards tipo "planes" (BRONCE/PLATA/ORO) con beneficios y precio tachado
 }
 
@@ -59,8 +59,8 @@ enum EntitlementStatus {
 
 // Bolsa de piscina libre ("10 visitas"): estado de cada reserva de visita.
 enum PoolReservationStatus {
-  RESERVED  // cupo tomado, aún no asistido
-  USED      // ya escaneado/asistido
+  RESERVED // cupo tomado, aún no asistido
+  USED // ya escaneado/asistido
   CANCELLED // liberado (devuelve el cupo y el crédito)
 }
 
@@ -168,19 +168,19 @@ model User {
   updatedAt       DateTime  @updatedAt
 
   // Relations
-  orders           Order[]
-  tickets          Ticket[]
-  scans            Scan[]           @relation("StaffScans")
-  registeredMembershipGuestPasses MembershipGuestPass[] @relation("MembershipGuestPassStaff")
-  createdEvents    Event[]          @relation("EventCreator")
-  courtesyBatches  CourtesyBatch[]
-  claimedCourtesy  CourtesyTicket[] @relation("ClaimedBy")
-  discountCodes    DiscountCode[]   @relation("DiscountCreator")
-  complaintBookEntries ComplaintBookEntry[]
-  uploadedAssets   UploadedAsset[]
-  billingProfile   UserBillingProfile?
-  promoPopups      PromoPopup[]
-  membershipAdminChanges MembershipAdminChange[]
+  orders                          Order[]
+  tickets                         Ticket[]
+  scans                           Scan[]                  @relation("StaffScans")
+  registeredMembershipGuestPasses MembershipGuestPass[]   @relation("MembershipGuestPassStaff")
+  createdEvents                   Event[]                 @relation("EventCreator")
+  courtesyBatches                 CourtesyBatch[]
+  claimedCourtesy                 CourtesyTicket[]        @relation("ClaimedBy")
+  discountCodes                   DiscountCode[]          @relation("DiscountCreator")
+  complaintBookEntries            ComplaintBookEntry[]
+  uploadedAssets                  UploadedAsset[]
+  billingProfile                  UserBillingProfile?
+  promoPopups                     PromoPopup[]
+  membershipAdminChanges          MembershipAdminChange[]
 
   @@map("users")
 }
@@ -264,49 +264,49 @@ model UploadedAsset {
 }
 
 model Event {
-  id          String    @id @default(cuid())
-  slug        String    @unique
-  title       String
-  description String    @db.Text
-  location    String
-  venue       String
-  servilexSucursalCode String @default("01")
-  bannerUrl   String?
-  startDate   DateTime
-  endDate     DateTime
-  mode        EventMode @default(RANGE)
-  category    EventCategory @default(EVENTO)
-  advanceAmount Decimal @default(0) @db.Decimal(10, 2)
+  id                      String            @id @default(cuid())
+  slug                    String            @unique
+  title                   String
+  description             String            @db.Text
+  location                String
+  venue                   String
+  servilexSucursalCode    String            @default("01")
+  bannerUrl               String?
+  startDate               DateTime
+  endDate                 DateTime
+  mode                    EventMode         @default(RANGE)
+  category                EventCategory     @default(EVENTO)
+  advanceAmount           Decimal           @default(0) @db.Decimal(10, 2)
   // Solo aplica si category = ACADEMIA. Cantidad de clases por semana del paquete
   // (1..7). Se usa para autocompletar `packageDaysCount` en el creador de entradas.
   academiaWeeklyFrequency Int?
-  isPublished Boolean   @default(false)
-  visibility  EventVisibility @default(PUBLIC)
-  accessToken String?   @unique
-  discipline  String?   // e.g., "Natación", "Waterpolo", etc.
+  isPublished             Boolean           @default(false)
+  visibility              EventVisibility   @default(PUBLIC)
+  accessToken             String?           @unique
+  discipline              String? // e.g., "Natación", "Waterpolo", etc.
   // Cómo se muestran las entradas en la página pública del evento.
-  ticketLayout EventTicketLayout @default(LIST)
+  ticketLayout            EventTicketLayout @default(LIST)
   // Membresías a término fijo: cómo se resuelve la fecha de inicio que elige (o
   // se fuerza a) el comprador en el checkout.
   //  - Si membershipStartFixed está presente: TODOS inician ese día (sin selector).
   //  - Si no, y hay min/max: el comprador elige dentro de [min, max].
   //  - Si nada: default (>= hoy, <= hoy + 18 meses), sin enero/febrero.
-  membershipStartFixed DateTime? @db.Date
-  membershipStartMin   DateTime? @db.Date
-  membershipStartMax   DateTime? @db.Date
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  membershipStartFixed    DateTime?         @db.Date
+  membershipStartMin      DateTime?         @db.Date
+  membershipStartMax      DateTime?         @db.Date
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
 
   // Relations
-  createdBy       String
-  creator         User            @relation("EventCreator", fields: [createdBy], references: [id])
-  eventDays       EventDay[]
-  ticketTypes     TicketType[]
-  tickets         Ticket[]
-  scans           Scan[]
+  createdBy             String
+  creator               User                  @relation("EventCreator", fields: [createdBy], references: [id])
+  eventDays             EventDay[]
+  ticketTypes           TicketType[]
+  tickets               Ticket[]
+  scans                 Scan[]
   membershipGuestPasses MembershipGuestPass[]
-  courtesyBatches CourtesyBatch[]
-  discountCodes   DiscountCode[]
+  courtesyBatches       CourtesyBatch[]
+  discountCodes         DiscountCode[]
 
   @@index([isPublished, endDate])
   @@index([visibility, isPublished, endDate])
@@ -317,8 +317,8 @@ model EventDay {
   id        String   @id @default(cuid())
   eventId   String
   date      DateTime @db.Date
-  openTime  String   // "08:00"
-  closeTime String   // "18:00"
+  openTime  String // "08:00"
+  closeTime String // "18:00"
   capacity  Int      @default(0) // 0 = unlimited
 
   // Relations
@@ -329,25 +329,25 @@ model EventDay {
 }
 
 model TicketType {
-  id               String   @id @default(cuid())
-  eventId          String
-  name             String   // "General", "VIP", "Full Day 3 días"
-  description      String?
-  price            Decimal  @db.Decimal(10, 2)
-  currency         String   @default("PEN")
-  capacity         Int      @default(0) // 0 = unlimited
-  sold             Int      @default(0)
+  id                       String   @id @default(cuid())
+  eventId                  String
+  name                     String // "General", "VIP", "Full Day 3 días"
+  description              String?
+  price                    Decimal  @db.Decimal(10, 2)
+  currency                 String   @default("PEN")
+  capacity                 Int      @default(0) // 0 = unlimited
+  sold                     Int      @default(0)
   // EVENTO: si true, el cupo se controla por fecha mediante
   // TicketTypeDateInventory. Se mantiene false por defecto para que las
   // entradas legacy sigan usando capacity/sold globales. PISCINA_LIBRE conserva
   // su comportamiento diario por categoría aunque este flag sea false.
-  capacityByDate   Boolean  @default(false)
-  isPackage        Boolean  @default(false)
-  packageDaysCount Int?     // Number of days for package tickets
+  capacityByDate           Boolean  @default(false)
+  isPackage                Boolean  @default(false)
+  packageDaysCount         Int? // Number of days for package tickets
   // Membresías: cupo de clases por mes. Si está presente, el control de
   // asistencia se reinicia cada mes (use-it-or-lose-it) en vez de usar una
   // bolsa total. Ver scan-helpers.buildMembershipMonthlySummary.
-  monthlyClassLimit Int?
+  monthlyClassLimit        Int?
   // Membresías a término fijo: duración en meses ACTIVOS (6 = semestral, 12 = anual).
   // Si está presente (junto con Ticket.membershipStartDate elegido en checkout) la
   // vigencia se desacopla del rango del evento y aplica el blackout enero/febrero
@@ -356,45 +356,46 @@ model TicketType {
   // Membresías: si true, permite varios ingresos el MISMO día (no se bloquea el
   // reingreso) y cada escaneo cuenta como 1 clase del cupo mensual (se cuenta por
   // scans VALID del mes, no por días). Solo aplica a membresías (monthlyClassLimit).
-  allowMultipleDailyScans Boolean @default(false)
+  allowMultipleDailyScans  Boolean  @default(false)
   // Membresías de natación con horario semanal fijo (BRONCE/PLATA): clave del
   // perfil de horario en src/lib/membership-schedule.ts (ej. "ADULTOS_BRONCE").
   // La sede sale de event.servilexSucursalCode. Si está presente, el comprador
   // elige frecuencia + hora en el checkout y el escáner valida día+hora.
   // null = sin horario semanal (ORO / legacy intactos).
-  membershipScheduleKey String?
-  validDays        Json?    // Array of dates ["2024-03-15", "2024-03-16"]
+  membershipScheduleKey    String?
+  validDays                Json? // Array of dates ["2024-03-15", "2024-03-16"]
   // Presentación tipo "plan" (layout PLANS del evento)
-  originalPrice    Decimal? @db.Decimal(10, 2) // Precio regular para mostrar tachado
-  benefits         Json?    // [{ text: string, footnote?: boolean }]
-  isFeatured       Boolean  @default(false)    // Destaca el plan (ring + badge)
-  highlightLabel   String?  // Badge destacado, ej. "MÁS POPULAR"
-  accentColor      String?  // Token de color: "bronze" | "silver" | "gold" | custom
-  servilexEnabled        Boolean  @default(false)
-  servilexIndicator      String?  @default("AC")
-  servilexSucursalCode   String?
-  servilexServiceCode    String?
-  servilexDisciplineCode String?
-  servilexScheduleCode   String?
-  servilexPoolCode       String?
-  servilexExtraConfig    Json?
-  servilexServiceId      String?
-  servilexBindingId      String?
-  isActive         Boolean  @default(true)
-  sortOrder        Int      @default(0)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  originalPrice            Decimal? @db.Decimal(10, 2) // Precio regular para mostrar tachado
+  benefits                 Json? // [{ text: string, footnote?: boolean }]
+  isFeatured               Boolean  @default(false) // Destaca el plan (ring + badge)
+  highlightLabel           String? // Badge destacado, ej. "MÁS POPULAR"
+  accentColor              String? // Token de color: "bronze" | "silver" | "gold" | custom
+  servilexEnabled          Boolean  @default(false)
+  servilexIndicator        String?  @default("AC")
+  servilexSucursalCode     String?
+  servilexServiceCode      String?
+  servilexDisciplineCode   String?
+  servilexScheduleCode     String?
+  servilexPoolCode         String?
+  servilexExtraConfig      Json?
+  servilexServiceId        String?
+  servilexBindingId        String?
+  isActive                 Boolean  @default(true)
+  sortOrder                Int      @default(0)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
   // Relations
-  event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  servilexService ServilexService? @relation(fields: [servilexServiceId], references: [id])
-  servilexBinding AbioCatalogBinding? @relation(fields: [servilexBindingId], references: [id])
-  dateInventories TicketTypeDateInventory[]
-  orderItems      OrderItem[]
-  tickets         Ticket[]
-  courtesyBatches CourtesyBatch[]
+  event            Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  servilexService  ServilexService?          @relation(fields: [servilexServiceId], references: [id])
+  servilexBinding  AbioCatalogBinding?       @relation(fields: [servilexBindingId], references: [id])
+  dateInventories  TicketTypeDateInventory[]
+  orderItems       OrderItem[]
+  tickets          Ticket[]
+  courtesyBatches  CourtesyBatch[]
+  discountCodes    DiscountCode[]
   // Reservas de bolsa que consumen el cupo de este horario (relación inversa).
-  poolReservations PoolVisitReservation[] @relation("PoolReservationSlot")
+  poolReservations PoolVisitReservation[]    @relation("PoolReservationSlot")
 
   @@index([eventId])
   @@index([isActive])
@@ -419,48 +420,48 @@ model TicketTypeDateInventory {
 }
 
 model Order {
-  id               String      @id @default(cuid())
-  userId           String
-  status           OrderStatus @default(PENDING)
-  orderType        OrderType   @default(TICKET)
-  totalAmount      Decimal     @db.Decimal(10, 2)
-  currency         String      @default("PEN")
-  provider         String      @default("IZIPAY")
-  providerRef      String?     // Payment reference from provider
-  providerOrderNumber String?
+  id                    String             @id @default(cuid())
+  userId                String
+  status                OrderStatus        @default(PENDING)
+  orderType             OrderType          @default(TICKET)
+  totalAmount           Decimal            @db.Decimal(10, 2)
+  currency              String             @default("PEN")
+  provider              String             @default("IZIPAY")
+  providerRef           String? // Payment reference from provider
+  providerOrderNumber   String?
   providerTransactionId String?
-  providerResponse Json?       // Full response from provider
-  paymentSyncAttempts Int      @default(0)
-  paymentLastSyncAt DateTime?
-  paymentNeedsReview Boolean   @default(false)
-  paidAt           DateTime?
+  providerResponse      Json? // Full response from provider
+  paymentSyncAttempts   Int                @default(0)
+  paymentLastSyncAt     DateTime?
+  paymentNeedsReview    Boolean            @default(false)
+  paidAt                DateTime?
   // Merch delivery (null for TICKET orders)
-  deliveryMethod    DeliveryMethod?
-  pickupEventId     String?
-  shippingAddress   String?
-  shippingDistrito  String?
-  shippingUbigeo    String?
-  shippingReference String?
-  shippingPhone     String?
-  shippingCost      Decimal?           @db.Decimal(10, 2)
-  fulfillmentStatus FulfillmentStatus?
-  fulfilledAt       DateTime?
-  trackingCode      String?
+  deliveryMethod        DeliveryMethod?
+  pickupEventId         String?
+  shippingAddress       String?
+  shippingDistrito      String?
+  shippingUbigeo        String?
+  shippingReference     String?
+  shippingPhone         String?
+  shippingCost          Decimal?           @db.Decimal(10, 2)
+  fulfillmentStatus     FulfillmentStatus?
+  fulfilledAt           DateTime?
+  trackingCode          String?
   // Billing data
-  documentType     String?     // "BOLETA" or "FACTURA"
-  buyerDocType     String?     // "1" = DNI, "6" = RUC
-  buyerDocNumber   String?     // DNI (8 digits) or RUC (11 digits)
-  buyerName        String?     // Full name or business name
-  buyerAddress     String?     // Fiscal address (for FACTURA)
-  buyerEmail       String?
-  buyerPhone       String?
-  buyerUbigeo      String?
-  buyerFirstName   String?
-  buyerSecondName  String?
+  documentType          String? // "BOLETA" or "FACTURA"
+  buyerDocType          String? // "1" = DNI, "6" = RUC
+  buyerDocNumber        String? // DNI (8 digits) or RUC (11 digits)
+  buyerName             String? // Full name or business name
+  buyerAddress          String? // Fiscal address (for FACTURA)
+  buyerEmail            String?
+  buyerPhone            String?
+  buyerUbigeo           String?
+  buyerFirstName        String?
+  buyerSecondName       String?
   buyerLastNamePaternal String?
   buyerLastNameMaternal String?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
   // Relations
   user       User        @relation(fields: [userId], references: [id])
@@ -486,8 +487,8 @@ model OrderItem {
   quantity       Int
   unitPrice      Decimal @db.Decimal(10, 2)
   subtotal       Decimal @db.Decimal(10, 2)
-  attendeeData   Json?   // [{name, dni}, {name, dni}] for each ticket
-  merchSnapshot  Json?   // {productName, size, zone, imageUrl, category} at purchase time
+  attendeeData   Json? // [{name, dni}, {name, dni}] for each ticket
+  merchSnapshot  Json? // {productName, size, zone, imageUrl, category} at purchase time
 
   // Relations
   order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -498,45 +499,45 @@ model OrderItem {
 }
 
 model Ticket {
-  id           String       @id @default(cuid())
-  orderId      String
-  userId       String
-  eventId      String
-  ticketTypeId String
-  ticketCode   String       @unique // Unique code for QR
-  attendeeName String?
-  attendeeDni  String?
+  id                  String       @id @default(cuid())
+  orderId             String
+  userId              String
+  eventId             String
+  ticketTypeId        String
+  ticketCode          String       @unique // Unique code for QR
+  attendeeName        String?
+  attendeeDni         String?
   // Membresías a término fijo: fecha de inicio elegida por el comprador en el
   // checkout. Ancla los ciclos mensuales y la vigencia (ver scan-helpers).
   // null = legacy → se usa event.startDate como ancla.
-  membershipStartDate DateTime? @db.Date
+  membershipStartDate DateTime?    @db.Date
   // Membresías de natación con horario semanal fijo: la selección normalizada del
   // comprador (frecuencia + sesiones día/hora). Ver lib/membership-schedule.ts
   // (MembershipScheduleSelection). null = sin horario semanal.
-  membershipSchedule Json?
-  status       TicketStatus @default(ACTIVE)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  membershipSchedule  Json?
+  status              TicketStatus @default(ACTIVE)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
   // Relations
-  order         Order                  @relation(fields: [orderId], references: [id])
-  user          User                   @relation(fields: [userId], references: [id])
-  event         Event                  @relation(fields: [eventId], references: [id])
-  ticketType    TicketType             @relation(fields: [ticketTypeId], references: [id])
-  entitlements  TicketDayEntitlement[]
-  scans         Scan[]
-  courtesyInfo  CourtesyTicket?
+  order                 Order                       @relation(fields: [orderId], references: [id])
+  user                  User                        @relation(fields: [userId], references: [id])
+  event                 Event                       @relation(fields: [eventId], references: [id])
+  ticketType            TicketType                  @relation(fields: [ticketTypeId], references: [id])
+  entitlements          TicketDayEntitlement[]
+  scans                 Scan[]
+  courtesyInfo          CourtesyTicket?
   // Membresías semestral/anual BRONCE/PLATA: horario elegido por mes (puntos de
   // cambio). El base/mes 0 sigue siendo membershipSchedule; cada fila aquí es un
   // cambio que rige desde su monthIndex en adelante. Ver lib/membership-schedule.
-  monthlySchedules MembershipMonthlySchedule[]
-  membershipFreeze MembershipFreeze?
+  monthlySchedules      MembershipMonthlySchedule[]
+  membershipFreeze      MembershipFreeze?
   // Bolsa de piscina libre: reservas de visita del titular (draw-down de créditos).
-  poolReservations PoolVisitReservation[]
+  poolReservations      PoolVisitReservation[]
   // Pases gratuitos registrados por staff para acompañantes de membresías ORO.
   membershipGuestPasses MembershipGuestPass[]
   // Correcciones administrativas de horario/sede hechas desde el panel.
-  adminChanges MembershipAdminChange[]
+  adminChanges          MembershipAdminChange[]
 
   @@index([eventId])
   @@index([userId])
@@ -607,9 +608,9 @@ model TicketDayEntitlement {
 model PoolVisitReservation {
   id                 String                @id @default(cuid())
   ticketId           String
-  sourceTicketTypeId String                // el horario de piscina cuyo cupo se consume
+  sourceTicketTypeId String // el horario de piscina cuyo cupo se consume
   date               DateTime              @db.Date
-  shift              String                // etiqueta del horario (horaInicio-horaFin) para el escáner/carnet
+  shift              String // etiqueta del horario (horaInicio-horaFin) para el escáner/carnet
   status             PoolReservationStatus @default(RESERVED)
   usedAt             DateTime?
   createdAt          DateTime              @default(now())
@@ -678,33 +679,37 @@ model MembershipGuestPass {
 // ==================== DISCOUNT CODES ====================
 
 enum DiscountType {
-  PERCENTAGE  // 20% off
-  FIXED       // S/ 10 off
+  PERCENTAGE // 20% off
+  FIXED // S/ 10 off
 }
 
 model DiscountCode {
-  id            String       @id @default(cuid())
-  code          String       @unique  // "FDNDA20", "PROMO2026"
-  description   String?      // "Descuento para auspiciadores"
-  type          DiscountType @default(PERCENTAGE)
-  value         Decimal      @db.Decimal(10, 2) // 20 for 20%, or 10 for S/10
-  eventId       String?      // null = applies to all events
-  minPurchase   Decimal?     @db.Decimal(10, 2) // Minimum purchase amount
-  maxUses       Int?         // null = unlimited
-  usedCount     Int          @default(0)
-  maxUsesPerUser Int?        @default(1)  // How many times same user can use
-  validFrom     DateTime     @default(now())
-  validUntil    DateTime?
-  isActive      Boolean      @default(true)
-  createdBy     String
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id             String       @id @default(cuid())
+  code           String       @unique // "FDNDA20", "PROMO2026"
+  description    String? // "Descuento para auspiciadores"
+  type           DiscountType @default(PERCENTAGE)
+  value          Decimal      @db.Decimal(10, 2) // 20 for 20%, or 10 for S/10
+  eventId        String? // null = applies to all events
+  ticketTypeId   String? // null = applies to every ticket type in the event
+  validDate      DateTime?    @db.Date // null = applies to every configured date
+  minPurchase    Decimal?     @db.Decimal(10, 2) // Minimum purchase amount
+  maxUses        Int? // null = unlimited
+  usedCount      Int          @default(0)
+  maxUsesPerUser Int?         @default(1) // How many times same user can use
+  validFrom      DateTime     @default(now())
+  validUntil     DateTime?
+  isActive       Boolean      @default(true)
+  createdBy      String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   // Relations
-  event   Event?        @relation(fields: [eventId], references: [id])
-  creator User          @relation("DiscountCreator", fields: [createdBy], references: [id])
+  ticketType TicketType?  @relation(fields: [ticketTypeId], references: [id], onDelete: Restrict)
+  event   Event?          @relation(fields: [eventId], references: [id])
+  creator User            @relation("DiscountCreator", fields: [createdBy], references: [id])
   usages  DiscountUsage[]
 
+  @@index([ticketTypeId, validDate])
   @@map("discount_codes")
 }
 
@@ -752,30 +757,30 @@ model CourtesyTicket {
   status          CourtesyStatus @default(PENDING)
   expiresAt       DateTime?
   claimedAt       DateTime?
-  
+
   // Pre-assigned attendee data (optional)
-  assignedName    String?
-  assignedDni     String?
+  assignedName String?
+  assignedDni  String?
 
   // Relations
-  ticket    Ticket?        @relation(fields: [ticketId], references: [id])
-  batch     CourtesyBatch  @relation(fields: [batchId], references: [id])
-  claimedBy User?          @relation("ClaimedBy", fields: [claimedByUserId], references: [id])
+  ticket    Ticket?       @relation(fields: [ticketId], references: [id])
+  batch     CourtesyBatch @relation(fields: [batchId], references: [id])
+  claimedBy User?         @relation("ClaimedBy", fields: [claimedByUserId], references: [id])
 
   @@map("courtesy_tickets")
 }
 
 model ServilexService {
-  id          String       @id @default(cuid())
-  codigo      String       @unique  // "LNAT12", "TPOL08", etc.
-  indicador   String       // "AC"
-  disciplina  String       // "NATACION", "CLAVADOS", etc.
-  sede        String       // "LIMA", "VMT", "TRUJILLO", "HUANCHACO"
-  clases      Int?         // 4, 8, 12, 20, null para BECA/REINTEGRO
-  descripcion String       // "NATACION 12 clases - LIMA"
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id          String   @id @default(cuid())
+  codigo      String   @unique // "LNAT12", "TPOL08", etc.
+  indicador   String // "AC"
+  disciplina  String // "NATACION", "CLAVADOS", etc.
+  sede        String // "LIMA", "VMT", "TRUJILLO", "HUANCHACO"
+  clases      Int? // 4, 8, 12, 20, null para BECA/REINTEGRO
+  descripcion String // "NATACION 12 clases - LIMA"
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   ticketTypes   TicketType[]
   merchProducts MerchProduct[]
@@ -864,7 +869,7 @@ model AbioCatalogBinding {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  ticketTypes      TicketType[]
+  ticketTypes TicketType[]
 
   @@unique([codigoEmp, sucursalCodigo, servicioCodigo, disciplinaCodigo, piscinaCodigo, horarioCodigo])
   @@index([codigoEmp, sucursalCodigo, servicioCodigo, isActive])
@@ -873,18 +878,18 @@ model AbioCatalogBinding {
 }
 
 model AbioCatalogSyncRun {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   resource         String
   status           String
   requestPayload   Json?
   responsePayload  Json?
-  importedCount    Int      @default(0)
-  deactivatedCount Int      @default(0)
+  importedCount    Int       @default(0)
+  deactivatedCount Int       @default(0)
   errorMessage     String?
-  startedAt        DateTime @default(now())
+  startedAt        DateTime  @default(now())
   finishedAt       DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([resource, startedAt])
   @@index([status, startedAt])
@@ -892,31 +897,31 @@ model AbioCatalogSyncRun {
 }
 
 model Invoice {
-  id               String        @id @default(cuid())
-  orderId          String
-  servilexGroupKey String        @default("legacy")
-  status           InvoiceStatus @default(PENDING)
-  documentType     DocumentType  @default(BOLETA)
-  servilexIndicator String?
-  servilexSucursalCode String?
-  servilexGroupType String?
-  servilexGroupLabel String?
-  assignedTotal    Decimal       @default(0) @db.Decimal(10, 2)
-  alumnoSnapshot   Json?
+  id                      String        @id @default(cuid())
+  orderId                 String
+  servilexGroupKey        String        @default("legacy")
+  status                  InvoiceStatus @default(PENDING)
+  documentType            DocumentType  @default(BOLETA)
+  servilexIndicator       String?
+  servilexSucursalCode    String?
+  servilexGroupType       String?
+  servilexGroupLabel      String?
+  assignedTotal           Decimal       @default(0) @db.Decimal(10, 2)
+  alumnoSnapshot          Json?
   servilexPayloadSnapshot Json?
-  invoiceNumber    String?       // SUNAT serie-correlativo (e.g. B001-00000001)
+  invoiceNumber           String? // SUNAT serie-correlativo (e.g. B001-00000001)
   // Buyer fiscal data
-  buyerDocType     String?       // "1" = DNI, "6" = RUC
-  buyerDocNumber   String?       // DNI (8 digits) or RUC (11 digits)
-  buyerName        String?       // Full name or business name (razón social)
-  buyerAddress     String?       // Fiscal address (for FACTURA)
-  buyerEmail       String?
-  buyerPhone       String?
-  buyerUbigeo      String?
-  buyerFirstName   String?
-  buyerSecondName  String?
-  buyerLastNamePaternal String?
-  buyerLastNameMaternal String?
+  buyerDocType            String? // "1" = DNI, "6" = RUC
+  buyerDocNumber          String? // DNI (8 digits) or RUC (11 digits)
+  buyerName               String? // Full name or business name (razón social)
+  buyerAddress            String? // Fiscal address (for FACTURA)
+  buyerEmail              String?
+  buyerPhone              String?
+  buyerUbigeo             String?
+  buyerFirstName          String?
+  buyerSecondName         String?
+  buyerLastNamePaternal   String?
+  buyerLastNameMaternal   String?
   // Provider integration
   traceId                 String?       @unique
   requestPayload          String?       @db.Text
@@ -956,18 +961,18 @@ enum TicketIssuanceOutcome {
 }
 
 model TicketIssuanceLog {
-  id        String                @id @default(cuid())
-  ticketId  String?
-  userId    String?
-  eventId   String?
-  outcome   TicketIssuanceOutcome
-  reason    String?               @db.Text
-  qrDate    String?
-  qrShift   String?
+  id            String                @id @default(cuid())
+  ticketId      String?
+  userId        String?
+  eventId       String?
+  outcome       TicketIssuanceOutcome
+  reason        String?               @db.Text
+  qrDate        String?
+  qrShift       String?
   requestedDate String?
-  userAgent String?               @db.Text
-  ipAddress String?
-  createdAt DateTime              @default(now())
+  userAgent     String?               @db.Text
+  ipAddress     String?
+  createdAt     DateTime              @default(now())
 
   @@index([ticketId, createdAt])
   @@index([outcome, createdAt])
@@ -978,26 +983,26 @@ model TicketIssuanceLog {
 // ==================== MERCH ====================
 
 model MerchProduct {
-  id                  String        @id @default(cuid())
-  slug                String        @unique
-  name                String
-  description         String?       @db.Text
-  category            MerchCategory
-  zone                MerchZone     @default(GENERICA)
-  etapa               String?
-  price               Decimal       @db.Decimal(10, 2)
-  currency            String        @default("PEN")
-  imageUrl            String?
-  imageUrls           Json?
-  hasSizes            Boolean       @default(false)
-  availableSizes      Json?
-  isActive            Boolean       @default(true)
-  sortOrder           Int           @default(0)
-  servilexServiceId   String?       // deprecated: usar servilexServiceCode (codigo del catalogo ABIO)
-  servilexServiceCode String?       // codigo ABIO (AbioCatalogService.servicioCodigo) para emitir boleta OS
-  servilexSucursalCode String?      // sucursal ABIO para el comprobante (default env SERVILEX_SUCURSAL si null)
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  id                   String        @id @default(cuid())
+  slug                 String        @unique
+  name                 String
+  description          String?       @db.Text
+  category             MerchCategory
+  zone                 MerchZone     @default(GENERICA)
+  etapa                String?
+  price                Decimal       @db.Decimal(10, 2)
+  currency             String        @default("PEN")
+  imageUrl             String?
+  imageUrls            Json?
+  hasSizes             Boolean       @default(false)
+  availableSizes       Json?
+  isActive             Boolean       @default(true)
+  sortOrder            Int           @default(0)
+  servilexServiceId    String? // deprecated: usar servilexServiceCode (codigo del catalogo ABIO)
+  servilexServiceCode  String? // codigo ABIO (AbioCatalogService.servicioCodigo) para emitir boleta OS
+  servilexSucursalCode String? // sucursal ABIO para el comprobante (default env SERVILEX_SUCURSAL si null)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   servilexService ServilexService? @relation(fields: [servilexServiceId], references: [id])
   variants        MerchVariant[]
@@ -1042,8 +1047,8 @@ model PromoPopup {
   updatedAt    DateTime @updatedAt
   updatedById  String?
 
-  updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
-  events PromoPopupEvent[]
+  updatedBy User?             @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  events    PromoPopupEvent[]
 
   @@map("promo_popups")
 }
