@@ -55,3 +55,10 @@ next-env.d.ts
 
 .vercel
 .env*.local
+
+# insumos de scripts (pueden contener PII de compradores)
+/scripts/data/
+
+# resultados de pruebas de carga (pesados, se regeneran con JMeter)
+/performance-tests/reports/
+/performance-tests/jmeter.log
