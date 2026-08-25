@@ -19,10 +19,17 @@ type ReassignmentSpec = {
     targetEventId: string
     targetTicketTypeId: string
     targetSucursal: string
-    scheduleKey: "BRONCE" | "BRONCE_2X"
+    scheduleKey: "BRONCE" | "BRONCE_2X" | "PLATA"
     matricula: string
     expectedPrice: number
     expectedStartDate: string
+    /**
+     * Horario semanal corregido. Si se omite se conserva el elegido en el
+     * checkout (solo se revalida contra el catálogo de la sede destino); si se
+     * indica, reemplaza la frecuencia y/o las horas — para los casos en que la
+     * sede equivocada vino acompañada de un horario equivocado.
+     */
+    targetSchedule?: { category: string; frequency: string; hours: Record<string, string> }
     expectedSessions: Array<{ weekday: number; start: string; end: string }>
 }
 
@@ -66,6 +73,87 @@ const REASSIGNMENTS: ReassignmentSpec[] = [
             { weekday: 5, start: "20:00", end: "21:00" },
         ],
     },
+    {
+        // Compró VIDENA pero asiste en Campo de Marte; además el horario
+        // registrado (Mar-Jue 5-6pm + Sáb 12-1pm) no era el suyo: va
+        // Lun-Mié-Vie 5-6pm. Se corrigen ambos en la misma transacción.
+        label: "Israel Castillo Martinez (Ursula Martinez)",
+        ticketId: "cmrjr4ocq04ub01pb8rqes75l",
+        orderId: "cmrjr31dx04u701pbs4law6f4",
+        orderItemId: "cmrjr31en04u801pbk3zxcpin",
+        sourceEventId: "cmqtpjkzl003g01qex3xwhgfl",
+        sourceTicketTypeId: "cmqtqtkbu003t01qezaoqruc6",
+        targetEventId: "cmqto4hi8003801qe2peblce8",
+        targetTicketTypeId: "cmqtoamu6003a01qeapfye1cv",
+        targetSucursal: "01",
+        scheduleKey: "BRONCE",
+        matricula: "7986685",
+        expectedPrice: 2040,
+        expectedStartDate: "2026-08-03",
+        targetSchedule: { category: "NINOS", frequency: "LMV", hours: { main: "17:00-18:00" } },
+        expectedSessions: [
+            { weekday: 1, start: "17:00", end: "18:00" },
+            { weekday: 3, start: "17:00", end: "18:00" },
+            { weekday: 5, start: "17:00", end: "18:00" },
+        ],
+    },
+    {
+        // Compró Campo de Marte por error; asiste en VIDENA. Su hora de CDM
+        // (Mar-Jue 6-7pm) no existe para adultos en VIDENA —esa franja es de
+        // niños—, así que pasa a Mar-Jue 9-10am. El sábado se conserva en
+        // 7-8am, que sí está en el catálogo de VIDENA.
+        label: "Maryam Reggina Guadalupe De La Cruz De La Cruz",
+        ticketId: "cmsjjwnl109nq01lozss352q7",
+        orderId: "cmsjjt3nk09nl01loid4058kg",
+        orderItemId: "cmsjjt3ob09nm01lo7d3ovx0e",
+        sourceEventId: "cmqto4hi8003801qe2peblce8",
+        sourceTicketTypeId: "cmqto8hq5003901qed9smx1cw",
+        targetEventId: "cmqtpjkzl003g01qex3xwhgfl",
+        targetTicketTypeId: "cmqtqr88u003s01qesb56krfw",
+        targetSucursal: "03",
+        scheduleKey: "BRONCE",
+        matricula: "0297619",
+        expectedPrice: 1090,
+        expectedStartDate: "2026-08-03",
+        targetSchedule: {
+            category: "ADULTOS",
+            frequency: "MJS",
+            hours: { weekday: "09:00-10:00", saturday: "07:00-08:00" },
+        },
+        expectedSessions: [
+            { weekday: 2, start: "09:00", end: "10:00" },
+            { weekday: 4, start: "09:00", end: "10:00" },
+            { weekday: 6, start: "07:00", end: "08:00" },
+        ],
+    },
+    {
+        // Compró VIDENA pero asiste en Campo de Marte: sus escaneos del 19 y 20
+        // de agosto a las 7am en CDM salieron WRONG_EVENT. El horario elegido
+        // (Lun-Vie 7-8am) existe igual en el catálogo PLATA de CDM, así que solo
+        // cambia la sede; se reescribe el horario únicamente para que quede con
+        // sucursalCode "01".
+        label: "Jose Francisco Vasquez Hiyo",
+        ticketId: "cmstmcioq015z01nrvnmcaakw",
+        orderId: "cmstmanzw015v01nrfeml23gk",
+        orderItemId: "cmstmao0j015w01nrgonpw6mb",
+        sourceEventId: "cmqtpjkzl003g01qex3xwhgfl",
+        sourceTicketTypeId: "cmqtqvbmc003u01qe3hztib3g",
+        targetEventId: "cmqto4hi8003801qe2peblce8",
+        targetTicketTypeId: "cmqtomcyt003c01qejdepabp4",
+        targetSucursal: "01",
+        scheduleKey: "PLATA",
+        matricula: "7300631",
+        expectedPrice: 1240,
+        expectedStartDate: "2026-08-03",
+        targetSchedule: { category: "ADULTOS", frequency: "LV", hours: { main: "07:00-08:00" } },
+        expectedSessions: [
+            { weekday: 1, start: "07:00", end: "08:00" },
+            { weekday: 2, start: "07:00", end: "08:00" },
+            { weekday: 3, start: "07:00", end: "08:00" },
+            { weekday: 4, start: "07:00", end: "08:00" },
+            { weekday: 5, start: "07:00", end: "08:00" },
+        ],
+    },
 ]
 
 const APPLY = process.argv.includes("--apply")
@@ -85,6 +173,22 @@ function dateKey(value: Date | null | undefined): string | null {
 
 function assertEqual(actual: unknown, expected: unknown, message: string): void {
     if (actual !== expected) fail(`${message}: esperado ${String(expected)}, recibido ${String(actual)}`)
+}
+
+/** Discrepancias toleradas en registros ya reasignados (ver `expectEqual`). */
+const drift: string[] = []
+
+/**
+ * Como `assertEqual`, pero solo bloquea cuando todavía hay algo que escribir.
+ * Estas comprobaciones describen el estado esperado ANTES de mover el registro;
+ * en una reasignación ya aplicada el dato pudo cambiar después por vías
+ * legítimas (un ajuste posterior de la fecha de inicio, un cambio de precio de
+ * lista), y eso no debe bloquear la corrección de los casos pendientes.
+ */
+function expectEqual(actual: unknown, expected: unknown, message: string, pending: boolean): void {
+    if (actual === expected) return
+    if (pending) fail(`${message}: esperado ${String(expected)}, recibido ${String(actual)}`)
+    drift.push(`${message}: esperado ${String(expected)}, recibido ${String(actual)}`)
 }
 
 function scheduleInputFromStored(value: unknown): {
@@ -217,31 +321,32 @@ async function main() {
             fail(`${spec.label}: ticket y OrderItem no están íntegramente en la sede origen ni en la destino`)
         }
 
+        const pending = !isTargetState
         assertEqual(ticket.orderId, spec.orderId, `${spec.label}: orden del ticket`)
-        assertEqual(ticket.status, "ACTIVE", `${spec.label}: estado del ticket`)
-        assertEqual(dateKey(ticket.membershipStartDate), spec.expectedStartDate, `${spec.label}: inicio`)
-        assertEqual(ticket.order.status, "PAID", `${spec.label}: estado de la orden`)
         assertEqual(orderItem.orderId, spec.orderId, `${spec.label}: orden del item`)
-        assertEqual(orderItem.quantity, 1, `${spec.label}: cantidad del item`)
-        assertEqual(Number(orderItem.unitPrice), spec.expectedPrice, `${spec.label}: precio unitario`)
-        assertEqual(Number(orderItem.subtotal), spec.expectedPrice, `${spec.label}: subtotal`)
         assertEqual(sourceType.eventId, spec.sourceEventId, `${spec.label}: evento del tipo origen`)
         assertEqual(targetType.eventId, spec.targetEventId, `${spec.label}: evento del tipo destino`)
         assertEqual(targetType.event.servilexSucursalCode, spec.targetSucursal, `${spec.label}: sede destino`)
-        assertEqual(Number(sourceType.price), spec.expectedPrice, `${spec.label}: precio del tipo origen`)
-        assertEqual(Number(targetType.price), spec.expectedPrice, `${spec.label}: precio del tipo destino`)
-        assertEqual(sourceType.membershipScheduleKey, spec.scheduleKey, `${spec.label}: perfil origen`)
         assertEqual(targetType.membershipScheduleKey, spec.scheduleKey, `${spec.label}: perfil destino`)
-        assertEqual(sourceType.monthlyClassLimit, targetType.monthlyClassLimit, `${spec.label}: límite mensual equivalente`)
-        assertEqual(sourceType.membershipDurationMonths, targetType.membershipDurationMonths, `${spec.label}: duración equivalente`)
-        assertEqual(sourceType.isPackage, targetType.isPackage, `${spec.label}: modalidad equivalente`)
+        expectEqual(ticket.status, "ACTIVE", `${spec.label}: estado del ticket`, pending)
+        expectEqual(dateKey(ticket.membershipStartDate), spec.expectedStartDate, `${spec.label}: inicio`, pending)
+        expectEqual(ticket.order.status, "PAID", `${spec.label}: estado de la orden`, pending)
+        expectEqual(orderItem.quantity, 1, `${spec.label}: cantidad del item`, pending)
+        expectEqual(Number(orderItem.unitPrice), spec.expectedPrice, `${spec.label}: precio unitario`, pending)
+        expectEqual(Number(orderItem.subtotal), spec.expectedPrice, `${spec.label}: subtotal`, pending)
+        expectEqual(Number(sourceType.price), spec.expectedPrice, `${spec.label}: precio del tipo origen`, pending)
+        expectEqual(Number(targetType.price), spec.expectedPrice, `${spec.label}: precio del tipo destino`, pending)
+        expectEqual(sourceType.membershipScheduleKey, spec.scheduleKey, `${spec.label}: perfil origen`, pending)
+        expectEqual(sourceType.monthlyClassLimit, targetType.monthlyClassLimit, `${spec.label}: límite mensual equivalente`, pending)
+        expectEqual(sourceType.membershipDurationMonths, targetType.membershipDurationMonths, `${spec.label}: duración equivalente`, pending)
+        expectEqual(sourceType.isPackage, targetType.isPackage, `${spec.label}: modalidad equivalente`, pending)
         if (isSourceState && sourceType.sold < 1) {
             fail(`${spec.label}: el contador sold de origen ya está en cero`)
         }
         if (isSourceState && targetType.capacity !== 0 && targetType.sold + 1 > targetType.capacity) {
             fail(`${spec.label}: el tipo destino no tiene cupo global`)
         }
-        if (ticket.monthlySchedules.length > 0) {
+        if (pending && ticket.monthlySchedules.length > 0) {
             fail(`${spec.label}: tiene cambios mensuales de horario; requiere revisión manual`)
         }
 
@@ -257,7 +362,7 @@ async function main() {
         if (!profile) fail(`${spec.label}: no existe el perfil de horario en la sede destino`)
         const scheduleResult = validateMembershipScheduleSelection(
             profile,
-            currentScheduleInput,
+            spec.targetSchedule ?? currentScheduleInput,
             spec.targetSucursal
         )
         if (!scheduleResult.ok) fail(`${spec.label}: horario incompatible: ${scheduleResult.error}`)
@@ -294,7 +399,7 @@ async function main() {
                 invoiceNumber: issuedInvoice.invoiceNumber,
                 invoiceGroupKey: issuedInvoice.servilexGroupKey,
                 wrongEventScans: ticket.scans.filter((scan) => scan.result === "WRONG_EVENT").length,
-                schedule: actualSessions,
+                schedule: normalizeSessions(ticket.membershipSchedule),
             },
         })
     }
@@ -306,8 +411,15 @@ async function main() {
             targetEventId: entry.spec.targetEventId,
             targetTicketTypeId: entry.spec.targetTicketTypeId,
             targetSucursal: entry.spec.targetSucursal,
+            schedule: expectedSessionKeys(entry.spec),
         },
     })) }, null, 2))
+
+    if (drift.length > 0) {
+        console.log(`\nDatos que cambiaron después de reasignar (informativo, no bloquea):`)
+        for (const line of drift) console.log(`  · ${line}`)
+        console.log("")
+    }
 
     if (!APPLY) {
         const pending = prepared.filter((entry) => !entry.alreadyApplied).length

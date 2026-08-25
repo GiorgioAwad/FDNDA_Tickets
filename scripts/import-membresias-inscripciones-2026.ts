@@ -73,7 +73,7 @@ const COL = {
     vendedor: 17,
 } as const
 
-type Bucket = "READY" | "EXCLUIDO-TICKETING" | "SIN-CUENTA" | "REVISION"
+type Bucket = "READY" | "EXCLUIDO-TICKETING" | "SIN-CUENTA" | "REVISION" | "YA-TIENE-CARNET"
 
 interface RowReport {
     rowNumber: number
@@ -83,6 +83,7 @@ interface RowReport {
     correo: string
     celular: string
     apoderado: string
+    posibleCuenta: string
     metodo: string
     sede: string
     planTexto: string
@@ -194,6 +195,20 @@ function up(s: string): string {
 
 function cleanDni(s: string): string {
     return s.replace(/[^0-9kK]/g, "").trim()
+}
+
+// Clave canónica de DNI (ignora ceros a la izquierda) para comparar sin importar
+// si viene "8133606" o "08133606".
+function dniKey(s: string): string {
+    return cleanDni(s).replace(/^0+/, "")
+}
+
+// Variantes de un DNI para buscar en BD (crudo, sin ceros, y padded a 8): cubre
+// cuentas guardadas con o sin cero inicial.
+function dniVariants(s: string): string[] {
+    const raw = cleanDni(s)
+    if (!raw) return []
+    return Array.from(new Set([raw, raw.replace(/^0+/, ""), raw.padStart(8, "0")].filter(Boolean)))
 }
 
 function cleanEmail(s: string): string {
@@ -325,6 +340,28 @@ async function loadAcademiaTicketTypes(): Promise<AcademiaTicketType[]> {
     }))
 }
 
+/**
+ * Mapa eventId -> Set de DNIs (del alumno) que YA tienen un carnet ACTIVE de ese
+ * evento por cualquier vía (web/IZIPAY, otro lote presencial, etc.). Se usa para
+ * NO re-emitir y evitar duplicados. Un carnet CANCELLED no cuenta.
+ */
+async function loadExistingCarnets(): Promise<Map<string, Set<string>>> {
+    const tickets = await db().ticket.findMany({
+        where: { status: "ACTIVE", event: { category: "ACADEMIA" } },
+        select: { attendeeDni: true, event: { select: { slug: true } } },
+    })
+    const map = new Map<string, Set<string>>()
+    for (const t of tickets) {
+        const dni = dniKey(t.attendeeDni ?? "")
+        if (!dni) continue
+        const key = t.event.slug
+        const set = map.get(key)
+        if (set) set.add(dni)
+        else map.set(key, new Set([dni]))
+    }
+    return map
+}
+
 // Tipo de entrada sintético para el modo --offline (sin BD): permite ejercitar
 // el parseo/validación de horario/fecha sin resolver contra la BD real.
 function makeOfflineTicketType(
@@ -390,7 +427,7 @@ function resolveTicketType(
 async function findUser(dni: string, email: string) {
     if (dni) {
         const byDni = await db().user.findFirst({
-            where: { dni },
+            where: { dni: { in: dniVariants(dni) } },
             select: { id: true, email: true, name: true },
         })
         if (byDni) return byDni
@@ -403,6 +440,18 @@ async function findUser(dni: string, email: string) {
         if (byEmail) return byEmail
     }
     return null
+}
+
+// Cruce adicional POR NOMBRE (solo para el reporte de contacto): busca una cuenta
+// cuyo nombre coincida (insensitive). NO se usa para emitir (evita falsos
+// positivos); solo marca "posible cuenta" para que el usuario verifique.
+async function findUserByName(name: string) {
+    const n = name.trim()
+    if (n.length < 5) return null
+    return db().user.findFirst({
+        where: { name: { equals: n, mode: "insensitive" } },
+        select: { email: true, dni: true, name: true },
+    })
 }
 
 // ── Resolución de horario para una fila ────────────────────────────────────────
@@ -466,11 +515,11 @@ function readyToCsv(rows: ReadyRow[]): string {
 
 function buildReview(reports: RowReport[]): string {
     const counts: Record<Bucket, number> = {
-        READY: 0, "EXCLUIDO-TICKETING": 0, "SIN-CUENTA": 0, REVISION: 0,
+        READY: 0, "EXCLUIDO-TICKETING": 0, "SIN-CUENTA": 0, REVISION: 0, "YA-TIENE-CARNET": 0,
     }
     for (const r of reports) counts[r.bucket] += 1
 
-    const order: Bucket[] = ["READY", "REVISION", "SIN-CUENTA", "EXCLUIDO-TICKETING"]
+    const order: Bucket[] = ["READY", "REVISION", "SIN-CUENTA", "YA-TIENE-CARNET", "EXCLUIDO-TICKETING"]
     const lines: string[] = []
     lines.push("# Inscripciones Membresías 2026 — cruce y emisión de carnets\n")
     lines.push(`Generado: ${new Date().toISOString()}\n`)
@@ -481,6 +530,7 @@ function buildReview(reports: RowReport[]): string {
     lines.push(`| READY (a emitir) | ${counts.READY} |`)
     lines.push(`| REVISION (corregir a mano) | ${counts.REVISION} |`)
     lines.push(`| SIN-CUENTA (no tiene cuenta web) | ${counts["SIN-CUENTA"]} |`)
+    lines.push(`| YA-TIENE-CARNET (ya tiene carnet ACTIVE, no re-emitir) | ${counts["YA-TIENE-CARNET"]} |`)
     lines.push(`| EXCLUIDO-TICKETING (ya compró web) | ${counts["EXCLUIDO-TICKETING"]} |`)
     lines.push(`| **Total** | **${reports.length}** |`)
     lines.push("")
@@ -508,7 +558,7 @@ function buildReview(reports: RowReport[]): string {
 function buildPendientesCsv(reports: RowReport[]): string {
     const headers = [
         "fila", "bucket", "motivo", "alumno", "dniAlumno", "correo", "celular",
-        "apoderado", "metodo", "sede", "plan",
+        "apoderado", "posibleCuentaPorNombre", "metodo", "sede", "plan",
     ]
     const rows = reports
         .filter((r) => r.bucket === "SIN-CUENTA" || r.bucket === "REVISION")
@@ -517,7 +567,7 @@ function buildPendientesCsv(reports: RowReport[]): string {
     for (const r of rows) {
         lines.push([
             String(r.rowNumber), r.bucket, r.motivo, r.alumno, r.dni, r.correo,
-            r.celular, r.apoderado, r.metodo, r.sede, r.planTexto,
+            r.celular, r.apoderado, r.posibleCuenta, r.metodo, r.sede, r.planTexto,
         ].map((v) => csvEscape(v ?? "")).join(","))
     }
     return lines.join("\n") + "\n"
@@ -667,17 +717,27 @@ async function main() {
 
     if (!offline) await loadPrisma()
     const academiaTts = offline ? [] : await loadAcademiaTicketTypes()
+    // Carnets ACTIVE ya existentes (por evento/DNI) para no re-emitir duplicados.
+    const existingCarnets = offline ? new Map<string, Set<string>>() : await loadExistingCarnets()
 
     const reports: RowReport[] = []
     const ready: ReadyRow[] = []
     const previews: PreviewCard[] = []
     const seenSourceRefs = new Set<string>()
 
+    let syntheticRow = 900
     for (const rec of dataRows) {
         const numRaw = clean(rec[COL.num])
-        if (!numRaw || !/^\d+$/.test(numRaw)) continue // filas vacías/no numeradas
+        const isNumbered = /^\d+$/.test(numRaw)
+        // Procesar también filas con datos pero SIN número de fila (a veces vienen
+        // al final del CSV). Solo se saltan las realmente vacías.
+        const hasPersonData = Boolean(
+            clean(rec[COL.alumnoNombre]) || clean(rec[COL.alumnoDni]) ||
+            clean(rec[COL.apoderadoNombre]) || clean(rec[COL.apoderadoDni])
+        )
+        if (!isNumbered && !hasPersonData) continue
 
-        const rowNumber = Number(numRaw)
+        const rowNumber = isNumbered ? Number(numRaw) : syntheticRow++
         const metodo = clean(rec[COL.metodoPago])
         const apoderadoNombre = clean(rec[COL.apoderadoNombre])
         const apoderadoDni = cleanDni(clean(rec[COL.apoderadoDni]))
@@ -708,11 +768,18 @@ async function main() {
             correo: alumnoCorreo || apoderadoCorreo || "",
             celular: alumnoCel || apoderadoCel || "",
             apoderado: apoderadoInfo,
+            posibleCuenta: "",
             metodo: metodo || "(vacío)",
             sede: sedeTexto || "-",
             planTexto: [membresiaCol, planCol].filter(Boolean).join(" ") || precio || "-",
             bucket: "REVISION",
             motivo: "",
+        }
+        // Cruce por nombre para el reporte de contacto (no afecta la emisión).
+        const crossByName = async () => {
+            if (offline) return
+            const hit = (await findUserByName(alumnoNombre)) ?? (apoderadoNombre ? await findUserByName(apoderadoNombre) : null)
+            if (hit) report.posibleCuenta = `${hit.email}${hit.dni ? ` (DNI ${hit.dni})` : ""}`
         }
         const skip = (bucket: Bucket, motivo: string) => {
             report.bucket = bucket
@@ -730,6 +797,7 @@ async function main() {
         const titularDni = hasApoderado ? apoderadoDni : alumnoDni
         const titularEmail = hasApoderado ? apoderadoCorreo : alumnoCorreo
         if (!titularDni && !titularEmail) {
+            await crossByName()
             skip("SIN-CUENTA", "sin DNI ni correo del titular para cruzar")
             continue
         }
@@ -737,6 +805,7 @@ async function main() {
             ? { id: "offline", email: titularEmail || `${titularDni || `fila-${rowNumber}`}@offline.test`, name: alumnoNombre || apoderadoNombre }
             : await findUser(titularDni, titularEmail)
         if (!user) {
+            await crossByName()
             skip("SIN-CUENTA", `no existe cuenta web (DNI ${titularDni || "-"} / correo ${titularEmail || "-"})`)
             continue
         }
@@ -773,6 +842,14 @@ async function main() {
             : resolveTicketType(academiaTts, sucursalCode, duration, scheduleKey, tier)
         if (!ttRes.ok) { skip("REVISION", ttRes.error); continue }
         const tt = ttRes.tt
+
+        // 5b) Anti-duplicado: si el alumno (por DNI) ya tiene un carnet ACTIVE de
+        // este evento por cualquier vía (web/otro lote), NO re-emitir. No afecta a
+        // hermanos (tienen DNI distinto).
+        if (alumnoDni && existingCarnets.get(tt.eventSlug)?.has(dniKey(alumnoDni))) {
+            skip("YA-TIENE-CARNET", `${alumnoNombre || "el alumno"} ya tiene carnet ACTIVE de ${tt.eventTitle}`)
+            continue
+        }
 
         // 6) Fecha de inicio
         const startRes = parseStartDate(mesTexto)
@@ -865,6 +942,7 @@ async function main() {
     console.log(`  READY (a emitir):      ${counts.READY ?? 0}`)
     console.log(`  REVISION:              ${counts.REVISION ?? 0}`)
     console.log(`  SIN-CUENTA:            ${counts["SIN-CUENTA"] ?? 0}`)
+    console.log(`  YA-TIENE-CARNET:       ${counts["YA-TIENE-CARNET"] ?? 0}`)
     console.log(`  EXCLUIDO-TICKETING:    ${counts["EXCLUIDO-TICKETING"] ?? 0}`)
     console.log("")
     console.log(`CSV listo para emitir:  ${readyPath}`)
