@@ -25,7 +25,7 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 
 import { getMembershipScheduleProfile, parseMembershipScheduleSelection, validateMembershipScheduleSelection } from "@/lib/membership-schedule"
-import { buildEntitlementDates } from "@/lib/order-fulfillment"
+import { buildEntitlementDates } from "@/lib/entitlement-dates"
 import { isBlackoutMonth } from "@/lib/membership-config"
 import { formatDateUTC } from "@/lib/qr"
 import { generateTicketCode, parseDateOnly, formatPrice } from "@/lib/utils"
