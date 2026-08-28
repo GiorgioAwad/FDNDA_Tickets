@@ -25,6 +25,7 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 
 import { getMembershipScheduleProfile, parseMembershipScheduleSelection, validateMembershipScheduleSelection } from "@/lib/membership-schedule"
+import { buildEntitlementDates } from "@/lib/order-fulfillment"
 import { isBlackoutMonth } from "@/lib/membership-config"
 import { formatDateUTC } from "@/lib/qr"
 import { generateTicketCode, parseDateOnly, formatPrice } from "@/lib/utils"
@@ -65,12 +66,18 @@ type PlannedIssue = {
         monthlyClassLimit: number | null
         membershipDurationMonths: number | null
         membershipScheduleKey: string | null
+        isPackage: boolean
+        packageDaysCount: number | null
+        validDays: Prisma.JsonValue | null
         eventId: string
         event: {
             id: string
             slug: string
             title: string
             servilexSucursalCode: string
+            category: string
+            startDate: Date
+            endDate: Date
             membershipStartFixed: Date | null
             membershipStartMin: Date | null
             membershipStartMax: Date | null
@@ -80,6 +87,7 @@ type PlannedIssue = {
     attendeeDni: string | null
     membershipStartDate: string
     membershipSchedule: Prisma.InputJsonValue | null
+    entitlementDates: Date[]
     amountPaid: number
     row: Row
 }
@@ -340,6 +348,9 @@ async function resolveTicketType(row: Row, flags: Flags) {
                     slug: true,
                     title: true,
                     servilexSucursalCode: true,
+                    category: true,
+                    startDate: true,
+                    endDate: true,
                     membershipStartFixed: true,
                     membershipStartMin: true,
                     membershipStartMax: true,
@@ -481,6 +492,24 @@ async function planRow(
     const amountFromFlags = flagString(flags, "amount")
     const amountPaid = parseMoney(getCell(row, "amountPaid", "amount", "monto") || amountFromFlags || "0")
 
+    // Los tipos por paquete (academias sin cupo mensual, p.ej. VMT) se escanean
+    // contra sus dias habilitados: hay que pre-generar los entitlements igual que
+    // lo hace el checkout web, si no el carnet queda sin dias validos.
+    const entitlementDates = buildEntitlementDates({
+        ticketType: {
+            isPackage: ticketType.isPackage,
+            packageDaysCount: ticketType.packageDaysCount,
+            monthlyClassLimit: ticketType.monthlyClassLimit,
+            validDays: ticketType.validDays,
+        },
+        event: {
+            startDate: ticketType.event.startDate,
+            endDate: ticketType.event.endDate,
+        },
+        attendee: null,
+        eventCategory: ticketType.event.category,
+    })
+
     return {
         rowNumber,
         sourceRef,
@@ -491,6 +520,7 @@ async function planRow(
         attendeeDni,
         membershipStartDate: membershipStartDate || "",
         membershipSchedule,
+        entitlementDates,
         amountPaid,
         row,
     }
@@ -576,6 +606,12 @@ async function createIssue(tx: Prisma.TransactionClient, issue: PlannedIssue, op
             membershipStartDate: issue.membershipStartDate ? parseDateOnly(issue.membershipStartDate) : null,
             membershipSchedule: issue.membershipSchedule ?? Prisma.JsonNull,
             status: "ACTIVE",
+            entitlements: {
+                create: issue.entitlementDates.map((date) => ({
+                    date,
+                    status: "AVAILABLE" as const,
+                })),
+            },
         },
     })
 
@@ -642,7 +678,7 @@ async function main() {
 
     for (const issue of planned) {
         console.log(
-            `OK fila ${issue.rowNumber}: ${issue.user.email} -> ${issue.ticketType.event.title} / ${issue.ticketType.name} inicio ${issue.membershipStartDate || "-"} ref=${issue.sourceRef}`
+            `OK fila ${issue.rowNumber}: ${issue.user.email} -> ${issue.ticketType.event.title} / ${issue.ticketType.name} | ${issue.attendeeName} (${issue.attendeeDni ?? "sin DNI"}) | S/${issue.amountPaid} | inicio ${issue.membershipStartDate || "-"} | dias ${issue.entitlementDates.length}${issue.entitlementDates.length ? ` (${formatDateUTC(issue.entitlementDates[0])} -> ${formatDateUTC(issue.entitlementDates[issue.entitlementDates.length - 1])})` : ""} | ref=${issue.sourceRef}`
         )
     }
     for (const skip of skipped) {

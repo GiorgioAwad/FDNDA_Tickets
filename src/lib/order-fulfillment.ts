@@ -394,7 +394,7 @@ const resolveMembershipStartDate = (
     return new Date(`${dateStr}T12:00:00Z`)
 }
 
-const buildEntitlementDates = (input: {
+export const buildEntitlementDates = (input: {
     ticketType: {
         isPackage: boolean
         packageDaysCount: number | null
