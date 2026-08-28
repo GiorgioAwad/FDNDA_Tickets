@@ -14,6 +14,7 @@ const baseTicketType: CarnetValidationContext["ticketType"] = {
     membershipScheduleKey: "BRONCE",
     isPackage: false,
     packageDaysCount: null,
+    capacityByDate: false,
     validDays: null,
     eventId: "ev_cm",
     event: {
@@ -152,8 +153,47 @@ test("sin cupo global se rechaza, y forceCapacity lo deja pasar con aviso", () =
     )
     assert.equal(forced.ok, true)
     if (forced.ok) {
-        assert.equal(forced.plan.forcedCapacity, true)
+        assert.equal(forced.plan.forcedGlobalCapacity, true)
+        // Este ticketType no usa cupo por fecha: el otro gate nunca se activa.
+        assert.equal(forced.plan.forcedDateCapacity, false)
         assert.ok(forced.plan.warnings.some((w) => /sobrecupo/i.test(w)))
+    }
+})
+
+test("forzar el cupo global lleno no marca el cupo por fecha si ese dia tiene sitio", () => {
+    // tope global lleno (10/10) + cupo del dia CON espacio (5/30): forzar el
+    // primero no debe activar el segundo gate, que es independiente.
+    const poolType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_pool_full",
+        name: "PISCINA LIBRE 3-4 PM",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        capacity: 10,
+        sold: 10,
+        event: { ...baseTicketType.event, category: "PISCINA_LIBRE" },
+    }
+    const result = validateCarnetRequest(
+        makeCtx({
+            ticketType: poolType,
+            input: {
+                userId: "u1",
+                ticketTypeId: "tt_pool_full",
+                sourceRef: "panel:u1:tt_pool_full:1",
+                reason: "Cortesia",
+                membershipStartDate: null,
+                membershipSchedule: null,
+                scheduleSelections: [{ date: "2026-09-02" }],
+                forceCapacity: true,
+            },
+            dateInventory: [{ date: "2026-09-02", capacity: 30, sold: 5, isEnabled: true }],
+        })
+    )
+    assert.equal(result.ok, true)
+    if (result.ok) {
+        assert.equal(result.plan.forcedGlobalCapacity, true)
+        assert.equal(result.plan.forcedDateCapacity, false)
     }
 })
 
@@ -180,6 +220,18 @@ test("piscina libre exige fecha y respeta el inventario del dia", () => {
         makeCtx({ ticketType: poolType, input: poolInput })
     )
     assert.match(errorsOf(sinFecha).join(" "), /fecha/i)
+
+    // Fecha elegida sin fila de inventario: el preview debe rechazarla, no
+    // dejarla pasar en limpio y fallar recien en la escritura.
+    const sinInventario = validateCarnetRequest(
+        makeCtx({
+            ticketType: poolType,
+            input: { ...poolInput, scheduleSelections: [{ date: "2026-09-02" }] },
+            dateInventory: [],
+        })
+    )
+    assert.equal(sinInventario.ok, false)
+    assert.match(errorsOf(sinInventario).join(" "), /no hay inventario configurado/i)
 
     const cerrada = validateCarnetRequest(
         makeCtx({
@@ -214,6 +266,93 @@ test("piscina libre exige fecha y respeta el inventario del dia", () => {
         })
     )
     assert.equal(forzadaCerrada.ok, false)
+})
+
+test("un EVENTO con capacityByDate exige fecha y respeta su inventario", () => {
+    // Distinto de piscina libre: usesTicketDateCapacity tambien cubre EVENTO
+    // cuando el ticketType tiene capacityByDate=true (checkout de produccion
+    // ya lo trata asi; el panel de carnets debia hacer lo mismo).
+    const eventoType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_evento_fecha",
+        name: "ENTRADA GENERAL DIA 1",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        capacityByDate: true,
+        event: { ...baseTicketType.event, category: "EVENTO" },
+    }
+    const eventoInput = {
+        userId: "u1",
+        ticketTypeId: "tt_evento_fecha",
+        sourceRef: "panel:u1:tt_evento_fecha:1",
+        reason: "Cortesia",
+        membershipStartDate: null,
+        membershipSchedule: null,
+    }
+
+    const sinFecha = validateCarnetRequest(makeCtx({ ticketType: eventoType, input: eventoInput }))
+    assert.match(errorsOf(sinFecha).join(" "), /fecha/i)
+
+    const sinInventario = validateCarnetRequest(
+        makeCtx({
+            ticketType: eventoType,
+            input: { ...eventoInput, scheduleSelections: [{ date: "2026-09-02" }] },
+            dateInventory: [],
+        })
+    )
+    assert.equal(sinInventario.ok, false)
+    assert.match(errorsOf(sinInventario).join(" "), /no hay inventario configurado/i)
+
+    const llena = validateCarnetRequest(
+        makeCtx({
+            ticketType: eventoType,
+            input: { ...eventoInput, scheduleSelections: [{ date: "2026-09-02" }] },
+            dateInventory: [{ date: "2026-09-02", capacity: 50, sold: 50, isEnabled: true }],
+        })
+    )
+    assert.equal(llena.ok, false)
+    assert.match(errorsOf(llena).join(" "), /cupo/i)
+
+    const conCupo = validateCarnetRequest(
+        makeCtx({
+            ticketType: eventoType,
+            input: { ...eventoInput, scheduleSelections: [{ date: "2026-09-02" }] },
+            dateInventory: [{ date: "2026-09-02", capacity: 50, sold: 10, isEnabled: true }],
+        })
+    )
+    assert.equal(conCupo.ok, true)
+    if (conCupo.ok) assert.deepEqual(conCupo.plan.entitlementDates, ["2026-09-02"])
+})
+
+test("un EVENTO sin capacityByDate no exige fecha por inventario", () => {
+    // capacityByDate=false (default) para un EVENTO: usesTicketDateCapacity
+    // devuelve false, asi que no se exige seleccion ni se valida inventario,
+    // igual que antes de este fix.
+    const eventoType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_evento_simple",
+        name: "ENTRADA GENERAL",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        capacityByDate: false,
+        event: { ...baseTicketType.event, category: "EVENTO" },
+    }
+    const result = validateCarnetRequest(
+        makeCtx({
+            ticketType: eventoType,
+            input: {
+                userId: "u1",
+                ticketTypeId: "tt_evento_simple",
+                sourceRef: "panel:u1:tt_evento_simple:1",
+                reason: "Cortesia",
+                membershipStartDate: null,
+                membershipSchedule: null,
+            },
+        })
+    )
+    assert.equal(result.ok, true)
 })
 
 test("un paquete al que le faltan fechas se rechaza", () => {

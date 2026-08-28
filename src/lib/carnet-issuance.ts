@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client"
 
 import { prisma } from "@/lib/prisma"
 import { sendPurchaseEmail } from "@/lib/email"
-import { isPoolFreeEventCategory } from "@/lib/pool-free"
+import { usesTicketDateCapacity } from "@/lib/ticket-date-capacity"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 import { formatPrice, generateTicketCode, parseDateOnly } from "@/lib/utils"
 import {
@@ -23,6 +23,7 @@ const TICKET_TYPE_SELECT = {
     membershipScheduleKey: true,
     isPackage: true,
     packageDaysCount: true,
+    capacityByDate: true,
     validDays: true,
     eventId: true,
     event: {
@@ -75,7 +76,10 @@ export async function planCarnetIssuance(
         }),
     ])
 
-    const dateInventory = isPoolFreeEventCategory(ticketType.event.category)
+    const dateInventory = usesTicketDateCapacity({
+        eventCategory: ticketType.event.category,
+        capacityByDate: ticketType.capacityByDate,
+    })
         ? (
               await prisma.ticketTypeDateInventory.findMany({
                   where: { ticketTypeId: ticketType.id },
@@ -110,15 +114,38 @@ export async function issueCarnet(
     const now = new Date()
 
     const created = await prisma.$transaction(async (tx) => {
-        // 1. Cupo global. Con forceCapacity el incremento va sin guard; sin el,
-        //    el guard hace que dos emisiones simultaneas no pasen del tope.
-        const ticketType = await tx.ticketType.findUniqueOrThrow({
-            where: { id: plan.ticketTypeId },
-            select: { capacity: true, name: true, eventId: true, event: { select: { category: true } } },
+        // 0. Guarda de idempotencia. El check equivalente en planCarnetIssuance usa
+        //    el cliente global (solo lectura, no atomico); esta repeticion con tx
+        //    es la que de verdad impide que un doble clic (o un reintento) cree dos
+        //    ordenes para el mismo sourceRef si ambas llamadas llegan a la vez.
+        const existingOrder = await tx.order.findFirst({
+            where: { provider: "PRESENCIAL", providerOrderNumber: plan.providerOrderNumber },
+            select: { id: true },
         })
+        if (existingOrder) {
+            throw new Error(
+                `Este carnet ya se emitio (orden ${existingOrder.id.slice(-8).toUpperCase()}).`
+            )
+        }
+
+        // 1. Cupo global. Con forcedGlobalCapacity el incremento va sin guard; sin
+        //    el, el guard hace que dos emisiones simultaneas no pasen del tope.
+        const ticketType = await tx.ticketType.findUnique({
+            where: { id: plan.ticketTypeId },
+            select: {
+                capacity: true,
+                name: true,
+                eventId: true,
+                capacityByDate: true,
+                event: { select: { category: true } },
+            },
+        })
+        if (!ticketType) {
+            throw new Error(`El tipo de entrada "${plan.ticketTypeName}" ya no existe.`)
+        }
 
         const capacityWhere =
-            ticketType.capacity > 0 && !plan.forcedCapacity
+            ticketType.capacity > 0 && !plan.forcedGlobalCapacity
                 ? { sold: { lt: ticketType.capacity } }
                 : {}
         const updated = await tx.ticketType.updateMany({
@@ -129,10 +156,14 @@ export async function issueCarnet(
             throw new Error(`No hay cupo para "${ticketType.name}".`)
         }
 
-        // 2. Cupo por fecha (solo piscina libre).
-        if (isPoolFreeEventCategory(ticketType.event.category) && plan.scheduleSelections.length > 0) {
+        // 2. Cupo por fecha (piscina libre, o EVENTO con capacityByDate).
+        const usesDateCapacity = usesTicketDateCapacity({
+            eventCategory: ticketType.event.category,
+            capacityByDate: ticketType.capacityByDate,
+        })
+        if (usesDateCapacity && plan.scheduleSelections.length > 0) {
             const dateKey = plan.scheduleSelections[0].date
-            if (plan.forcedCapacity) {
+            if (plan.forcedDateCapacity) {
                 // Incremento sin guard, aqui y no en el helper del checkout.
                 const bumped = await tx.ticketTypeDateInventory.updateMany({
                     where: { ticketTypeId: plan.ticketTypeId, date: parseDateOnly(dateKey) },
@@ -167,7 +198,8 @@ export async function issueCarnet(
                     issuedByUserId: actor.id,
                     issuedByEmail: actor.email,
                     reason: plan.reason,
-                    forcedCapacity: plan.forcedCapacity,
+                    forcedGlobalCapacity: plan.forcedGlobalCapacity,
+                    forcedDateCapacity: plan.forcedDateCapacity,
                     allowedExistingActive: plan.allowedExistingActive,
                     issuedAt: now.toISOString(),
                 },

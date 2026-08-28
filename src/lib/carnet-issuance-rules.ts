@@ -8,6 +8,7 @@ import {
     type MembershipScheduleSelection,
 } from "@/lib/membership-schedule"
 import { isPoolFreeEventCategory } from "@/lib/pool-free"
+import { usesTicketDateCapacity } from "@/lib/ticket-date-capacity"
 import { buildEntitlementDates } from "@/lib/entitlement-dates"
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -40,6 +41,8 @@ export type CarnetTicketTypeContext = {
     membershipScheduleKey: string | null
     isPackage: boolean
     packageDaysCount: number | null
+    /** EVENTO con cupo por fecha (ver `usesTicketDateCapacity`). Piscina libre ignora este flag. */
+    capacityByDate: boolean
     validDays: Prisma.JsonValue | null
     eventId: string
     event: {
@@ -55,7 +58,7 @@ export type CarnetTicketTypeContext = {
     }
 }
 
-/** Inventario por fecha de un ticketType de piscina libre. */
+/** Inventario por fecha de un ticketType con cupo por fecha (piscina libre o EVENTO+capacityByDate). */
 export type CarnetDateInventory = {
     date: string
     capacity: number
@@ -71,7 +74,7 @@ export type CarnetValidationContext = {
     existingActiveTicketCode: string | null
     /** Id de la orden previa con el mismo sourceRef, si ya se emitio. */
     duplicateOrderId: string | null
-    /** Solo para piscina libre: inventario configurado del ticketType. */
+    /** Solo si `usesTicketDateCapacity` aplica: inventario configurado del ticketType. */
     dateInventory: CarnetDateInventory[]
 }
 
@@ -96,8 +99,15 @@ export type CarnetPlan = {
     reason: string
     capacityBefore: number
     capacityTotal: number
-    /** True solo si se salto un cupo realmente lleno, no si el check estaba marcado de mas. */
-    forcedCapacity: boolean
+    /**
+     * Dos gates independientes: el cupo global (ticketType.capacity/sold) y el
+     * cupo por fecha (TicketTypeDateInventory). Cada uno es true solo si se
+     * salto SU propio tope realmente lleno, no si el check estaba marcado de
+     * mas ni por estar lleno el otro gate. `issueCarnet` los usa por separado
+     * para decidir que guard quitar en cada escritura.
+     */
+    forcedGlobalCapacity: boolean
+    forcedDateCapacity: boolean
     allowedExistingActive: boolean
     sendEmail: boolean
     warnings: string[]
@@ -217,26 +227,41 @@ export function validateCarnetRequest(ctx: CarnetValidationContext): CarnetValid
         }
     }
 
-    // ── Fechas (piscina libre y paquetes) ─────────────────────────────────────
+    // ── Fechas (piscina libre, EVENTO con cupo por fecha, y paquetes) ──────────
     const selections = (input.scheduleSelections ?? [])
         .filter((s) => DATE_RE.test(s.date))
         .map((s) => ({ date: s.date, shift: s.shift?.trim() ? s.shift.trim() : null }))
 
     const isPoolFree = isPoolFreeEventCategory(ticketType.event.category)
+    // La bolsa de piscina libre (isPackage + pool-free) no elige fecha al emitirse:
+    // las visitas se reservan despues (draw-down), asi que nunca consume cupo por
+    // fecha aqui ni pre-genera entitlements. Este carve-out es exclusivo de
+    // piscina libre; un EVENTO con capacityByDate no tiene ese concepto de bolsa.
     const isBag = ticketType.isPackage && isPoolFree
+    const usesDateCapacity = usesTicketDateCapacity({
+        eventCategory: ticketType.event.category,
+        capacityByDate: ticketType.capacityByDate,
+    })
 
     let skippedFullDate = false
-    if (isPoolFree && !isBag) {
+    if (usesDateCapacity && !isBag) {
         if (selections.length === 0) {
             errors.push("Elige la fecha de la visita.")
         } else {
             const dateKey = selections[0].date
             const cell = ctx.dateInventory.find((row) => row.date === dateKey)
-            if (cell && !cell.isEnabled) {
+            if (!cell) {
+                // Sin fila de inventario no hay como saber si hay cupo, y la
+                // escritura (requireConfigured: true) tampoco la crea sola: el
+                // preview debe rechazar esto en vez de dejarlo pasar en limpio.
+                errors.push(
+                    `No hay inventario configurado para el ${dateKey} en "${ticketType.name}".`
+                )
+            } else if (!cell.isEnabled) {
                 // Forzar sobrecupo NO abre una fecha cerrada: cerrarla es una
                 // decision operativa, no un tope lleno.
                 errors.push(`La fecha ${dateKey} esta cerrada para "${ticketType.name}".`)
-            } else if (cell && cell.capacity > 0 && cell.sold >= cell.capacity) {
+            } else if (cell.capacity > 0 && cell.sold >= cell.capacity) {
                 if (input.forceCapacity) {
                     skippedFullDate = true
                     warnings.push(
@@ -298,9 +323,11 @@ export function validateCarnetRequest(ctx: CarnetValidationContext): CarnetValid
             reason,
             capacityBefore: ticketType.sold,
             capacityTotal: ticketType.capacity,
-            // Solo true si de verdad se salto un tope lleno. Marcar el check sin
-            // que hubiera nada lleno no debe desactivar el guard de la escritura.
-            forcedCapacity: Boolean(input.forceCapacity) && (globalFull || skippedFullDate),
+            // Cada gate solo es true si DE VERDAD se salto su propio tope lleno.
+            // Marcar el check sin que hubiera nada lleno, o que el otro gate
+            // estuviera lleno, no debe desactivar el guard de la escritura.
+            forcedGlobalCapacity: Boolean(input.forceCapacity) && globalFull,
+            forcedDateCapacity: Boolean(input.forceCapacity) && skippedFullDate,
             allowedExistingActive: Boolean(ctx.existingActiveTicketCode && input.allowExistingActive),
             sendEmail: input.sendEmail !== false,
             warnings,
