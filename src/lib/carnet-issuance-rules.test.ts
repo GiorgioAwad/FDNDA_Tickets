@@ -355,6 +355,97 @@ test("un EVENTO sin capacityByDate no exige fecha por inventario", () => {
     assert.equal(result.ok, true)
 })
 
+test("un paquete EVENTO+capacityByDate valida CADA fecha, no solo la primera", () => {
+    // packageDaysCount=2: la primera fecha tiene cupo, la segunda esta llena.
+    // Antes del fix solo se miraba selections[0] y esto pasaba en limpio.
+    const packEventoType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_pack_evento",
+        name: "PASE 2 DIAS",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        isPackage: true,
+        packageDaysCount: 2,
+        capacityByDate: true,
+        event: { ...baseTicketType.event, category: "EVENTO" },
+    }
+    const packInput = {
+        userId: "u1",
+        ticketTypeId: "tt_pack_evento",
+        sourceRef: "panel:u1:tt_pack_evento:1",
+        reason: "Cortesia",
+        membershipStartDate: null,
+        membershipSchedule: null,
+        scheduleSelections: [{ date: "2026-09-02" }, { date: "2026-09-03" }],
+    }
+    const dateInventory = [
+        { date: "2026-09-02", capacity: 50, sold: 10, isEnabled: true }, // con cupo
+        { date: "2026-09-03", capacity: 50, sold: 50, isEnabled: true }, // llena
+    ]
+
+    const rechazado = validateCarnetRequest(
+        makeCtx({ ticketType: packEventoType, input: packInput, dateInventory })
+    )
+    assert.equal(rechazado.ok, false)
+    if (!rechazado.ok) {
+        // Nombra la fecha llena (la segunda), no solo la primera.
+        assert.ok(rechazado.errors.some((e) => e.includes("2026-09-03")))
+        // La primera fecha (con cupo) no genero ningun error propio.
+        assert.ok(!rechazado.errors.some((e) => /2026-09-02.*cupo|cupo.*2026-09-02/.test(e)))
+    }
+
+    // forceCapacity acepta el paquete completo y marca el gate de fecha.
+    const forzado = validateCarnetRequest(
+        makeCtx({
+            ticketType: packEventoType,
+            input: { ...packInput, forceCapacity: true },
+            dateInventory,
+        })
+    )
+    assert.equal(forzado.ok, true)
+    if (forzado.ok) {
+        assert.equal(forzado.plan.forcedDateCapacity, true)
+        assert.equal(forzado.plan.forcedGlobalCapacity, false)
+        assert.ok(forzado.plan.warnings.some((w) => w.includes("2026-09-03")))
+        assert.deepEqual(forzado.plan.entitlementDates, ["2026-09-02", "2026-09-03"])
+    }
+})
+
+test("dos selecciones del mismo dia cuentan 2 contra el cupo de esa fecha", () => {
+    const packEventoType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_pack_evento_dup",
+        name: "PASE 2 DIAS",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        isPackage: true,
+        packageDaysCount: 2,
+        capacityByDate: true,
+        event: { ...baseTicketType.event, category: "EVENTO" },
+    }
+    // Mismo dia repetido dos veces: con 1 cupo libre (sold 49/50) alcanza para
+    // una unidad pero no para dos.
+    const result = validateCarnetRequest(
+        makeCtx({
+            ticketType: packEventoType,
+            input: {
+                userId: "u1",
+                ticketTypeId: "tt_pack_evento_dup",
+                sourceRef: "panel:u1:tt_pack_evento_dup:1",
+                reason: "Cortesia",
+                membershipStartDate: null,
+                membershipSchedule: null,
+                scheduleSelections: [{ date: "2026-09-02" }, { date: "2026-09-02" }],
+            },
+            dateInventory: [{ date: "2026-09-02", capacity: 50, sold: 49, isEnabled: true }],
+        })
+    )
+    assert.equal(result.ok, false)
+    assert.match(errorsOf(result).join(" "), /cupo/i)
+})
+
 test("un paquete al que le faltan fechas se rechaza", () => {
     const packType: CarnetValidationContext["ticketType"] = {
         ...baseTicketType,

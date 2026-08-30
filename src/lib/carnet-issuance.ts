@@ -162,21 +162,33 @@ export async function issueCarnet(
             capacityByDate: ticketType.capacityByDate,
         })
         if (usesDateCapacity && plan.scheduleSelections.length > 0) {
-            const dateKey = plan.scheduleSelections[0].date
+            // Un paquete selecciona varias fechas para el mismo ticket: cada una
+            // consume su propio cupo. Mismo patron que
+            // buildTicketDateReservationCounts en el checkout de produccion — un
+            // mapa por fecha, sin deduplicar (dos selecciones del mismo dia
+            // reservan 2 contra ese dia).
+            const dateCounts = new Map<string, number>()
+            for (const selection of plan.scheduleSelections) {
+                dateCounts.set(selection.date, (dateCounts.get(selection.date) ?? 0) + 1)
+            }
+
             if (plan.forcedDateCapacity) {
-                // Incremento sin guard, aqui y no en el helper del checkout.
-                const bumped = await tx.ticketTypeDateInventory.updateMany({
-                    where: { ticketTypeId: plan.ticketTypeId, date: parseDateOnly(dateKey) },
-                    data: { sold: { increment: 1 } },
-                })
-                if (bumped.count === 0) {
-                    throw new Error(`No hay inventario configurado para el ${dateKey}.`)
+                // Incremento sin guard, aqui y no en el helper del checkout. Cada
+                // fecha se incrementa por su propia cantidad, no solo la primera.
+                for (const [dateKey, count] of dateCounts) {
+                    const bumped = await tx.ticketTypeDateInventory.updateMany({
+                        where: { ticketTypeId: plan.ticketTypeId, date: parseDateOnly(dateKey) },
+                        data: { sold: { increment: count } },
+                    })
+                    if (bumped.count === 0) {
+                        throw new Error(`No hay inventario configurado para el ${dateKey}.`)
+                    }
                 }
             } else {
                 await reserveTicketTypeDateInventory(tx, {
                     ticketTypeId: plan.ticketTypeId,
                     templateCapacity: 0,
-                    reservations: new Map([[dateKey, 1]]),
+                    reservations: dateCounts,
                     ticketLabel: plan.ticketTypeName,
                     requireConfigured: true,
                 })

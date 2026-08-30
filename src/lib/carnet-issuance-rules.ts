@@ -248,29 +248,42 @@ export function validateCarnetRequest(ctx: CarnetValidationContext): CarnetValid
         if (selections.length === 0) {
             errors.push("Elige la fecha de la visita.")
         } else {
-            const dateKey = selections[0].date
-            const cell = ctx.dateInventory.find((row) => row.date === dateKey)
-            if (!cell) {
-                // Sin fila de inventario no hay como saber si hay cupo, y la
-                // escritura (requireConfigured: true) tampoco la crea sola: el
-                // preview debe rechazar esto en vez de dejarlo pasar en limpio.
-                errors.push(
-                    `No hay inventario configurado para el ${dateKey} en "${ticketType.name}".`
-                )
-            } else if (!cell.isEnabled) {
-                // Forzar sobrecupo NO abre una fecha cerrada: cerrarla es una
-                // decision operativa, no un tope lleno.
-                errors.push(`La fecha ${dateKey} esta cerrada para "${ticketType.name}".`)
-            } else if (cell.capacity > 0 && cell.sold >= cell.capacity) {
-                if (input.forceCapacity) {
-                    skippedFullDate = true
-                    warnings.push(
-                        `Sobrecupo del dia ${dateKey}: ${cell.sold}/${cell.capacity}.`
-                    )
-                } else {
+            // Un paquete (isPackage + packageDaysCount > 1) selecciona varias
+            // fechas distintas para el MISMO ticket: cada una consume su propio
+            // cupo y debe validarse por separado (no solo la primera). Si el
+            // mismo dia aparece repetido entre las selecciones, cuenta esa
+            // cantidad de veces — mismo criterio que
+            // buildTicketDateReservationCounts en el checkout de produccion, que
+            // tampoco deduplica.
+            const dateCounts = new Map<string, number>()
+            for (const selection of selections) {
+                dateCounts.set(selection.date, (dateCounts.get(selection.date) ?? 0) + 1)
+            }
+
+            for (const [dateKey, count] of dateCounts) {
+                const cell = ctx.dateInventory.find((row) => row.date === dateKey)
+                if (!cell) {
+                    // Sin fila de inventario no hay como saber si hay cupo, y la
+                    // escritura (requireConfigured: true) tampoco la crea sola: el
+                    // preview debe rechazar esto en vez de dejarlo pasar en limpio.
                     errors.push(
-                        `No hay cupo para "${ticketType.name}" el ${dateKey} (${cell.sold}/${cell.capacity}).`
+                        `No hay inventario configurado para el ${dateKey} en "${ticketType.name}".`
                     )
+                } else if (!cell.isEnabled) {
+                    // Forzar sobrecupo NO abre una fecha cerrada: cerrarla es una
+                    // decision operativa, no un tope lleno.
+                    errors.push(`La fecha ${dateKey} esta cerrada para "${ticketType.name}".`)
+                } else if (cell.capacity > 0 && cell.sold + count > cell.capacity) {
+                    if (input.forceCapacity) {
+                        skippedFullDate = true
+                        warnings.push(
+                            `Sobrecupo del dia ${dateKey}: ${cell.sold}/${cell.capacity}.`
+                        )
+                    } else {
+                        errors.push(
+                            `No hay cupo para "${ticketType.name}" el ${dateKey} (${cell.sold}/${cell.capacity}).`
+                        )
+                    }
                 }
             }
         }
