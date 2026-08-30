@@ -13,6 +13,24 @@ import { buildEntitlementDates } from "@/lib/entitlement-dates"
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
+/**
+ * Errores que la capa de dominio (issueCarnet, en carnet-issuance.ts) lanza
+ * deliberadamente, con un mensaje en espanol pensado para mostrarse tal cual
+ * al admin (duplicado, tipo de entrada eliminado, cupo agotado). Las rutas
+ * solo devuelven el `.message` de una excepcion cuando es instancia de esta
+ * clase; cualquier otro error (conexion caida, violacion de FK, timeout de
+ * transaccion, SQL crudo de un helper) cae al mensaje generico. Se define
+ * aca, no en carnet-issuance.ts, para que tanto el dominio como las rutas
+ * puedan importarla sin crear un ciclo (carnet-issuance.ts ya importa de
+ * este modulo; este modulo no importa de carnet-issuance.ts).
+ */
+export class CarnetIssuanceError extends Error {
+    constructor(message: string) {
+        super(message)
+        this.name = "CarnetIssuanceError"
+    }
+}
+
 export type CarnetIssuanceInput = {
     userId: string
     ticketTypeId: string

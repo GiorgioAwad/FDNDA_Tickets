@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client"
 
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { issueCarnet, planCarnetIssuance } from "@/lib/carnet-issuance"
-import type { CarnetIssuanceInput } from "@/lib/carnet-issuance-rules"
+import { CarnetIssuanceError, type CarnetIssuanceInput } from "@/lib/carnet-issuance-rules"
 import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
@@ -48,19 +48,27 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, errors: result.errors }, { status: 422 })
         }
 
-        // issueCarnet es la unica fuente de errores deliberados de este tramo
-        // (ya en espanol: cupo agotado, duplicado detectado dentro de la
-        // transaccion, tipo de entrada eliminado, etc.). Se aisla en su
-        // propio try/catch para poder devolver ese mensaje tal cual sin
-        // arriesgarnos a filtrar el texto crudo de una excepcion inesperada
-        // (error de Prisma, bug, etc.) de cualquier otro punto de la ruta.
+        // issueCarnet corre una transaccion de varios pasos (ademas de
+        // delegar en reserveTicketTypeDateInventory, que ejecuta SQL crudo):
+        // no todo lo que puede lanzar desde ahi es un error deliberado. Solo
+        // se devuelve el mensaje cuando es una CarnetIssuanceError -- la
+        // clase que issueCarnet usa para sus guardas a proposito (duplicado,
+        // tipo de entrada eliminado, cupo agotado). Cualquier otra excepcion
+        // (conexion caida, violacion de FK, timeout de transaccion, SQL
+        // crudo de un helper) cae al mensaje generico: falla cerrado, nunca
+        // se filtra texto crudo.
         let issued
         try {
             issued = await issueCarnet(result.plan, { id: user.id, email: user.email })
         } catch (error) {
             console.error("Error emitiendo carnet:", error)
-            const message = error instanceof Error ? error.message : "Error al emitir el carnet"
-            return NextResponse.json({ success: false, errors: [message] }, { status: 500 })
+            if (error instanceof CarnetIssuanceError) {
+                return NextResponse.json({ success: false, errors: [error.message] }, { status: 500 })
+            }
+            return NextResponse.json(
+                { success: false, errors: ["Error al emitir el carnet"] },
+                { status: 500 }
+            )
         }
 
         return NextResponse.json({

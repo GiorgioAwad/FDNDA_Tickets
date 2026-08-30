@@ -6,6 +6,7 @@ import { usesTicketDateCapacity } from "@/lib/ticket-date-capacity"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 import { formatPrice, generateTicketCode, parseDateOnly } from "@/lib/utils"
 import {
+    CarnetIssuanceError,
     validateCarnetRequest,
     type CarnetIssuanceInput,
     type CarnetPlan,
@@ -123,7 +124,7 @@ export async function issueCarnet(
             select: { id: true },
         })
         if (existingOrder) {
-            throw new Error(
+            throw new CarnetIssuanceError(
                 `Este carnet ya se emitio (orden ${existingOrder.id.slice(-8).toUpperCase()}).`
             )
         }
@@ -141,7 +142,7 @@ export async function issueCarnet(
             },
         })
         if (!ticketType) {
-            throw new Error(`El tipo de entrada "${plan.ticketTypeName}" ya no existe.`)
+            throw new CarnetIssuanceError(`El tipo de entrada "${plan.ticketTypeName}" ya no existe.`)
         }
 
         const capacityWhere =
@@ -153,7 +154,7 @@ export async function issueCarnet(
             data: { sold: { increment: 1 } },
         })
         if (updated.count !== 1) {
-            throw new Error(`No hay cupo para "${ticketType.name}".`)
+            throw new CarnetIssuanceError(`No hay cupo para "${ticketType.name}".`)
         }
 
         // 2. Cupo por fecha (piscina libre, o EVENTO con capacityByDate).
@@ -181,7 +182,7 @@ export async function issueCarnet(
                         data: { sold: { increment: count } },
                     })
                     if (bumped.count === 0) {
-                        throw new Error(`No hay inventario configurado para el ${dateKey}.`)
+                        throw new CarnetIssuanceError(`No hay inventario configurado para el ${dateKey}.`)
                     }
                 }
             } else {
