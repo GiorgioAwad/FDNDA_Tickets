@@ -16,7 +16,16 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 })
         }
 
-        const body = (await request.json()) as Partial<CarnetIssuanceInput>
+        let body: Partial<CarnetIssuanceInput>
+        try {
+            body = (await request.json()) as Partial<CarnetIssuanceInput>
+        } catch (error) {
+            console.error("Error leyendo el cuerpo de la solicitud de emision de carnet:", error)
+            return NextResponse.json(
+                { success: false, errors: ["La solicitud no tiene un formato valido."] },
+                { status: 400 }
+            )
+        }
         if (!body.userId || !body.ticketTypeId || !body.sourceRef) {
             return NextResponse.json(
                 { success: false, errors: ["Previsualiza la emision antes de confirmarla."] },
@@ -39,7 +48,20 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, errors: result.errors }, { status: 422 })
         }
 
-        const issued = await issueCarnet(result.plan, { id: user.id, email: user.email })
+        // issueCarnet es la unica fuente de errores deliberados de este tramo
+        // (ya en espanol: cupo agotado, duplicado detectado dentro de la
+        // transaccion, tipo de entrada eliminado, etc.). Se aisla en su
+        // propio try/catch para poder devolver ese mensaje tal cual sin
+        // arriesgarnos a filtrar el texto crudo de una excepcion inesperada
+        // (error de Prisma, bug, etc.) de cualquier otro punto de la ruta.
+        let issued
+        try {
+            issued = await issueCarnet(result.plan, { id: user.id, email: user.email })
+        } catch (error) {
+            console.error("Error emitiendo carnet:", error)
+            const message = error instanceof Error ? error.message : "Error al emitir el carnet"
+            return NextResponse.json({ success: false, errors: [message] }, { status: 500 })
+        }
 
         return NextResponse.json({
             success: true,
@@ -47,8 +69,10 @@ export async function POST(request: NextRequest) {
         })
     } catch (error) {
         console.error("Error emitiendo carnet:", error)
-        const message = error instanceof Error ? error.message : "Error al emitir el carnet"
-        return NextResponse.json({ success: false, errors: [message] }, { status: 500 })
+        return NextResponse.json(
+            { success: false, errors: ["Error al emitir el carnet"] },
+            { status: 500 }
+        )
     }
 }
 

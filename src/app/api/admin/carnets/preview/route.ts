@@ -18,7 +18,16 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 })
         }
 
-        const body = (await request.json()) as Partial<CarnetIssuanceInput>
+        let body: Partial<CarnetIssuanceInput>
+        try {
+            body = (await request.json()) as Partial<CarnetIssuanceInput>
+        } catch (error) {
+            console.error("Error leyendo el cuerpo de la solicitud de preview de carnet:", error)
+            return NextResponse.json(
+                { success: false, errors: ["La solicitud no tiene un formato valido."] },
+                { status: 400 }
+            )
+        }
         if (!body.userId || !body.ticketTypeId) {
             return NextResponse.json(
                 { success: false, errors: ["Elige un usuario y un tipo de entrada."] },
