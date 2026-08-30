@@ -35,6 +35,7 @@ import {
     Receipt,
     ShoppingBag,
     Package,
+    IdCard,
 } from "lucide-react"
 
 interface NavItem {
@@ -64,6 +65,7 @@ const adminNavigation: NavGroup[] = [
             { label: "Entradas", href: "/admin/entradas", icon: Ticket },
             { label: "Membresias", href: "/admin/membresias", icon: CalendarClock },
             { label: "Cortesías", href: "/admin/cortesias", icon: Gift },
+            { label: "Emitir carnet", href: "/admin/carnets", icon: IdCard },
             { label: "Merch", href: "/admin/merch", icon: ShoppingBag },
             { label: "Pedidos merch", href: "/admin/merch/pedidos", icon: Package },
             { label: "Ingresos", href: "/admin/ingresos", icon: DollarSign },
@@ -304,6 +306,7 @@ function AdminTopBar({ onMenuClick, title }: AdminTopBarProps) {
         if (pathname.includes("/asistencia")) return "Asistencia"
         if (pathname.includes("/diagnostico-qr")) return "Diagnóstico QR"
         if (pathname.includes("/diagnostico-abio")) return "Diagnóstico ABIO"
+        if (pathname.includes("/carnets")) return "Emitir carnet"
         return "Admin"
     })()
 
