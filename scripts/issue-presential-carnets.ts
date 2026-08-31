@@ -26,6 +26,10 @@
  *   scheduleCategory       ADULTOS/NINOS, si aplica horario
  *   scheduleFrequency      LMV/MJS/LV, si aplica horario
  *   scheduleHoursJson      JSON, ej. {"main":"09:00-10:00"}
+ *   buyerName              opcional; nombre/razon social del comprador (default user.name)
+ *   buyerPhone/phone/telefono  opcional; queda en la orden y es clave de busqueda del panel de membresias
+ *   buyerDocNumber/buyerDni    opcional; default el DNI del asistente. 11 digitos => RUC (buyerDocType 6)
+ *   documentType           opcional; BOLETA (default) o FACTURA. NO emite comprobante: es solo etiqueta
  *
  * Nota: si el ticketType usa cupo por fecha (piscina libre, o EVENTO con
  * capacityByDate) o es un paquete de varios dias, el modulo compartido exige
@@ -45,6 +49,9 @@ import {
 } from "@/lib/membership-schedule"
 import { planCarnetIssuance, issueCarnet } from "@/lib/carnet-issuance"
 import type { CarnetIssuanceInput, CarnetPlan } from "@/lib/carnet-issuance-rules"
+
+/** Marca de origen de este script en `Order.providerResponse.source`. */
+const IMPORT_SOURCE = "presential-carnet-import"
 
 let prisma: typeof import("@/lib/prisma").prisma | null = null
 
@@ -379,6 +386,28 @@ async function inputFromRow(
         forceCapacity: flagBool(flags, "force-capacity"),
         allowExistingActive: flagBool(flags, "allow-existing-active"),
         sendEmail: !flagBool(flags, "no-email"),
+        // Marca de origen propia: el historial del panel admin filtra por
+        // "admin-carnet-panel", asi que un lote importado por CSV no debe
+        // aparecer ahi mezclado con las emisiones manuales.
+        source: IMPORT_SOURCE,
+        // Datos del COMPRADOR, distintos de los del asistente. buyerPhone es
+        // clave de busqueda en /api/admin/memberships y, junto con
+        // buyerDocNumber, columna de los exports de asistentes: si el CSV los
+        // trae, tienen que llegar a la orden. buyerDocType lo deriva el modulo
+        // compartido del largo del documento (11 digitos = RUC).
+        buyerName: getCell(row, "buyerName") || null,
+        buyerPhone: getCell(row, "buyerPhone", "phone", "telefono") || null,
+        buyerDocNumber: getCell(row, "buyerDocNumber", "buyerDni") || null,
+        documentType: getCell(row, "documentType") || null,
+        // Rastro de auditoria del lote en Order.providerResponse: sin tabla de
+        // auditoria, esto es lo unico que permite reconstruir de que archivo y
+        // de que fila salio un carnet.
+        extra: {
+            batch,
+            sourceRef,
+            rowNumber,
+            originalRow: row,
+        },
     }
 }
 
@@ -437,8 +466,19 @@ async function main() {
             const result = await planCarnetIssuance(input)
             if (result.ok) {
                 planned.push({ rowNumber, plan: result.plan })
-            } else if (result.errors.some((e) => /ya se emiti/i.test(e))) {
-                skipped.push({ rowNumber, sourceRef: input.sourceRef, reason: result.errors[0] })
+                continue
+            }
+            // Clasificacion por CODIGO, no por el texto del mensaje. Antes se
+            // hacia match contra /ya se emiti/: reescribir esa frase en
+            // carnet-issuance-rules.ts convertia el "saltar filas ya emitidas"
+            // en "hay errores, no se emitio nada", y el camino documentado de
+            // recuperacion (volver a correr el mismo archivo tras un lote a
+            // medio emitir) dejaba de funcionar para siempre.
+            const alreadyIssued = result.issues.find((issue) => issue.code === "ALREADY_ISSUED")
+            if (alreadyIssued) {
+                // El mensaje del duplicado, no result.errors[0], que es el que
+                // quedo primero en la lista y puede ser cualquier otro.
+                skipped.push({ rowNumber, sourceRef: input.sourceRef, reason: alreadyIssued.message })
             } else {
                 errors.push(`Fila ${rowNumber}: ${result.errors.join(" | ")}`)
             }
