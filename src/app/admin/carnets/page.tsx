@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 
+import { CarnetHistory } from "@/components/admin/carnets/CarnetHistory"
 import { CarnetIssueForm } from "@/components/admin/carnets/CarnetIssueForm"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 
@@ -19,6 +20,7 @@ export default async function CarnetsPage() {
                 </p>
             </header>
             <CarnetIssueForm />
+            <CarnetHistory />
         </div>
     )
 }
