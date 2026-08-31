@@ -158,7 +158,16 @@ const columns: ColumnDef<HistoryItem>[] = [
     },
 ]
 
-export function CarnetHistory() {
+type CarnetHistoryProps = {
+    /**
+     * Contador que sube con cada carnet emitido en esta pagina (lo lleva
+     * CarnetsPanel). Cambiarlo vuelve a disparar la carga, para que la tabla
+     * muestre lo recien emitido en vez de quedarse con la foto inicial.
+     */
+    refreshKey?: number
+}
+
+export function CarnetHistory({ refreshKey = 0 }: CarnetHistoryProps = {}) {
     const [items, setItems] = useState<HistoryItem[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -201,7 +210,7 @@ export function CarnetHistory() {
         return () => {
             cancelled = true
         }
-    }, [reloadKey])
+    }, [reloadKey, refreshKey])
 
     return (
         <Card>

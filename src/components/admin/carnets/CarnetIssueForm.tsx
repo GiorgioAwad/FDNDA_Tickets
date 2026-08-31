@@ -37,6 +37,8 @@ type CarnetPlanResponse = {
     ticketTypeName: string
     eventTitle: string
     entitlementDates: string[]
+    /** Por que entitlementDates puede venir vacio (ver CarnetPlan.entitlementMode). */
+    entitlementMode: "MONTHLY_CLASS" | "POOL_BAG" | "DATES"
     capacityBefore: number
     capacityTotal: number
     warnings: string[]
@@ -93,7 +95,17 @@ function extractErrors(json: unknown): string[] {
     return ["Error inesperado"]
 }
 
-export function CarnetIssueForm() {
+type CarnetIssueFormProps = {
+    /**
+     * Se llama despues de cada emision confirmada. Lo usa CarnetsPanel para
+     * refrescar el historial: los dos componentes son hermanos y sin este
+     * aviso la tabla se quedaba con la foto de la carga inicial, aunque su
+     * estado vacio promete que lo emitido "va a aparecer aqui".
+     */
+    onIssued?: () => void
+}
+
+export function CarnetIssueForm({ onIssued }: CarnetIssueFormProps = {}) {
     const [events, setEvents] = useState<CarnetOptionEvent[]>([])
     const [includeEnded, setIncludeEnded] = useState(false)
     const [loadingEvents, setLoadingEvents] = useState(true)
@@ -133,8 +145,6 @@ export function CarnetIssueForm() {
         () => event?.ticketTypes.find((t) => t.id === ticketTypeId) ?? null,
         [event, ticketTypeId]
     )
-    const isPoolFreeEvent = event?.category === "PISCINA_LIBRE"
-
     // Un preview calculado deja de ser valido en cuanto cambia cualquier
     // campo que viaja en el cuerpo de la solicitud (o el usuario/tipo de
     // entrada que lo determinan). Se limpia desde el propio manejador de
@@ -373,6 +383,7 @@ export function CarnetIssueForm() {
             // emitio, no lo que hay ahora en pantalla.
             setIssued({ ...issuedSnapshot, ticketCode: data.ticketCode, emailError: data.emailError })
             setPlan(null)
+            onIssued?.()
         }
         setBusy(null)
     }
@@ -463,7 +474,7 @@ export function CarnetIssueForm() {
                         )}
                         <CarnetDetailFields
                             ticketType={ticketType}
-                            isPoolFreeEvent={Boolean(isPoolFreeEvent)}
+                            eventCategory={event?.category ?? null}
                             membershipStartFixed={event?.membershipStartFixed ?? null}
                             startDate={startDate}
                             setStartDate={handleStartDateChange}
@@ -582,13 +593,22 @@ export function CarnetIssueForm() {
                             {plan.attendeeName} — {plan.ticketTypeName} ({plan.eventTitle})
                         </p>
                         {plan.membershipStartDate && <p>Inicio de membresia: {plan.membershipStartDate}</p>}
+                        {/* entitlementDates vacio significa cosas distintas segun
+                            el tipo de entrada: una bolsa de piscina reserva sus
+                            visitas despues, una membresia crea el entitlement de
+                            cada clase al escanear. Se distingue por
+                            entitlementMode, que resuelve el servidor. */}
                         <p>
                             Dias validos:{" "}
-                            {plan.entitlementDates.length === 0
-                                ? "por clase (cupo mensual)"
-                                : `${plan.entitlementDates.length} (${plan.entitlementDates[0]} → ${
+                            {plan.entitlementDates.length > 0
+                                ? `${plan.entitlementDates.length} (${plan.entitlementDates[0]} → ${
                                       plan.entitlementDates[plan.entitlementDates.length - 1]
-                                  })`}
+                                  })`
+                                : plan.entitlementMode === "POOL_BAG"
+                                  ? "sin fechas: las visitas se reservan despues, una por una"
+                                  : plan.entitlementMode === "MONTHLY_CLASS"
+                                    ? "por clase (cupo mensual)"
+                                    : "sin fechas"}
                         </p>
                         <p>
                             Cupo: {plan.capacityBefore} → {plan.capacityBefore + 1} de {plan.capacityTotal || "∞"}

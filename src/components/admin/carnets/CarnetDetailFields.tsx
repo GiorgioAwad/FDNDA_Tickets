@@ -9,6 +9,7 @@ import type {
     MembershipScheduleInput,
     MembershipScheduleProfile,
 } from "@/lib/membership-schedule"
+import { isPoolBagTicketType } from "@/lib/pool-bag-classification"
 
 export type CarnetTicketTypeOption = {
     id: string
@@ -36,10 +37,10 @@ export type DateCapacityRow = { date: string; capacity: number; sold: number; is
 
 interface Props {
     ticketType: CarnetTicketTypeOption
-    /** category === "PISCINA_LIBRE" del evento seleccionado. Solo se usa para
-     * el carve-out de la bolsa de piscina libre (ver isBag abajo), nunca para
-     * decidir si se muestra el selector de fecha. */
-    isPoolFreeEvent: boolean
+    /** `Event.category` del evento seleccionado. Solo se usa para el carve-out
+     * de la bolsa de piscina libre (ver isBag abajo), nunca para decidir si se
+     * muestra el selector de fecha. */
+    eventCategory: string | null
     membershipStartFixed: string | null
     startDate: string
     setStartDate: (value: string) => void
@@ -55,7 +56,7 @@ const selectClassName =
 
 export function CarnetDetailFields({
     ticketType,
-    isPoolFreeEvent,
+    eventCategory,
     membershipStartFixed,
     startDate,
     setStartDate,
@@ -67,18 +68,38 @@ export function CarnetDetailFields({
 }: Props) {
     const isMembership = (ticketType.monthlyClassLimit ?? 0) > 0
 
-    // Ver carnet-issuance-rules.ts: la bolsa de piscina libre (paquete +
-    // evento piscina libre) no elige fecha al emitirse -- las visitas se
-    // reservan despues (draw-down). Este carve-out es exclusivo de piscina
-    // libre; un paquete de un EVENTO con cupo por fecha si elige sus fechas.
-    const isBag = ticketType.isPackage && isPoolFreeEvent
+    // Predicado canonico (`isPoolBagTicketType`), el mismo que aplica
+    // carnet-issuance-rules.ts en el servidor: la bolsa de piscina libre no
+    // elige fecha al emitirse -- las visitas se reservan despues (draw-down).
+    // Exige ademas packageDaysCount > 0: un tipo PISCINA_LIBRE guardado con
+    // "es paquete" y el conteo de dias vacio NO es una bolsa y si tiene que
+    // elegir su fecha, o entraria sin consumir cupo de ningun dia. Este
+    // carve-out es exclusivo de piscina libre; un paquete de un EVENTO con
+    // cupo por fecha siempre elige sus fechas.
+    const isBag = isPoolBagTicketType({
+        eventCategory,
+        isPackage: ticketType.isPackage,
+        packageDaysCount: ticketType.packageDaysCount,
+    })
 
-    // Selector de UNA fecha: cualquier tipo con cupo por fecha que no sea un
-    // paquete. Corregido: antes se disparaba con "es piscina libre", pero el
-    // cupo por fecha tambien aplica a EVENTO+capacityByDate.
-    const showSingleDate = ticketType.usesDateCapacity && !ticketType.isPackage
-
+    // Un paquete elige N fechas. Sin packageDaysCount no hay N, asi que no es
+    // un paquete "de verdad" para efectos del formulario.
     const needsPackageDates = ticketType.isPackage && !!ticketType.packageDaysCount && !isBag
+
+    // Selector de UNA fecha: cualquier tipo con cupo por fecha que no elija
+    // varias ni sea una bolsa. Corregido: antes se disparaba con "es piscina
+    // libre", pero el cupo por fecha tambien aplica a EVENTO+capacityByDate.
+    // Se descarta por `needsPackageDates`/`isBag` y no por `isPackage` a secas
+    // para que el caso mal configurado (es paquete, conteo de dias vacio) siga
+    // pudiendo elegir su fecha: el servidor se la exige igual.
+    const showSingleDate = ticketType.usesDateCapacity && !needsPackageDates && !isBag
+
+    // Con cupo por fecha, las fechas del paquete salen del inventario
+    // configurado igual que en el selector de una sola fecha: un
+    // <input type="date"> libre deja tipear cualquier dia (incluido uno de
+    // otro anio o sin fila de inventario) y el error recien aparece al
+    // previsualizar.
+    const usePackageInventorySelect = ticketType.usesDateCapacity && dateInventory.length > 0
 
     const toggleDate = (date: string) => {
         setSelectedDates(
@@ -88,8 +109,20 @@ export function CarnetDetailFields({
         )
     }
 
+    // Una entrada de evento simple no necesita ningun campo extra. Sin este
+    // aviso la tarjeta "3 · Detalle" quedaba vacia y se leia como si algo no
+    // hubiera cargado.
+    const hasAnyField =
+        isMembership || Boolean(ticketType.scheduleProfile) || showSingleDate || isBag || needsPackageDates
+
     return (
         <div className="space-y-4">
+            {!hasAnyField && (
+                <p className="text-sm text-muted-foreground">
+                    Este tipo de entrada no necesita datos adicionales.
+                </p>
+            )}
+
             {isMembership && (
                 <div className="space-y-1">
                     <label className="block text-sm font-medium text-foreground">Fecha de inicio</label>
@@ -159,14 +192,37 @@ export function CarnetDetailFields({
                     <label className="block text-sm font-medium text-foreground">
                         Fechas del paquete ({selectedDates.length}/{ticketType.packageDaysCount})
                     </label>
-                    <Input
-                        type="date"
-                        onChange={(event) => {
-                            if (event.target.value) toggleDate(event.target.value)
-                            event.target.value = ""
-                        }}
-                        className="max-w-xs"
-                    />
+                    {usePackageInventorySelect ? (
+                        <select
+                            value=""
+                            onChange={(event) => {
+                                if (event.target.value) toggleDate(event.target.value)
+                            }}
+                            className={selectClassName}
+                        >
+                            <option value="">Agrega una fecha</option>
+                            {dateInventory.map((row) => (
+                                <option
+                                    key={row.date}
+                                    value={row.date}
+                                    disabled={!row.isEnabled || selectedDates.includes(row.date)}
+                                >
+                                    {row.date} —{" "}
+                                    {row.isEnabled ? `${row.sold}/${row.capacity || "∞"}` : "cerrado"}
+                                    {selectedDates.includes(row.date) ? " (elegida)" : ""}
+                                </option>
+                            ))}
+                        </select>
+                    ) : (
+                        <Input
+                            type="date"
+                            onChange={(event) => {
+                                if (event.target.value) toggleDate(event.target.value)
+                                event.target.value = ""
+                            }}
+                            className="max-w-xs"
+                        />
+                    )}
                     {selectedDates.length > 0 && (
                         <ul className="flex flex-wrap gap-2">
                             {selectedDates.map((date) => (

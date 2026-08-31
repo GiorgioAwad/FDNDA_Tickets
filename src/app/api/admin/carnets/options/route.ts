@@ -3,9 +3,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { getMembershipScheduleProfile } from "@/lib/membership-schedule"
 import { prisma } from "@/lib/prisma"
-import { getTodayDateString } from "@/lib/qr"
 import { usesTicketDateCapacity } from "@/lib/ticket-date-capacity"
-import { parseDateOnly } from "@/lib/utils"
+import { getEventActiveThreshold } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -21,10 +20,21 @@ export async function GET(request: NextRequest) {
 
         const includeEnded = new URL(request.url).searchParams.get("includeEnded") === "true"
 
+        // Sin filtro de publicacion a proposito: el uso principal del panel es
+        // regularizar inscritos presenciales de eventos que todavia no estan
+        // publicados (o que ya se despublicaron), asi que aca se listan todos
+        // los eventos, publicados o no. El unico recorte es temporal.
         const events = await prisma.event.findMany({
             where: {
-                // El dia se calcula en America/Lima, no en el UTC del contenedor.
-                ...(includeEnded ? {} : { endDate: { gte: parseDateOnly(getTodayDateString()) } }),
+                // getEventActiveThreshold() = mediodia UTC del dia civil de
+                // Lima: el evento sigue listado durante TODO su ultimo dia
+                // (hasta las 11:59pm Lima) en vez de desaparecer a las 7am,
+                // que es lo que pasa comparando contra `new Date()`. Es el
+                // helper canonico de lib/utils; antes esta ruta rearmaba la
+                // misma regla a mano con parseDateOnly(getTodayDateString()),
+                // byte-equivalente pero una segunda definicion de algo que ya
+                // costo un incidente.
+                ...(includeEnded ? {} : { endDate: { gte: getEventActiveThreshold() } }),
             },
             select: {
                 id: true,

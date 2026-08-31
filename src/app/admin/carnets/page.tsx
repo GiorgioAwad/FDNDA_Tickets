@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation"
 
-import { CarnetHistory } from "@/components/admin/carnets/CarnetHistory"
-import { CarnetIssueForm } from "@/components/admin/carnets/CarnetIssueForm"
+import { CarnetsPanel } from "@/components/admin/carnets/CarnetsPanel"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
@@ -19,8 +18,7 @@ export default async function CarnetsPage() {
                     emite fuera de la web.
                 </p>
             </header>
-            <CarnetIssueForm />
-            <CarnetHistory />
+            <CarnetsPanel />
         </div>
     )
 }
