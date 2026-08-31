@@ -2,6 +2,11 @@
  * Emite carnets/entradas de membresia para inscritos presenciales que ya tienen
  * usuario web. Por defecto es DRY-RUN: valida la relacion y muestra el plan.
  *
+ * Este script es un adaptador delgado sobre `src/lib/carnet-issuance.ts`: no
+ * repite validaciones ni escritura propias, solo traduce cada fila del CSV a
+ * un `CarnetIssuanceInput` y llama a `planCarnetIssuance`/`issueCarnet`. Es el
+ * mismo modulo que usa el panel admin, para que ambos caminos nunca diverjan.
+ *
  * Uso:
  *   tsx scripts/issue-presential-carnets.ts --file=presenciales.csv --batch=videna-ago-2026 --event-slug=membresias-videna-2026 --ticket-type-name="MEMBRESIA SEMESTRAL BRONCE"
  *   tsx scripts/issue-presential-carnets.ts --file=presenciales.csv --batch=videna-ago-2026 --event-slug=membresias-videna-2026 --ticket-type-name="MEMBRESIA SEMESTRAL BRONCE" --confirm
@@ -15,21 +20,31 @@
  *   amountPaid/amount      opcional; default 0
  *   eventSlug/eventId      opcional si se pasan flags globales
  *   ticketTypeName/ticketTypeId opcional si se pasan flags globales
- *   membershipSchedule     JSON normalizado o input de horario
+ *   membershipSchedule     JSON normalizado (con `sessions`, tal como se guarda
+ *                          en Ticket.membershipSchedule) o input crudo
+ *                          (categoria/frecuencia/horas)
  *   scheduleCategory       ADULTOS/NINOS, si aplica horario
  *   scheduleFrequency      LMV/MJS/LV, si aplica horario
  *   scheduleHoursJson      JSON, ej. {"main":"09:00-10:00"}
+ *
+ * Nota: si el ticketType usa cupo por fecha (piscina libre, o EVENTO con
+ * capacityByDate) o es un paquete de varios dias, el modulo compartido exige
+ * fechas (`scheduleSelections`) que este script no completa desde el CSV: esas
+ * filas fallaran con un error claro en vez de emitir un carnet que no consume
+ * cupo por fecha. Es el comportamiento correcto; este script se usa hoy solo
+ * para membresias, que no pasan por esa rama.
  */
 import { Prisma } from "@prisma/client"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 
-import { getMembershipScheduleProfile, parseMembershipScheduleSelection, validateMembershipScheduleSelection } from "@/lib/membership-schedule"
-import { buildEntitlementDates } from "@/lib/entitlement-dates"
-import { isBlackoutMonth } from "@/lib/membership-config"
-import { formatDateUTC } from "@/lib/qr"
-import { generateTicketCode, parseDateOnly, formatPrice } from "@/lib/utils"
-import { sendPurchaseEmail } from "@/lib/email"
+import {
+    parseMembershipScheduleSelection,
+    scheduleSelectionToInput,
+    type MembershipScheduleInput,
+} from "@/lib/membership-schedule"
+import { planCarnetIssuance, issueCarnet } from "@/lib/carnet-issuance"
+import type { CarnetIssuanceInput, CarnetPlan } from "@/lib/carnet-issuance-rules"
 
 let prisma: typeof import("@/lib/prisma").prisma | null = null
 
@@ -48,57 +63,8 @@ function db() {
 type Flags = Record<string, string | boolean>
 type Row = Record<string, string>
 
-type PlannedIssue = {
-    rowNumber: number
-    sourceRef: string
-    providerOrderNumber: string
-    user: {
-        id: string
-        email: string
-        name: string
-    }
-    ticketType: {
-        id: string
-        name: string
-        price: Prisma.Decimal
-        capacity: number
-        sold: number
-        monthlyClassLimit: number | null
-        membershipDurationMonths: number | null
-        membershipScheduleKey: string | null
-        isPackage: boolean
-        packageDaysCount: number | null
-        validDays: Prisma.JsonValue | null
-        eventId: string
-        event: {
-            id: string
-            slug: string
-            title: string
-            servilexSucursalCode: string
-            category: string
-            startDate: Date
-            endDate: Date
-            membershipStartFixed: Date | null
-            membershipStartMin: Date | null
-            membershipStartMax: Date | null
-        }
-    }
-    attendeeName: string
-    attendeeDni: string | null
-    membershipStartDate: string
-    membershipSchedule: Prisma.InputJsonValue | null
-    entitlementDates: Date[]
-    amountPaid: number
-    row: Row
-}
-
-type SkippedIssue = {
-    rowNumber: number
-    sourceRef: string
-    reason: string
-}
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+type PlannedIssue = { rowNumber: number; plan: CarnetPlan }
+type SkippedIssue = { rowNumber: number; sourceRef: string; reason: string }
 
 function parseArgs(argv: string[]) {
     const flags: Flags = {}
@@ -135,10 +101,10 @@ Flags:
   --ticket-type-id          plan global si no viene por fila
   --ticket-type-name        nombre del plan global si no viene por fila
   --confirm                 escribe en BD; sin esto solo valida
-  --no-inventory            no incrementa ticket_types.sold
-  --force-capacity          permite emitir aunque capacity este lleno
+  --no-inventory            RETIRADO: el modulo compartido siempre actualiza el cupo al emitir; el script aborta si se pasa este flag
+  --force-capacity          permite emitir aunque el cupo (global o por fecha) este lleno
   --allow-existing-active   permite otro carnet activo del mismo plan/evento para el usuario
-  --allow-missing-schedule  permite emitir sin horario aunque el plan tenga perfil semanal
+  --allow-missing-schedule  RETIRADO: el modulo compartido siempre exige horario si el plan tiene perfil semanal; la fila fallara con error si falta
   --no-email                no envia el correo de confirmacion por carnet emitido
   --print-template          imprime un CSV ejemplo
 `)
@@ -266,15 +232,6 @@ function parseMoney(value: string, fallback = 0) {
     return Math.round(parsed * 100) / 100
 }
 
-function assertDateKey(value: string, label: string) {
-    if (!DATE_RE.test(value)) throw new Error(`${label} debe tener formato YYYY-MM-DD.`)
-    const parsed = new Date(`${value}T12:00:00Z`)
-    if (Number.isNaN(parsed.getTime()) || formatDateUTC(parsed) !== value) {
-        throw new Error(`${label} no es una fecha valida.`)
-    }
-    return value
-}
-
 function parseJsonCell(value: string, label: string) {
     if (!value) return null
     try {
@@ -306,8 +263,21 @@ function scheduleInputFromRow(row: Row) {
     return null
 }
 
-function toJsonValue(value: unknown): Prisma.InputJsonValue {
-    return value as Prisma.InputJsonValue
+/**
+ * `scheduleInputFromRow` puede devolver dos formas distintas: el input crudo
+ * (categoria/frecuencia/horas, igual al checkout) o una seleccion ya
+ * normalizada (con `sessions`, tal como queda guardada en
+ * Ticket.membershipSchedule) si alguien copio ese JSON directo al CSV.
+ * `CarnetIssuanceInput.membershipSchedule` solo acepta la forma cruda
+ * (`validateCarnetRequest` valida contra el perfil, no re-hidrata una
+ * seleccion ya resuelta), asi que si se detecta la forma normalizada se
+ * convierte de vuelta con `scheduleSelectionToInput` antes de entregarla.
+ */
+function toMembershipScheduleInput(row: Row): MembershipScheduleInput | null {
+    const raw = scheduleInputFromRow(row)
+    const normalized = parseMembershipScheduleSelection(raw)
+    if (normalized) return scheduleSelectionToInput(normalized)
+    return raw as MembershipScheduleInput | null
 }
 
 async function resolveTicketType(row: Row, flags: Flags) {
@@ -369,253 +339,47 @@ async function resolveTicketType(row: Row, flags: Flags) {
     return ticketTypes[0]
 }
 
-async function planRow(
+/** Traduce una fila del CSV a la entrada que espera el modulo compartido. */
+async function inputFromRow(
     row: Row,
     rowNumber: number,
     flags: Flags,
     batch: string,
     seenRefs: Set<string>
-): Promise<PlannedIssue | SkippedIssue> {
+): Promise<CarnetIssuanceInput> {
+    const email = getCell(row, "email", "correo").toLowerCase()
+    if (!email) throw new Error(`Fila ${rowNumber}: falta email.`)
+
+    const user = await db().user.findFirst({
+        where: { email: { equals: email, mode: "insensitive" } },
+        select: { id: true },
+    })
+    if (!user) throw new Error(`Fila ${rowNumber}: el usuario ${email} no existe en la web.`)
+
+    const ticketType = await resolveTicketType(row, flags)
+
     const sourceRef = buildSourceRef(batch, row, rowNumber)
     if (seenRefs.has(sourceRef)) {
         throw new Error(`Fila ${rowNumber}: sourceRef duplicado en el archivo (${sourceRef}).`)
     }
     seenRefs.add(sourceRef)
 
-    const providerOrderNumber = `PRES-${sourceRef}`
-    const existingImport = await db().order.findFirst({
-        where: {
-            provider: "PRESENCIAL",
-            providerOrderNumber,
-        },
-        include: {
-            tickets: { select: { id: true, ticketCode: true, status: true } },
-        },
-    })
-    if (existingImport) {
-        return {
-            rowNumber,
-            sourceRef,
-            reason: `ya existe orden ${existingImport.id.slice(-8).toUpperCase()} con ${existingImport.tickets.length} ticket(s)`,
-        }
-    }
-
-    const email = getCell(row, "email", "correo").toLowerCase()
-    if (!email) throw new Error(`Fila ${rowNumber}: falta email.`)
-
-    const user = await db().user.findFirst({
-        where: { email: { equals: email, mode: "insensitive" } },
-        select: { id: true, email: true, name: true },
-    })
-    if (!user) {
-        throw new Error(`Fila ${rowNumber}: el usuario ${email} no existe en la web.`)
-    }
-
-    const ticketType = await resolveTicketType(row, flags)
-    const isMembership = (ticketType.monthlyClassLimit ?? 0) > 0
-    if (!isMembership && !flagBool(flags, "allow-non-membership")) {
-        throw new Error(`Fila ${rowNumber}: "${ticketType.name}" no es una membresia (monthlyClassLimit vacio).`)
-    }
-    if (!ticketType.isActive) {
-        throw new Error(`Fila ${rowNumber}: "${ticketType.name}" esta inactivo.`)
-    }
-
-    const existingActive = await db().ticket.findFirst({
-        where: {
-            userId: user.id,
-            eventId: ticketType.eventId,
-            ticketTypeId: ticketType.id,
-            status: "ACTIVE",
-            order: { status: "PAID" },
-        },
-        select: { id: true, ticketCode: true },
-    })
-    if (existingActive && !flagBool(flags, "allow-existing-active")) {
-        throw new Error(
-            `Fila ${rowNumber}: ${email} ya tiene carnet activo ${existingActive.ticketCode} para "${ticketType.name}".`
-        )
-    }
-
-    const fixedTerm = isMembership && (ticketType.membershipDurationMonths ?? 0) > 0
-    const explicitStart = getCell(row, "membershipStartDate", "startDate", "inicio")
-    const membershipStartDate = ticketType.event.membershipStartFixed
-        ? formatDateUTC(ticketType.event.membershipStartFixed)
-        : explicitStart
-
-    if (fixedTerm && !membershipStartDate) {
-        throw new Error(`Fila ${rowNumber}: falta membershipStartDate para "${ticketType.name}".`)
-    }
-    if (membershipStartDate) {
-        assertDateKey(membershipStartDate, `Fila ${rowNumber}: membershipStartDate`)
-        const month = Number(membershipStartDate.slice(5, 7))
-        if (isBlackoutMonth(month)) {
-            throw new Error(`Fila ${rowNumber}: membershipStartDate no puede ser enero ni febrero.`)
-        }
-        const min = ticketType.event.membershipStartMin ? formatDateUTC(ticketType.event.membershipStartMin) : null
-        const max = ticketType.event.membershipStartMax ? formatDateUTC(ticketType.event.membershipStartMax) : null
-        if (min && membershipStartDate < min) {
-            throw new Error(`Fila ${rowNumber}: inicio ${membershipStartDate} es menor al minimo ${min}.`)
-        }
-        if (max && membershipStartDate > max) {
-            throw new Error(`Fila ${rowNumber}: inicio ${membershipStartDate} supera el maximo ${max}.`)
-        }
-    }
-
-    const scheduleProfile = getMembershipScheduleProfile(
-        ticketType.event.servilexSucursalCode,
-        ticketType.membershipScheduleKey
-    )
-    const rawSchedule = scheduleInputFromRow(row)
-    let membershipSchedule: Prisma.InputJsonValue | null = null
-    if (scheduleProfile) {
-        if (!rawSchedule && !flagBool(flags, "allow-missing-schedule")) {
-            throw new Error(`Fila ${rowNumber}: "${ticketType.name}" requiere horario semanal.`)
-        }
-        if (rawSchedule) {
-            const normalized = parseMembershipScheduleSelection(rawSchedule)
-            if (normalized) {
-                membershipSchedule = toJsonValue(normalized)
-            } else {
-                const validation = validateMembershipScheduleSelection(
-                    scheduleProfile,
-                    rawSchedule as Parameters<typeof validateMembershipScheduleSelection>[1],
-                    ticketType.event.servilexSucursalCode
-                )
-                if (!validation.ok) throw new Error(`Fila ${rowNumber}: ${validation.error}`)
-                membershipSchedule = toJsonValue(validation.selection)
-            }
-        }
-    }
-
-    const attendeeName = getCell(row, "attendeeName", "name", "nombre") || user.name
-    const attendeeDni = getCell(row, "attendeeDni", "dni", "documentNumber", "documento") || null
-    const amountFromFlags = flagString(flags, "amount")
-    const amountPaid = parseMoney(getCell(row, "amountPaid", "amount", "monto") || amountFromFlags || "0")
-
-    // Los tipos por paquete (academias sin cupo mensual, p.ej. VMT) se escanean
-    // contra sus dias habilitados: hay que pre-generar los entitlements igual que
-    // lo hace el checkout web, si no el carnet queda sin dias validos.
-    const entitlementDates = buildEntitlementDates({
-        ticketType: {
-            isPackage: ticketType.isPackage,
-            packageDaysCount: ticketType.packageDaysCount,
-            monthlyClassLimit: ticketType.monthlyClassLimit,
-            validDays: ticketType.validDays,
-        },
-        event: {
-            startDate: ticketType.event.startDate,
-            endDate: ticketType.event.endDate,
-        },
-        attendee: null,
-        eventCategory: ticketType.event.category,
-    })
-
     return {
-        rowNumber,
+        userId: user.id,
+        ticketTypeId: ticketType.id,
+        attendeeName: getCell(row, "attendeeName", "name", "nombre") || undefined,
+        attendeeDni: getCell(row, "attendeeDni", "dni", "documentNumber", "documento") || null,
+        amountPaid: parseMoney(
+            getCell(row, "amountPaid", "amount", "monto") || flagString(flags, "amount") || "0"
+        ),
+        membershipStartDate: getCell(row, "membershipStartDate", "startDate", "inicio") || null,
+        membershipSchedule: toMembershipScheduleInput(row),
         sourceRef,
-        providerOrderNumber,
-        user,
-        ticketType,
-        attendeeName,
-        attendeeDni,
-        membershipStartDate: membershipStartDate || "",
-        membershipSchedule,
-        entitlementDates,
-        amountPaid,
-        row,
+        reason: `Import presencial lote ${batch} (fila ${rowNumber})`,
+        forceCapacity: flagBool(flags, "force-capacity"),
+        allowExistingActive: flagBool(flags, "allow-existing-active"),
+        sendEmail: !flagBool(flags, "no-email"),
     }
-}
-
-async function createIssue(tx: Prisma.TransactionClient, issue: PlannedIssue, options: {
-    reserveInventory: boolean
-    forceCapacity: boolean
-}) {
-    if (options.reserveInventory) {
-        const capacityWhere =
-            issue.ticketType.capacity > 0 && !options.forceCapacity
-                ? { sold: { lte: issue.ticketType.capacity - 1 } }
-                : {}
-        const updated = await tx.ticketType.updateMany({
-            where: {
-                id: issue.ticketType.id,
-                isActive: true,
-                ...capacityWhere,
-            },
-            data: {
-                sold: { increment: 1 },
-            },
-        })
-        if (updated.count !== 1) {
-            throw new Error(`Sin capacidad para ${issue.ticketType.name} (${issue.ticketType.id}).`)
-        }
-    }
-
-    const buyerDocNumber = getCell(issue.row, "buyerDocNumber", "buyerDni") || issue.attendeeDni
-    const now = new Date()
-    const order = await tx.order.create({
-        data: {
-            userId: issue.user.id,
-            status: "PAID",
-            orderType: "TICKET",
-            totalAmount: issue.amountPaid,
-            currency: "PEN",
-            provider: "PRESENCIAL",
-            providerRef: issue.sourceRef,
-            providerOrderNumber: issue.providerOrderNumber,
-            providerResponse: {
-                source: "presential-carnet-import",
-                batch: issue.sourceRef.split(":")[0],
-                sourceRef: issue.sourceRef,
-                rowNumber: issue.rowNumber,
-                importedAt: now.toISOString(),
-                originalRow: issue.row,
-            },
-            paidAt: now,
-            documentType: getCell(issue.row, "documentType") || "BOLETA",
-            buyerDocType: buyerDocNumber && buyerDocNumber.length === 11 ? "6" : "1",
-            buyerDocNumber,
-            buyerName: getCell(issue.row, "buyerName") || issue.user.name,
-            buyerEmail: issue.user.email,
-            buyerPhone: getCell(issue.row, "buyerPhone", "phone", "telefono") || null,
-            orderItems: {
-                create: [{
-                    ticketTypeId: issue.ticketType.id,
-                    quantity: 1,
-                    unitPrice: issue.amountPaid,
-                    subtotal: issue.amountPaid,
-                    attendeeData: [{
-                        name: issue.attendeeName,
-                        dni: issue.attendeeDni,
-                        membershipStartDate: issue.membershipStartDate || null,
-                        membershipSchedule: issue.membershipSchedule,
-                    }] as Prisma.InputJsonValue,
-                }],
-            },
-        },
-    })
-
-    const ticket = await tx.ticket.create({
-        data: {
-            orderId: order.id,
-            userId: issue.user.id,
-            eventId: issue.ticketType.eventId,
-            ticketTypeId: issue.ticketType.id,
-            ticketCode: generateTicketCode(),
-            attendeeName: issue.attendeeName,
-            attendeeDni: issue.attendeeDni || undefined,
-            membershipStartDate: issue.membershipStartDate ? parseDateOnly(issue.membershipStartDate) : null,
-            membershipSchedule: issue.membershipSchedule ?? Prisma.JsonNull,
-            status: "ACTIVE",
-            entitlements: {
-                create: issue.entitlementDates.map((date) => ({
-                    date,
-                    status: "AVAILABLE" as const,
-                })),
-            },
-        },
-    })
-
-    return { orderId: order.id, ticketCode: ticket.ticketCode }
 }
 
 async function main() {
@@ -629,12 +393,20 @@ async function main() {
         return
     }
 
+    if (flagBool(flags, "no-inventory")) {
+        // El modulo compartido (issueCarnet) siempre incrementa ticket_types.sold
+        // al escribir: no hay forma de pedirle que no lo haga sin tocar esa
+        // funcion, que este script no puede modificar. Abortar en vez de aceptar
+        // el flag y actualizar el cupo de todos modos en silencio.
+        throw new Error(
+            "--no-inventory ya no esta soportado: el modulo compartido siempre actualiza el cupo al emitir. Quita el flag."
+        )
+    }
+
     const file = flagString(flags, "file")
     const batch = flagString(flags, "batch")
     const confirm = flagBool(flags, "confirm")
-    const reserveInventory = !flagBool(flags, "no-inventory")
-    const forceCapacity = flagBool(flags, "force-capacity")
-    const sendEmails = !flagBool(flags, "no-email")
+    const sendEmailsRequested = !flagBool(flags, "no-email")
 
     if (!file || !batch) {
         usage()
@@ -649,7 +421,6 @@ async function main() {
     console.log(`Archivo: ${absoluteFile}`)
     console.log(`Lote: ${batch}`)
     console.log(`Modo: ${confirm ? "CONFIRM" : "DRY-RUN"}`)
-    console.log(`Inventario: ${reserveInventory ? "incrementar sold" : "no tocar"}`)
     console.log("")
 
     await loadPrisma()
@@ -662,9 +433,15 @@ async function main() {
     for (let index = 0; index < rows.length; index += 1) {
         const rowNumber = index + 2
         try {
-            const result = await planRow(rows[index], rowNumber, flags, batch, seenRefs)
-            if ("reason" in result) skipped.push(result)
-            else planned.push(result)
+            const input = await inputFromRow(rows[index], rowNumber, flags, batch, seenRefs)
+            const result = await planCarnetIssuance(input)
+            if (result.ok) {
+                planned.push({ rowNumber, plan: result.plan })
+            } else if (result.errors.some((e) => /ya se emiti/i.test(e))) {
+                skipped.push({ rowNumber, sourceRef: input.sourceRef, reason: result.errors[0] })
+            } else {
+                errors.push(`Fila ${rowNumber}: ${result.errors.join(" | ")}`)
+            }
         } catch (error) {
             errors.push(error instanceof Error ? error.message : String(error))
         }
@@ -677,8 +454,9 @@ async function main() {
     console.log("")
 
     for (const issue of planned) {
+        const p = issue.plan
         console.log(
-            `OK fila ${issue.rowNumber}: ${issue.user.email} -> ${issue.ticketType.event.title} / ${issue.ticketType.name} | ${issue.attendeeName} (${issue.attendeeDni ?? "sin DNI"}) | S/${issue.amountPaid} | inicio ${issue.membershipStartDate || "-"} | dias ${issue.entitlementDates.length}${issue.entitlementDates.length ? ` (${formatDateUTC(issue.entitlementDates[0])} -> ${formatDateUTC(issue.entitlementDates[issue.entitlementDates.length - 1])})` : ""} | ref=${issue.sourceRef}`
+            `OK fila ${issue.rowNumber}: ${p.userEmail} -> ${p.eventTitle} / ${p.ticketTypeName} | ${p.attendeeName} (${p.attendeeDni ?? "sin DNI"}) | S/${p.amountPaid} | inicio ${p.membershipStartDate || "-"} | dias ${p.entitlementDates.length} | ref=${p.sourceRef}`
         )
     }
     for (const skip of skipped) {
@@ -703,60 +481,51 @@ async function main() {
         return
     }
 
-    const created = await db().$transaction(async (tx) => {
-        const result: Array<{ email: string; orderId: string; ticketCode: string }> = []
-        for (const issue of planned) {
-            const createdIssue = await createIssue(tx, issue, { reserveInventory, forceCapacity })
-            result.push({
-                email: issue.user.email,
-                orderId: createdIssue.orderId,
-                ticketCode: createdIssue.ticketCode,
-            })
-        }
-        return result
-    }, { timeout: 60_000 })
-
+    // Cada fila se emite en su propia transaccion (issueCarnet), no todas en una
+    // sola como antes. Si una fila falla a mitad de camino, las anteriores ya
+    // quedaron confirmadas en BD y NO se revierten: por eso se imprime cada
+    // carnet emitido apenas se confirma (no al final) y, si el lote se corta, se
+    // puede volver a correr el mismo archivo — los sourceRef ya usados se saltan
+    // solos en la siguiente pasada (ver planCarnetIssuance/issueCarnet).
     console.log("")
-    console.log(`Emitidos ${created.length} carnet(s):`)
-    for (const item of created) {
-        console.log(`  - ${item.email}: ${item.ticketCode} (orden ${item.orderId.slice(-8).toUpperCase()})`)
+    console.log("Emitiendo:")
+    const created: Array<{ email: string; orderId: string; ticketCode: string; emailError: string | null }> = []
+    try {
+        for (const item of planned) {
+            const result = await issueCarnet(item.plan, { id: "script", email: `cli:${batch}` })
+            created.push({
+                email: item.plan.userEmail,
+                orderId: result.orderId,
+                ticketCode: result.ticketCode,
+                emailError: result.emailError,
+            })
+            console.log(`  - ${item.plan.userEmail}: ${result.ticketCode} (orden ${result.orderId.slice(-8).toUpperCase()})`)
+        }
+    } catch (error) {
+        const failedRow = planned[created.length]
+        console.log("")
+        console.error(
+            `ERROR al emitir fila ${failedRow ? failedRow.rowNumber : "?"}: ${error instanceof Error ? error.message : String(error)}`
+        )
+        if (created.length > 0) {
+            console.error(
+                `Los ${created.length} carnet(s) anteriores ya quedaron emitidos (no se revierten). Vuelve a correr el mismo archivo: los sourceRef ya usados se saltan solos.`
+            )
+        }
+        throw error
     }
 
-    // Notificar por correo a cada titular que su carnet fue emitido. Reusa el
-    // mismo correo de confirmacion que reciben los compradores web. Best-effort:
-    // el carnet ya quedo emitido, un fallo de correo no revierte nada.
-    // created[i] corresponde a planned[i] (mismo orden dentro de la transaccion).
-    if (!sendEmails) {
-        console.log("")
+    console.log("")
+    console.log(`Emitidos ${created.length} carnet(s).`)
+
+    if (!sendEmailsRequested) {
         console.log("(--no-email) No se enviaron correos.")
     } else {
-        let sent = 0
-        let failedEmails = 0
-        for (let i = 0; i < created.length; i += 1) {
-            const item = created[i]
-            const issue = planned[i]
-            try {
-                const result = await sendPurchaseEmail(
-                    item.email,
-                    issue.user.name,
-                    item.orderId,
-                    issue.ticketType.event.title || "Membresia FDNDA",
-                    1,
-                    formatPrice(issue.amountPaid)
-                )
-                if (result.success) {
-                    sent += 1
-                } else {
-                    failedEmails += 1
-                    console.error(`  correo FALLO ${item.email}: ${result.error ?? "desconocido"}`)
-                }
-            } catch (error) {
-                failedEmails += 1
-                console.error(`  correo ERROR ${item.email}: ${error instanceof Error ? error.message : String(error)}`)
-            }
+        for (const item of created) {
+            if (item.emailError) console.error(`  correo FALLO ${item.email}: ${item.emailError}`)
         }
-        console.log("")
-        console.log(`Correos: ${sent} encolados/enviados, ${failedEmails} fallidos.`)
+        const failedEmails = created.filter((item) => item.emailError).length
+        console.log(`Correos: ${created.length - failedEmails} enviados, ${failedEmails} fallidos.`)
     }
 }
 
