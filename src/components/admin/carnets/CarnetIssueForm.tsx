@@ -33,6 +33,7 @@ type CarnetOptionEvent = {
 type CarnetPlanResponse = {
     sourceRef: string
     attendeeName: string
+    attendeeDni: string | null
     ticketTypeName: string
     eventTitle: string
     entitlementDates: string[]
@@ -42,6 +43,20 @@ type CarnetPlanResponse = {
     membershipStartDate: string | null
     forcedGlobalCapacity: boolean
     forcedDateCapacity: boolean
+}
+
+/**
+ * Lo que de verdad se emitio, capturado del `plan` en el instante en que
+ * onIssue confirma la firma y dispara el POST -- antes de esperar la
+ * respuesta. Si el admin edita el formulario mientras la solicitud esta en
+ * vuelo, este snapshot no se ve afectado: el banner de exito describe lo que
+ * se emitio, no lo que el formulario muestra quince segundos despues.
+ */
+type IssuedSnapshot = {
+    attendeeName: string
+    attendeeDni: string | null
+    ticketTypeName: string
+    eventTitle: string
 }
 
 type CarnetPlanPreview = CarnetPlanResponse & {
@@ -104,7 +119,9 @@ export function CarnetIssueForm() {
     const [plan, setPlan] = useState<CarnetPlanPreview | null>(null)
     const [errors, setErrors] = useState<string[]>([])
     const [busy, setBusy] = useState<"preview" | "issue" | null>(null)
-    const [issued, setIssued] = useState<{ ticketCode: string; emailError: string | null } | null>(null)
+    const [issued, setIssued] = useState<
+        (IssuedSnapshot & { ticketCode: string; emailError: string | null }) | null
+    >(null)
 
     // El evento/tipo de entrada seleccionados se DERIVAN del catalogo en cada
     // render en vez de guardarse aparte: si el catalogo cambia (p. ej. se
@@ -294,7 +311,12 @@ export function CarnetIssueForm() {
             }
             return json.data as T
         } catch (error) {
-            setErrors([error instanceof Error ? `Error de red: ${error.message}` : "Error de red"])
+            // error.message del browser (p. ej. "Failed to fetch") es texto en
+            // ingles: nunca se muestra tal cual, solo se deja en consola para
+            // diagnostico. Mismo criterio que los otros dos catch de fetch de
+            // este componente (carga de eventos / fechas disponibles).
+            console.error("Error de red en el panel de carnets:", error)
+            setErrors(["No se pudo conectar con el servidor. Revisa tu conexion e intenta de nuevo."])
             return null
         }
     }
@@ -327,13 +349,29 @@ export function CarnetIssueForm() {
             setErrors(["Los datos cambiaron despues de previsualizar. Vuelve a previsualizar antes de emitir."])
             return
         }
+        // Snapshot de lo que se esta emitiendo, tomado del `plan` en este
+        // mismo instante -- antes de esperar la respuesta. El formulario
+        // sigue editable mientras la solicitud esta en vuelo (solo los
+        // botones se deshabilitan), asi que si el admin corrige un campo
+        // (p. ej. el DNI) antes de que llegue la respuesta, este objeto local
+        // NO cambia con el: sigue describiendo exactamente lo que se envio.
+        const issuedSnapshot: IssuedSnapshot = {
+            attendeeName: plan.attendeeName,
+            attendeeDni: plan.attendeeDni,
+            ticketTypeName: plan.ticketTypeName,
+            eventTitle: plan.eventTitle,
+        }
         setBusy("issue")
         const data = await post<{ ticketCode: string; emailError: string | null }>(
             "/api/admin/carnets",
             plan.sourceRef
         )
         if (data) {
-            setIssued({ ticketCode: data.ticketCode, emailError: data.emailError })
+            // Se arma con issuedSnapshot (capturado arriba), no con el estado
+            // vivo del formulario: si este ya cambio mientras se esperaba la
+            // respuesta, el banner sigue describiendo lo que de verdad se
+            // emitio, no lo que hay ahora en pantalla.
+            setIssued({ ...issuedSnapshot, ticketCode: data.ticketCode, emailError: data.emailError })
             setPlan(null)
         }
         setBusy(null)
@@ -571,6 +609,15 @@ export function CarnetIssueForm() {
                             <Badge variant="success">Emitido</Badge>
                             <p className="font-semibold">Carnet {issued.ticketCode}</p>
                         </div>
+                        {/* Datos capturados al momento de emitir (issuedSnapshot), no el
+                            estado actual del formulario: si se edito algo mientras la
+                            solicitud estaba en vuelo, esto sigue describiendo lo que
+                            de verdad se emitio. */}
+                        <p>
+                            {issued.attendeeName}
+                            {issued.attendeeDni ? ` (DNI ${issued.attendeeDni})` : ""} — {issued.ticketTypeName}
+                            , {issued.eventTitle}
+                        </p>
                         {issued.emailError && (
                             <p className="text-amber-700">El correo no se pudo enviar: {issued.emailError}</p>
                         )}
