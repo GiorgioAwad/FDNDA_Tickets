@@ -43,6 +43,18 @@ const TICKET_TYPE_SELECT = {
 } satisfies Prisma.TicketTypeSelect
 
 /**
+ * Rechazo que no nace de las reglas sino de la carga de contexto (no existe el
+ * usuario / el tipo de entrada). Va sin `code` porque no hay ningun consumidor
+ * que necesite distinguirlo: los codigos existen para lo que el script tiene
+ * que clasificar (ver CarnetValidationErrorCode).
+ */
+const contextFailure = (message: string): CarnetValidationResult => ({
+    ok: false,
+    errors: [message],
+    issues: [{ message }],
+})
+
+/**
  * Carga el contexto desde la BD y valida. No escribe nada: es el dry-run que
  * usan tanto el preview del panel como el script.
  */
@@ -53,13 +65,13 @@ export async function planCarnetIssuance(
         where: { id: input.userId },
         select: { id: true, email: true, name: true },
     })
-    if (!user) return { ok: false, errors: ["El usuario no existe."] }
+    if (!user) return contextFailure("El usuario no existe.")
 
     const ticketType = await prisma.ticketType.findUnique({
         where: { id: input.ticketTypeId },
         select: TICKET_TYPE_SELECT,
     })
-    if (!ticketType) return { ok: false, errors: ["El tipo de entrada no existe."] }
+    if (!ticketType) return contextFailure("El tipo de entrada no existe.")
 
     const [duplicate, existingActive] = await Promise.all([
         prisma.order.findFirst({
@@ -115,10 +127,23 @@ export async function issueCarnet(
     const now = new Date()
 
     const created = await prisma.$transaction(async (tx) => {
-        // 0. Guarda de idempotencia. El check equivalente en planCarnetIssuance usa
-        //    el cliente global (solo lectura, no atomico); esta repeticion con tx
-        //    es la que de verdad impide que un doble clic (o un reintento) cree dos
-        //    ordenes para el mismo sourceRef si ambas llamadas llegan a la vez.
+        // 0. Guarda de idempotencia por sourceRef. Repite dentro de la
+        //    transaccion el check que planCarnetIssuance hace con el cliente
+        //    global, para que el reintento de un lote (o un doble clic que
+        //    reenvia el MISMO sourceRef del preview) no cree una segunda orden.
+        //
+        //    Cuidado con lo que esta guarda NO da: bajo READ COMMITTED (el
+        //    default de Postgres y de Prisma; aca no se fija isolation level)
+        //    dos transacciones concurrentes no ven las filas que la otra aun no
+        //    confirmo, asi que este findFirst no serializa nada por si solo. Si
+        //    dos emisiones con el mismo sourceRef entran a la vez, ambas leen
+        //    "no existe" y ambas insertan. Lo que de verdad las ordena es el
+        //    row-lock que toma el `ticketType.updateMany` de abajo (todas las
+        //    emisiones del mismo ticketType compiten por esa fila), y lo que
+        //    cerraria el hueco del todo seria un unique sobre
+        //    (provider, providerOrderNumber) -- que no existe: esta rama no
+        //    puede tocar el schema. No se elimine esta guarda pensando que el
+        //    unique sobra, ni se confie en ella como si fuera el unique.
         const existingOrder = await tx.order.findFirst({
             where: { provider: "PRESENCIAL", providerOrderNumber: plan.providerOrderNumber },
             select: { id: true },
@@ -135,6 +160,7 @@ export async function issueCarnet(
             where: { id: plan.ticketTypeId },
             select: {
                 capacity: true,
+                isActive: true,
                 name: true,
                 eventId: true,
                 capacityByDate: true,
@@ -143,6 +169,13 @@ export async function issueCarnet(
         })
         if (!ticketType) {
             throw new CarnetIssuanceError(`El tipo de entrada "${plan.ticketTypeName}" ya no existe.`)
+        }
+        // isActive se comprueba por separado del cupo: los dos van juntos en el
+        // `where` del updateMany de abajo, asi que sin este check un tipo
+        // desactivado entre el preview y el commit se reportaba como "no hay
+        // cupo", que manda al admin a buscar el problema donde no esta.
+        if (!ticketType.isActive) {
+            throw new CarnetIssuanceError(`El tipo de entrada "${ticketType.name}" esta inactivo.`)
         }
 
         const capacityWhere =
@@ -154,7 +187,38 @@ export async function issueCarnet(
             data: { sold: { increment: 1 } },
         })
         if (updated.count !== 1) {
-            throw new CarnetIssuanceError(`No hay cupo para "${ticketType.name}".`)
+            // El where cubre cupo Y isActive: el chequeo de arriba descarta el
+            // caso comun, pero entre esa lectura y este update alguien pudo
+            // desactivar el tipo, asi que el mensaje nombra las dos causas.
+            throw new CarnetIssuanceError(
+                `No se pudo emitir "${ticketType.name}": el cupo se lleno o el tipo de entrada se desactivo.`
+            )
+        }
+
+        // 1b. Carnet activo duplicado, DENTRO de la transaccion y despues del
+        //     update de arriba a proposito: ese update toma el row-lock del
+        //     ticketType, asi que dos emisiones del mismo tipo se serializan y
+        //     la segunda si ve el ticket que confirmo la primera. El unico
+        //     check equivalente vivia en planCarnetIssuance, fuera de toda
+        //     transaccion: dos admins con la misma planilla previsualizaban y
+        //     emitian a la vez, ninguno veia el ticket del otro (cada sourceRef
+        //     lleva su Date.now(), asi que la guarda de idempotencia tampoco
+        //     los cruzaba) y quedaban dos carnets ACTIVE con sold +2.
+        if (!plan.allowedExistingActive) {
+            const existingActive = await tx.ticket.findFirst({
+                where: {
+                    userId: plan.userId,
+                    ticketTypeId: plan.ticketTypeId,
+                    status: "ACTIVE",
+                    order: { status: "PAID" },
+                },
+                select: { ticketCode: true },
+            })
+            if (existingActive) {
+                throw new CarnetIssuanceError(
+                    `${plan.userEmail} ya tiene el carnet activo ${existingActive.ticketCode} para "${ticketType.name}". Marca "permitir duplicado" si es intencional.`
+                )
+            }
         }
 
         // 2. Cupo por fecha (piscina libre, o EVENTO con capacityByDate).
@@ -164,10 +228,15 @@ export async function issueCarnet(
         })
         if (usesDateCapacity && plan.scheduleSelections.length > 0) {
             // Un paquete selecciona varias fechas para el mismo ticket: cada una
-            // consume su propio cupo. Mismo patron que
-            // buildTicketDateReservationCounts en el checkout de produccion — un
-            // mapa por fecha, sin deduplicar (dos selecciones del mismo dia
-            // reservan 2 contra ese dia).
+            // consume su propio cupo, por eso el mapa por fecha.
+            //
+            // Las fechas repetidas ya las rechazo validateCarnetRequest, asi que
+            // aca cada fecha vale 1. (buildTicketDateReservationCounts, del
+            // checkout, tampoco "cuenta duplicados": lo que no deduplica es
+            // ENTRE asistentes distintos de una misma compra, y un carnet tiene
+            // exactamente un asistente. Contar dos veces el mismo dia reservaba
+            // un cupo que ningun entitlement iba a usar, porque
+            // normalizeScheduleSelections deduplica por `date::shift`.)
             const dateCounts = new Map<string, number>()
             for (const selection of plan.scheduleSelections) {
                 dateCounts.set(selection.date, (dateCounts.get(selection.date) ?? 0) + 1)
@@ -186,13 +255,29 @@ export async function issueCarnet(
                     }
                 }
             } else {
-                await reserveTicketTypeDateInventory(tx, {
-                    ticketTypeId: plan.ticketTypeId,
-                    templateCapacity: 0,
-                    reservations: dateCounts,
-                    ticketLabel: plan.ticketTypeName,
-                    requireConfigured: true,
-                })
+                // reserveTicketTypeDateInventory lanza `Error` pelado (y corre
+                // SQL crudo). La ruta solo devuelve el texto de una
+                // CarnetIssuanceError, asi que sin esta traduccion el caso mas
+                // probable de todos -- que el checkout publico se lleve el
+                // ultimo cupo del dia entre el preview y el clic -- llegaba al
+                // admin como "Error al emitir el carnet". Se reetiqueta aca;
+                // ticket-date-inventory.ts esta congelado (corre en el checkout
+                // de produccion) y no se toca.
+                try {
+                    await reserveTicketTypeDateInventory(tx, {
+                        ticketTypeId: plan.ticketTypeId,
+                        templateCapacity: 0,
+                        reservations: dateCounts,
+                        ticketLabel: plan.ticketTypeName,
+                        requireConfigured: true,
+                    })
+                } catch (error) {
+                    const dates = Array.from(dateCounts.keys()).join(", ")
+                    throw new CarnetIssuanceError(
+                        `No se pudo reservar el cupo de "${plan.ticketTypeName}" para ${dates}: el dia se lleno o dejo de estar configurado. Vuelve a previsualizar.`,
+                        { cause: error }
+                    )
+                }
             }
         }
 
@@ -206,8 +291,20 @@ export async function issueCarnet(
                 provider: "PRESENCIAL",
                 providerRef: plan.sourceRef,
                 providerOrderNumber: plan.providerOrderNumber,
+                // No hay tabla de auditoria (esta rama no puede migrar el
+                // schema): el rastro de quien emitio, por que y con que
+                // overrides vive en este JSON. `auditExtra` trae los
+                // metadatos propios de cada emisor (el import por CSV manda
+                // lote/fila/fila original) y va PRIMERO para que no pueda
+                // pisar ninguna de las claves canonicas de abajo.
+                //
+                // `source` distingue al emisor: el historial del panel
+                // (GET /api/admin/carnets) filtra por "admin-carnet-panel",
+                // asi que un lote importado por CSV manda su propia marca y no
+                // aparece ahi.
                 providerResponse: {
-                    source: "admin-carnet-panel",
+                    ...plan.auditExtra,
+                    source: plan.source,
                     issuedByUserId: actor.id,
                     issuedByEmail: actor.email,
                     reason: plan.reason,
@@ -215,13 +312,20 @@ export async function issueCarnet(
                     forcedDateCapacity: plan.forcedDateCapacity,
                     allowedExistingActive: plan.allowedExistingActive,
                     issuedAt: now.toISOString(),
-                },
+                } as Prisma.InputJsonValue,
                 paidAt: now,
-                documentType: "BOLETA",
-                buyerDocType: "1",
-                buyerDocNumber: plan.attendeeDni,
-                buyerName: plan.userName,
+                // Datos de facturacion. No disparan comprobante (la boleta se
+                // emite fuera de la web), pero buyerDocNumber y buyerPhone son
+                // columnas de los exports de asistentes y buyerPhone es clave
+                // de busqueda en /api/admin/memberships: hardcodearlos hacia
+                // que un lote importado quedara sin telefono, invisible para
+                // esa busqueda y en blanco en la reporteria.
+                documentType: plan.documentType,
+                buyerDocType: plan.buyerDocType,
+                buyerDocNumber: plan.buyerDocNumber,
+                buyerName: plan.buyerName,
                 buyerEmail: plan.userEmail,
+                buyerPhone: plan.buyerPhone,
                 orderItems: {
                     create: [
                         {

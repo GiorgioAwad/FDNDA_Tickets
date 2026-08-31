@@ -3,7 +3,11 @@ import { Prisma } from "@prisma/client"
 
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { issueCarnet, planCarnetIssuance } from "@/lib/carnet-issuance"
-import { CarnetIssuanceError, type CarnetIssuanceInput } from "@/lib/carnet-issuance-rules"
+import {
+    CarnetIssuanceError,
+    DEFAULT_CARNET_SOURCE,
+    type CarnetIssuanceInput,
+} from "@/lib/carnet-issuance-rules"
 import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
@@ -91,12 +95,15 @@ export async function GET() {
             return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 })
         }
 
+        // Solo lo emitido DESDE el panel: otras emisiones PRESENCIAL (el
+        // import por CSV, que manda su propia marca en
+        // CarnetIssuanceInput.source) no pertenecen a este historial.
         const orders = await prisma.order.findMany({
             where: {
                 provider: "PRESENCIAL",
                 providerResponse: {
                     path: ["source"],
-                    equals: "admin-carnet-panel",
+                    equals: DEFAULT_CARNET_SOURCE,
                 } as Prisma.JsonNullableFilter,
             },
             orderBy: { createdAt: "desc" },

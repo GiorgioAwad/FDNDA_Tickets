@@ -412,7 +412,12 @@ test("un paquete EVENTO+capacityByDate valida CADA fecha, no solo la primera", (
     }
 })
 
-test("dos selecciones del mismo dia cuentan 2 contra el cupo de esa fecha", () => {
+test("repetir la misma fecha en un paquete se rechaza (I-6)", () => {
+    // El checkout publico rechaza repetir un dia (orders/route.ts). Aca hacia
+    // falta el mismo criterio por una razon concreta: la reserva contaba la
+    // repeticion (2 unidades de ese dia) pero normalizeScheduleSelections
+    // deduplica por `date::shift` antes de crear los entitlements, asi que se
+    // cobraba un cupo que nadie iba a poder usar.
     const packEventoType: CarnetValidationContext["ticketType"] = {
         ...baseTicketType,
         id: "tt_pack_evento_dup",
@@ -425,8 +430,6 @@ test("dos selecciones del mismo dia cuentan 2 contra el cupo de esa fecha", () =
         capacityByDate: true,
         event: { ...baseTicketType.event, category: "EVENTO" },
     }
-    // Mismo dia repetido dos veces: con 1 cupo libre (sold 49/50) alcanza para
-    // una unidad pero no para dos.
     const result = validateCarnetRequest(
         makeCtx({
             ticketType: packEventoType,
@@ -439,11 +442,11 @@ test("dos selecciones del mismo dia cuentan 2 contra el cupo de esa fecha", () =
                 membershipSchedule: null,
                 scheduleSelections: [{ date: "2026-09-02" }, { date: "2026-09-02" }],
             },
-            dateInventory: [{ date: "2026-09-02", capacity: 50, sold: 49, isEnabled: true }],
+            dateInventory: [{ date: "2026-09-02", capacity: 50, sold: 10, isEnabled: true }],
         })
     )
     assert.equal(result.ok, false)
-    assert.match(errorsOf(result).join(" "), /cupo/i)
+    assert.match(errorsOf(result).join(" "), /no repitas la fecha 2026-09-02/i)
 })
 
 test("un paquete al que le faltan fechas se rechaza", () => {
@@ -473,4 +476,341 @@ test("un paquete al que le faltan fechas se rechaza", () => {
         })
     )
     assert.match(errorsOf(result).join(" "), /3 fecha/i)
+})
+
+test("una fecha fuera de validDays se rechaza (I-1)", () => {
+    // validDays acota el calendario del tipo de entrada. Sin este gate la
+    // unica barrera era "existe fila de inventario", que no corre para un tipo
+    // sin cupo por fecha: un tipeo de anio escribia entitlements fuera del
+    // evento, que el panel despues no puede revocar.
+    const packType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_pack_validdays",
+        name: "PAQUETE 2 DIAS ACADEMIA",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        isPackage: true,
+        packageDaysCount: 2,
+        capacityByDate: false,
+        validDays: ["2026-09-01", "2026-09-02", "2026-09-03"],
+        event: { ...baseTicketType.event, category: "ACADEMIA" },
+    }
+    const packInput = {
+        userId: "u1",
+        ticketTypeId: "tt_pack_validdays",
+        sourceRef: "panel:u1:tt_pack_validdays:1",
+        reason: "Regularizacion",
+        membershipStartDate: null,
+        membershipSchedule: null,
+    }
+
+    const fuera = validateCarnetRequest(
+        makeCtx({
+            ticketType: packType,
+            input: {
+                ...packInput,
+                scheduleSelections: [{ date: "2026-09-01" }, { date: "2026-09-10" }],
+            },
+        })
+    )
+    assert.equal(fuera.ok, false)
+    assert.match(errorsOf(fuera).join(" "), /2026-09-10 no es valida/i)
+
+    const dentro = validateCarnetRequest(
+        makeCtx({
+            ticketType: packType,
+            input: {
+                ...packInput,
+                scheduleSelections: [{ date: "2026-09-01" }, { date: "2026-09-02" }],
+            },
+        })
+    )
+    assert.equal(dentro.ok, true)
+    if (dentro.ok) assert.deepEqual(dentro.plan.entitlementDates, ["2026-09-01", "2026-09-02"])
+})
+
+test("sin validDays, la ventana es el rango del evento (I-1)", () => {
+    // El evento base va de 2026-01-01 a 2026-12-31. 2027-09-01 pasa el regex y,
+    // antes del fix, escribia tres entitlements completamente fuera del evento.
+    const packType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_pack_rango",
+        name: "PAQUETE 3 DIAS",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        isPackage: true,
+        packageDaysCount: 3,
+        validDays: null,
+        event: { ...baseTicketType.event, category: "ACADEMIA" },
+    }
+    const result = validateCarnetRequest(
+        makeCtx({
+            ticketType: packType,
+            input: {
+                userId: "u1",
+                ticketTypeId: "tt_pack_rango",
+                sourceRef: "panel:u1:tt_pack_rango:1",
+                reason: "Regularizacion",
+                membershipStartDate: null,
+                membershipSchedule: null,
+                scheduleSelections: [
+                    { date: "2027-09-01" },
+                    { date: "2027-09-02" },
+                    { date: "2027-09-03" },
+                ],
+            },
+        })
+    )
+    assert.equal(result.ok, false)
+    const texto = errorsOf(result).join(" ")
+    assert.match(texto, /2027-09-01 no es valida/i)
+    assert.match(texto, /2027-09-03 no es valida/i)
+})
+
+test("una fecha inexistente en el calendario se rechaza, no se normaliza (I-2)", () => {
+    // 2026-11-31 pasa el regex, noviembre no esta bloqueado y no hay min/max:
+    // antes llegaba intacta al preview y parseDateOnly la guardaba como
+    // 2026-12-01, corriendo el plazo entero de una membresia de termino fijo.
+    const inicioImposible = validateCarnetRequest(
+        makeCtx({ input: { membershipStartDate: "2026-11-31" } })
+    )
+    assert.equal(inicioImposible.ok, false)
+    assert.match(errorsOf(inicioImposible).join(" "), /2026-11-31.*no es una fecha valida/i)
+
+    // Y tambien en las fechas seleccionadas: antes se filtraban en silencio, lo
+    // que desplazaba el diagnostico a "requiere 3 fechas; elegiste 2".
+    const packType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_pack_cal",
+        name: "PAQUETE 3 DIAS",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        isPackage: true,
+        packageDaysCount: 3,
+        event: { ...baseTicketType.event, category: "ACADEMIA" },
+    }
+    const fechaImposible = validateCarnetRequest(
+        makeCtx({
+            ticketType: packType,
+            input: {
+                userId: "u1",
+                ticketTypeId: "tt_pack_cal",
+                sourceRef: "panel:u1:tt_pack_cal:1",
+                reason: "Regularizacion",
+                membershipStartDate: null,
+                membershipSchedule: null,
+                scheduleSelections: [
+                    { date: "2026-09-01" },
+                    { date: "2026-09-02" },
+                    { date: "2026-02-30" },
+                ],
+            },
+        })
+    )
+    assert.equal(fechaImposible.ok, false)
+    const texto = errorsOf(fechaImposible).join(" ")
+    assert.match(texto, /2026-02-30.*no es una fecha valida/i)
+    // El error habla del tipeo, no del conteo de fechas del paquete.
+    assert.ok(!/requiere 3 fechas/i.test(texto))
+})
+
+test("un paquete de piscina sin packageDaysCount NO es bolsa: exige fecha (I-4)", () => {
+    // Estado alcanzable desde el formulario admin de tipos de entrada:
+    // isPackage=true con el conteo de dias vacio. Con el predicado debil
+    // (isPackage && esPiscina) se tomaba por bolsa, se saltaban los dos gates
+    // de fecha y se emitia una visita que no descontaba cupo de ningun dia.
+    const poolPackType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_pool_pack_nulo",
+        name: "PISCINA LIBRE PAQUETE MAL CONFIGURADO",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        isPackage: true,
+        packageDaysCount: null,
+        event: { ...baseTicketType.event, category: "PISCINA_LIBRE" },
+    }
+    const poolInput = {
+        userId: "u1",
+        ticketTypeId: "tt_pool_pack_nulo",
+        sourceRef: "panel:u1:tt_pool_pack_nulo:1",
+        reason: "Cortesia",
+        membershipStartDate: null,
+        membershipSchedule: null,
+    }
+
+    const sinFecha = validateCarnetRequest(makeCtx({ ticketType: poolPackType, input: poolInput }))
+    assert.equal(sinFecha.ok, false)
+    assert.match(errorsOf(sinFecha).join(" "), /elige la fecha/i)
+
+    // Con fecha valida si emite, y esa fecha consume el cupo de su dia.
+    const conFecha = validateCarnetRequest(
+        makeCtx({
+            ticketType: poolPackType,
+            input: { ...poolInput, scheduleSelections: [{ date: "2026-09-02" }] },
+            dateInventory: [{ date: "2026-09-02", capacity: 30, sold: 5, isEnabled: true }],
+        })
+    )
+    assert.equal(conFecha.ok, true)
+    if (conFecha.ok) {
+        assert.equal(conFecha.plan.entitlementMode, "DATES")
+        assert.deepEqual(conFecha.plan.scheduleSelections, [{ date: "2026-09-02", shift: null }])
+        assert.deepEqual(conFecha.plan.entitlementDates, ["2026-09-02"])
+    }
+})
+
+test("una bolsa de piscina real no reserva fechas aunque el cuerpo las traiga (I-4/I-6)", () => {
+    const bagType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_pool_bag",
+        name: "BOLSA 10 VISITAS",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        isPackage: true,
+        packageDaysCount: 10,
+        event: { ...baseTicketType.event, category: "PISCINA_LIBRE" },
+    }
+    const result = validateCarnetRequest(
+        makeCtx({
+            ticketType: bagType,
+            input: {
+                userId: "u1",
+                ticketTypeId: "tt_pool_bag",
+                sourceRef: "panel:u1:tt_pool_bag:1",
+                reason: "Cortesia",
+                membershipStartDate: null,
+                membershipSchedule: null,
+                // Cuerpo armado a mano: sin el descarte, esto reservaba el cupo
+                // de dos dias que buildEntitlementDates no iba a materializar.
+                scheduleSelections: [{ date: "2026-09-02" }, { date: "2026-09-03" }],
+            },
+            dateInventory: [
+                { date: "2026-09-02", capacity: 30, sold: 5, isEnabled: true },
+                { date: "2026-09-03", capacity: 30, sold: 5, isEnabled: true },
+            ],
+        })
+    )
+    assert.equal(result.ok, true)
+    if (result.ok) {
+        assert.deepEqual(result.plan.scheduleSelections, [])
+        assert.deepEqual(result.plan.entitlementDates, [])
+        assert.equal(result.plan.entitlementMode, "POOL_BAG")
+    }
+})
+
+test("un tipo que exige turno se rechaza: el panel no captura turno (I-7)", () => {
+    // Sin turno el ticket queda con expectedShift = null y el escaner se salta
+    // esa validacion: el titular entraria a AMBOS turnos con un solo cupo del
+    // dia. Se rechaza hasta que exista un selector de turno.
+    const turnoType: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_turnos",
+        name: "ENTRADA CON TURNO",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        capacityByDate: true,
+        validDays: {
+            dates: ["2026-09-02"],
+            shifts: ["Manana (09:00-12:00)", "Tarde (14:00-17:00)"],
+        },
+        event: { ...baseTicketType.event, category: "EVENTO" },
+    }
+    const turnoInput = {
+        userId: "u1",
+        ticketTypeId: "tt_turnos",
+        sourceRef: "panel:u1:tt_turnos:1",
+        reason: "Cortesia",
+        membershipStartDate: null,
+        membershipSchedule: null,
+        scheduleSelections: [{ date: "2026-09-02" }],
+    }
+    const dateInventory = [{ date: "2026-09-02", capacity: 50, sold: 1, isEnabled: true }]
+
+    const result = validateCarnetRequest(
+        makeCtx({ ticketType: turnoType, input: turnoInput, dateInventory })
+    )
+    assert.equal(result.ok, false)
+    assert.match(errorsOf(result).join(" "), /turno/i)
+
+    // Con requireShiftSelection = false (turnos informativos) si se puede emitir.
+    const opcional = validateCarnetRequest(
+        makeCtx({
+            ticketType: {
+                ...turnoType,
+                validDays: {
+                    dates: ["2026-09-02"],
+                    shifts: ["Manana (09:00-12:00)"],
+                    requireShiftSelection: false,
+                },
+            },
+            input: turnoInput,
+            dateInventory,
+        })
+    )
+    assert.equal(opcional.ok, true)
+})
+
+test("el duplicado trae un codigo estable, no solo un mensaje (I-8)", () => {
+    // El script de import separa "saltar fila ya emitida" de "abortar el lote"
+    // con este codigo. Antes lo hacia con /ya se emiti/ contra el texto: basta
+    // reescribir el mensaje para que un lote a medio emitir no se pueda
+    // reintentar nunca mas desde el mismo archivo.
+    const result = validateCarnetRequest(
+        makeCtx({ duplicateOrderId: "ord_1", input: { reason: "  " } })
+    )
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    const duplicado = result.issues.find((issue) => issue.code === "ALREADY_ISSUED")
+    assert.ok(duplicado, "falta el issue con code ALREADY_ISSUED")
+    assert.match(duplicado.message, /ya se emiti/i)
+    // Y es el mensaje del duplicado, no el primero de la lista: aca el primero
+    // es el del motivo faltante, que es justo lo que el script imprimia.
+    assert.notEqual(result.errors[0], duplicado.message)
+    assert.equal(result.errors.length, result.issues.length)
+})
+
+test("los datos de facturacion y la marca de origen llegan al plan (I-3)", () => {
+    // Defaults del panel: origen admin-carnet-panel, BOLETA, documento y
+    // nombre del titular, sin telefono.
+    const porDefecto = validateCarnetRequest(makeCtx())
+    assert.equal(porDefecto.ok, true)
+    if (porDefecto.ok) {
+        assert.equal(porDefecto.plan.source, "admin-carnet-panel")
+        assert.equal(porDefecto.plan.documentType, "BOLETA")
+        assert.equal(porDefecto.plan.buyerDocType, "1")
+        assert.equal(porDefecto.plan.buyerDocNumber, "12345678")
+        assert.equal(porDefecto.plan.buyerName, "Ana Torres")
+        assert.equal(porDefecto.plan.buyerPhone, null)
+        assert.deepEqual(porDefecto.plan.auditExtra, {})
+    }
+
+    // Import por CSV: marca propia (para no ensuciar el historial del panel),
+    // comprador distinto del asistente y RUC de 11 digitos => buyerDocType 6.
+    const importado = validateCarnetRequest(
+        makeCtx({
+            input: {
+                source: "presential-carnet-import",
+                buyerName: "ACADEMIA SAC",
+                buyerPhone: "999888777",
+                buyerDocNumber: "20123456789",
+                documentType: "FACTURA",
+                extra: { batch: "videna-ago-2026", rowNumber: 7 },
+            },
+        })
+    )
+    assert.equal(importado.ok, true)
+    if (importado.ok) {
+        assert.equal(importado.plan.source, "presential-carnet-import")
+        assert.equal(importado.plan.documentType, "FACTURA")
+        assert.equal(importado.plan.buyerDocType, "6")
+        assert.equal(importado.plan.buyerDocNumber, "20123456789")
+        assert.equal(importado.plan.buyerName, "ACADEMIA SAC")
+        assert.equal(importado.plan.buyerPhone, "999888777")
+        assert.deepEqual(importado.plan.auditExtra, { batch: "videna-ago-2026", rowNumber: 7 })
+    }
 })
