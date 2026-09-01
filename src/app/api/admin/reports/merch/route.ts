@@ -107,6 +107,7 @@ export async function GET() {
                         createdAt: order.createdAt,
                         paidAt: order.paidAt,
                         deliveryMethod: order.deliveryMethod,
+                        pickupLocationSnapshot: order.pickupLocationSnapshot,
                         fulfillmentStatus: order.fulfillmentStatus,
                         shippingCost: toNumber(order.shippingCost),
                         shippingAddress: order.shippingAddress,

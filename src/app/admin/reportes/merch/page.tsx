@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatPrice } from "@/lib/utils"
 import { formatComprobanteLabel } from "@/lib/billing"
+import { formatMerchPickupAddress, getMerchPickupSnapshot } from "@/lib/merch-pickup"
 import {
     AlertCircle,
     CheckCircle,
@@ -49,6 +50,7 @@ interface MerchReportOrder {
     createdAt: string
     paidAt: string | null
     deliveryMethod: "PICKUP_EVENT" | "SHIPPING_HOME" | "PICKUP_OFFICE" | null
+    pickupLocationSnapshot: Record<string, unknown> | null
     fulfillmentStatus: string | null
     shippingCost: number
     shippingAddress: string | null
@@ -100,7 +102,9 @@ function getStatusBadge(status: OrderStatus) {
 
 function getDeliveryLabel(order: MerchReportOrder) {
     if (order.deliveryMethod === "SHIPPING_HOME") return "Provincia - envio"
-    if (order.deliveryMethod === "PICKUP_OFFICE") return "Recojo Campo de Marte"
+    if (order.deliveryMethod === "PICKUP_OFFICE") {
+        return `Recojo ${getMerchPickupSnapshot(order.pickupLocationSnapshot).name}`
+    }
     if (order.deliveryMethod === "PICKUP_EVENT") return "Recojo en evento"
     return "-"
 }
@@ -179,6 +183,12 @@ export default function MerchReportPage() {
                 "Precio Unitario": item.unitPrice,
                 "Subtotal Item": item.subtotal,
                 "Metodo Entrega": getDeliveryLabel(order),
+                "Sede Recojo": order.deliveryMethod === "PICKUP_OFFICE"
+                    ? getMerchPickupSnapshot(order.pickupLocationSnapshot).name
+                    : "",
+                "Direccion Recojo": order.deliveryMethod === "PICKUP_OFFICE"
+                    ? formatMerchPickupAddress(getMerchPickupSnapshot(order.pickupLocationSnapshot))
+                    : "",
                 "Costo Envio": order.shippingCost,
                 "Direccion Envio": order.shippingAddress || "",
                 "Distrito Envio": order.shippingDistrito || "",
@@ -217,6 +227,8 @@ export default function MerchReportPage() {
             { wch: 14 },
             { wch: 14 },
             { wch: 22 },
+            { wch: 24 },
+            { wch: 36 },
             { wch: 12 },
             { wch: 32 },
             { wch: 18 },
@@ -421,6 +433,11 @@ export default function MerchReportPage() {
                                             </td>
                                             <td className="py-3 min-w-[170px]">
                                                 <p>{getDeliveryLabel(order)}</p>
+                                                {order.deliveryMethod === "PICKUP_OFFICE" && (
+                                                    <p className="text-xs text-gray-500">
+                                                        {formatMerchPickupAddress(getMerchPickupSnapshot(order.pickupLocationSnapshot))}
+                                                    </p>
+                                                )}
                                                 {order.shippingDistrito && (
                                                     <p className="text-xs text-gray-500">{order.shippingDistrito}</p>
                                                 )}

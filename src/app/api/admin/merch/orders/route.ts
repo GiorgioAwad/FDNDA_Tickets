@@ -64,6 +64,7 @@ export async function GET(request: NextRequest) {
             totalAmount: true,
             shippingCost: true,
             deliveryMethod: true,
+            pickupLocationSnapshot: true,
             shippingAddress: true,
             shippingDistrito: true,
             shippingUbigeo: true,

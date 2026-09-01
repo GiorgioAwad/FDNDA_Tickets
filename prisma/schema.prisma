@@ -420,54 +420,57 @@ model TicketTypeDateInventory {
 }
 
 model Order {
-  id                    String             @id @default(cuid())
-  userId                String
-  status                OrderStatus        @default(PENDING)
-  orderType             OrderType          @default(TICKET)
-  totalAmount           Decimal            @db.Decimal(10, 2)
-  currency              String             @default("PEN")
-  provider              String             @default("IZIPAY")
-  providerRef           String? // Payment reference from provider
-  providerOrderNumber   String?
-  providerTransactionId String?
-  providerResponse      Json? // Full response from provider
-  paymentSyncAttempts   Int                @default(0)
-  paymentLastSyncAt     DateTime?
-  paymentNeedsReview    Boolean            @default(false)
-  paidAt                DateTime?
+  id                     String             @id @default(cuid())
+  userId                 String
+  status                 OrderStatus        @default(PENDING)
+  orderType              OrderType          @default(TICKET)
+  totalAmount            Decimal            @db.Decimal(10, 2)
+  currency               String             @default("PEN")
+  provider               String             @default("IZIPAY")
+  providerRef            String? // Payment reference from provider
+  providerOrderNumber    String?
+  providerTransactionId  String?
+  providerResponse       Json? // Full response from provider
+  paymentSyncAttempts    Int                @default(0)
+  paymentLastSyncAt      DateTime?
+  paymentNeedsReview     Boolean            @default(false)
+  paidAt                 DateTime?
   // Merch delivery (null for TICKET orders)
-  deliveryMethod        DeliveryMethod?
-  pickupEventId         String?
-  shippingAddress       String?
-  shippingDistrito      String?
-  shippingUbigeo        String?
-  shippingReference     String?
-  shippingPhone         String?
-  shippingCost          Decimal?           @db.Decimal(10, 2)
-  fulfillmentStatus     FulfillmentStatus?
-  fulfilledAt           DateTime?
-  trackingCode          String?
+  deliveryMethod         DeliveryMethod?
+  pickupEventId          String?
+  pickupLocationId       String?
+  pickupLocationSnapshot Json?
+  shippingAddress        String?
+  shippingDistrito       String?
+  shippingUbigeo         String?
+  shippingReference      String?
+  shippingPhone          String?
+  shippingCost           Decimal?           @db.Decimal(10, 2)
+  fulfillmentStatus      FulfillmentStatus?
+  fulfilledAt            DateTime?
+  trackingCode           String?
   // Billing data
-  documentType          String? // "BOLETA" or "FACTURA"
-  buyerDocType          String? // "1" = DNI, "6" = RUC
-  buyerDocNumber        String? // DNI (8 digits) or RUC (11 digits)
-  buyerName             String? // Full name or business name
-  buyerAddress          String? // Fiscal address (for FACTURA)
-  buyerEmail            String?
-  buyerPhone            String?
-  buyerUbigeo           String?
-  buyerFirstName        String?
-  buyerSecondName       String?
-  buyerLastNamePaternal String?
-  buyerLastNameMaternal String?
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
+  documentType           String? // "BOLETA" or "FACTURA"
+  buyerDocType           String? // "1" = DNI, "6" = RUC
+  buyerDocNumber         String? // DNI (8 digits) or RUC (11 digits)
+  buyerName              String? // Full name or business name
+  buyerAddress           String? // Fiscal address (for FACTURA)
+  buyerEmail             String?
+  buyerPhone             String?
+  buyerUbigeo            String?
+  buyerFirstName         String?
+  buyerSecondName        String?
+  buyerLastNamePaternal  String?
+  buyerLastNameMaternal  String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
 
   // Relations
-  user       User        @relation(fields: [userId], references: [id])
-  orderItems OrderItem[]
-  tickets    Ticket[]
-  invoices   Invoice[]
+  user           User                 @relation(fields: [userId], references: [id])
+  orderItems     OrderItem[]
+  tickets        Ticket[]
+  invoices       Invoice[]
+  pickupLocation MerchPickupLocation? @relation(fields: [pickupLocationId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([status])
@@ -475,6 +478,7 @@ model Order {
   @@index([createdAt])
   @@index([providerOrderNumber])
   @@index([providerTransactionId])
+  @@index([pickupLocationId])
   @@index([status, provider, paymentNeedsReview, paymentLastSyncAt])
   @@map("orders")
 }
@@ -704,10 +708,10 @@ model DiscountCode {
   updatedAt      DateTime     @updatedAt
 
   // Relations
-  ticketType TicketType?  @relation(fields: [ticketTypeId], references: [id], onDelete: Restrict)
-  event   Event?          @relation(fields: [eventId], references: [id])
-  creator User            @relation("DiscountCreator", fields: [createdBy], references: [id])
-  usages  DiscountUsage[]
+  ticketType TicketType?     @relation(fields: [ticketTypeId], references: [id], onDelete: Restrict)
+  event      Event?          @relation(fields: [eventId], references: [id])
+  creator    User            @relation("DiscountCreator", fields: [createdBy], references: [id])
+  usages     DiscountUsage[]
 
   @@index([ticketTypeId, validDate])
   @@map("discount_codes")
@@ -1030,6 +1034,23 @@ model MerchVariant {
   @@unique([productId, size])
   @@index([productId, isActive])
   @@map("merch_variants")
+}
+
+model MerchPickupLocation {
+  id           String   @id @default(cuid())
+  name         String
+  address      String
+  district     String?
+  instructions String?  @db.Text
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders Order[]
+
+  @@index([isActive, sortOrder])
+  @@map("merch_pickup_locations")
 }
 
 model PromoPopup {

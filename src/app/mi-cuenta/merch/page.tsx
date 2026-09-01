@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatPrice } from "@/lib/utils"
+import { formatMerchPickupAddress, getMerchPickupSnapshot } from "@/lib/merch-pickup"
 import { ArrowLeft, ShoppingBag, Package, MapPin, Truck, Clock, CheckCircle2, XCircle, Mail } from "lucide-react"
 
 export const dynamic = "force-dynamic"
@@ -33,7 +34,7 @@ const PAYMENT_BADGE: Record<string, { label: string; className: string }> = {
 const DELIVERY_LABEL: Record<DeliveryMethod, string> = {
     PICKUP_EVENT: "Recojo en evento",
     SHIPPING_HOME: "Envío a domicilio",
-    PICKUP_OFFICE: "Recojo en sede Campo de Marte",
+    PICKUP_OFFICE: "Recojo en sede",
 }
 
 function formatDate(value: Date | null): string {
@@ -52,14 +53,21 @@ function shortId(id: string): string {
     return id.slice(-8).toUpperCase()
 }
 
-function fulfillmentMessage(status: FulfillmentStatus, deliveryMethod: DeliveryMethod | null): string {
+function fulfillmentMessage(
+    status: FulfillmentStatus,
+    deliveryMethod: DeliveryMethod | null,
+    pickupLocationName?: string
+): string {
+    if (status === "READY" && deliveryMethod !== "SHIPPING_HOME" && pickupLocationName) {
+        return `Tu pedido esta listo. Acercate a ${pickupLocationName} con tu DNI.`
+    }
     if (status === "PENDING") {
         return "Estamos preparando tu pedido. Te avisaremos cuando esté listo."
     }
     if (status === "READY") {
         return deliveryMethod === "SHIPPING_HOME"
             ? "Tu pedido está empacado. Pronto lo entregaremos al courier."
-            : "Tu pedido está listo. Acércate a la sede Campo de Marte con tu DNI."
+            : "Tu pedido está listo. Acércate a la sede indicada con tu DNI."
     }
     if (status === "SHIPPED") {
         return "Tu pedido fue despachado y va en camino a tu dirección."
@@ -88,6 +96,7 @@ export default async function MyMerchOrdersPage() {
             totalAmount: true,
             shippingCost: true,
             deliveryMethod: true,
+            pickupLocationSnapshot: true,
             shippingAddress: true,
             shippingDistrito: true,
             shippingPhone: true,
@@ -152,7 +161,15 @@ export default async function MyMerchOrdersPage() {
                         const badge = FULFILLMENT_BADGE[fulfillment]
                         const payment = PAYMENT_BADGE[order.status] || PAYMENT_BADGE.PENDING
                         const isShipping = order.deliveryMethod === "SHIPPING_HOME"
-                        const message = fulfillmentMessage(fulfillment, order.deliveryMethod)
+                        const pickupLocation =
+                            order.deliveryMethod === "PICKUP_OFFICE"
+                                ? getMerchPickupSnapshot(order.pickupLocationSnapshot)
+                                : null
+                        const message = fulfillmentMessage(
+                            fulfillment,
+                            order.deliveryMethod,
+                            pickupLocation?.name
+                        )
 
                         return (
                             <div
@@ -261,12 +278,24 @@ export default async function MyMerchOrdersPage() {
                                             )}
                                             <div>
                                                 <div className="font-medium">
-                                                    {order.deliveryMethod ? DELIVERY_LABEL[order.deliveryMethod] : "—"}
+                                                    {pickupLocation
+                                                        ? `Recojo en ${pickupLocation.name}`
+                                                        : order.deliveryMethod
+                                                            ? DELIVERY_LABEL[order.deliveryMethod]
+                                                            : "—"}
                                                 </div>
                                                 {isShipping && order.shippingAddress && (
                                                     <div className="text-xs text-muted-foreground">
                                                         {order.shippingAddress}
                                                         {order.shippingDistrito ? `, ${order.shippingDistrito}` : ""}
+                                                    </div>
+                                                )}
+                                                {pickupLocation && (
+                                                    <div className="text-xs text-muted-foreground">
+                                                        <div>{formatMerchPickupAddress(pickupLocation)}</div>
+                                                        {pickupLocation.instructions && (
+                                                            <div className="mt-1">{pickupLocation.instructions}</div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>

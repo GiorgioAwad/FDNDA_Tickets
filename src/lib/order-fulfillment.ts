@@ -9,6 +9,7 @@ import { buildNaturalPersonFullName } from "@/lib/billing"
 import { buildServilexInvoiceSnapshots } from "@/lib/servilex"
 import { isCoveredByIssuedAcMatricula } from "@/lib/servilex-invoice-guard"
 import { isPoolBagTicketType } from "@/lib/pool-bag"
+import { getMerchPickupSnapshot } from "@/lib/merch-pickup"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
 import {
     buildTicketDateReservationCounts,
@@ -884,6 +885,10 @@ export async function fulfillMerchOrder({
             total: Number(order.totalAmount),
             deliveryMethod: order.deliveryMethod ?? "PICKUP_OFFICE",
             pickupEventTitle,
+            pickupLocation:
+                order.deliveryMethod === "PICKUP_OFFICE"
+                    ? getMerchPickupSnapshot(order.pickupLocationSnapshot)
+                    : null,
             shippingAddress: order.shippingAddress,
             shippingDistrito: order.shippingDistrito,
             shippingReference: order.shippingReference,

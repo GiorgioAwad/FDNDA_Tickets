@@ -6,6 +6,10 @@ import {
 } from "./email-queue"
 import { sendTransactionalEmail } from "./email-provider"
 import { buildEmailUrl, resolveEmailBaseUrl } from "./email-url"
+import {
+    formatMerchPickupAddress,
+    type MerchPickupSnapshot,
+} from "./merch-pickup"
 
 const FROM_EMAIL = process.env.EMAIL_FROM || "Ticketing FDNDA <ticketing@fdnda.org>"
 const APP_URL = resolveEmailBaseUrl()
@@ -435,6 +439,7 @@ export interface MerchOrderEmailInput {
     total: number
     deliveryMethod: "PICKUP_EVENT" | "SHIPPING_HOME" | "PICKUP_OFFICE"
     pickupEventTitle?: string | null
+    pickupLocation?: MerchPickupSnapshot | null
     shippingAddress?: string | null
     shippingDistrito?: string | null
     shippingReference?: string | null
@@ -468,6 +473,7 @@ export interface MerchFulfillmentEmailInput {
     trackingCode?: string | null
     shippingAddress?: string | null
     shippingDistrito?: string | null
+    pickupLocation?: MerchPickupSnapshot | null
     items: MerchOrderEmailItem[]
 }
 
@@ -479,7 +485,7 @@ interface FulfillmentCopy {
 }
 
 function buildFulfillmentCopy(input: MerchFulfillmentEmailInput, shortOrderId: string): FulfillmentCopy {
-    const { status, deliveryMethod, trackingCode, shippingAddress, shippingDistrito } = input
+    const { status, deliveryMethod, trackingCode, shippingAddress, shippingDistrito, pickupLocation } = input
 
     if (status === "READY") {
         const isShipping = deliveryMethod === "SHIPPING_HOME"
@@ -488,7 +494,15 @@ function buildFulfillmentCopy(input: MerchFulfillmentEmailInput, shortOrderId: s
             headline: isShipping ? "Tu pedido esta listo para envio" : "Tu pedido esta listo para recojo",
             intro: isShipping
                 ? "Ya empacamos tu merch y lo dejaremos pronto en manos del courier. Te avisaremos cuando este en camino."
-                : "Ya empacamos tu merch. Acercate a la sede Campo de Marte con tu numero de orden y DNI para recogerlo.",
+                : `Ya empacamos tu merch. Acercate a ${pickupLocation?.name || "la sede elegida"} con tu numero de orden y DNI para recogerlo.`,
+            extraBlock:
+                !isShipping && pickupLocation
+                    ? `<p style="margin:0;"><strong>${formatMerchPickupAddress(pickupLocation)}</strong></p>${
+                          pickupLocation.instructions
+                              ? `<p style="margin:4px 0 0; color:#64748b; font-size:13px;">${pickupLocation.instructions}</p>`
+                              : ""
+                      }`
+                    : undefined,
         }
     }
 
@@ -608,6 +622,7 @@ export async function sendMerchOrderConfirmationEmail(input: MerchOrderEmailInpu
         total,
         deliveryMethod,
         pickupEventTitle,
+        pickupLocation,
         shippingAddress,
         shippingDistrito,
         shippingReference,
@@ -617,7 +632,7 @@ export async function sendMerchOrderConfirmationEmail(input: MerchOrderEmailInpu
     const shortOrderId = orderId.slice(-8).toUpperCase()
     const orderUrl = `${APP_URL}/mi-cuenta`
 
-    const deliveryBlock =
+    const deliveryBlockTemplate =
         deliveryMethod === "PICKUP_EVENT"
             ? `<p style="margin:8px 0 0;">📍 <strong>Recojo en evento:</strong> ${pickupEventTitle || "Evento FDNDA"}.</p>
                <p style="margin:4px 0 0; color:#64748b; font-size:13px;">Acércate al módulo de FDNDA el día del evento con tu DNI.</p>`
@@ -627,8 +642,15 @@ export async function sendMerchOrderConfirmationEmail(input: MerchOrderEmailInpu
                    ${shippingReference ? `<p style="margin:0; color:#64748b; font-size:13px;">Ref: ${shippingReference}</p>` : ""}
                    <p style="margin:4px 0 0; color:#64748b; font-size:13px;">Contacto: ${shippingPhone || ""}</p>
                    <p style="margin:8px 0 0; color:#64748b; font-size:13px;">Te coordinaremos por WhatsApp para confirmar la entrega.</p>`
-                : `<p style="margin:8px 0 0;">🏢 <strong>Recojo en sede Campo de Marte</strong></p>
+                : `<p style="margin:8px 0 0;">🏢 <strong>Recojo en sede</strong></p>
                    <p style="margin:4px 0 0; color:#64748b; font-size:13px;">Presenta tu numero de orden y DNI al momento del recojo.</p>`
+
+    const deliveryBlock =
+        deliveryMethod === "PICKUP_OFFICE" && pickupLocation
+            ? `<p style="margin:8px 0 0;"><strong>Recojo en ${pickupLocation.name}</strong></p>
+               <p style="margin:4px 0 0;">${formatMerchPickupAddress(pickupLocation)}</p>
+               <p style="margin:4px 0 0; color:#64748b; font-size:13px;">${pickupLocation.instructions || "Presenta tu numero de orden y DNI al momento del recojo."}</p>`
+            : deliveryBlockTemplate
 
     const itemsTable = items
         .map((item) => {

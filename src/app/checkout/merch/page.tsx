@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { buildNaturalPersonFullName } from "@/lib/billing"
 import { formatPrice } from "@/lib/utils"
 import { getUbigeoNames } from "@/lib/ubigeo-peru"
+import { formatMerchPickupAddress } from "@/lib/merch-pickup"
 import { ZONE_THEME } from "@/components/merch/theme"
 import type { IzipayCheckoutConfig } from "@/lib/izipay"
 import {
@@ -25,6 +26,7 @@ import {
     ArrowLeft,
     FileText,
     User as UserIcon,
+    Loader2,
 } from "lucide-react"
 import AuthModal from "@/components/auth/AuthModal"
 import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
@@ -35,6 +37,14 @@ const IzipayCheckout = dynamic(
 )
 
 type DeliveryMethod = "SHIPPING_HOME" | "PICKUP_OFFICE"
+
+interface PickupLocation {
+    id: string
+    name: string
+    address: string
+    district: string | null
+    instructions: string | null
+}
 
 interface BillingState {
     documentType: "BOLETA" | "FACTURA"
@@ -66,7 +76,6 @@ const DEFAULT_BILLING: BillingState = {
 
 const MIN_MERCH_ORDER_SUBTOTAL = 30
 const SHIPPING_COST_PROVINCE = Number(process.env.NEXT_PUBLIC_MERCH_SHIPPING_COST_PROV ?? "10")
-const LIMA_PICKUP_LOCATION = "Campo de Marte"
 
 function isLimaDestination(ubigeo: string | null | undefined): boolean {
     return Boolean(ubigeo?.startsWith("15"))
@@ -95,8 +104,38 @@ export default function MerchCheckoutPage() {
     const [shippingDistrito, setShippingDistrito] = useState("")
     const [shippingReference, setShippingReference] = useState("")
     const [shippingPhone, setShippingPhone] = useState("")
+    const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([])
+    const [pickupLocationId, setPickupLocationId] = useState("")
+    const [pickupLocationsLoading, setPickupLocationsLoading] = useState(true)
+    const [pickupLocationsError, setPickupLocationsError] = useState("")
     // Usamos el ubigeo de facturación también para calcular costo de envío
     const shippingUbigeo = billing.buyerUbigeo
+
+    const loadPickupLocations = useCallback(async () => {
+        setPickupLocationsLoading(true)
+        setPickupLocationsError("")
+        try {
+            const response = await fetch("/api/merch/pickup-locations", { cache: "no-store" })
+            const payload = await response.json()
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || "No se pudieron cargar las sedes.")
+            }
+
+            const locations = payload.data as PickupLocation[]
+            setPickupLocations(locations)
+            setPickupLocationId((current) =>
+                locations.some((location) => location.id === current)
+                    ? current
+                    : locations[0]?.id ?? ""
+            )
+        } catch (loadError) {
+            setPickupLocations([])
+            setPickupLocationId("")
+            setPickupLocationsError((loadError as Error).message)
+        } finally {
+            setPickupLocationsLoading(false)
+        }
+    }, [])
 
     const [izipayCheckoutData, setIzipayCheckoutData] = useState<{
         authorization: string
@@ -114,6 +153,10 @@ export default function MerchCheckoutPage() {
         emailAutofilledRef.current = true
         setBilling((prev) => (prev.buyerEmail ? prev : { ...prev, buyerEmail: session.user.email ?? "" }))
     }, [status, session?.user?.email])
+
+    useEffect(() => {
+        void loadPickupLocations()
+    }, [loadPickupLocations])
 
     // Auto-fill distrito desde ubigeo solo si está vacío (no pisa edición manual)
     useEffect(() => {
@@ -136,6 +179,11 @@ export default function MerchCheckoutPage() {
         if (deliveryMethod !== "SHIPPING_HOME") return 0
         return SHIPPING_COST_PROVINCE
     }, [deliveryMethod])
+
+    const selectedPickupLocation = useMemo(
+        () => pickupLocations.find((location) => location.id === pickupLocationId) ?? null,
+        [pickupLocationId, pickupLocations]
+    )
 
     const grandTotal = itemsTotal + shippingCost
     const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
@@ -170,21 +218,16 @@ export default function MerchCheckoutPage() {
         }
         if (!billing.buyerUbigeo) return "Selecciona tu ubicación (departamento/provincia/distrito)"
 
-        if (destinationIsLima && deliveryMethod !== "PICKUP_OFFICE") {
-            return `Para Lima, el recojo es en la sede ${LIMA_PICKUP_LOCATION}.`
-        }
-
-        if (destinationIsLima === false && deliveryMethod !== "SHIPPING_HOME") {
-            return "Para provincia, selecciona envio a domicilio. El costo es S/ 10."
-        }
-
         if (deliveryMethod === "SHIPPING_HOME") {
+            if (destinationIsLima) return "El envio a domicilio esta disponible solo para provincia. Elige una sede de recojo."
             if (!shippingAddress.trim()) return "Dirección de envío requerida"
             if (!shippingDistrito.trim()) return "Distrito requerido"
             if (!shippingPhone.trim()) return "Teléfono de contacto para envío requerido"
+        } else if (!selectedPickupLocation) {
+            return pickupLocationsError || "Selecciona una sede de recojo disponible."
         }
         return null
-    }, [items.length, itemsTotal, billing, destinationIsLima, deliveryMethod, shippingAddress, shippingDistrito, shippingPhone])
+    }, [items.length, itemsTotal, billing, destinationIsLima, deliveryMethod, selectedPickupLocation, pickupLocationsError, shippingAddress, shippingDistrito, shippingPhone])
 
     const handleCheckout = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -224,7 +267,10 @@ export default function MerchCheckoutPage() {
                                 shippingReference: shippingReference || null,
                                 shippingPhone,
                             }
-                        : { method: "PICKUP_OFFICE" as const },
+                        : {
+                                method: "PICKUP_OFFICE" as const,
+                                pickupLocationId: selectedPickupLocation?.id,
+                            },
             }
             const orderFingerprint = JSON.stringify(orderPayload)
             const canReuseOrder =
@@ -469,8 +515,8 @@ export default function MerchCheckoutPage() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-4">
-                                <div className="rounded-lg border border-fdnda-primary/20 bg-fdnda-primary/5 p-3 text-sm text-muted-foreground">
-                                    Lima: recojo sin costo en la sede {LIMA_PICKUP_LOCATION}. Provincia: envio a domicilio por S/ {SHIPPING_COST_PROVINCE}.
+                                <div className="rounded-lg border border-fdnda-primary/20 bg-fdnda-primary/5 p-3 text-sm text-foreground">
+                                    El recojo en sede no tiene costo. Para provincia también puedes elegir envío a domicilio por S/ {SHIPPING_COST_PROVINCE}.
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -493,7 +539,7 @@ export default function MerchCheckoutPage() {
                                     <button
                                         type="button"
                                         onClick={() => setDeliveryMethod("PICKUP_OFFICE")}
-                                        disabled={destinationIsLima === false}
+                                        disabled={pickupLocationsLoading || pickupLocations.length === 0}
                                         className={`p-4 rounded-xl border-2 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                                             deliveryMethod === "PICKUP_OFFICE"
                                                 ? "border-fdnda-primary bg-fdnda-primary/5"
@@ -504,17 +550,72 @@ export default function MerchCheckoutPage() {
                                             <MapPin className="h-4 w-4 text-fdnda-primary" />
                                             <span className="font-semibold text-sm">Recojo en sede</span>
                                         </div>
-                                        <p className="text-xs text-muted-foreground">Lima · {LIMA_PICKUP_LOCATION} · Sin costo</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {pickupLocationsLoading
+                                                ? "Cargando sedes..."
+                                                : pickupLocations.length > 0
+                                                    ? `${pickupLocations.length} ${pickupLocations.length === 1 ? "sede disponible" : "sedes disponibles"} · Sin costo`
+                                                    : "Sin sedes activas"}
+                                        </p>
                                     </button>
                                 </div>
 
                                 {deliveryMethod === "PICKUP_OFFICE" && (
-                                    <div className="rounded-lg bg-gray-50 border border-border p-3">
-                                        <p className="text-sm font-semibold text-foreground">Recojo en {LIMA_PICKUP_LOCATION}</p>
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                            Disponible para compras destinadas a Lima. Presenta tu numero de orden al momento del recojo.
-                                        </p>
-                                    </div>
+                                    <fieldset className="space-y-2">
+                                        <legend className="text-sm font-semibold text-foreground">
+                                            Elige dónde recogerás tu pedido
+                                        </legend>
+                                        {pickupLocationsLoading ? (
+                                            <div className="flex items-center gap-2 rounded-xl border border-border bg-gray-50 p-4 text-sm text-muted-foreground">
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                Cargando sedes de recojo...
+                                            </div>
+                                        ) : pickupLocationsError ? (
+                                            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                                                <p className="text-sm text-red-700">{pickupLocationsError}</p>
+                                                <Button type="button" variant="outline" size="sm" className="mt-3" onClick={loadPickupLocations}>
+                                                    Volver a intentar
+                                                </Button>
+                                            </div>
+                                        ) : pickupLocations.length === 0 ? (
+                                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                                                No hay sedes activas en este momento. Intenta más tarde o contacta a soporte.
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 gap-2">
+                                                {pickupLocations.map((location) => (
+                                                    <label
+                                                        key={location.id}
+                                                        className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
+                                                            pickupLocationId === location.id
+                                                                ? "border-fdnda-primary bg-fdnda-primary/5"
+                                                                : "border-border bg-white hover:border-fdnda-primary/40"
+                                                        }`}
+                                                    >
+                                                        <input
+                                                            type="radio"
+                                                            name="pickupLocation"
+                                                            value={location.id}
+                                                            checked={pickupLocationId === location.id}
+                                                            onChange={() => setPickupLocationId(location.id)}
+                                                            className="mt-1 h-4 w-4 accent-[hsl(var(--fdnda-primary))]"
+                                                        />
+                                                        <span className="min-w-0">
+                                                            <span className="block text-sm font-semibold text-foreground">{location.name}</span>
+                                                            <span className="mt-0.5 block text-sm text-muted-foreground break-words">
+                                                                {formatMerchPickupAddress(location)}
+                                                            </span>
+                                                            {location.instructions && (
+                                                                <span className="mt-1 block text-xs text-muted-foreground break-words">
+                                                                    {location.instructions}
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </fieldset>
                                 )}
 
                                 {deliveryMethod === "SHIPPING_HOME" && (

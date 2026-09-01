@@ -3,6 +3,7 @@ import { z } from "zod"
 import { FulfillmentStatus, Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
+import { getMerchPickupSnapshot } from "@/lib/merch-pickup"
 import {
     sendMerchFulfillmentStatusEmail,
     type MerchFulfillmentNotifyStatus,
@@ -101,6 +102,7 @@ export async function PATCH(
             fulfillmentStatus: true,
             trackingCode: true,
             deliveryMethod: true,
+            pickupLocationSnapshot: true,
             shippingAddress: true,
             shippingDistrito: true,
             buyerEmail: true,
@@ -172,6 +174,10 @@ export async function PATCH(
                 orderId: existing.id,
                 status: fulfillmentStatus,
                 deliveryMethod: existing.deliveryMethod,
+                pickupLocation:
+                    existing.deliveryMethod === "PICKUP_OFFICE"
+                        ? getMerchPickupSnapshot(existing.pickupLocationSnapshot)
+                        : null,
                 trackingCode: trackingValue,
                 shippingAddress: existing.shippingAddress,
                 shippingDistrito: existing.shippingDistrito,

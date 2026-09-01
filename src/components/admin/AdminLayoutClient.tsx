@@ -36,6 +36,7 @@ import {
     ShoppingBag,
     Package,
     IdCard,
+    Building2,
 } from "lucide-react"
 
 interface NavItem {
@@ -67,6 +68,7 @@ const adminNavigation: NavGroup[] = [
             { label: "Cortesías", href: "/admin/cortesias", icon: Gift },
             { label: "Emitir carnet", href: "/admin/carnets", icon: IdCard },
             { label: "Merch", href: "/admin/merch", icon: ShoppingBag },
+            { label: "Sedes de recojo", href: "/admin/merch/sedes", icon: Building2 },
             { label: "Pedidos merch", href: "/admin/merch/pedidos", icon: Package },
             { label: "Ingresos", href: "/admin/ingresos", icon: DollarSign },
         ],
@@ -297,6 +299,8 @@ function AdminTopBar({ onMenuClick, title }: AdminTopBarProps) {
         if (pathname.includes("/reportes/cupos")) return "Cupos y horarios"
         if (pathname.includes("/reportes/merch")) return "Reporte merch"
         if (pathname.includes("/merch/pedidos")) return "Pedidos merch"
+        if (pathname.includes("/merch/sedes")) return "Sedes de recojo"
+        if (pathname.includes("/merch")) return "Merch"
         if (pathname.includes("/reportes")) return "Reportes"
         if (pathname.includes("/estadisticas")) return "Estadísticas"
         if (pathname.includes("/reclamos")) return "Reclamos"

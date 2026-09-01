@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatPrice } from "@/lib/utils"
+import { formatMerchPickupAddress, getMerchPickupSnapshot } from "@/lib/merch-pickup"
 import { Loader2, Package, RefreshCw, Search, Truck, MapPin, Phone, Mail } from "lucide-react"
 
 type FulfillmentStatus = "PENDING" | "READY" | "SHIPPED" | "DELIVERED" | "PICKED_UP" | "CANCELLED"
@@ -19,6 +20,7 @@ export interface AdminMerchOrder {
     totalAmount: number
     shippingCost: number
     deliveryMethod: DeliveryMethod | null
+    pickupLocationSnapshot: Record<string, unknown> | null
     shippingAddress: string | null
     shippingDistrito: string | null
     shippingUbigeo: string | null
@@ -316,6 +318,10 @@ export default function AdminMerchOrdersClient({ initialOrders }: AdminMerchOrde
                         const fulfillment = order.fulfillmentStatus || "PENDING"
                         const needsTracking = row.fulfillmentStatus === "SHIPPED"
                         const isShipping = order.deliveryMethod === "SHIPPING_HOME"
+                        const pickupLocation =
+                            order.deliveryMethod === "PICKUP_OFFICE"
+                                ? getMerchPickupSnapshot(order.pickupLocationSnapshot)
+                                : null
 
                         return (
                             <div
@@ -469,8 +475,21 @@ export default function AdminMerchOrdersClient({ initialOrders }: AdminMerchOrde
                                                     )}
                                                 </>
                                             ) : (
-                                                <div className="text-muted-foreground">
-                                                    Recojo en sede Campo de Marte
+                                                <div className="flex items-start gap-2 text-muted-foreground">
+                                                    <MapPin className="h-4 w-4 mt-0.5 shrink-0" />
+                                                    <div>
+                                                        <div className="font-medium text-foreground">
+                                                            Recojo en {pickupLocation?.name || "sede"}
+                                                        </div>
+                                                        {pickupLocation && (
+                                                            <>
+                                                                <div>{formatMerchPickupAddress(pickupLocation)}</div>
+                                                                {pickupLocation.instructions && (
+                                                                    <div className="mt-1 text-xs">{pickupLocation.instructions}</div>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
                                             <div className="flex items-center gap-2 text-muted-foreground">

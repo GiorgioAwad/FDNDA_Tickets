@@ -49,6 +49,7 @@ const merchOrderSchema = z.object({
         }),
         z.object({
             method: z.literal("PICKUP_OFFICE"),
+            pickupLocationId: z.string().min(1, "Selecciona una sede de recojo."),
         }),
     ]),
 })
@@ -57,7 +58,8 @@ function isLimaDestination(ubigeo: string | null | undefined): boolean {
     return Boolean(ubigeo?.startsWith("15"))
 }
 
-// Provincia tiene envio fijo. Lima se atiende con recojo en Campo de Marte.
+// El envio a domicilio se mantiene solo para provincia. El recojo puede hacerse
+// en cualquiera de las sedes activas que configure administracion.
 function calculateShippingCost(ubigeo: string | null | undefined): number {
     if (!ubigeo || isLimaDestination(ubigeo)) return 0
     return SHIPPING_COST_PROVINCE
@@ -100,21 +102,14 @@ export async function POST(request: NextRequest) {
 
         if (delivery.method === "PICKUP_EVENT") {
             return NextResponse.json(
-                { success: false, error: "El recojo de merch en Lima es en la sede Campo de Marte." },
+                { success: false, error: "Selecciona una de las sedes de recojo disponibles." },
                 { status: 400 }
             )
         }
 
         if (delivery.method === "SHIPPING_HOME" && isLimaDestination(delivery.shippingUbigeo)) {
             return NextResponse.json(
-                { success: false, error: "Para Lima, el recojo de merch es en la sede Campo de Marte." },
-                { status: 400 }
-            )
-        }
-
-        if (delivery.method === "PICKUP_OFFICE" && !isLimaDestination(billing.buyerUbigeo)) {
-            return NextResponse.json(
-                { success: false, error: "Para provincia, selecciona envio a domicilio. El costo es S/ 10." },
+                { success: false, error: "Para Lima, selecciona recojo en una sede disponible." },
                 { status: 400 }
             )
         }
@@ -130,6 +125,23 @@ export async function POST(request: NextRequest) {
         const order = await prisma.$transaction(async (tx) => {
             let itemsTotal = 0
             const orderItemsData: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] = []
+            const pickupLocation =
+                delivery.method === "PICKUP_OFFICE"
+                    ? await tx.merchPickupLocation.findFirst({
+                          where: { id: delivery.pickupLocationId, isActive: true },
+                          select: {
+                              id: true,
+                              name: true,
+                              address: true,
+                              district: true,
+                              instructions: true,
+                          },
+                      })
+                    : null
+
+            if (delivery.method === "PICKUP_OFFICE" && !pickupLocation) {
+                throw new Error("La sede elegida ya no esta disponible. Selecciona otra sede.")
+            }
 
             for (const item of items) {
                 const product = await tx.merchProduct.findUnique({
@@ -203,6 +215,16 @@ export async function POST(request: NextRequest) {
                 fulfillmentStatus: "PENDING",
                 deliveryMethod: delivery.method,
                 pickupEventId: null,
+                pickupLocationId: pickupLocation?.id ?? null,
+                pickupLocationSnapshot: pickupLocation
+                    ? ({
+                          id: pickupLocation.id,
+                          name: pickupLocation.name,
+                          address: pickupLocation.address,
+                          district: pickupLocation.district,
+                          instructions: pickupLocation.instructions,
+                      } as Prisma.InputJsonValue)
+                    : Prisma.JsonNull,
                 shippingCost: shippingCost > 0 ? shippingCost : null,
                 ...(delivery.method === "SHIPPING_HOME"
                     ? {

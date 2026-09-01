@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatPrice } from "@/lib/utils"
-import { Plus, Pencil, Package, ShoppingBag } from "lucide-react"
+import { Plus, Pencil, Package, ShoppingBag, MapPin } from "lucide-react"
 
 export const dynamic = "force-dynamic"
 
@@ -56,12 +56,20 @@ export default async function AdminMerchPage() {
                         Gestiona productos físicos del campeonato: poleras, gorras, pines.
                     </p>
                 </div>
-                <Link href="/admin/merch/nuevo">
-                    <Button>
-                        <Plus className="h-4 w-4" />
-                        Nuevo producto
-                    </Button>
-                </Link>
+                <div className="flex flex-wrap justify-end gap-2">
+                    <Link href="/admin/merch/sedes">
+                        <Button variant="outline">
+                            <MapPin className="h-4 w-4" />
+                            Sedes de recojo
+                        </Button>
+                    </Link>
+                    <Link href="/admin/merch/nuevo">
+                        <Button>
+                            <Plus className="h-4 w-4" />
+                            Nuevo producto
+                        </Button>
+                    </Link>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
