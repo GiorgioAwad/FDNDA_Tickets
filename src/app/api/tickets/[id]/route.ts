@@ -13,6 +13,7 @@ import {
 } from "@/lib/ticket-date-policy"
 import {
     getMembershipPeriod,
+    getMembershipQuotaPeriod,
     getMembershipExpiry,
     getMembershipAccessStatus,
     getEligibleMembershipFreezeMonths,
@@ -414,12 +415,13 @@ export async function GET(
 
         // Check if this date is valid for the ticket
         let dateStr = formatDateUTC(qrDate)
-        // Membresía: solo cuentan las clases usadas dentro del mes en curso
-        // (reinicio sin acumular). El ciclo se ancla a la fecha de inicio elegida
-        // por el comprador (membresías a término fijo) o, en legacy, al inicio del
-        // evento. El resto del cómputo de paquete sigue igual.
+        // Membresía: el cupo de clases se reinicia cada día 1. El ciclo anclado a
+        // la fecha de inicio se conserva por separado para horarios y vigencia.
         const membershipAnchor = getMembershipAnchor(ticket)
         const membershipPeriod = isMembership && membershipAnchor ? getMembershipPeriod(todayStr, membershipAnchor) : null
+        const membershipQuotaPeriod = isMembership && membershipAnchor
+            ? getMembershipQuotaPeriod(todayStr, membershipAnchor)
+            : null
         const isFixedTerm = isFixedTermMembership(ticket)
         const freezeRanges = ticket.membershipFreeze
             ? [{
@@ -438,22 +440,22 @@ export async function GET(
         // del mes (cada ingreso es una clase), no por días/entitlements.
         const allowMultiDaily = isMembership && ticket.ticketType.allowMultipleDailyScans === true
         let usedCount: number
-        if (isMembership && allowMultiDaily && membershipPeriod) {
+        if (isMembership && allowMultiDaily && membershipQuotaPeriod) {
             usedCount = await prisma.scan.count({
                 where: {
                     ticketId: ticket.id,
                     result: "VALID",
                     date: {
-                        gte: new Date(`${membershipPeriod.startStr}T00:00:00Z`),
-                        lt: new Date(`${membershipPeriod.endStr}T00:00:00Z`),
+                        gte: new Date(`${membershipQuotaPeriod.startStr}T00:00:00Z`),
+                        lt: new Date(`${membershipQuotaPeriod.endStr}T00:00:00Z`),
                     },
                 },
             })
-        } else if (isMembership && membershipPeriod) {
+        } else if (isMembership && membershipQuotaPeriod) {
             usedCount = entitlements.filter((item) => {
                 if (item.status !== "USED") return false
                 const d = formatDateUTC(item.date)
-                return d >= membershipPeriod.startStr && d < membershipPeriod.endStr
+                return d >= membershipQuotaPeriod.startStr && d < membershipQuotaPeriod.endStr
             }).length
         } else {
             usedCount = entitlements.filter((item) => item.status === "USED").length
@@ -665,7 +667,7 @@ export async function GET(
                           total: packageDaysCount ?? 0,
                           used: usedCount,
                           remaining: Math.max((packageDaysCount ?? 0) - usedCount, 0),
-                          periodStart: membershipPeriod?.startStr ?? null,
+                          periodStart: membershipQuotaPeriod?.startStr ?? null,
                           // Membresías a término fijo (anual/semestral)
                           membershipStart: isFixedTerm && membershipAnchor
                               ? formatDateUTC(membershipAnchor)

@@ -324,17 +324,17 @@ export const getEffectiveScheduleSelection = (
 
 /**
  * Ancla de la membresía: la fecha de inicio elegida por el comprador o, en
- * tickets legacy, el inicio del evento. Todos los cortes mensuales y la vigencia
- * se calculan a partir de aquí.
+ * tickets legacy, el inicio del evento. La vigencia y los cambios de horario se
+ * calculan desde aquí; el cupo usa meses calendario mediante
+ * `getMembershipQuotaPeriod`.
  */
 export const getMembershipAnchor = (ticket: ScanTicket): Date | null =>
     getFixedTermMembershipAnchor(ticket) ?? ticket.event?.startDate ?? null
 
 /**
- * Período (mes) de la membresía que contiene `today`, anclado a `anchor`.
- * Los cortes caen en el día del mes del ancla. Devuelve null si `today` es
- * anterior al inicio. El blackout no afecta este conteo: en ene/feb el QR ya
- * está bloqueado aguas arriba, así que el cupo simplemente no se consume.
+ * Ciclo de la membresía que contiene `today`, anclado a `anchor`.
+ * Los cortes caen en el día del mes del ancla y se usan para horarios y vigencia.
+ * Devuelve null si `today` es anterior al inicio.
  */
 export const getMembershipPeriod = (today: string, anchor: Date): MembershipPeriod | null => {
     const startStr = formatDateUTC(anchor)
@@ -351,6 +351,32 @@ export const getMembershipPeriod = (today: string, anchor: Date): MembershipPeri
         index: months,
         startStr: addMonthsToParts(sy, sm, sd, months),
         endStr: addMonthsToParts(sy, sm, sd, months + 1),
+    }
+}
+
+/**
+ * Periodo usado exclusivamente para el cupo de clases de una membresia.
+ * El primer periodo empieza en la fecha de inicio real y termina el primer dia
+ * del mes siguiente. Desde entonces, el cupo se reinicia cada dia 1 y se cuenta
+ * por mes calendario, independientemente del dia de inicio de la membresia.
+ *
+ * Se mantiene separado de `getMembershipPeriod`, porque ese ciclo anclado sigue
+ * definiendo el mes de vigencia/horario de la membresia.
+ */
+export const getMembershipQuotaPeriod = (today: string, anchor: Date): MembershipPeriod | null => {
+    const anchorStr = formatDateUTC(anchor)
+    const [sy, sm, sd] = anchorStr.split("-").map(Number)
+    const [ty, tm, td] = today.split("-").map(Number)
+    if (!sy || !sm || !sd || !ty || !tm || !td) return null
+    if (today < anchorStr) return null
+
+    const index = (ty - sy) * 12 + (tm - sm)
+    const calendarStart = `${ty}-${pad2(tm)}-01`
+
+    return {
+        index,
+        startStr: index === 0 ? anchorStr : calendarStart,
+        endStr: addMonthsToParts(ty, tm, 1, 1),
     }
 }
 
@@ -535,7 +561,7 @@ export const buildMembershipMonthlySummary = (
 ): AttendanceSummary => {
     const limit = ticket.ticketType.monthlyClassLimit ?? 0
     const anchor = getMembershipAnchor(ticket)
-    const period = anchor ? getMembershipPeriod(today, anchor) : null
+    const period = anchor ? getMembershipQuotaPeriod(today, anchor) : null
     if (!period) {
         return { total: limit, used: 0, remaining: limit }
     }

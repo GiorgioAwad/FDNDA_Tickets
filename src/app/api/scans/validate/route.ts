@@ -35,6 +35,7 @@ import {
     membershipAllowsMultipleDailyScans,
     getMembershipAnchor,
     getMembershipPeriod,
+    getMembershipQuotaPeriod,
     isWithinEventRange,
 } from "@/lib/scan-helpers"
 
@@ -366,9 +367,9 @@ export async function POST(request: NextRequest) {
         // válido en los días de la frecuencia elegida y dentro de la franja horaria
         // elegida (hora Lima). El override de emergencia (Staff/Admin) lo omite y
         // queda registrado en Scan.notes (ver el logScan del flujo de éxito).
-        // Horario efectivo del mes en curso (aplica el cambio mensual vigente; si
-        // no hay, hereda el horario de checkout). El índice de mes se ancla a la
-        // fecha de inicio de la membresía (mismo cálculo que el cupo mensual).
+        // Horario efectivo del ciclo vigente (aplica el cambio mensual; si no
+        // hay, hereda el horario de checkout). Su índice permanece anclado a la
+        // fecha de inicio y es independiente del cupo por mes calendario.
         const scheduleAnchor = getMembershipAnchor(ticket)
         const scheduleMonthIndex = scheduleAnchor
             ? getMembershipPeriod(today, scheduleAnchor)?.index ?? 0
@@ -576,7 +577,7 @@ export async function POST(request: NextRequest) {
         // la validación de día+hora de más arriba.
         if (membershipAllowsMultipleDailyScans(ticket)) {
             const anchor = getMembershipAnchor(ticket)
-            const period = anchor ? getMembershipPeriod(today, anchor) : null
+            const period = anchor ? getMembershipQuotaPeriod(today, anchor) : null
             const limit = ticket.ticketType.monthlyClassLimit ?? 0
             const monthlyUsed = period
                 ? await prisma.scan.count({

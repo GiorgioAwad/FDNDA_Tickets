@@ -18,7 +18,7 @@ import {
     isFixedTermMembership,
     getMembershipAccessStatus,
     getMembershipAnchor,
-    getMembershipPeriod,
+    getMembershipQuotaPeriod,
     membershipAllowsMultipleDailyScans,
 } from "@/lib/scan-helpers"
 
@@ -475,7 +475,7 @@ export async function POST(request: NextRequest) {
         // para todos los planes (el panel no valida horario: criterio del staff).
         if (membershipAllowsMultipleDailyScans(ticket)) {
             const anchor = getMembershipAnchor(ticket)
-            const period = anchor ? getMembershipPeriod(today, anchor) : null
+            const period = anchor ? getMembershipQuotaPeriod(today, anchor) : null
             const limit = ticket.ticketType.monthlyClassLimit ?? 0
 
             const [todayScans, monthlyUsed] = await Promise.all([

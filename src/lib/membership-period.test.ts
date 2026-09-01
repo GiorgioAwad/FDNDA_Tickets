@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import {
     getMembershipPeriod,
+    getMembershipQuotaPeriod,
     getMembershipExpiry,
     isFixedTermMembership,
     isWithinMembershipWindow,
@@ -95,6 +96,46 @@ test("getMembershipPeriod advances to the next cycle past the anchor day", () =>
 test("getMembershipPeriod returns null before the membership starts", () => {
     const period = getMembershipPeriod("2026-02-28", new Date("2026-03-15T00:00:00Z"))
     assert.equal(period, null)
+})
+
+test("membership quota resets on the first day of every calendar month", () => {
+    const anchor = new Date("2026-08-03T00:00:00Z")
+
+    assert.deepEqual(getMembershipQuotaPeriod("2026-08-31", anchor), {
+        index: 0,
+        startStr: "2026-08-03",
+        endStr: "2026-09-01",
+    })
+    assert.deepEqual(getMembershipQuotaPeriod("2026-09-01", anchor), {
+        index: 1,
+        startStr: "2026-09-01",
+        endStr: "2026-10-01",
+    })
+})
+
+test("monthly summary drops the previous month classes on day one", () => {
+    const ticket = makeTicket("2026-07-01", 8, [
+        "2026-08-04",
+        "2026-08-11",
+        "2026-08-13",
+        "2026-08-18",
+        "2026-08-25",
+        "2026-08-27",
+    ], {
+        membershipStartDate: "2026-08-03",
+        membershipDurationMonths: 6,
+    })
+
+    assert.deepEqual(buildMembershipMonthlySummary(ticket, "2026-08-31"), {
+        total: 8,
+        used: 6,
+        remaining: 2,
+    })
+    assert.deepEqual(buildMembershipMonthlySummary(ticket, "2026-09-01"), {
+        total: 8,
+        used: 0,
+        remaining: 8,
+    })
 })
 
 test("monthly summary counts only classes used in the current cycle", () => {
@@ -295,19 +336,19 @@ test("getEligibleMembershipFreezeMonths does not offer months after November", (
     assert.deepEqual(months, ["2026-08", "2026-09", "2026-10", "2026-11"])
 })
 
-test("fixed-term membership anchors the monthly cycle to the chosen start date", () => {
-    // Inicio elegido 2026-09-10; el corte mensual cae el día 10.
+test("fixed-term membership quota uses calendar months after its chosen start date", () => {
+    // Inicio elegido 2026-09-10; el primer cupo es parcial hasta fin de septiembre.
     const ticket = makeTicket("2026-07-01", 8, ["2026-09-12", "2026-09-15", "2026-10-20"], {
         membershipStartDate: "2026-09-10",
         membershipDurationMonths: 12,
     })
-    // 2026-09-20 está en el ciclo [09-10, 10-10): cuentan 09-12 y 09-15 (no 10-20)
+    // En septiembre cuentan 09-12 y 09-15 (no 10-20).
     assert.deepEqual(buildMembershipMonthlySummary(ticket, "2026-09-20"), {
         total: 8,
         used: 2,
         remaining: 6,
     })
-    // 2026-10-20 está en el ciclo [10-10, 11-10): solo cuenta 10-20 (reinicio)
+    // El 1 de octubre se reinició el cupo: solo cuenta 10-20.
     assert.deepEqual(buildMembershipMonthlySummary(ticket, "2026-10-20"), {
         total: 8,
         used: 1,
@@ -328,9 +369,9 @@ test("membershipAllowsMultipleDailyScans solo aplica a membresías con el flag",
     assert.equal(membershipAllowsMultipleDailyScans(noMembership), false)
 })
 
-test("legacy membership (no chosen start) still anchors to the event start", () => {
+test("legacy membership uses the event start as its initial eligibility date", () => {
     const legacy = makeTicket("2026-03-01", 20, ["2026-03-05", "2026-03-10"])
-    // Mismo comportamiento que antes: anclado a event.startDate
+    // Sin inicio elegido, event.startDate sigue siendo la fecha inicial.
     assert.deepEqual(buildMembershipMonthlySummary(legacy, "2026-03-15"), {
         total: 20,
         used: 2,

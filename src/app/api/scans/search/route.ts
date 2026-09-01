@@ -8,7 +8,7 @@ import {
     buildMembershipDisplay,
     generateEntitlements,
     getMembershipAnchor,
-    getMembershipPeriod,
+    getMembershipQuotaPeriod,
     matchesToday,
     membershipAllowsMultipleDailyScans,
 } from "@/lib/scan-helpers"
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 
                 if (display && membershipAllowsMultipleDailyScans(scanTicket)) {
                     const anchor = getMembershipAnchor(scanTicket)
-                    const period = anchor ? getMembershipPeriod(today, anchor) : null
+                    const period = anchor ? getMembershipQuotaPeriod(today, anchor) : null
                     const limit = scanTicket.ticketType.monthlyClassLimit ?? 0
 
                     const [monthlyUsed, dailyUsed] = await Promise.all([
