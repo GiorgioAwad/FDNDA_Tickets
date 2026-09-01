@@ -5,11 +5,20 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 import { buildBillingSnapshot } from "@/lib/billing"
 import { rateLimit } from "@/lib/rate-limit"
+import { resolveMerchPickupAssignments } from "@/lib/merch-pickup"
 
 export const runtime = "nodejs"
 
 const MIN_MERCH_ORDER_SUBTOTAL = 30
 const SHIPPING_COST_PROVINCE = Number(process.env.MERCH_SHIPPING_COST_PROV ?? "10")
+
+interface MerchOrderPickupLocation {
+    id: string
+    name: string
+    address: string
+    district: string | null
+    instructions: string | null
+}
 
 const merchItemSchema = z.object({
     productId: z.string().min(1),
@@ -49,7 +58,6 @@ const merchOrderSchema = z.object({
         }),
         z.object({
             method: z.literal("PICKUP_OFFICE"),
-            pickupLocationId: z.string().min(1, "Selecciona una sede de recojo."),
         }),
     ]),
 })
@@ -58,8 +66,8 @@ function isLimaDestination(ubigeo: string | null | undefined): boolean {
     return Boolean(ubigeo?.startsWith("15"))
 }
 
-// El envio a domicilio se mantiene solo para provincia. El recojo puede hacerse
-// en cualquiera de las sedes activas que configure administracion.
+// El envio a domicilio se mantiene solo para provincia. Para recojo, la sede
+// sale de la asignacion administrativa de cada producto.
 function calculateShippingCost(ubigeo: string | null | undefined): number {
     if (!ubigeo || isLimaDestination(ubigeo)) return 0
     return SHIPPING_COST_PROVINCE
@@ -125,23 +133,13 @@ export async function POST(request: NextRequest) {
         const order = await prisma.$transaction(async (tx) => {
             let itemsTotal = 0
             const orderItemsData: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] = []
-            const pickupLocation =
-                delivery.method === "PICKUP_OFFICE"
-                    ? await tx.merchPickupLocation.findFirst({
-                          where: { id: delivery.pickupLocationId, isActive: true },
-                          select: {
-                              id: true,
-                              name: true,
-                              address: true,
-                              district: true,
-                              instructions: true,
-                          },
-                      })
-                    : null
-
-            if (delivery.method === "PICKUP_OFFICE" && !pickupLocation) {
-                throw new Error("La sede elegida ya no esta disponible. Selecciona otra sede.")
-            }
+            let pickupLocation: MerchOrderPickupLocation | null = null
+            const pickupAssignments: Array<{
+                productId: string
+                pickupLocationId: string | null
+                pickupLocationIsActive: boolean
+            }> = []
+            const pickupLocationsById = new Map<string, MerchOrderPickupLocation>()
 
             for (const item of items) {
                 const product = await tx.merchProduct.findUnique({
@@ -154,11 +152,33 @@ export async function POST(request: NextRequest) {
                         price: true,
                         imageUrl: true,
                         isActive: true,
+                        pickupLocationId: true,
+                        pickupLocation: {
+                            select: {
+                                id: true,
+                                name: true,
+                                address: true,
+                                district: true,
+                                instructions: true,
+                                isActive: true,
+                            },
+                        },
                     },
                 })
 
                 if (!product || !product.isActive) {
                     throw new Error(`Producto no disponible: ${item.productId}`)
+                }
+
+                if (delivery.method === "PICKUP_OFFICE") {
+                    pickupAssignments.push({
+                        productId: product.id,
+                        pickupLocationId: product.pickupLocationId,
+                        pickupLocationIsActive: product.pickupLocation.isActive,
+                    })
+                    if (product.pickupLocation.isActive) {
+                        pickupLocationsById.set(product.pickupLocation.id, product.pickupLocation)
+                    }
                 }
 
                 // Reserva atómica: incrementa "reserved" solo si hay stock libre
@@ -197,6 +217,20 @@ export async function POST(request: NextRequest) {
                         imageUrl: product.imageUrl,
                     } as Prisma.InputJsonValue,
                 })
+            }
+
+            if (delivery.method === "PICKUP_OFFICE") {
+                const resolution = resolveMerchPickupAssignments(pickupAssignments)
+                if (resolution.kind === "unavailable" || resolution.kind === "empty") {
+                    throw new Error("Uno o mas productos no tiene una sede de recojo activa. Actualiza tu carrito o elige envio.")
+                }
+                if (resolution.kind === "mixed") {
+                    throw new Error("Tu carrito contiene productos de sedes distintas. Para recojo, compralos en pedidos separados.")
+                }
+                pickupLocation = pickupLocationsById.get(resolution.pickupLocationId) ?? null
+                if (!pickupLocation) {
+                    throw new Error("La sede asignada ya no esta disponible. Actualiza tu carrito.")
+                }
             }
 
             if (itemsTotal < MIN_MERCH_ORDER_SUBTOTAL) {

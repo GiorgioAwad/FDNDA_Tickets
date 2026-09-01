@@ -218,6 +218,16 @@ async function main() {
     let created = 0
     let updated = 0
 
+    const pickupLocation = await prisma.merchPickupLocation.findFirst({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        select: { id: true, name: true },
+    })
+    if (!pickupLocation) {
+        throw new Error("No hay una sede de recojo activa para asignar los productos.")
+    }
+    console.log(`[seed-merch] Sede de recojo: ${pickupLocation.name}`)
+
     for (const [index, product] of PRODUCTS.entries()) {
         const imageUrl = `${PUBLIC_BASE}/merch/${encodeURIComponent(product.imageFile)}`
         const backImageUrl = product.backImageFile
@@ -243,6 +253,7 @@ async function main() {
                     availableSizes: product.availableSizes ?? undefined,
                     isActive: true,
                     sortOrder,
+                    pickupLocationId: pickupLocation.id,
                 },
             })
             updated++
@@ -279,6 +290,7 @@ async function main() {
                 availableSizes: product.availableSizes ?? undefined,
                 isActive: true,
                 sortOrder,
+                pickupLocationId: pickupLocation.id,
                 variants: { create: variantsData },
             },
         })

@@ -6,6 +6,18 @@ export interface MerchPickupSnapshot {
     instructions: string | null
 }
 
+export interface MerchProductPickupAssignment {
+    productId: string
+    pickupLocationId: string | null
+    pickupLocationIsActive: boolean
+}
+
+export type MerchPickupAssignmentResolution =
+    | { kind: "empty" }
+    | { kind: "unavailable"; productIds: string[] }
+    | { kind: "mixed"; pickupLocationIds: string[] }
+    | { kind: "single"; pickupLocationId: string }
+
 export const LEGACY_MERCH_PICKUP: MerchPickupSnapshot = {
     id: "legacy-campo-de-marte",
     name: "Campo de Marte",
@@ -46,4 +58,28 @@ export function formatMerchPickupAddress(location: Pick<MerchPickupSnapshot, "ad
         return location.address
     }
     return `${location.address}, ${location.district}`
+}
+
+export function resolveMerchPickupAssignments(
+    assignments: MerchProductPickupAssignment[]
+): MerchPickupAssignmentResolution {
+    if (assignments.length === 0) return { kind: "empty" }
+
+    const unavailableProductIds = assignments
+        .filter((assignment) => !assignment.pickupLocationId || !assignment.pickupLocationIsActive)
+        .map((assignment) => assignment.productId)
+
+    if (unavailableProductIds.length > 0) {
+        return { kind: "unavailable", productIds: unavailableProductIds }
+    }
+
+    const pickupLocationIds = Array.from(
+        new Set(assignments.map((assignment) => assignment.pickupLocationId as string))
+    )
+
+    if (pickupLocationIds.length > 1) {
+        return { kind: "mixed", pickupLocationIds }
+    }
+
+    return { kind: "single", pickupLocationId: pickupLocationIds[0] }
 }

@@ -1,10 +1,24 @@
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { MerchProductForm } from "@/components/admin/MerchProductForm"
+import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
 
-export default function NuevoMerchPage() {
+export default async function NuevoMerchPage() {
+    const pickupLocations = await prisma.merchPickupLocation.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        select: {
+            id: true,
+            name: true,
+            address: true,
+            district: true,
+            instructions: true,
+            isActive: true,
+        },
+    })
+
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-6">
             <div>
@@ -21,7 +35,7 @@ export default function NuevoMerchPage() {
                 </p>
             </div>
 
-            <MerchProductForm />
+            <MerchProductForm pickupLocations={pickupLocations} />
         </div>
     )
 }

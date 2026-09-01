@@ -18,6 +18,16 @@ async function getProducts(): Promise<MerchProductView[]> {
         const products = await prisma.merchProduct.findMany({
             where: { isActive: true },
             include: {
+                pickupLocation: {
+                    select: {
+                        id: true,
+                        name: true,
+                        address: true,
+                        district: true,
+                        instructions: true,
+                        isActive: true,
+                    },
+                },
                 variants: {
                     where: { isActive: true },
                     orderBy: { size: "asc" },
@@ -55,6 +65,7 @@ async function getProducts(): Promise<MerchProductView[]> {
                 imageUrls,
                 hasSizes: product.hasSizes,
                 availableSizes,
+                pickupLocation: product.pickupLocation,
                 isSoldOut: totalAvailable === 0,
                 variants,
             }

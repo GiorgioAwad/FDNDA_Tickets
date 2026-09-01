@@ -23,6 +23,24 @@ export default async function AdminMerchEditPage({ params }: AdminMerchEditPageP
 
     if (!product) notFound()
 
+    const pickupLocations = await prisma.merchPickupLocation.findMany({
+        where: {
+            OR: [
+                { isActive: true },
+                { id: product.pickupLocationId },
+            ],
+        },
+        orderBy: [{ isActive: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
+        select: {
+            id: true,
+            name: true,
+            address: true,
+            district: true,
+            instructions: true,
+            isActive: true,
+        },
+    })
+
     const availableSizes = Array.isArray(product.availableSizes)
         ? (product.availableSizes as unknown[]).filter((s): s is string => typeof s === "string")
         : []
@@ -58,6 +76,7 @@ export default async function AdminMerchEditPage({ params }: AdminMerchEditPageP
 
             <MerchProductForm
                 isEdit
+                pickupLocations={pickupLocations}
                 initialData={{
                     id: product.id,
                     name: product.name,
@@ -73,6 +92,7 @@ export default async function AdminMerchEditPage({ params }: AdminMerchEditPageP
                     availableSizes,
                     isActive: product.isActive,
                     sortOrder: product.sortOrder,
+                    pickupLocationId: product.pickupLocationId,
                     servilexServiceCode: product.servilexServiceCode,
                     servilexSucursalCode: product.servilexSucursalCode,
                 }}

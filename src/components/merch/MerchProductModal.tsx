@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { Check, Minus, Plus, ShoppingBag, X } from "lucide-react"
+import { Check, MapPin, Minus, Plus, ShoppingBag, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useMerchCart } from "@/hooks/merch-cart-context"
@@ -145,6 +145,25 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
                                     {product.description}
                                 </p>
                             )}
+
+                            <div className={`flex items-start gap-3 rounded-xl border p-3 ${
+                                product.pickupLocation.isActive
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                                    : "border-amber-200 bg-amber-50 text-amber-950"
+                            }`}>
+                                <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+                                <div className="min-w-0 text-sm">
+                                    <p className="font-semibold break-words">
+                                        {product.pickupLocation.isActive
+                                            ? `Recojo en ${product.pickupLocation.name}`
+                                            : "Recojo temporalmente no disponible"}
+                                    </p>
+                                    <p className="mt-0.5 break-words opacity-80">
+                                        {product.pickupLocation.address}
+                                        {product.pickupLocation.district ? `, ${product.pickupLocation.district}` : ""}
+                                    </p>
+                                </div>
+                            </div>
 
                             {/* Size selector */}
                             {product.hasSizes && (

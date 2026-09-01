@@ -125,6 +125,19 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         if (body.sortOrder !== undefined && Number.isFinite(Number(body.sortOrder))) {
             data.sortOrder = Number(body.sortOrder)
         }
+        if (body.pickupLocationId !== undefined) {
+            if (typeof body.pickupLocationId !== "string" || !body.pickupLocationId.trim()) {
+                return NextResponse.json({ success: false, error: "Selecciona una sede de recojo." }, { status: 400 })
+            }
+            const pickupLocation = await prisma.merchPickupLocation.findFirst({
+                where: { id: body.pickupLocationId.trim(), isActive: true },
+                select: { id: true },
+            })
+            if (!pickupLocation) {
+                return NextResponse.json({ success: false, error: "La sede de recojo seleccionada no está activa." }, { status: 400 })
+            }
+            data.pickupLocation = { connect: { id: pickupLocation.id } }
+        }
         if (body.servilexServiceCode === null) {
             data.servilexServiceCode = null
             data.servilexSucursalCode = null

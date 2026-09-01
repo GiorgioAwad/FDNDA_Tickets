@@ -46,6 +46,12 @@ interface PickupLocation {
     instructions: string | null
 }
 
+type PickupResolution =
+    | { kind: "empty" }
+    | { kind: "unavailable"; productIds: string[] }
+    | { kind: "mixed"; pickupLocationIds: string[] }
+    | { kind: "single"; pickupLocationId: string }
+
 interface BillingState {
     documentType: "BOLETA" | "FACTURA"
     buyerDocNumber: string
@@ -105,17 +111,32 @@ export default function MerchCheckoutPage() {
     const [shippingReference, setShippingReference] = useState("")
     const [shippingPhone, setShippingPhone] = useState("")
     const [pickupLocations, setPickupLocations] = useState<PickupLocation[]>([])
-    const [pickupLocationId, setPickupLocationId] = useState("")
+    const [pickupResolution, setPickupResolution] = useState<PickupResolution>({ kind: "empty" })
     const [pickupLocationsLoading, setPickupLocationsLoading] = useState(true)
     const [pickupLocationsError, setPickupLocationsError] = useState("")
     // Usamos el ubigeo de facturación también para calcular costo de envío
     const shippingUbigeo = billing.buyerUbigeo
 
+    const pickupProductIds = useMemo(
+        () => Array.from(new Set(items.map((item) => item.productId))).sort().join(","),
+        [items]
+    )
+
     const loadPickupLocations = useCallback(async () => {
+        if (!pickupProductIds) {
+            setPickupLocations([])
+            setPickupResolution({ kind: "empty" })
+            setPickupLocationsError("")
+            setPickupLocationsLoading(false)
+            return
+        }
         setPickupLocationsLoading(true)
         setPickupLocationsError("")
         try {
-            const response = await fetch("/api/merch/pickup-locations", { cache: "no-store" })
+            const response = await fetch(
+                `/api/merch/pickup-locations?productIds=${encodeURIComponent(pickupProductIds)}`,
+                { cache: "no-store" }
+            )
             const payload = await response.json()
             if (!response.ok || !payload.success) {
                 throw new Error(payload.error || "No se pudieron cargar las sedes.")
@@ -123,19 +144,15 @@ export default function MerchCheckoutPage() {
 
             const locations = payload.data as PickupLocation[]
             setPickupLocations(locations)
-            setPickupLocationId((current) =>
-                locations.some((location) => location.id === current)
-                    ? current
-                    : locations[0]?.id ?? ""
-            )
+            setPickupResolution(payload.resolution as PickupResolution)
         } catch (loadError) {
             setPickupLocations([])
-            setPickupLocationId("")
+            setPickupResolution({ kind: "empty" })
             setPickupLocationsError((loadError as Error).message)
         } finally {
             setPickupLocationsLoading(false)
         }
-    }, [])
+    }, [pickupProductIds])
 
     const [izipayCheckoutData, setIzipayCheckoutData] = useState<{
         authorization: string
@@ -181,9 +198,28 @@ export default function MerchCheckoutPage() {
     }, [deliveryMethod])
 
     const selectedPickupLocation = useMemo(
-        () => pickupLocations.find((location) => location.id === pickupLocationId) ?? null,
-        [pickupLocationId, pickupLocations]
+        () =>
+            pickupResolution.kind === "single"
+                ? pickupLocations.find((location) => location.id === pickupResolution.pickupLocationId) ?? null
+                : null,
+        [pickupResolution, pickupLocations]
     )
+    const canPickup =
+        !pickupLocationsLoading &&
+        !pickupLocationsError &&
+        pickupResolution.kind === "single" &&
+        selectedPickupLocation !== null
+
+    useEffect(() => {
+        if (
+            destinationIsLima === false &&
+            deliveryMethod === "PICKUP_OFFICE" &&
+            !pickupLocationsLoading &&
+            !canPickup
+        ) {
+            setDeliveryMethod("SHIPPING_HOME")
+        }
+    }, [canPickup, deliveryMethod, destinationIsLima, pickupLocationsLoading])
 
     const grandTotal = itemsTotal + shippingCost
     const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
@@ -223,11 +259,17 @@ export default function MerchCheckoutPage() {
             if (!shippingAddress.trim()) return "Dirección de envío requerida"
             if (!shippingDistrito.trim()) return "Distrito requerido"
             if (!shippingPhone.trim()) return "Teléfono de contacto para envío requerido"
-        } else if (!selectedPickupLocation) {
-            return pickupLocationsError || "Selecciona una sede de recojo disponible."
+        } else if (pickupLocationsLoading) {
+            return "Espera mientras confirmamos la sede asignada a tus productos."
+        } else if (pickupLocationsError) {
+            return pickupLocationsError
+        } else if (pickupResolution.kind === "mixed") {
+            return "Tu carrito contiene productos de sedes distintas. Para recojo, cómpralos en pedidos separados."
+        } else if (pickupResolution.kind === "unavailable" || !selectedPickupLocation) {
+            return "Uno o más productos no tiene una sede de recojo activa. Actualiza tu carrito o elige envío."
         }
         return null
-    }, [items.length, itemsTotal, billing, destinationIsLima, deliveryMethod, selectedPickupLocation, pickupLocationsError, shippingAddress, shippingDistrito, shippingPhone])
+    }, [items.length, itemsTotal, billing, destinationIsLima, deliveryMethod, selectedPickupLocation, pickupLocationsError, pickupLocationsLoading, pickupResolution, shippingAddress, shippingDistrito, shippingPhone])
 
     const handleCheckout = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -269,7 +311,6 @@ export default function MerchCheckoutPage() {
                             }
                         : {
                                 method: "PICKUP_OFFICE" as const,
-                                pickupLocationId: selectedPickupLocation?.id,
                             },
             }
             const orderFingerprint = JSON.stringify(orderPayload)
@@ -539,7 +580,7 @@ export default function MerchCheckoutPage() {
                                     <button
                                         type="button"
                                         onClick={() => setDeliveryMethod("PICKUP_OFFICE")}
-                                        disabled={pickupLocationsLoading || pickupLocations.length === 0}
+                                        disabled={!canPickup}
                                         className={`p-4 rounded-xl border-2 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                                             deliveryMethod === "PICKUP_OFFICE"
                                                 ? "border-fdnda-primary bg-fdnda-primary/5"
@@ -552,23 +593,25 @@ export default function MerchCheckoutPage() {
                                         </div>
                                         <p className="text-xs text-muted-foreground">
                                             {pickupLocationsLoading
-                                                ? "Cargando sedes..."
-                                                : pickupLocations.length > 0
-                                                    ? `${pickupLocations.length} ${pickupLocations.length === 1 ? "sede disponible" : "sedes disponibles"} · Sin costo`
-                                                    : "Sin sedes activas"}
+                                                ? "Confirmando sede asignada..."
+                                                : pickupResolution.kind === "single" && selectedPickupLocation
+                                                    ? `${selectedPickupLocation.name} · Sin costo`
+                                                    : pickupResolution.kind === "mixed"
+                                                        ? `${pickupLocations.length} sedes distintas · Compra por separado`
+                                                        : "Recojo no disponible para este carrito"}
                                         </p>
                                     </button>
                                 </div>
 
                                 {deliveryMethod === "PICKUP_OFFICE" && (
-                                    <fieldset className="space-y-2">
-                                        <legend className="text-sm font-semibold text-foreground">
-                                            Elige dónde recogerás tu pedido
-                                        </legend>
+                                    <div className="space-y-2" aria-live="polite">
+                                        <p className="text-sm font-semibold text-foreground">
+                                            Sede asignada a tus productos
+                                        </p>
                                         {pickupLocationsLoading ? (
                                             <div className="flex items-center gap-2 rounded-xl border border-border bg-gray-50 p-4 text-sm text-muted-foreground">
                                                 <Loader2 className="h-4 w-4 animate-spin" />
-                                                Cargando sedes de recojo...
+                                                Confirmando dónde recogerás tu pedido...
                                             </div>
                                         ) : pickupLocationsError ? (
                                             <div className="rounded-xl border border-red-200 bg-red-50 p-4">
@@ -577,45 +620,42 @@ export default function MerchCheckoutPage() {
                                                     Volver a intentar
                                                 </Button>
                                             </div>
-                                        ) : pickupLocations.length === 0 ? (
+                                        ) : pickupResolution.kind === "mixed" ? (
                                             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                                                No hay sedes activas en este momento. Intenta más tarde o contacta a soporte.
+                                                <p className="font-semibold">Este carrito combina productos de sedes distintas.</p>
+                                                <p className="mt-1">
+                                                    Para recogerlos, realiza un pedido separado por cada sede.
+                                                </p>
+                                                <ul className="mt-3 space-y-1">
+                                                    {pickupLocations.map((location) => (
+                                                        <li key={location.id} className="flex items-start gap-2">
+                                                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                                            <span className="break-words">{location.name} · {formatMerchPickupAddress(location)}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        ) : pickupResolution.kind === "unavailable" || !selectedPickupLocation ? (
+                                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                                                Uno o más productos no tiene una sede de recojo activa. Retíralo del carrito o elige envío a provincia.
                                             </div>
                                         ) : (
-                                            <div className="grid grid-cols-1 gap-2">
-                                                {pickupLocations.map((location) => (
-                                                    <label
-                                                        key={location.id}
-                                                        className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
-                                                            pickupLocationId === location.id
-                                                                ? "border-fdnda-primary bg-fdnda-primary/5"
-                                                                : "border-border bg-white hover:border-fdnda-primary/40"
-                                                        }`}
-                                                    >
-                                                        <input
-                                                            type="radio"
-                                                            name="pickupLocation"
-                                                            value={location.id}
-                                                            checked={pickupLocationId === location.id}
-                                                            onChange={() => setPickupLocationId(location.id)}
-                                                            className="mt-1 h-4 w-4 accent-[hsl(var(--fdnda-primary))]"
-                                                        />
-                                                        <span className="min-w-0">
-                                                            <span className="block text-sm font-semibold text-foreground">{location.name}</span>
-                                                            <span className="mt-0.5 block text-sm text-muted-foreground break-words">
-                                                                {formatMerchPickupAddress(location)}
-                                                            </span>
-                                                            {location.instructions && (
-                                                                <span className="mt-1 block text-xs text-muted-foreground break-words">
-                                                                    {location.instructions}
-                                                                </span>
-                                                            )}
-                                                        </span>
-                                                    </label>
-                                                ))}
+                                            <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+                                                <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-semibold break-words">{selectedPickupLocation.name}</p>
+                                                    <p className="mt-0.5 text-sm break-words opacity-80">
+                                                        {formatMerchPickupAddress(selectedPickupLocation)}
+                                                    </p>
+                                                    {selectedPickupLocation.instructions && (
+                                                        <p className="mt-1 text-xs break-words opacity-75">
+                                                            {selectedPickupLocation.instructions}
+                                                        </p>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
-                                    </fieldset>
+                                    </div>
                                 )}
 
                                 {deliveryMethod === "SHIPPING_HOME" && (

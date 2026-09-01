@@ -102,6 +102,7 @@ export async function POST(request: NextRequest) {
             initialStock,
             isActive = true,
             sortOrder = 0,
+            pickupLocationId,
             servilexServiceCode,
             servilexSucursalCode,
         } = body
@@ -118,6 +119,17 @@ export async function POST(request: NextRequest) {
         const priceNum = Number(price)
         if (!Number.isFinite(priceNum) || priceNum <= 0) {
             return NextResponse.json({ success: false, error: "Precio inválido" }, { status: 400 })
+        }
+        if (typeof pickupLocationId !== "string" || !pickupLocationId.trim()) {
+            return NextResponse.json({ success: false, error: "Selecciona una sede de recojo." }, { status: 400 })
+        }
+
+        const pickupLocation = await prisma.merchPickupLocation.findFirst({
+            where: { id: pickupLocationId.trim(), isActive: true },
+            select: { id: true },
+        })
+        if (!pickupLocation) {
+            return NextResponse.json({ success: false, error: "La sede de recojo seleccionada no está activa." }, { status: 400 })
         }
 
         const sizesArray = hasSizes ? normalizeSizes(availableSizes) : []
@@ -169,6 +181,7 @@ export async function POST(request: NextRequest) {
                 availableSizes: hasSizes ? (sizesArray as Prisma.InputJsonValue) : Prisma.JsonNull,
                 isActive: Boolean(isActive),
                 sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 0,
+                pickupLocation: { connect: { id: pickupLocation.id } },
                 servilexServiceCode:
                     typeof servilexServiceCode === "string" && servilexServiceCode.trim()
                         ? servilexServiceCode.trim()

@@ -16,7 +16,7 @@ export default async function AdminMerchPickupLocationsPage() {
 
     const locations = await prisma.merchPickupLocation.findMany({
         orderBy: [{ isActive: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
-        include: { _count: { select: { orders: true } } },
+        include: { _count: { select: { orders: true, products: true } } },
     })
 
     const initialLocations: AdminMerchPickupLocation[] = locations.map((location) => ({

@@ -22,6 +22,14 @@ export interface MerchProductView {
     imageUrls: string[]
     hasSizes: boolean
     availableSizes: string[]
+    pickupLocation: {
+        id: string
+        name: string
+        address: string
+        district: string | null
+        instructions: string | null
+        isActive: boolean
+    }
     isSoldOut: boolean
     variants: MerchVariantView[]
 }

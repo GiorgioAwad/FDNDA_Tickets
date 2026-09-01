@@ -27,6 +27,9 @@ const CATEGORY_LABELS: Record<string, string> = {
 async function getProducts() {
     return prisma.merchProduct.findMany({
         include: {
+            pickupLocation: {
+                select: { name: true, district: true, isActive: true },
+            },
             variants: true,
             _count: { select: { variants: true } },
         },
@@ -142,6 +145,14 @@ export default async function AdminMerchPage() {
                                         )}
                                     </div>
                                     <h3 className="font-semibold text-foreground line-clamp-1">{product.name}</h3>
+                                    <div className="flex min-w-0 items-start gap-1.5 text-xs text-muted-foreground">
+                                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                        <span className="break-words">
+                                            Recojo en {product.pickupLocation.name}
+                                            {product.pickupLocation.district ? ` · ${product.pickupLocation.district}` : ""}
+                                            {!product.pickupLocation.isActive ? " · Sede inactiva" : ""}
+                                        </span>
+                                    </div>
                                     <div className="flex items-center justify-between text-sm">
                                         <span className="font-display font-bold text-fdnda-primary text-lg">
                                             {formatPrice(Number(product.price))}

@@ -29,7 +29,7 @@ export interface AdminMerchPickupLocation {
     sortOrder: number
     createdAt: string
     updatedAt: string
-    _count: { orders: number }
+    _count: { orders: number; products: number }
 }
 
 interface LocationForm {
@@ -229,6 +229,7 @@ export function MerchPickupLocationsManager({
                         <div className="space-y-3">
                             {locations.map((location) => {
                                 const busy = busyId === location.id
+                                const hasProducts = location._count.products > 0
                                 return (
                                     <article
                                         key={location.id}
@@ -265,10 +266,21 @@ export function MerchPickupLocationsManager({
                                                         {location.instructions}
                                                     </p>
                                                 )}
-                                                <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-                                                    <PackageCheck className="h-4 w-4" />
-                                                    {location._count.orders} {location._count.orders === 1 ? "pedido asociado" : "pedidos asociados"}
+                                                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                                    <span className="inline-flex items-center gap-1.5">
+                                                        <PackageCheck className="h-4 w-4" />
+                                                        {location._count.orders} {location._count.orders === 1 ? "pedido asociado" : "pedidos asociados"}
+                                                    </span>
+                                                    <span className="inline-flex items-center gap-1.5">
+                                                        <Building2 className="h-4 w-4" />
+                                                        {location._count.products} {location._count.products === 1 ? "producto asignado" : "productos asignados"}
+                                                    </span>
                                                 </div>
+                                                {hasProducts && location.isActive && (
+                                                    <p className="mt-2 text-xs text-amber-700">
+                                                        Reasigna los productos antes de desactivar o eliminar esta sede.
+                                                    </p>
+                                                )}
                                             </div>
 
                                             <div className="flex shrink-0 flex-wrap gap-2">
@@ -276,7 +288,14 @@ export function MerchPickupLocationsManager({
                                                     <Pencil className="h-4 w-4" />
                                                     Editar
                                                 </Button>
-                                                <Button type="button" variant="outline" size="sm" onClick={() => toggleLocation(location)} disabled={busy}>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => toggleLocation(location)}
+                                                    disabled={busy || (location.isActive && hasProducts)}
+                                                    title={location.isActive && hasProducts ? "Reasigna primero los productos vinculados" : undefined}
+                                                >
                                                     {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
                                                     {location.isActive ? "Desactivar" : "Activar"}
                                                 </Button>
@@ -287,7 +306,8 @@ export function MerchPickupLocationsManager({
                                                     aria-label={`Eliminar ${location.name}`}
                                                     className="text-red-600 hover:bg-red-50 hover:text-red-700"
                                                     onClick={() => removeLocation(location)}
-                                                    disabled={busy}
+                                                    disabled={busy || hasProducts}
+                                                    title={hasProducts ? "Reasigna primero los productos vinculados" : undefined}
                                                 >
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>

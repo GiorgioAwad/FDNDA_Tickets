@@ -10,6 +10,16 @@ export async function GET() {
         const products = await prisma.merchProduct.findMany({
             where: { isActive: true },
             include: {
+                pickupLocation: {
+                    select: {
+                        id: true,
+                        name: true,
+                        address: true,
+                        district: true,
+                        instructions: true,
+                        isActive: true,
+                    },
+                },
                 variants: {
                     where: { isActive: true },
                     orderBy: { size: "asc" },
@@ -41,6 +51,7 @@ export async function GET() {
                 imageUrls: Array.isArray(product.imageUrls) ? product.imageUrls : [],
                 hasSizes: product.hasSizes,
                 availableSizes: Array.isArray(product.availableSizes) ? product.availableSizes : [],
+                pickupLocation: product.pickupLocation,
                 isSoldOut: totalAvailable === 0,
                 variants,
             }

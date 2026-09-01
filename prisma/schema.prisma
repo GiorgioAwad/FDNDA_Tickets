@@ -988,6 +988,7 @@ model TicketIssuanceLog {
 
 model MerchProduct {
   id                   String        @id @default(cuid())
+  pickupLocationId     String
   slug                 String        @unique
   name                 String
   description          String?       @db.Text
@@ -1008,9 +1009,11 @@ model MerchProduct {
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
-  servilexService ServilexService? @relation(fields: [servilexServiceId], references: [id])
+  servilexService ServilexService?    @relation(fields: [servilexServiceId], references: [id])
+  pickupLocation  MerchPickupLocation @relation(fields: [pickupLocationId], references: [id], onDelete: Restrict)
   variants        MerchVariant[]
 
+  @@index([pickupLocationId])
   @@index([category, zone, isActive])
   @@index([isActive, sortOrder])
   @@map("merch_products")
@@ -1047,7 +1050,8 @@ model MerchPickupLocation {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  orders Order[]
+  orders   Order[]
+  products MerchProduct[]
 
   @@index([isActive, sortOrder])
   @@map("merch_pickup_locations")

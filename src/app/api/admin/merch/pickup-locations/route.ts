@@ -22,7 +22,7 @@ export async function GET() {
 
     const locations = await prisma.merchPickupLocation.findMany({
         orderBy: [{ isActive: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
-        include: { _count: { select: { orders: true } } },
+        include: { _count: { select: { orders: true, products: true } } },
     })
 
     return NextResponse.json({ success: true, data: locations })
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
             isActive: data.isActive ?? true,
             sortOrder: data.sortOrder ?? 0,
         },
-        include: { _count: { select: { orders: true } } },
+        include: { _count: { select: { orders: true, products: true } } },
     })
 
     return NextResponse.json({ success: true, data: location }, { status: 201 })

@@ -32,12 +32,24 @@ export async function PATCH(
     }
 
     const { id } = await params
-    const existing = await prisma.merchPickupLocation.findUnique({ where: { id } })
+    const existing = await prisma.merchPickupLocation.findUnique({
+        where: { id },
+        include: { _count: { select: { products: true } } },
+    })
     if (!existing) {
         return NextResponse.json({ success: false, error: "Sede no encontrada" }, { status: 404 })
     }
 
     const data = parsed.data
+    if (data.isActive === false && existing._count.products > 0) {
+        return NextResponse.json(
+            {
+                success: false,
+                error: `Reasigna los ${existing._count.products} producto(s) vinculados antes de desactivar esta sede.`,
+            },
+            { status: 409 }
+        )
+    }
     const location = await prisma.merchPickupLocation.update({
         where: { id },
         data: {
@@ -48,7 +60,7 @@ export async function PATCH(
             ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
             ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
         },
-        include: { _count: { select: { orders: true } } },
+        include: { _count: { select: { orders: true, products: true } } },
     })
 
     return NextResponse.json({ success: true, data: location })
@@ -66,17 +78,27 @@ export async function DELETE(
     const { id } = await params
     const existing = await prisma.merchPickupLocation.findUnique({
         where: { id },
-        include: { _count: { select: { orders: true } } },
+        include: { _count: { select: { orders: true, products: true } } },
     })
     if (!existing) {
         return NextResponse.json({ success: false, error: "Sede no encontrada" }, { status: 404 })
+    }
+
+    if (existing._count.products > 0) {
+        return NextResponse.json(
+            {
+                success: false,
+                error: `Reasigna los ${existing._count.products} producto(s) vinculados antes de eliminar esta sede.`,
+            },
+            { status: 409 }
+        )
     }
 
     if (existing._count.orders > 0) {
         const location = await prisma.merchPickupLocation.update({
             where: { id },
             data: { isActive: false },
-            include: { _count: { select: { orders: true } } },
+            include: { _count: { select: { orders: true, products: true } } },
         })
         return NextResponse.json({
             success: true,

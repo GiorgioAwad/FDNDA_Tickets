@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ImageUploader } from "@/components/ui/image-uploader"
-import { Save, Trash2 } from "lucide-react"
+import { ExternalLink, MapPin, Save, Trash2 } from "lucide-react"
 
 type Category = "POLERA" | "GORRA" | "PIN" | "OTROS"
 type Zone = "LIMA" | "SUR" | "NORTE" | "ORIENTE" | "GENERICA"
@@ -31,14 +32,25 @@ interface MerchProductFormData {
     availableSizes: string[]
     isActive: boolean
     sortOrder: number
+    pickupLocationId: string
     servilexServiceCode: string | null
     servilexSucursalCode: string | null
     initialStock?: number
 }
 
+export interface MerchPickupLocationOption {
+    id: string
+    name: string
+    address: string
+    district: string | null
+    instructions: string | null
+    isActive: boolean
+}
+
 interface MerchProductFormProps {
     initialData?: Partial<MerchProductFormData> & { imageUrls?: string[] }
     isEdit?: boolean
+    pickupLocations: MerchPickupLocationOption[]
 }
 
 const DEFAULT_SIZES = ["S", "M", "L", "XL"]
@@ -58,7 +70,7 @@ const ZONE_OPTIONS: { value: Zone; label: string }[] = [
     { value: "ORIENTE", label: "Zona 4 — Oriente" },
 ]
 
-export function MerchProductForm({ initialData, isEdit = false }: MerchProductFormProps) {
+export function MerchProductForm({ initialData, isEdit = false, pickupLocations }: MerchProductFormProps) {
     const router = useRouter()
     const [submitting, setSubmitting] = useState(false)
     const [deleting, setDeleting] = useState(false)
@@ -83,6 +95,10 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
             : DEFAULT_SIZES,
         isActive: initialData?.isActive ?? true,
         sortOrder: initialData?.sortOrder ?? 0,
+        pickupLocationId:
+            initialData?.pickupLocationId ??
+            pickupLocations.find((location) => location.isActive)?.id ??
+            "",
         servilexServiceCode: initialData?.servilexServiceCode ?? null,
         servilexSucursalCode: initialData?.servilexSucursalCode ?? null,
         initialStock: 0,
@@ -172,6 +188,17 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
             toast.error("Indica al menos una talla")
             return
         }
+        const selectedPickupLocation = pickupLocations.find(
+            (location) => location.id === form.pickupLocationId
+        )
+        if (!selectedPickupLocation) {
+            toast.error("Selecciona la sede donde se recogerá este producto")
+            return
+        }
+        if (!selectedPickupLocation.isActive) {
+            toast.error("La sede asignada está inactiva. Elige una sede activa")
+            return
+        }
 
         setSubmitting(true)
         try {
@@ -192,6 +219,7 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
                 availableSizes: form.hasSizes ? form.availableSizes : null,
                 isActive: form.isActive,
                 sortOrder: Number(form.sortOrder) || 0,
+                pickupLocationId: form.pickupLocationId,
                 servilexServiceCode: form.servilexServiceCode,
                 servilexSucursalCode: form.servilexServiceCode ? abioSucursal || null : null,
                 ...(isEdit ? {} : { initialStock: Number(form.initialStock) || 0 }),
@@ -317,6 +345,81 @@ export function MerchProductForm({ initialData, isEdit = false }: MerchProductFo
                                 />
                             </div>
                         </div>
+                    </div>
+
+                    <div className="space-y-4 rounded-xl border border-border bg-white p-5">
+                        <div className="flex items-start gap-3">
+                            <div className="mt-0.5 rounded-lg bg-fdnda-primary/10 p-2 text-fdnda-primary">
+                                <MapPin className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                                <h3 className="font-display text-lg font-bold text-foreground">Sede de recojo</h3>
+                                <p className="mt-0.5 text-sm text-muted-foreground">
+                                    El comprador recogerá este producto únicamente en la sede asignada.
+                                </p>
+                            </div>
+                        </div>
+
+                        {pickupLocations.length === 0 ? (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                                <p className="font-semibold">No hay sedes configuradas.</p>
+                                <p className="mt-1">Crea una sede activa antes de guardar el producto.</p>
+                                <Link
+                                    href="/admin/merch/sedes"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-3 inline-flex items-center gap-1.5 font-semibold text-fdnda-primary underline underline-offset-4"
+                                >
+                                    Configurar sedes
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                </Link>
+                            </div>
+                        ) : (
+                            <div>
+                                <label htmlFor="product-pickup-location" className="mb-1.5 block text-sm font-semibold text-foreground">
+                                    Sede asignada *
+                                </label>
+                                <select
+                                    id="product-pickup-location"
+                                    value={form.pickupLocationId}
+                                    onChange={(event) => setForm({ ...form, pickupLocationId: event.target.value })}
+                                    required
+                                    className="h-11 w-full rounded-md border border-input bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-sm"
+                                >
+                                    <option value="">Selecciona una sede</option>
+                                    {pickupLocations.map((location) => (
+                                        <option key={location.id} value={location.id} disabled={!location.isActive}>
+                                            {location.name}{location.district ? ` · ${location.district}` : ""}{location.isActive ? "" : " · Inactiva"}
+                                        </option>
+                                    ))}
+                                </select>
+
+                                {(() => {
+                                    const selected = pickupLocations.find(
+                                        (location) => location.id === form.pickupLocationId
+                                    )
+                                    if (!selected) return null
+                                    return (
+                                        <div className={`mt-3 rounded-xl border p-3 text-sm ${
+                                            selected.isActive
+                                                ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                                                : "border-amber-200 bg-amber-50 text-amber-950"
+                                        }`}>
+                                            <p className="font-semibold break-words">{selected.name}</p>
+                                            <p className="mt-0.5 break-words opacity-80">
+                                                {selected.address}{selected.district ? `, ${selected.district}` : ""}
+                                            </p>
+                                            {selected.instructions && (
+                                                <p className="mt-1 break-words text-xs opacity-75">{selected.instructions}</p>
+                                            )}
+                                            {!selected.isActive && (
+                                                <p className="mt-2 font-semibold">Reasigna el producto para poder guardarlo.</p>
+                                            )}
+                                        </div>
+                                    )
+                                })()}
+                            </div>
+                        )}
                     </div>
 
                     <div className="bg-white rounded-xl border border-border p-5 space-y-4">
