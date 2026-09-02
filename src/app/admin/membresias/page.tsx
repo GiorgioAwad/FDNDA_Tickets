@@ -11,6 +11,7 @@ import {
     RefreshCw,
     Save,
     Search,
+    Snowflake,
     Ticket,
     Users,
 } from "lucide-react"
@@ -594,15 +595,27 @@ export default function AdminMembershipsPage() {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-4">
-                                                    <Button
-                                                        type="button"
-                                                        size="sm"
-                                                        onClick={() => handleSave(membership)}
-                                                        disabled={!canSave || savingId === membership.id}
-                                                    >
-                                                        <Save className="h-4 w-4" />
-                                                        Guardar
-                                                    </Button>
+                                                    <div className="flex flex-col items-start gap-2">
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            onClick={() => handleSave(membership)}
+                                                            disabled={!canSave || savingId === membership.id}
+                                                        >
+                                                            <Save className="h-4 w-4" />
+                                                            Guardar
+                                                        </Button>
+                                                        {membership.status === "ACTIVE" && !membership.freeze ? (
+                                                            <Button asChild size="sm" variant="outline">
+                                                                <Link
+                                                                    href={`/admin/membresias/${membership.id}#congelamiento`}
+                                                                >
+                                                                    <Snowflake className="h-4 w-4" />
+                                                                    Congelar
+                                                                </Link>
+                                                            </Button>
+                                                        ) : null}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         )

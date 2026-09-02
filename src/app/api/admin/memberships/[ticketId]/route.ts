@@ -24,10 +24,12 @@ import {
 import { prisma } from "@/lib/prisma"
 import { formatDateUTC, getTodayDateString } from "@/lib/qr"
 import {
+    ADMIN_MEMBERSHIP_FREEZE_OPTIONS,
     buildAttendanceSummary,
     getEffectiveScheduleSelection,
     getMembershipAccessStatus,
     getMembershipAnchor,
+    getEligibleMembershipFreezeMonths,
     getMembershipPeriod,
 } from "@/lib/scan-helpers"
 import { getAcMatriculaFromGroupKey } from "@/lib/servilex-invoice-guard"
@@ -247,6 +249,23 @@ export async function GET(
                         result: scan.result,
                         notes: scan.notes,
                     })),
+                },
+                membershipFreeze: {
+                    applied: record.membershipFreeze
+                        ? {
+                              month: record.membershipFreeze.month,
+                              start: formatDateUTC(record.membershipFreeze.startDate),
+                              end: formatDateUTC(record.membershipFreeze.endDate),
+                          }
+                        : null,
+                    availableMonths: record.membershipFreeze
+                        ? []
+                        : getEligibleMembershipFreezeMonths(
+                              scanTicket,
+                              new Date(),
+                              24,
+                              ADMIN_MEMBERSHIP_FREEZE_OPTIONS
+                          ),
                 },
                 scheduleProfile: profile,
                 currentScheduleInput: scheduleSelectionToInput(

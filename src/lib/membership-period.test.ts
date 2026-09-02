@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
+    ADMIN_MEMBERSHIP_FREEZE_OPTIONS,
     getMembershipPeriod,
     getMembershipQuotaPeriod,
     getMembershipExpiry,
@@ -308,6 +309,38 @@ test("validateMembershipFreezeMonth requires 48 hours notice", () => {
     if (!result.ok) {
         assert.match(result.error, /48 horas/)
     }
+})
+
+test("admin can freeze with less than 48 hours notice", () => {
+    const ticket = makeTicket("2026-07-01", 20, [], {
+        membershipStartDate: "2026-03-01",
+        membershipDurationMonths: 12,
+    })
+
+    const result = validateMembershipFreezeMonth(
+        ticket,
+        "2026-08",
+        new Date("2026-07-31T12:00:00Z"),
+        ADMIN_MEMBERSHIP_FREEZE_OPTIONS
+    )
+
+    assert.equal(result.ok, true)
+})
+
+test("admin can freeze the current month", () => {
+    const ticket = makeTicket("2026-07-01", 20, [], {
+        membershipStartDate: "2026-03-01",
+        membershipDurationMonths: 12,
+    })
+
+    const result = validateMembershipFreezeMonth(
+        ticket,
+        "2026-08",
+        new Date("2026-08-15T12:00:00Z"),
+        ADMIN_MEMBERSHIP_FREEZE_OPTIONS
+    )
+
+    assert.equal(result.ok, true)
 })
 
 test("validateMembershipFreezeMonth caps voluntary freezes at November of the start year", () => {

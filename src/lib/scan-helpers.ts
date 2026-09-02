@@ -462,10 +462,21 @@ export type MembershipFreezeValidationResult =
     | { ok: true; range: MembershipFreezeMonthRange; membershipExpiry: string }
     | { ok: false; error: string }
 
+export type MembershipFreezeValidationOptions = {
+    allowCurrentMonth?: boolean
+    minNoticeHours?: number
+}
+
+export const ADMIN_MEMBERSHIP_FREEZE_OPTIONS: Readonly<MembershipFreezeValidationOptions> = {
+    allowCurrentMonth: true,
+    minNoticeHours: 0,
+}
+
 export const validateMembershipFreezeMonth = (
     ticket: ScanTicket,
     month: string,
     now: Date = new Date(),
+    options: MembershipFreezeValidationOptions = {},
     blackout: readonly number[] = MEMBERSHIP_BLACKOUT_MONTHS
 ): MembershipFreezeValidationResult => {
     if (!isFixedTermMembership(ticket)) {
@@ -494,13 +505,18 @@ export const validateMembershipFreezeMonth = (
     }
 
     const todayStr = getLimaDateString(now)
-    if (range.startStr <= todayStr) {
+    const currentMonth = todayStr.slice(0, 7)
+    if (options.allowCurrentMonth ? range.month < currentMonth : range.startStr <= todayStr) {
         return { ok: false, error: "No se aceptan congelamientos retroactivos o del mes en curso." }
     }
 
-    const minNoticeMs = 48 * 60 * 60 * 1000
-    if (startAt.getTime() - now.getTime() < minNoticeMs) {
-        return { ok: false, error: "Solicita el congelamiento con al menos 48 horas de anticipación." }
+    const minNoticeHours = options.minNoticeHours ?? 48
+    const minNoticeMs = minNoticeHours * 60 * 60 * 1000
+    if (minNoticeHours > 0 && startAt.getTime() - now.getTime() < minNoticeMs) {
+        return {
+            ok: false,
+            error: `Solicita el congelamiento con al menos ${minNoticeHours} horas de anticipación.`,
+        }
     }
 
     const anchor = getMembershipAnchor(ticket)
@@ -532,7 +548,8 @@ export const validateMembershipFreezeMonth = (
 export const getEligibleMembershipFreezeMonths = (
     ticket: ScanTicket,
     now: Date = new Date(),
-    maxMonthsAhead = 24
+    maxMonthsAhead = 24,
+    validationOptions: MembershipFreezeValidationOptions = {}
 ): MembershipFreezeMonthRange[] => {
     const { year, month } = getLimaDateParts(now)
     const currentMonth = `${year}-${pad2(month)}`
@@ -543,7 +560,7 @@ export const getEligibleMembershipFreezeMonths = (
     for (let offset = 0; offset <= maxMonthsAhead; offset += 1) {
         const candidate = addMonthsToMonthKey(currentMonth, offset)
         if (latestFreezeMonth && candidate > latestFreezeMonth) break
-        const result = validateMembershipFreezeMonth(ticket, candidate, now)
+        const result = validateMembershipFreezeMonth(ticket, candidate, now, validationOptions)
         if (result.ok) options.push(result.range)
     }
 

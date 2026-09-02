@@ -5,6 +5,7 @@ import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseDateOnly } from "@/lib/utils"
 import { formatDateUTC } from "@/lib/qr"
 import {
+    ADMIN_MEMBERSHIP_FREEZE_OPTIONS,
     getEligibleMembershipFreezeMonths,
     getMembershipAnchor,
     getMembershipExpiry,
@@ -41,12 +42,18 @@ export async function POST(
         if (!ticket) {
             return NextResponse.json({ success: false, error: "Entrada no encontrada" }, { status: 404 })
         }
-        if (ticket.userId !== user.id && !hasRole(user.role, "ADMIN")) {
+        const isAdmin = hasRole(user.role, "ADMIN")
+        if (ticket.userId !== user.id && !isAdmin) {
             return NextResponse.json({ success: false, error: "No autorizado" }, { status: 403 })
         }
 
         const scanTicket = ticket as unknown as ScanTicket
-        const validation = validateMembershipFreezeMonth(scanTicket, month)
+        const validation = validateMembershipFreezeMonth(
+            scanTicket,
+            month,
+            new Date(),
+            isAdmin ? ADMIN_MEMBERSHIP_FREEZE_OPTIONS : undefined
+        )
         if (!validation.ok) {
             return NextResponse.json({ success: false, error: validation.error }, { status: 400 })
         }

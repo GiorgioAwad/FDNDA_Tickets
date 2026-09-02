@@ -97,6 +97,18 @@ export interface MembershipDetail {
             notes: string | null
         }>
     }
+    membershipFreeze: {
+        applied: {
+            month: string
+            start: string
+            end: string
+        } | null
+        availableMonths: Array<{
+            month: string
+            startStr: string
+            endStr: string
+        }>
+    }
     scheduleProfile: ScheduleProfile | null
     currentScheduleInput: { category: string | null; frequency: string | null; hours: Record<string, string> }
     candidateTypes: DetailCandidateType[]

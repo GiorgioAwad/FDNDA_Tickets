@@ -7,6 +7,7 @@ import { AlertCircle, ArrowLeft, CalendarClock, History, MapPin, RefreshCw } fro
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { FreezeActions } from "./FreezeActions"
 import { ScheduleActions, type Plan } from "./ScheduleActions"
 import type { MembershipDetail } from "./types"
 
@@ -282,6 +283,8 @@ export default function MembershipDetailPage({
                     void load()
                 }}
             />
+
+            <FreezeActions detail={detail} onFrozen={() => void load()} />
 
             {/* 4. Historial */}
             <Card>
