@@ -70,7 +70,8 @@ export async function applyMembershipChange(
         }
     }
     if (writes.soldIncrementTypeId) {
-        const incremented = plan.overCapacityOverride
+        const incremented =
+            plan.overCapacityOverride || writes.soldIncrementUsesDateCapacity
             ? await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
                   UPDATE "ticket_types"
                   SET "sold" = "sold" + 1

@@ -13,6 +13,22 @@ import type { MembershipScheduleInput } from "@/lib/membership-schedule"
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
+const NON_DATE_TYPE_FIELDS = {
+    packageDaysCount: null,
+    validDays: [],
+    capacityByDate: false,
+    allowMultipleDailyScans: false,
+    eventCategory: "ACADEMIA",
+    eventStartDate: new Date("2026-01-01T00:00:00Z"),
+    eventEndDate: new Date("2026-12-31T00:00:00Z"),
+    dateInventories: [],
+    servilexSucursalCode: null,
+    servilexServiceCode: null,
+    servilexDisciplineCode: null,
+    servilexPoolCode: null,
+    servilexExtraConfig: null,
+} satisfies Partial<MembershipTicketTypeSnapshot>
+
 // Horario BRONCE ninos L-M-V 15:00-16:00 en VIDENA (03). Coincide con el caso
 // real de scripts/set-membership-schedule.ts.
 const VIDENA_BRONCE_TYPE: MembershipTicketTypeSnapshot = {
@@ -25,6 +41,7 @@ const VIDENA_BRONCE_TYPE: MembershipTicketTypeSnapshot = {
     sold: 40,
     isActive: true,
     isPackage: false,
+    ...NON_DATE_TYPE_FIELDS,
     monthlyClassLimit: 12,
     membershipDurationMonths: 6,
     membershipScheduleKey: "BRONCE",
@@ -71,6 +88,7 @@ function baseSnapshot(overrides: Partial<MembershipChangeSnapshot> = {}): Member
         orderItem: {
             id: "oi-1",
             ticketTypeId: "tt-videna-bronce",
+            quantity: 1,
             attendeeData: [{ matricula: "2299469", name: "Aylin Oriana Lachira Panta" }],
         },
         sourceType: VIDENA_BRONCE_TYPE,
@@ -392,6 +410,7 @@ const CDM_PLATA_TYPE: MembershipTicketTypeSnapshot = {
     sold: 10,
     isActive: true,
     isPackage: false,
+    ...NON_DATE_TYPE_FIELDS,
     monthlyClassLimit: 20,
     membershipDurationMonths: 6,
     membershipScheduleKey: "PLATA",
@@ -443,6 +462,7 @@ function plataSnapshot(): MembershipChangeSnapshot {
         orderItem: {
             id: "oi-2",
             ticketTypeId: "tt-videna-plata",
+            quantity: 1,
             attendeeData: [{ matricula: "7300631", name: "Jose Francisco Vasquez Hiyo" }],
         },
         sourceType: VIDENA_PLATA_TYPE,
@@ -696,6 +716,7 @@ const VMT_LMV_4PM: MembershipTicketTypeSnapshot = {
     sold: 12,
     isActive: true,
     isPackage: false,
+    ...NON_DATE_TYPE_FIELDS,
     monthlyClassLimit: 12,
     membershipDurationMonths: 6,
     membershipScheduleKey: null,
@@ -727,6 +748,7 @@ function vmtSnapshot(): MembershipChangeSnapshot {
         orderItem: {
             id: "oi-3",
             ticketTypeId: "tt-vmt-lmv-4pm",
+            quantity: 1,
             attendeeData: [{ matricula: "9001122", name: "Alumno VMT" }],
         },
         sourceType: VMT_LMV_4PM,
@@ -811,4 +833,121 @@ test("la autorizacion de sobrecupo forma parte de la huella de confirmacion", ()
         allowOverCapacity: true,
     })
     assert.notEqual(withoutOverride, withOverride)
+})
+
+test("el alcance del evento permite academia mensual aunque no tenga metadatos de membresia", () => {
+    const sourceType = {
+        ...VMT_LMV_4PM,
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+    }
+    const targetType = {
+        ...VMT_MJS_5PM,
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+    }
+    const snapshot: MembershipChangeSnapshot = {
+        ...vmtSnapshot(),
+        sourceType,
+        orderItem: {
+            ...vmtSnapshot().orderItem,
+            attendeeData: [{ name: "Ximena Quispe", email: "ximena@example.com" }],
+        },
+    }
+    const plan = planMembershipChange(snapshot, {
+        kind: "TRANSFER",
+        targetType,
+        allowAnySameEventTicket: true,
+    })
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.label, "Cambio de tipo, horario o turno")
+})
+
+test("el alcance generico nunca permite mover una entrada a otro evento", () => {
+    const plan = planMembershipChange(vmtSnapshot(), {
+        kind: "TRANSFER",
+        targetType: { ...VMT_MJS_5PM, eventId: "ev-otro" },
+        allowAnySameEventTicket: true,
+    })
+    assert.equal(plan.ok, false)
+    if (plan.ok) return
+    assert.ok(plan.blockers.some((blocker) => blocker.code === "TARGET_OTHER_EVENT"))
+})
+
+test("el panel bloquea items que agrupan varias entradas", () => {
+    const snapshot = vmtSnapshot()
+    snapshot.orderItem.quantity = 2
+    snapshot.orderItem.attendeeData = [
+        { name: "Asistente uno" },
+        { name: "Asistente dos" },
+    ]
+    const plan = planMembershipChange(snapshot, {
+        kind: "TRANSFER",
+        targetType: VMT_MJS_5PM,
+        allowAnySameEventTicket: true,
+    })
+    assert.equal(plan.ok, false)
+    if (plan.ok) return
+    assert.ok(plan.blockers.some((blocker) => blocker.code === "ORDER_ITEM_NOT_INDIVIDUAL"))
+})
+
+test("la equivalencia generica conserva la cantidad de dias comprada", () => {
+    const plan = planMembershipChange(vmtSnapshot(), {
+        kind: "TRANSFER",
+        targetType: { ...VMT_MJS_5PM, packageDaysCount: 10 },
+        allowAnySameEventTicket: true,
+    })
+    assert.equal(plan.ok, false)
+    if (plan.ok) return
+    assert.ok(plan.blockers.some((blocker) => blocker.code === "TARGET_NOT_EQUIVALENT"))
+})
+
+test("piscina usa el cupo diario aunque el contador global supere la capacidad base", () => {
+    const sourceType: MembershipTicketTypeSnapshot = {
+        ...VMT_LMV_4PM,
+        eventCategory: "PISCINA_LIBRE",
+        validDays: { dates: ["2026-09-10"] },
+        eventStartDate: new Date("2026-09-01T00:00:00Z"),
+        eventEndDate: new Date("2026-09-30T00:00:00Z"),
+        capacity: 10,
+        sold: 30,
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+    }
+    const targetType: MembershipTicketTypeSnapshot = {
+        ...sourceType,
+        id: "tt-piscina-tarde",
+        name: "17:00-18:00",
+        dateInventories: [
+            {
+                date: new Date("2026-09-10T00:00:00Z"),
+                capacity: 10,
+                sold: 2,
+                isEnabled: true,
+            },
+        ],
+    }
+    const snapshot: MembershipChangeSnapshot = {
+        ...vmtSnapshot(),
+        sourceType,
+        orderItem: {
+            ...vmtSnapshot().orderItem,
+            attendeeData: [
+                {
+                    name: "Entrada piscina",
+                    scheduleSelections: [{ date: "2026-09-10", shift: "07:00-08:00" }],
+                },
+            ],
+        },
+    }
+    const plan = planMembershipChange(snapshot, {
+        kind: "TRANSFER",
+        targetType,
+        allowAnySameEventTicket: true,
+    })
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.writes.soldIncrementUsesDateCapacity, true)
+    assert.equal(plan.overCapacityOverride, false)
 })

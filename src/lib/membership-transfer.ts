@@ -24,6 +24,12 @@ import {
     type MembershipScheduleSelection,
 } from "@/lib/membership-schedule"
 import { getAcMatriculaFromGroupKey } from "@/lib/servilex-invoice-guard"
+import {
+    buildTicketDateReservationCounts,
+    getRequiredTicketDateSelections,
+    usesTicketDateCapacity,
+} from "@/lib/ticket-date-capacity"
+import { normalizeScheduleSelections } from "@/lib/ticket-schedule"
 
 // ── Snapshot ──────────────────────────────────────────────────────────────────
 
@@ -37,9 +43,27 @@ export interface MembershipTicketTypeSnapshot {
     sold: number
     isActive: boolean
     isPackage: boolean
+    packageDaysCount: number | null
+    validDays: unknown
+    capacityByDate: boolean
+    allowMultipleDailyScans: boolean
     monthlyClassLimit: number | null
     membershipDurationMonths: number | null
     membershipScheduleKey: string | null
+    eventCategory: string
+    eventStartDate: Date
+    eventEndDate: Date
+    dateInventories: Array<{
+        date: Date
+        capacity: number
+        sold: number
+        isEnabled: boolean
+    }>
+    servilexSucursalCode: string | null
+    servilexServiceCode: string | null
+    servilexDisciplineCode: string | null
+    servilexPoolCode: string | null
+    servilexExtraConfig: unknown
 }
 
 export interface MembershipInvoiceSnapshot {
@@ -69,6 +93,7 @@ export interface MembershipChangeSnapshot {
     orderItem: {
         id: string
         ticketTypeId: string
+        quantity: number
         attendeeData: unknown
     }
     sourceType: MembershipTicketTypeSnapshot
@@ -86,6 +111,8 @@ export type MembershipChangeIntent =
            *  Solo se registra como sobrecupo cuando el movimiento realmente
            *  deja sold por encima de capacity. */
           allowOverCapacity?: boolean
+          /** Habilita entradas comunes, pero exclusivamente dentro del mismo evento. */
+          allowAnySameEventTicket?: boolean
       }
 
 // ── Resultado ─────────────────────────────────────────────────────────────────
@@ -106,6 +133,8 @@ export type MembershipChangeBlockerCode =
     | "TARGET_NOT_EQUIVALENT"
     | "INVOICE_MISSING"
     | "ORDER_PROVIDER_MOCK"
+    | "ORDER_ITEM_NOT_INDIVIDUAL"
+    | "TARGET_OTHER_EVENT"
 
 export interface MembershipChangeBlocker {
     code: MembershipChangeBlockerCode
@@ -139,6 +168,8 @@ export interface MembershipChangeWrites {
     }
     soldDecrementTypeId?: string
     soldIncrementTypeId?: string
+    /** El límite real ya se validó y reservó en el inventario diario. */
+    soldIncrementUsesDateCapacity?: boolean
 }
 
 export type MembershipChangePlan =
@@ -320,12 +351,16 @@ export function buildMembershipChangeFingerprint(
                   tt: intent.kind === "TRANSFER" ? intent.targetType.id : null,
                   s: normalizeScheduleIntent(intent.scheduleInput),
                   oc: intent.kind === "TRANSFER" ? intent.allowOverCapacity === true : false,
+                  ge: intent.kind === "TRANSFER" ? intent.allowAnySameEventTicket === true : false,
               }
             : null,
     })
 }
 
-function commonBlockers(snapshot: MembershipChangeSnapshot): MembershipChangeBlocker[] {
+function commonBlockers(
+    snapshot: MembershipChangeSnapshot,
+    options: { requireMatricula?: boolean } = {}
+): MembershipChangeBlocker[] {
     const blockers: MembershipChangeBlocker[] = []
     if (snapshot.ticket.status !== "ACTIVE") {
         blockers.push({
@@ -346,7 +381,17 @@ function commonBlockers(snapshot: MembershipChangeSnapshot): MembershipChangeBlo
                 "El carnet tiene horarios definidos por mes. Cambiar el horario base dejaria esos meses apuntando a un catalogo que ya no aplica: requiere revision manual por script.",
         })
     }
-    if (getAttendeeMatricula(snapshot.orderItem.attendeeData) === null) {
+    if (snapshot.orderItem.quantity !== 1) {
+        blockers.push({
+            code: "ORDER_ITEM_NOT_INDIVIDUAL",
+            message:
+                "La compra agrupa varias entradas en un mismo item. No se puede cambiar una sola sin separar primero la compra.",
+        })
+    }
+    if (
+        options.requireMatricula !== false &&
+        getAttendeeMatricula(snapshot.orderItem.attendeeData) === null
+    ) {
         blockers.push({
             code: "ATTENDEE_DATA_INVALID",
             message:
@@ -452,6 +497,14 @@ function planScheduleChange(
     }
 }
 
+function getTargetPoolShiftLabel(type: MembershipTicketTypeSnapshot): string {
+    const config = asRecord(type.servilexExtraConfig)
+    const start =
+        typeof config.horaInicio === "string" ? config.horaInicio.trim() : ""
+    const end = typeof config.horaFin === "string" ? config.horaFin.trim() : ""
+    return start && end ? `${start}-${end}` : type.name.trim()
+}
+
 /** Providers que bloquean cualquier correccion. */
 const PROVIDERS_BLOQUEADOS = new Set(["MOCK"])
 
@@ -504,9 +557,22 @@ function equivalenceBlockers(
         )
     }
     if (source.isPackage !== target.isPackage) diffs.push("modalidad de paquete")
+    if (source.packageDaysCount !== target.packageDaysCount) diffs.push("cantidad de dias")
+    if (source.capacityByDate !== target.capacityByDate) diffs.push("modalidad de cupo por fecha")
+    if (source.allowMultipleDailyScans !== target.allowMultipleDailyScans) {
+        diffs.push("regla de reingreso")
+    }
     if (source.membershipScheduleKey !== target.membershipScheduleKey) {
         diffs.push(`plan (${source.membershipScheduleKey} vs ${target.membershipScheduleKey})`)
     }
+    if (source.servilexSucursalCode !== target.servilexSucursalCode) {
+        diffs.push("sucursal del servicio")
+    }
+    if (source.servilexServiceCode !== target.servilexServiceCode) diffs.push("servicio")
+    if (source.servilexDisciplineCode !== target.servilexDisciplineCode) {
+        diffs.push("disciplina")
+    }
+    if (source.servilexPoolCode !== target.servilexPoolCode) diffs.push("piscina")
     if (diffs.length === 0) return []
     return [
         {
@@ -521,11 +587,20 @@ function planTransfer(
     intent: Extract<MembershipChangeIntent, { kind: "TRANSFER" }>
 ): MembershipChangePlan {
     const targetType = intent.targetType
+    const genericSameEvent = intent.allowAnySameEventTicket === true
     const scheduleInput = intent.scheduleInput ?? null
     const { sourceType } = snapshot
-    const blockers = [...commonBlockers(snapshot), ...invoiceBlockers(snapshot)]
-    const overCapacityOverride =
+    const targetUsesDateCapacity = usesTicketDateCapacity({
+        eventCategory: targetType.eventCategory,
+        capacityByDate: targetType.capacityByDate,
+    })
+    const blockers = [
+        ...commonBlockers(snapshot, { requireMatricula: !genericSameEvent }),
+        ...invoiceBlockers(snapshot),
+    ]
+    let overCapacityOverride =
         intent.allowOverCapacity === true &&
+        !targetUsesDateCapacity &&
         targetType.capacity !== 0 &&
         targetType.sold + 1 > targetType.capacity
 
@@ -550,12 +625,20 @@ function planTransfer(
         return { ok: false, blockers }
     }
 
+    if (genericSameEvent && targetType.eventId !== snapshot.ticket.eventId) {
+        blockers.push({
+            code: "TARGET_OTHER_EVENT",
+            message: "Desde este panel solo se puede cambiar a otra alternativa del mismo evento.",
+        })
+    }
+
     blockers.push(...equivalenceBlockers(sourceType, targetType))
 
     if (!targetType.isActive) {
         blockers.push({ code: "TARGET_INACTIVE", message: "El tipo destino esta desactivado." })
     }
     if (
+        !targetUsesDateCapacity &&
         targetType.capacity !== 0 &&
         targetType.sold + 1 > targetType.capacity &&
         !intent.allowOverCapacity
@@ -564,6 +647,53 @@ function planTransfer(
             code: "TARGET_FULL",
             message: `El tipo destino no tiene cupo: ${targetType.sold} vendidos de ${targetType.capacity}.`,
         })
+    }
+
+    if (targetUsesDateCapacity) {
+        try {
+            const attendees = Array.isArray(snapshot.orderItem.attendeeData)
+                ? snapshot.orderItem.attendeeData
+                : []
+            const reservations = buildTicketDateReservationCounts({
+                attendees,
+                quantity: snapshot.orderItem.quantity,
+                validDays: targetType.validDays,
+                eventStartDate: targetType.eventStartDate,
+                eventEndDate: targetType.eventEndDate,
+                ticketLabel: targetType.name,
+                requiredSelections: getRequiredTicketDateSelections(targetType),
+            })
+            for (const [dateKey, quantity] of reservations) {
+                const inventory = targetType.dateInventories.find(
+                    (row) => row.date.toISOString().slice(0, 10) === dateKey
+                )
+                if (!inventory || !inventory.isEnabled) {
+                    blockers.push({
+                        code: "TARGET_FULL",
+                        message: `El destino no tiene inventario habilitado para el ${dateKey}.`,
+                    })
+                    continue
+                }
+                if (
+                    inventory.capacity > 0 &&
+                    inventory.sold + quantity > inventory.capacity
+                ) {
+                    if (intent.allowOverCapacity) {
+                        overCapacityOverride = true
+                    } else {
+                        blockers.push({
+                            code: "TARGET_FULL",
+                            message: `El destino no tiene cupo el ${dateKey}: ${inventory.sold} ocupados de ${inventory.capacity}.`,
+                        })
+                    }
+                }
+            }
+        } catch (error) {
+            blockers.push({
+                code: "TARGET_NOT_EQUIVALENT",
+                message: error instanceof Error ? error.message : "Las fechas compradas no aplican al destino.",
+            })
+        }
     }
     if (sourceType.sold < 1) {
         blockers.push({
@@ -621,6 +751,7 @@ function planTransfer(
         orderItem: { ticketTypeId: targetType.id },
         soldDecrementTypeId: sourceType.id,
         soldIncrementTypeId: targetType.id,
+        soldIncrementUsesDateCapacity: targetUsesDateCapacity,
     }
     if (!sameEvent) writes.ticket.eventId = targetType.eventId
     if (afterSelection) {
@@ -628,11 +759,29 @@ function planTransfer(
         const attendee = asRecord((snapshot.orderItem.attendeeData as unknown[])[0])
         writes.orderItem.attendeeData = [{ ...attendee, membershipSchedule: afterSelection }]
     }
+    if (
+        genericSameEvent &&
+        targetType.eventCategory === "PISCINA_LIBRE" &&
+        Array.isArray(snapshot.orderItem.attendeeData)
+    ) {
+        const attendee = asRecord(snapshot.orderItem.attendeeData[0])
+        const shift = getTargetPoolShiftLabel(targetType)
+        writes.orderItem.attendeeData = [{
+            ...attendee,
+            scheduleSelections: normalizeScheduleSelections(attendee.scheduleSelections).map(
+                (selection) => ({ ...selection, shift })
+            ),
+        }]
+    }
 
     return {
         ok: true,
         kind: "TRANSFER",
-        label: sameEvent ? "Cambio de horario (la franja es el tipo de entrada)" : "Cambio de sede",
+        label: sameEvent
+            ? genericSameEvent
+                ? "Cambio de tipo, horario o turno"
+                : "Cambio de horario (la franja es el tipo de entrada)"
+            : "Cambio de sede",
         before: buildState(
             sourceType,
             beforeSelection,

@@ -28,10 +28,31 @@ export const ticketTypeSnapshotSelect = {
     sold: true,
     isActive: true,
     isPackage: true,
+    packageDaysCount: true,
+    validDays: true,
+    capacityByDate: true,
+    allowMultipleDailyScans: true,
     monthlyClassLimit: true,
     membershipDurationMonths: true,
     membershipScheduleKey: true,
-    event: { select: { id: true, title: true, servilexSucursalCode: true } },
+    servilexSucursalCode: true,
+    servilexServiceCode: true,
+    servilexDisciplineCode: true,
+    servilexPoolCode: true,
+    servilexExtraConfig: true,
+    event: {
+        select: {
+            id: true,
+            title: true,
+            category: true,
+            startDate: true,
+            endDate: true,
+            servilexSucursalCode: true,
+        },
+    },
+    dateInventories: {
+        select: { date: true, capacity: true, sold: true, isEnabled: true },
+    },
 } satisfies Prisma.TicketTypeSelect
 
 export type TicketTypeSnapshotRecord = Prisma.TicketTypeGetPayload<{
@@ -50,6 +71,7 @@ export const membershipChangeInclude = {
             servilexSucursalCode: true,
             startDate: true,
             endDate: true,
+            category: true,
             membershipStartFixed: true,
         },
     },
@@ -107,9 +129,22 @@ export function toTicketTypeSnapshot(
         sold: record.sold,
         isActive: record.isActive,
         isPackage: record.isPackage,
+        packageDaysCount: record.packageDaysCount,
+        validDays: record.validDays,
+        capacityByDate: record.capacityByDate,
+        allowMultipleDailyScans: record.allowMultipleDailyScans,
         monthlyClassLimit: record.monthlyClassLimit,
         membershipDurationMonths: record.membershipDurationMonths,
         membershipScheduleKey: record.membershipScheduleKey,
+        eventCategory: record.event.category,
+        eventStartDate: record.event.startDate,
+        eventEndDate: record.event.endDate,
+        dateInventories: record.dateInventories,
+        servilexSucursalCode: record.servilexSucursalCode,
+        servilexServiceCode: record.servilexServiceCode,
+        servilexDisciplineCode: record.servilexDisciplineCode,
+        servilexPoolCode: record.servilexPoolCode,
+        servilexExtraConfig: record.servilexExtraConfig,
     }
 }
 
@@ -153,6 +188,7 @@ export function toChangeSnapshot(record: MembershipChangeRecord): MembershipChan
             // record.ticketTypeId (string): el fallback nunca se usa, solo
             // estrecha el tipo para MembershipChangeSnapshot.
             ticketTypeId: orderItem.ticketTypeId ?? record.ticketTypeId,
+            quantity: orderItem.quantity,
             attendeeData: orderItem.attendeeData,
         },
         sourceType: toTicketTypeSnapshot(record.ticketType),

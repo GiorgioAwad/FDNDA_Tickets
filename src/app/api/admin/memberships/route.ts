@@ -265,6 +265,7 @@ export async function GET(request: NextRequest) {
         )
         const search = searchParams.get("search")?.trim() || ""
         const eventId = searchParams.get("eventId")?.trim() || ""
+        const eventTicketsScope = searchParams.get("scope") === "EVENT_TICKETS"
         const statusParam = (searchParams.get("status") || "ACTIVE").toUpperCase()
 
         const statusFilter: Prisma.TicketWhereInput =
@@ -273,7 +274,7 @@ export async function GET(request: NextRequest) {
                 : {}
 
         const where: Prisma.TicketWhereInput = {
-            ...membershipTicketWhere,
+            ...(eventTicketsScope ? { order: { status: OrderStatus.PAID } } : membershipTicketWhere),
             ...buildSearchFilter(search),
             ...statusFilter,
             ...(eventId ? { eventId } : {}),

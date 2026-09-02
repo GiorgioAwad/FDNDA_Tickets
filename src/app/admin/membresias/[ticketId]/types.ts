@@ -10,6 +10,24 @@ export interface DetailTicketType {
     sold: number
     isActive: boolean
     isPackage: boolean
+    packageDaysCount: number | null
+    validDays: unknown
+    capacityByDate: boolean
+    allowMultipleDailyScans: boolean
+    eventCategory: string
+    eventStartDate: string
+    eventEndDate: string
+    dateInventories: Array<{
+        date: string
+        capacity: number
+        sold: number
+        isEnabled: boolean
+    }>
+    servilexSucursalCode: string | null
+    servilexServiceCode: string | null
+    servilexDisciplineCode: string | null
+    servilexPoolCode: string | null
+    servilexExtraConfig: unknown
     monthlyClassLimit: number | null
     membershipDurationMonths: number | null
     membershipScheduleKey: string | null
@@ -111,6 +129,22 @@ export interface MembershipDetail {
     }
     scheduleProfile: ScheduleProfile | null
     currentScheduleInput: { category: string | null; frequency: string | null; hours: Record<string, string> }
+    dateChange: {
+        enabled: boolean
+        reason: string | null
+        currentSelections: Array<{
+            date: string
+            shift: string | null
+            status: string
+        }>
+        options: Array<{
+            date: string
+            shifts: string[]
+            capacity: number
+            sold: number
+            isEnabled: boolean
+        }>
+    }
     candidateTypes: DetailCandidateType[]
     history: DetailHistoryRow[]
 }

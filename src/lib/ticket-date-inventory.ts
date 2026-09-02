@@ -17,8 +17,20 @@ const reserveExistingDateInventory = async (
     tx: Prisma.TransactionClient,
     ticketTypeId: string,
     date: Date,
-    quantity: number
+    quantity: number,
+    allowOverCapacity = false
 ) => {
+    if (allowOverCapacity) {
+        return tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+            UPDATE "ticket_type_date_inventories"
+            SET "sold" = "sold" + ${quantity},
+                "updatedAt" = CURRENT_TIMESTAMP
+            WHERE "ticketTypeId" = ${ticketTypeId}
+              AND "date" = ${date}
+              AND "isEnabled" = true
+            RETURNING "id"
+        `)
+    }
     return tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         UPDATE "ticket_type_date_inventories"
         SET "sold" = "sold" + ${quantity},
@@ -39,6 +51,8 @@ export async function reserveTicketTypeDateInventory(
         reservations: Map<string, number>
         ticketLabel: string
         requireConfigured?: boolean
+        /** Excepción administrativa: ignora el límite, nunca una fecha cerrada. */
+        allowOverCapacity?: boolean
     }
 ) {
     for (const [dateKey, quantity] of input.reservations) {
@@ -47,7 +61,8 @@ export async function reserveTicketTypeDateInventory(
             tx,
             input.ticketTypeId,
             dateValue,
-            quantity
+            quantity,
+            input.allowOverCapacity === true
         )
 
         if (updated.length > 0) {
@@ -83,7 +98,8 @@ export async function reserveTicketTypeDateInventory(
                   tx,
                   input.ticketTypeId,
                   dateValue,
-                  quantity
+                  quantity,
+                  input.allowOverCapacity === true
               )
 
         if (retried.length === 0) {
@@ -99,10 +115,29 @@ export async function releaseTicketTypeDateInventory(
     input: {
         ticketTypeId: string
         reservations: Map<string, number>
+        /** En correcciones administrativas, una reserva ausente debe abortar. */
+        requireExisting?: boolean
     }
 ) {
     for (const [dateKey, quantity] of input.reservations) {
         const dateValue = parseDateOnly(dateKey)
+        if (input.requireExisting) {
+            const released = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+                UPDATE "ticket_type_date_inventories"
+                SET "sold" = "sold" - ${quantity},
+                    "updatedAt" = CURRENT_TIMESTAMP
+                WHERE "ticketTypeId" = ${input.ticketTypeId}
+                  AND "date" = ${dateValue}
+                  AND "sold" >= ${quantity}
+                RETURNING "id"
+            `)
+            if (released.length === 0) {
+                throw new Error(
+                    `No se pudo liberar el cupo de origen para el ${dateKey}`
+                )
+            }
+            continue
+        }
         await tx.$executeRaw(Prisma.sql`
             UPDATE "ticket_type_date_inventories"
             SET "sold" = GREATEST("sold" - ${quantity}, 0),

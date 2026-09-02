@@ -100,3 +100,24 @@ test("expiration or cancellation releases the selected date", async () => {
     })
     assert.equal(executeCalls, 1)
 })
+
+test("an administrative transfer aborts when its source inventory is missing", async () => {
+    let executeCalls = 0
+    const tx = {
+        $queryRaw: async () => [],
+        $executeRaw: async () => {
+            executeCalls += 1
+            return 1
+        },
+    } as unknown as Prisma.TransactionClient
+
+    await assert.rejects(
+        releaseTicketTypeDateInventory(tx, {
+            ticketTypeId: "daily",
+            reservations: reservation,
+            requireExisting: true,
+        }),
+        /No se pudo liberar el cupo de origen/
+    )
+    assert.equal(executeCalls, 0, "strict transfers must not use the clamped release")
+})

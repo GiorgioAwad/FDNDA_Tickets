@@ -21,6 +21,15 @@ import {
 } from "@/lib/membership-transfer"
 import { onEventUpdated } from "@/lib/cached-queries"
 import { prisma } from "@/lib/prisma"
+import {
+    buildTicketDateReservationCounts,
+    getRequiredTicketDateSelections,
+    usesTicketDateCapacity,
+} from "@/lib/ticket-date-capacity"
+import {
+    releaseTicketTypeDateInventory,
+    reserveTicketTypeDateInventory,
+} from "@/lib/ticket-date-inventory"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -44,6 +53,7 @@ export async function POST(
             reason?: string
             preview?: boolean
             allowOverCapacity?: boolean
+            eventTicketsScope?: boolean
             // Contrato con la UI (Tarea 10), igual que en schedule/route.ts: la
             // huella (`plan.fingerprint`) que la respuesta de preview le
             // devolvio al admin. Al confirmar, la ruta la reenvia tal cual y ES
@@ -102,7 +112,7 @@ export async function POST(
         // a mano, mover de evento una entrada que no es membresia y arrastrarle
         // el contador de vendidos. Aqui no hay ni siquiera un requisito de
         // perfil de horario que lo tapara por accidente.
-        if (!isMembershipTicketType(record.ticketType)) {
+        if (!body.eventTicketsScope && !isMembershipTicketType(record.ticketType)) {
             return NextResponse.json(
                 { success: false, error: NOT_A_MEMBERSHIP_ERROR },
                 { status: 404 }
@@ -118,6 +128,7 @@ export async function POST(
             targetType: toTicketTypeSnapshot(targetRecord),
             scheduleInput: body.selection ?? null,
             allowOverCapacity: body.allowOverCapacity === true,
+            allowAnySameEventTicket: body.eventTicketsScope === true,
         }
 
         const plan = planMembershipChange(snapshot, intent)
@@ -161,6 +172,49 @@ export async function POST(
                 throw new MembershipChangeAbort(
                     "El carnet cambio desde que abriste la pantalla. Recarga y vuelve a revisar antes de aplicar."
                 )
+            }
+
+            if (
+                usesTicketDateCapacity({
+                    eventCategory: freshSnapshot.sourceType.eventCategory,
+                    capacityByDate: freshSnapshot.sourceType.capacityByDate,
+                })
+            ) {
+                const attendees = Array.isArray(freshSnapshot.orderItem.attendeeData)
+                    ? freshSnapshot.orderItem.attendeeData
+                    : []
+                const sourceReservations = buildTicketDateReservationCounts({
+                    attendees,
+                    quantity: freshSnapshot.orderItem.quantity,
+                    validDays: freshSnapshot.sourceType.validDays,
+                    eventStartDate: freshSnapshot.sourceType.eventStartDate,
+                    eventEndDate: freshSnapshot.sourceType.eventEndDate,
+                    ticketLabel: freshSnapshot.sourceType.name,
+                    requiredSelections: getRequiredTicketDateSelections(freshSnapshot.sourceType),
+                })
+                const targetSnapshot = toTicketTypeSnapshot(freshTarget)
+                const targetReservations = buildTicketDateReservationCounts({
+                    attendees,
+                    quantity: freshSnapshot.orderItem.quantity,
+                    validDays: targetSnapshot.validDays,
+                    eventStartDate: targetSnapshot.eventStartDate,
+                    eventEndDate: targetSnapshot.eventEndDate,
+                    ticketLabel: targetSnapshot.name,
+                    requiredSelections: getRequiredTicketDateSelections(targetSnapshot),
+                })
+                await releaseTicketTypeDateInventory(tx, {
+                    ticketTypeId: freshSnapshot.sourceType.id,
+                    reservations: sourceReservations,
+                    requireExisting: true,
+                })
+                await reserveTicketTypeDateInventory(tx, {
+                    ticketTypeId: targetSnapshot.id,
+                    templateCapacity: targetSnapshot.capacity,
+                    reservations: targetReservations,
+                    ticketLabel: targetSnapshot.name,
+                    requireConfigured: true,
+                    allowOverCapacity: body.allowOverCapacity === true,
+                })
             }
 
             await applyMembershipChange(tx, {

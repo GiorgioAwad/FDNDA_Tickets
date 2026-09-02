@@ -33,6 +33,13 @@ import {
     getMembershipPeriod,
 } from "@/lib/scan-helpers"
 import { getAcMatriculaFromGroupKey } from "@/lib/servilex-invoice-guard"
+import { getTicketSelectableDates, usesTicketDateCapacity } from "@/lib/ticket-date-capacity"
+import {
+    getShiftOptionsForDate,
+    normalizeScheduleSelections,
+    parseTicketScheduleConfig,
+} from "@/lib/ticket-schedule"
+import { isPoolBagTicketType } from "@/lib/pool-bag"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -43,7 +50,7 @@ async function requireAdmin() {
 }
 
 export async function GET(
-    _request: NextRequest,
+    request: NextRequest,
     { params }: { params: Promise<{ ticketId: string }> }
 ) {
     try {
@@ -51,6 +58,7 @@ export async function GET(
             return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 })
         }
         const { ticketId } = await params
+        const eventTicketsScope = request.nextUrl.searchParams.get("scope") === "EVENT_TICKETS"
 
         const record = await prisma.ticket.findUnique({
             where: { id: ticketId },
@@ -65,7 +73,7 @@ export async function GET(
         // es un carnet de membresia. Sin este filtro, una entrada comun de
         // evento entra igual y candidateTypes termina sugiriendo "cambios de
         // sede" sin sentido.
-        if (!isMembershipTicketType(record.ticketType)) {
+        if (!eventTicketsScope && !isMembershipTicketType(record.ticketType)) {
             return NextResponse.json(
                 { success: false, error: NOT_A_MEMBERSHIP_ERROR },
                 { status: 404 }
@@ -120,6 +128,54 @@ export async function GET(
         )
 
         const snapshot = toChangeSnapshot(record)
+        const orderAttendee =
+            snapshot && Array.isArray(snapshot.orderItem.attendeeData)
+                ? snapshot.orderItem.attendeeData[0]
+                : null
+        const attendeeRecord =
+            orderAttendee && typeof orderAttendee === "object"
+                ? (orderAttendee as Record<string, unknown>)
+                : null
+        const purchasedSelections = normalizeScheduleSelections(
+            attendeeRecord?.scheduleSelections
+        )
+        const usesDateCapacity = usesTicketDateCapacity({
+            eventCategory: record.event.category,
+            capacityByDate: record.ticketType.capacityByDate,
+        })
+        const isPoolBag = isPoolBagTicketType({
+            eventCategory: record.event.category,
+            isPackage: record.ticketType.isPackage,
+            packageDaysCount: record.ticketType.packageDaysCount,
+        })
+        const scheduleConfig = parseTicketScheduleConfig(record.ticketType.validDays)
+        const entitlementByDate = new Map(
+            record.entitlements.map((item) => [
+                formatDateUTC(item.date),
+                item.status,
+            ])
+        )
+        const inventoryByDate = new Map(
+            record.ticketType.dateInventories.map((item) => [
+                formatDateUTC(item.date),
+                item,
+            ])
+        )
+        const selectableDates =
+            usesDateCapacity && !isPoolBag
+                ? getTicketSelectableDates({
+                      validDays: record.ticketType.validDays,
+                      eventStartDate: record.event.startDate,
+                      eventEndDate: record.event.endDate,
+                  }).filter((date) => date >= today)
+                : []
+        const datedSelections = purchasedSelections.map((selection) => ({
+            ...selection,
+            status: entitlementByDate.get(selection.date) ?? "AVAILABLE",
+        }))
+        const hasAvailableDate = datedSelections.some(
+            (selection) => selection.status === "AVAILABLE"
+        )
         // Compra familiar: dos hermanos en el mismo plan son UN OrderItem con
         // `quantity: 2` y dos asistentes. El cambio se sigue bloqueando (mover
         // el ticketTypeId del item arrastraria al hermano), pero el diagnostico
@@ -168,10 +224,18 @@ export async function GET(
             where: {
                 id: { not: record.ticketTypeId },
                 isActive: true,
+                ...(eventTicketsScope ? { eventId: record.eventId } : {}),
                 monthlyClassLimit: record.ticketType.monthlyClassLimit,
                 membershipDurationMonths: record.ticketType.membershipDurationMonths,
                 isPackage: record.ticketType.isPackage,
+                packageDaysCount: record.ticketType.packageDaysCount,
+                capacityByDate: record.ticketType.capacityByDate,
+                allowMultipleDailyScans: record.ticketType.allowMultipleDailyScans,
                 membershipScheduleKey: record.ticketType.membershipScheduleKey,
+                servilexSucursalCode: record.ticketType.servilexSucursalCode,
+                servilexServiceCode: record.ticketType.servilexServiceCode,
+                servilexDisciplineCode: record.ticketType.servilexDisciplineCode,
+                servilexPoolCode: record.ticketType.servilexPoolCode,
                 price: record.ticketType.price,
             },
             select: ticketTypeSnapshotSelect,
@@ -271,6 +335,25 @@ export async function GET(
                 currentScheduleInput: scheduleSelectionToInput(
                     parseMembershipScheduleSelection(record.membershipSchedule)
                 ),
+                dateChange: {
+                    enabled: usesDateCapacity && !isPoolBag && hasAvailableDate,
+                    reason: isPoolBag
+                        ? "Las visitas de una bolsa se cambian desde sus reservas."
+                        : usesDateCapacity && !hasAvailableDate
+                          ? "La compra no tiene fechas sin usar disponibles para cambiar."
+                          : null,
+                    currentSelections: datedSelections,
+                    options: selectableDates.map((date) => {
+                        const inventory = inventoryByDate.get(date)
+                        return {
+                            date,
+                            shifts: getShiftOptionsForDate(scheduleConfig, date),
+                            capacity: inventory?.capacity ?? record.ticketType.capacity,
+                            sold: inventory?.sold ?? 0,
+                            isEnabled: inventory?.isEnabled ?? false,
+                        }
+                    }),
+                },
                 candidateTypes: candidateTypes.map((type) => ({
                     ...toTicketTypeSnapshot(type),
                     eventTitle: type.event.title,

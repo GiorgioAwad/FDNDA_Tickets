@@ -13,6 +13,7 @@ import {
 
 import { ScheduleActions, type Plan } from "@/app/admin/membresias/[ticketId]/ScheduleActions"
 import type { MembershipDetail } from "@/app/admin/membresias/[ticketId]/types"
+import { DateChangeActions } from "@/components/admin/DateChangeActions"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -22,8 +23,8 @@ interface MembershipResult {
     ticketCode: string
     attendeeName: string | null
     attendeeDni: string | null
-    monthlyClassLimit: number
-    ticketType: { name: string }
+    monthlyClassLimit: number | null
+    ticketType: { name: string; isPackage?: boolean }
     user: { name: string | null; email: string }
 }
 
@@ -85,6 +86,7 @@ export function MembershipScheduleChangePanel({
                 status: "ACTIVE",
                 page: "1",
                 pageSize: "12",
+                scope: "EVENT_TICKETS",
             })
             if (debouncedSearch) params.set("search", debouncedSearch)
 
@@ -118,9 +120,10 @@ export function MembershipScheduleChangePanel({
         setAppliedChange(null)
         setError(null)
         try {
-            const response = await fetch(`/api/admin/memberships/${ticketId}`, {
-                cache: "no-store",
-            })
+            const response = await fetch(
+                `/api/admin/memberships/${ticketId}?scope=EVENT_TICKETS`,
+                { cache: "no-store" }
+            )
             const payload = (await response.json()) as MembershipDetailResponse
             if (requestId !== detailRequestRef.current) return
             if (!response.ok || !payload.success || !payload.data) {
@@ -142,15 +145,21 @@ export function MembershipScheduleChangePanel({
         setAppliedChange(plan)
     }
 
+    const handleAppliedDate = async () => {
+        setAppliedChange(null)
+        onApplied()
+        await Promise.all([loadMemberships(), loadDetail(selectedId)])
+    }
+
     return (
         <section aria-labelledby="schedule-change-title" className="space-y-4">
             <div className="max-w-3xl">
                 <h2 id="schedule-change-title" className="text-2xl font-semibold tracking-tight text-slate-950">
-                    Cambiar el horario de un asistente
+                    Cambiar una entrada
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Busca a la persona, revisa su frecuencia comprada y elige únicamente entre los
-                    horarios equivalentes disponibles de {eventTitle}.
+                    Busca a la persona y cambia su horario, días o turno solo entre alternativas
+                    equivalentes disponibles de {eventTitle}.
                 </p>
             </div>
 
@@ -261,9 +270,13 @@ export function MembershipScheduleChangePanel({
                                     </p>
                                 </div>
                                 <div className="shrink-0 text-left sm:text-right">
-                                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Frecuencia comprada</p>
+                                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Modalidad comprada</p>
                                     <p className="mt-1 font-semibold tabular-nums text-slate-950">
-                                        {detail.ticketType.monthlyClassLimit ?? "—"} clases por mes
+                                        {detail.ticketType.monthlyClassLimit
+                                            ? `${detail.ticketType.monthlyClassLimit} clases por mes`
+                                            : detail.ticketType.isPackage
+                                              ? `Paquete de ${detail.ticketType.packageDaysCount ?? "varios"} días`
+                                              : "Entrada individual"}
                                     </p>
                                 </div>
                             </div>
@@ -273,6 +286,10 @@ export function MembershipScheduleChangePanel({
                                 appliedChange={appliedChange}
                                 onApplied={(plan) => void handleApplied(plan)}
                                 sameEventOnly
+                            />
+                            <DateChangeActions
+                                detail={detail}
+                                onApplied={() => void handleAppliedDate()}
                             />
                         </div>
                     ) : (

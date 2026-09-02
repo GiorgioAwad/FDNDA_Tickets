@@ -17,6 +17,21 @@ export type Plan = Extract<MembershipChangePlan, { ok: true }>
 
 type Mode = "schedule" | "transfer"
 
+function usesDailyCapacity(type: DetailCandidateType) {
+    return (
+        type.eventCategory === "PISCINA_LIBRE" ||
+        (type.eventCategory === "EVENTO" && type.capacityByDate)
+    )
+}
+
+function shortDateLabel(value: string) {
+    return new Intl.DateTimeFormat("es-PE", {
+        day: "2-digit",
+        month: "short",
+        timeZone: "UTC",
+    }).format(new Date(`${value}T12:00:00Z`))
+}
+
 export function ScheduleActions({
     detail,
     appliedChange,
@@ -89,10 +104,37 @@ export function ScheduleActions({
         () => candidateTypes.find((candidate) => candidate.id === targetTypeId) ?? null,
         [candidateTypes, targetTypeId]
     )
+    const targetUsesDailyCapacity = Boolean(
+        selectedTargetType && usesDailyCapacity(selectedTargetType)
+    )
+    const targetDailyRows = useMemo(() => {
+        if (!selectedTargetType || !targetUsesDailyCapacity) return []
+
+        return detail.dateChange.currentSelections.map((selection) => {
+            const inventory = selectedTargetType.dateInventories.find(
+                (row) => row.date.slice(0, 10) === selection.date
+            )
+            const capacity = inventory?.capacity ?? selectedTargetType.capacity
+            const sold = inventory?.sold ?? 0
+
+            return {
+                date: selection.date,
+                shift: selection.shift,
+                capacity,
+                sold,
+                isEnabled: inventory?.isEnabled ?? false,
+                available: capacity === 0 ? null : Math.max(capacity - sold, 0),
+                isFull: Boolean(inventory?.isEnabled && capacity > 0 && sold >= capacity),
+            }
+        })
+    }, [detail.dateChange.currentSelections, selectedTargetType, targetUsesDailyCapacity])
+    const targetFullDates = targetDailyRows.filter((row) => row.isFull)
     const targetIsFull = Boolean(
         selectedTargetType &&
-            selectedTargetType.capacity > 0 &&
-            selectedTargetType.sold >= selectedTargetType.capacity
+            (targetUsesDailyCapacity
+                ? targetFullDates.length > 0
+                : selectedTargetType.capacity > 0 &&
+                  selectedTargetType.sold >= selectedTargetType.capacity)
     )
 
     // Ocupacion de la sede que se esta mirando, para no mandar a nadie a una
@@ -178,6 +220,7 @@ export function ScheduleActions({
             targetTicketTypeId: targetTypeId,
             selection: category && frequency ? { category, frequency, hours } : undefined,
             allowOverCapacity,
+            eventTicketsScope: sameEventOnly,
         }
     }
 
@@ -254,7 +297,7 @@ export function ScheduleActions({
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <Repeat className="h-5 w-5" />
-                    {sameEventOnly ? "Cambiar horario del asistente" : "Corregir horario o sede"}
+                    {sameEventOnly ? "Cambiar horario, dias o modalidad" : "Corregir horario o sede"}
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm" aria-busy={busy}>
@@ -312,8 +355,10 @@ export function ScheduleActions({
                             {candidateTypes.map((type: DetailCandidateType) => (
                                 <option key={type.id} value={type.id}>
                                     {type.sameEvent ? "" : `${type.eventTitle} · `}
-                                    {type.name} ({type.sold}
-                                    {type.capacity > 0 ? `/${type.capacity}` : ""} vendidos)
+                                    {type.name}{" "}
+                                    {usesDailyCapacity(type)
+                                        ? "(cupo por fecha)"
+                                        : `(${type.sold}${type.capacity > 0 ? `/${type.capacity}` : ""} vendidos)`}
                                 </option>
                             ))}
                         </select>
@@ -326,28 +371,63 @@ export function ScheduleActions({
                 ) : null}
 
                 {mode === "transfer" && selectedTargetType ? (
-                    <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-3">
-                        <div>
-                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Ocupados</p>
-                            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-950">
-                                {selectedTargetType.sold}
+                    targetUsesDailyCapacity ? (
+                        <div className="rounded-xl bg-slate-50 p-4">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                Cupo en las fechas compradas
                             </p>
+                            <div className="mt-3 divide-y divide-slate-200">
+                                {targetDailyRows.map((row) => (
+                                    <div
+                                        key={`${row.date}|${row.shift ?? ""}`}
+                                        className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0"
+                                    >
+                                        <span className="font-medium text-slate-800">
+                                            {shortDateLabel(row.date)}
+                                            {row.shift ? ` · ${row.shift}` : ""}
+                                        </span>
+                                        {!row.isEnabled ? (
+                                            <span className="text-sm font-semibold text-red-700">
+                                                Sin inventario habilitado
+                                            </span>
+                                        ) : (
+                                            <span
+                                                className={`text-sm font-semibold tabular-nums ${
+                                                    row.isFull ? "text-red-700" : "text-emerald-700"
+                                                }`}
+                                            >
+                                                {row.sold}/{row.capacity === 0 ? "sin tope" : row.capacity} ocupados
+                                                {row.available === null ? "" : ` · ${row.available} libres`}
+                                            </span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Cupo</p>
-                            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-950">
-                                {selectedTargetType.capacity === 0 ? "Sin tope" : selectedTargetType.capacity}
-                            </p>
+                    ) : (
+                        <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-3">
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Ocupados</p>
+                                <p className="mt-1 text-xl font-semibold tabular-nums text-slate-950">
+                                    {selectedTargetType.sold}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Cupo</p>
+                                <p className="mt-1 text-xl font-semibold tabular-nums text-slate-950">
+                                    {selectedTargetType.capacity === 0 ? "Sin tope" : selectedTargetType.capacity}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Disponibles</p>
+                                <p className={`mt-1 text-xl font-semibold tabular-nums ${targetIsFull ? "text-red-700" : "text-emerald-700"}`}>
+                                    {selectedTargetType.capacity === 0
+                                        ? "Sin tope"
+                                        : Math.max(selectedTargetType.capacity - selectedTargetType.sold, 0)}
+                                </p>
+                            </div>
                         </div>
-                        <div>
-                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Disponibles</p>
-                            <p className={`mt-1 text-xl font-semibold tabular-nums ${targetIsFull ? "text-red-700" : "text-emerald-700"}`}>
-                                {selectedTargetType.capacity === 0
-                                    ? "Sin tope"
-                                    : Math.max(selectedTargetType.capacity - selectedTargetType.sold, 0)}
-                            </p>
-                        </div>
-                    </div>
+                    )
                 ) : null}
 
                 {mode === "transfer" && targetIsFull ? (
@@ -368,8 +448,13 @@ export function ScheduleActions({
                                 Autorizar sobrecupo de una persona
                             </span>
                             <span className="mt-1 block text-xs leading-5 text-amber-800">
-                                El destino quedara con {selectedTargetType ? selectedTargetType.sold + 1 : "â€”"} inscritos
-                                para un cupo de {selectedTargetType?.capacity}. La excepcion y el motivo quedaran en el historial.
+                                {targetUsesDailyCapacity
+                                    ? `Las fechas ${targetFullDates
+                                          .map((row) => shortDateLabel(row.date))
+                                          .join(", ")} estan llenas. La excepcion y el motivo quedaran en el historial.`
+                                    : `El destino quedara con ${
+                                          selectedTargetType ? selectedTargetType.sold + 1 : "—"
+                                      } inscritos para un cupo de ${selectedTargetType?.capacity}. La excepcion y el motivo quedaran en el historial.`}
                             </span>
                         </span>
                     </label>
