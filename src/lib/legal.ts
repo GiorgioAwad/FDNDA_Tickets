@@ -1,6 +1,6 @@
 const DEFAULT_LEGAL_ENTITY_NAME = "Federacion Deportiva Nacional de Deportes Acuaticos del Peru"
 const DEFAULT_COMMERCIAL_NAME = "Ticketing FDNDA"
-const DEFAULT_ADDRESS = "Jr. Nazca Cdra. 6 s/n Lima 11, Peru"
+const DEFAULT_ADDRESS = "Jr. Nazca Cdra. 6 s/n, Jesús María, Lima, Perú"
 const DEFAULT_PHONE = "+51 941 632 535"
 const DEFAULT_EMAIL = "ticketing@fdnda.org"
 

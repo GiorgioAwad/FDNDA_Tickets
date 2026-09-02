@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { AlertCircle, AlertTriangle, CheckCircle2, Clock, Repeat } from "lucide-react"
+import { AlertCircle, AlertTriangle, CheckCircle2, Clock, Repeat, ShieldAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -21,6 +21,7 @@ export function ScheduleActions({
     detail,
     appliedChange,
     onApplied,
+    sameEventOnly = false,
 }: {
     detail: MembershipDetail
     // Ultimo cambio aplicado con exito para ESTE carnet, dueno de page.tsx.
@@ -29,6 +30,8 @@ export function ScheduleActions({
     // abajo lo borraria justo despues de aplicar un cambio de sede.
     appliedChange: Plan | null
     onApplied: (plan: Plan) => void
+    /** En el panel de cupos solo corrige horarios dentro del evento elegido. */
+    sameEventOnly?: boolean
 }) {
     const hasProfile = detail.scheduleProfile !== null
     const [mode, setMode] = useState<Mode>(hasProfile ? "schedule" : "transfer")
@@ -46,6 +49,8 @@ export function ScheduleActions({
     const [error, setError] = useState<string | null>(null)
     const [busy, setBusy] = useState(false)
     const [occupancy, setOccupancy] = useState<Record<string, number>>({})
+    const [occupancyStatus, setOccupancyStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
+    const [allowOverCapacity, setAllowOverCapacity] = useState(false)
 
     // Token de secuencia: solo la respuesta de la peticion MAS RECIENTE puede
     // tocar el estado. Sin esto, si el admin cambia la seleccion mientras una
@@ -69,12 +74,25 @@ export function ScheduleActions({
         setPlan(null)
         setBlockers([])
         setError(null)
+        setAllowOverCapacity(false)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [detail.ticketType.id])
 
+    const candidateTypes = useMemo(
+        () =>
+            sameEventOnly
+                ? detail.candidateTypes.filter((candidate) => candidate.sameEvent)
+                : detail.candidateTypes,
+        [detail.candidateTypes, sameEventOnly]
+    )
     const selectedTargetType = useMemo(
-        () => detail.candidateTypes.find((t) => t.id === targetTypeId) ?? null,
-        [detail.candidateTypes, targetTypeId]
+        () => candidateTypes.find((candidate) => candidate.id === targetTypeId) ?? null,
+        [candidateTypes, targetTypeId]
+    )
+    const targetIsFull = Boolean(
+        selectedTargetType &&
+            selectedTargetType.capacity > 0 &&
+            selectedTargetType.sold >= selectedTargetType.capacity
     )
 
     // Ocupacion de la sede que se esta mirando, para no mandar a nadie a una
@@ -89,6 +107,7 @@ export function ScheduleActions({
         // NUEVO se siguen viendo los numeros del evento anterior (Tarea 10,
         // hallazgo menor).
         setOccupancy({})
+        setOccupancyStatus(occupancyEventId ? "loading" : "idle")
         if (!occupancyEventId) return
         let cancelled = false
         void (async () => {
@@ -97,18 +116,20 @@ export function ScheduleActions({
                     `/api/admin/membership-occupancy?eventId=${occupancyEventId}`,
                     { cache: "no-store" }
                 )
-                if (!response.ok) return
+                if (!response.ok) throw new Error("No se pudo cargar la ocupacion")
                 const payload = await response.json()
-                if (cancelled || !payload.success || !payload.data.occupancy) return
+                if (cancelled) return
+                if (!payload.success || !payload.data.occupancy) {
+                    throw new Error("No se pudo cargar la ocupacion")
+                }
                 const map: Record<string, number> = {}
                 for (const cell of payload.data.occupancy.dayLoad) {
                     map[`${cell.weekday}|${cell.start}-${cell.end}`] = cell.total
                 }
                 setOccupancy(map)
+                setOccupancyStatus("ready")
             } catch {
-                // Fetch caido o respuesta no-JSON: se deja la ocupacion en 0
-                // (ya limpiada arriba) en vez de una promesa rechazada sin
-                // manejar (Tarea 10, hallazgo menor).
+                if (!cancelled) setOccupancyStatus("error")
             }
         })()
         return () => {
@@ -156,6 +177,7 @@ export function ScheduleActions({
             ...fingerprintField,
             targetTicketTypeId: targetTypeId,
             selection: category && frequency ? { category, frequency, hours } : undefined,
+            allowOverCapacity,
         }
     }
 
@@ -232,10 +254,10 @@ export function ScheduleActions({
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <Repeat className="h-5 w-5" />
-                    Corregir horario o sede
+                    {sameEventOnly ? "Cambiar horario del asistente" : "Corregir horario o sede"}
                 </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm">
+            <CardContent className="space-y-4 text-sm" aria-busy={busy}>
                 <div className="flex gap-2">
                     {hasProfile ? (
                         <Button
@@ -250,7 +272,7 @@ export function ScheduleActions({
                             Horario semanal
                         </Button>
                     ) : null}
-                    <Button
+                    {!sameEventOnly || !hasProfile ? <Button
                         variant={mode === "transfer" ? "default" : "outline"}
                         size="sm"
                         disabled={busy}
@@ -260,13 +282,13 @@ export function ScheduleActions({
                         }}
                     >
                         {hasProfile ? "Cambiar de sede" : "Cambiar de horario (tipo de entrada)"}
-                    </Button>
+                    </Button> : null}
                 </div>
 
                 {mode === "transfer" ? (
                     <label className="block">
                         <span className="text-xs uppercase tracking-wide text-slate-500">
-                            Tipo de entrada destino
+                            {sameEventOnly ? "Horario o dias destino" : "Tipo de entrada destino"}
                         </span>
                         <select
                             className="mt-1 w-full rounded-md border border-slate-300 p-2"
@@ -282,11 +304,12 @@ export function ScheduleActions({
                                 setCategory("")
                                 setFrequency("")
                                 setHours({})
+                                setAllowOverCapacity(false)
                                 reset()
                             }}
                         >
                             <option value="">Selecciona…</option>
-                            {detail.candidateTypes.map((type: DetailCandidateType) => (
+                            {candidateTypes.map((type: DetailCandidateType) => (
                                 <option key={type.id} value={type.id}>
                                     {type.sameEvent ? "" : `${type.eventTitle} · `}
                                     {type.name} ({type.sold}
@@ -294,12 +317,61 @@ export function ScheduleActions({
                                 </option>
                             ))}
                         </select>
-                        {detail.candidateTypes.length === 0 ? (
+                        {candidateTypes.length === 0 ? (
                             <p className="mt-1 text-slate-500">
-                                No hay tipos equivalentes disponibles (mismo precio, duracion, cupo mensual
-                                y plan).
+                                No hay horarios equivalentes en este evento para la frecuencia comprada.
                             </p>
                         ) : null}
+                    </label>
+                ) : null}
+
+                {mode === "transfer" && selectedTargetType ? (
+                    <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-3">
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Ocupados</p>
+                            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-950">
+                                {selectedTargetType.sold}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Cupo</p>
+                            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-950">
+                                {selectedTargetType.capacity === 0 ? "Sin tope" : selectedTargetType.capacity}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Disponibles</p>
+                            <p className={`mt-1 text-xl font-semibold tabular-nums ${targetIsFull ? "text-red-700" : "text-emerald-700"}`}>
+                                {selectedTargetType.capacity === 0
+                                    ? "Sin tope"
+                                    : Math.max(selectedTargetType.capacity - selectedTargetType.sold, 0)}
+                            </p>
+                        </div>
+                    </div>
+                ) : null}
+
+                {mode === "transfer" && targetIsFull ? (
+                    <label className="flex cursor-pointer gap-3 rounded-xl bg-amber-50 p-4 text-amber-950 ring-1 ring-amber-200">
+                        <input
+                            type="checkbox"
+                            checked={allowOverCapacity}
+                            disabled={busy}
+                            onChange={(event) => {
+                                setAllowOverCapacity(event.target.checked)
+                                reset()
+                            }}
+                            className="mt-1 h-4 w-4 rounded border-amber-400 text-amber-700 focus:ring-amber-600"
+                        />
+                        <span>
+                            <span className="flex items-center gap-2 font-semibold">
+                                <ShieldAlert className="h-4 w-4" />
+                                Autorizar sobrecupo de una persona
+                            </span>
+                            <span className="mt-1 block text-xs leading-5 text-amber-800">
+                                El destino quedara con {selectedTargetType ? selectedTargetType.sold + 1 : "â€”"} inscritos
+                                para un cupo de {selectedTargetType?.capacity}. La excepcion y el motivo quedaran en el historial.
+                            </span>
+                        </span>
                     </label>
                 ) : null}
 
@@ -376,7 +448,14 @@ export function ScheduleActions({
                                         )
                                         return (
                                             <option key={value} value={value}>
-                                                {hour.start} - {hour.end} · {load} en la franja
+                                                {hour.start} - {hour.end}
+                                                {occupancyStatus === "loading"
+                                                    ? " · cargando cupo…"
+                                                    : occupancyStatus === "error"
+                                                      ? " · cupo no disponible"
+                                                      : occupancyStatus === "ready"
+                                                        ? ` · ${load} en la franja`
+                                                        : ""}
                                             </option>
                                         )
                                     })}
@@ -385,22 +464,33 @@ export function ScheduleActions({
                         ))}
                     </div>
                 ) : null}
+                {activeProfile && occupancyStatus === "error" ? (
+                    <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">
+                        No se pudo consultar la ocupacion por franja. Recarga antes de confirmar el cambio.
+                    </p>
+                ) : null}
 
-                <label className="block">
+                <label className="block" htmlFor="membership-change-reason">
                     <span className="text-xs uppercase tracking-wide text-slate-500">
                         Motivo (queda en el historial)
                     </span>
                     <Input
+                        id="membership-change-reason"
                         value={reason}
                         disabled={busy}
+                        required
+                        aria-describedby="membership-change-reason-help"
                         onChange={(e) => setReason(e.target.value)}
-                        placeholder="Ej. compro CDM por error, asiste en VIDENA"
+                        placeholder="Ej. Solicitud del apoderado por cambio de turno"
                         className="mt-1"
                     />
+                    <span id="membership-change-reason-help" className="mt-1 block text-xs text-slate-500">
+                        Minimo 5 caracteres; si autorizas sobrecupo, minimo 10.
+                    </span>
                 </label>
 
                 {blockers.length > 0 ? (
-                    <div className="space-y-2 rounded-lg bg-red-50 p-3 text-red-800">
+                    <div role="alert" className="space-y-2 rounded-lg bg-red-50 p-3 text-red-800">
                         <p className="flex items-center gap-2 font-medium">
                             <AlertTriangle className="h-4 w-4" />
                             No se puede aplicar
@@ -414,14 +504,14 @@ export function ScheduleActions({
                 ) : null}
 
                 {error ? (
-                    <p className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-red-800">
+                    <p role="alert" className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-red-800">
                         <AlertCircle className="h-4 w-4" />
                         {error}
                     </p>
                 ) : null}
 
                 {appliedChange ? (
-                    <div className="space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3">
+                    <div aria-live="polite" className="space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3">
                         <p className="font-medium text-sky-900">Aplicado · {appliedChange.label}</p>
                         <div className="grid gap-2 sm:grid-cols-2">
                             <PlanColumn title="Antes" state={appliedChange.before} tone="sky" />
@@ -431,8 +521,15 @@ export function ScheduleActions({
                 ) : null}
 
                 {plan ? (
-                    <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                        <p className="font-medium text-emerald-900">{plan.label}</p>
+                    <div aria-live="polite" className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                        <p className="flex flex-wrap items-center gap-2 font-medium text-emerald-900">
+                            {plan.label}
+                            {plan.overCapacityOverride ? (
+                                <span className="rounded-full bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-950">
+                                    Sobrecupo +1
+                                </span>
+                            ) : null}
+                        </p>
                         <div className="grid gap-2 sm:grid-cols-2">
                             <PlanColumn title="Antes" state={plan.before} tone="emerald" />
                             <PlanColumn title="Despues" state={plan.after} tone="emerald" />
@@ -441,11 +538,24 @@ export function ScheduleActions({
                 ) : null}
 
                 <div className="flex gap-2">
-                    <Button variant="outline" disabled={busy} onClick={() => void send(true)}>
+                    <Button
+                        variant="outline"
+                        disabled={
+                            busy ||
+                            (activeProfile !== null && occupancyStatus !== "ready") ||
+                            (mode === "transfer" && (!targetTypeId || (targetIsFull && !allowOverCapacity)))
+                        }
+                        onClick={() => void send(true)}
+                    >
                         Previsualizar
                     </Button>
                     <Button
-                        disabled={busy || plan === null || reason.trim().length < 5}
+                        disabled={
+                            busy ||
+                            plan === null ||
+                            (activeProfile !== null && occupancyStatus !== "ready") ||
+                            reason.trim().length < (plan?.overCapacityOverride ? 10 : 5)
+                        }
                         onClick={() => void send(false)}
                     >
                         <CheckCircle2 className="mr-2 h-4 w-4" />

@@ -264,6 +264,7 @@ export async function GET(request: NextRequest) {
             Math.max(1, Number(searchParams.get("pageSize") || String(PAGE_SIZE_DEFAULT)))
         )
         const search = searchParams.get("search")?.trim() || ""
+        const eventId = searchParams.get("eventId")?.trim() || ""
         const statusParam = (searchParams.get("status") || "ACTIVE").toUpperCase()
 
         const statusFilter: Prisma.TicketWhereInput =
@@ -275,6 +276,7 @@ export async function GET(request: NextRequest) {
             ...membershipTicketWhere,
             ...buildSearchFilter(search),
             ...statusFilter,
+            ...(eventId ? { eventId } : {}),
         }
 
         const [tickets, total, totalMemberships, activeMemberships, missingTicketStart] =

@@ -70,14 +70,22 @@ export async function applyMembershipChange(
         }
     }
     if (writes.soldIncrementTypeId) {
-        const incremented = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-            UPDATE "ticket_types"
-            SET "sold" = "sold" + 1
-            WHERE "id" = ${writes.soldIncrementTypeId}
-              AND "isActive" = true
-              AND ("capacity" = 0 OR "sold" + 1 <= "capacity")
-            RETURNING "id"
-        `)
+        const incremented = plan.overCapacityOverride
+            ? await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+                  UPDATE "ticket_types"
+                  SET "sold" = "sold" + 1
+                  WHERE "id" = ${writes.soldIncrementTypeId}
+                    AND "isActive" = true
+                  RETURNING "id"
+              `)
+            : await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+                  UPDATE "ticket_types"
+                  SET "sold" = "sold" + 1
+                  WHERE "id" = ${writes.soldIncrementTypeId}
+                    AND "isActive" = true
+                    AND ("capacity" = 0 OR "sold" + 1 <= "capacity")
+                  RETURNING "id"
+              `)
         if (!incremented[0]) {
             throw new MembershipChangeAbort(
                 "No se pudo reservar el cupo del tipo destino; el carnet no se movio."
@@ -114,7 +122,9 @@ export async function applyMembershipChange(
             ticketId,
             actorId,
             kind: plan.kind as MembershipChangeKind,
-            reason,
+            reason: plan.overCapacityOverride
+                ? `[SOBRECUPO AUTORIZADO] ${reason}`
+                : reason,
             before: plan.before as unknown as Prisma.InputJsonValue,
             after: plan.after as unknown as Prisma.InputJsonValue,
         },

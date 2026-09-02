@@ -762,3 +762,53 @@ test("TRANSFER refleja los contadores sold de origen y destino en el plan", () =
     assert.equal(plan.after.sourceSold, 11)
     assert.equal(plan.after.targetSold, 9)
 })
+
+test("TRANSFER bloquea un horario VMT lleno por defecto", () => {
+    const fullTarget = { ...VMT_MJS_5PM, sold: VMT_MJS_5PM.capacity }
+    const plan = planMembershipChange(vmtSnapshot(), {
+        kind: "TRANSFER",
+        targetType: fullTarget,
+    })
+    assert.equal(plan.ok, false)
+    if (plan.ok) return
+    assert.ok(plan.blockers.some((blocker) => blocker.code === "TARGET_FULL"))
+})
+
+test("TRANSFER permite y marca el sobrecupo cuando el admin lo autoriza", () => {
+    const fullTarget = { ...VMT_MJS_5PM, sold: VMT_MJS_5PM.capacity }
+    const plan = planMembershipChange(vmtSnapshot(), {
+        kind: "TRANSFER",
+        targetType: fullTarget,
+        allowOverCapacity: true,
+    })
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.overCapacityOverride, true)
+    assert.equal(plan.after.capacityOverride, true)
+    assert.equal(plan.after.targetSold, fullTarget.capacity + 1)
+})
+
+test("autorizar sobrecupo no lo registra si el destino aun tiene espacio", () => {
+    const plan = planMembershipChange(vmtSnapshot(), {
+        kind: "TRANSFER",
+        targetType: VMT_MJS_5PM,
+        allowOverCapacity: true,
+    })
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.overCapacityOverride, false)
+    assert.equal(plan.after.capacityOverride, false)
+})
+
+test("la autorizacion de sobrecupo forma parte de la huella de confirmacion", () => {
+    const withoutOverride = buildMembershipChangeFingerprint(vmtSnapshot(), {
+        kind: "TRANSFER",
+        targetType: VMT_MJS_5PM,
+    })
+    const withOverride = buildMembershipChangeFingerprint(vmtSnapshot(), {
+        kind: "TRANSFER",
+        targetType: VMT_MJS_5PM,
+        allowOverCapacity: true,
+    })
+    assert.notEqual(withoutOverride, withOverride)
+})

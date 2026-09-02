@@ -82,6 +82,10 @@ export type MembershipChangeIntent =
           /** Requerido cuando el destino tiene catalogo y el horario actual no
            *  existe alla. Si se omite y el actual si existe, se conserva. */
           scheduleInput?: MembershipScheduleInput | null
+          /** Excepcion administrativa: permite que el destino supere su cupo.
+           *  Solo se registra como sobrecupo cuando el movimiento realmente
+           *  deja sold por encima de capacity. */
+          allowOverCapacity?: boolean
       }
 
 // ── Resultado ─────────────────────────────────────────────────────────────────
@@ -119,6 +123,8 @@ export interface MembershipChangeState {
     scheduleSummary: string
     sourceSold: number
     targetSold: number | null
+    /** Queda persistido en el JSON de auditoria del estado destino. */
+    capacityOverride?: boolean
 }
 
 export interface MembershipChangeWrites {
@@ -146,6 +152,7 @@ export type MembershipChangePlan =
           after: MembershipChangeState
           writes: MembershipChangeWrites
           fingerprint: string
+          overCapacityOverride: boolean
       }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -312,6 +319,7 @@ export function buildMembershipChangeFingerprint(
                   k: intent.kind,
                   tt: intent.kind === "TRANSFER" ? intent.targetType.id : null,
                   s: normalizeScheduleIntent(intent.scheduleInput),
+                  oc: intent.kind === "TRANSFER" ? intent.allowOverCapacity === true : false,
               }
             : null,
     })
@@ -440,6 +448,7 @@ function planScheduleChange(
             },
         },
         fingerprint: buildMembershipChangeFingerprint(snapshot, intent),
+        overCapacityOverride: false,
     }
 }
 
@@ -515,6 +524,10 @@ function planTransfer(
     const scheduleInput = intent.scheduleInput ?? null
     const { sourceType } = snapshot
     const blockers = [...commonBlockers(snapshot), ...invoiceBlockers(snapshot)]
+    const overCapacityOverride =
+        intent.allowOverCapacity === true &&
+        targetType.capacity !== 0 &&
+        targetType.sold + 1 > targetType.capacity
 
     // Deriva previa entre las dos fuentes de "en que evento esta el carnet":
     // lo que se escribe es `Ticket.eventId`, pero el tipo de entrada trae el
@@ -542,7 +555,11 @@ function planTransfer(
     if (!targetType.isActive) {
         blockers.push({ code: "TARGET_INACTIVE", message: "El tipo destino esta desactivado." })
     }
-    if (targetType.capacity !== 0 && targetType.sold + 1 > targetType.capacity) {
+    if (
+        targetType.capacity !== 0 &&
+        targetType.sold + 1 > targetType.capacity &&
+        !intent.allowOverCapacity
+    ) {
         blockers.push({
             code: "TARGET_FULL",
             message: `El tipo destino no tiene cupo: ${targetType.sold} vendidos de ${targetType.capacity}.`,
@@ -623,14 +640,18 @@ function planTransfer(
             sourceType.sold,
             targetType.sold
         ),
-        after: buildState(
-            targetType,
-            afterSelection ?? beforeSelection,
-            sessionKeys(afterSelection ?? beforeSelection),
-            sourceType.sold - 1,
-            targetType.sold + 1
-        ),
+        after: {
+            ...buildState(
+                targetType,
+                afterSelection ?? beforeSelection,
+                sessionKeys(afterSelection ?? beforeSelection),
+                sourceType.sold - 1,
+                targetType.sold + 1
+            ),
+            capacityOverride: overCapacityOverride,
+        },
         writes,
         fingerprint: buildMembershipChangeFingerprint(snapshot, intent),
+        overCapacityOverride,
     }
 }

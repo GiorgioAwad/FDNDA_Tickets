@@ -19,6 +19,7 @@ import {
     planMembershipChange,
     type MembershipChangeIntent,
 } from "@/lib/membership-transfer"
+import { onEventUpdated } from "@/lib/cached-queries"
 import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
@@ -42,6 +43,7 @@ export async function POST(
             selection?: { category?: string; frequency?: string; hours?: Record<string, string> }
             reason?: string
             preview?: boolean
+            allowOverCapacity?: boolean
             // Contrato con la UI (Tarea 10), igual que en schedule/route.ts: la
             // huella (`plan.fingerprint`) que la respuesta de preview le
             // devolvio al admin. Al confirmar, la ruta la reenvia tal cual y ES
@@ -66,6 +68,15 @@ export async function POST(
         if (!isPreview && reason.length < 5) {
             return NextResponse.json(
                 { success: false, error: "Indica el motivo del cambio (minimo 5 caracteres)." },
+                { status: 400 }
+            )
+        }
+        if (!isPreview && body.allowOverCapacity === true && reason.length < 10) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "El sobrecupo requiere un motivo detallado (minimo 10 caracteres).",
+                },
                 { status: 400 }
             )
         }
@@ -106,6 +117,7 @@ export async function POST(
             kind: "TRANSFER",
             targetType: toTicketTypeSnapshot(targetRecord),
             scheduleInput: body.selection ?? null,
+            allowOverCapacity: body.allowOverCapacity === true,
         }
 
         const plan = planMembershipChange(snapshot, intent)
@@ -165,6 +177,12 @@ export async function POST(
             // `targetSold` desfasado del que realmente se escribio.
             return freshPlan
         })
+
+        await Promise.all(
+            Array.from(new Set([record.eventId, targetRecord.eventId])).map((eventId) =>
+                onEventUpdated(eventId)
+            )
+        )
 
         return NextResponse.json({ success: true, data: { plan: appliedPlan } })
     } catch (error) {

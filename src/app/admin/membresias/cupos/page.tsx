@@ -8,6 +8,7 @@ import { AlertCircle, ArrowLeft, BarChart3, Download, Search, UsersRound } from 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { MembershipScheduleChangePanel } from "@/components/admin/MembershipScheduleChangePanel"
 
 const WEEKDAY_LABEL: Record<number, string> = {
     0: "Domingo",
@@ -137,6 +138,8 @@ export default function MembershipOccupancyPage() {
         const requestId = ++requestIdRef.current
         setLoading(true)
         setError(null)
+        setOccupancy(null)
+        setCapacityRows([])
         try {
             const query = id ? `?eventId=${id}` : ""
             const response = await fetch(`/api/admin/membership-occupancy${query}`, {
@@ -268,7 +271,7 @@ export default function MembershipOccupancyPage() {
 
     return (
         <div className="space-y-6 p-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <Link
                     href={eventId ? `/admin/eventos/${eventId}` : "/admin/eventos"}
                     className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
@@ -338,6 +341,14 @@ export default function MembershipOccupancyPage() {
                 <p className="text-sm text-slate-500">
                     Este evento todavia no tiene tipos de entrada para reportar.
                 </p>
+            ) : null}
+
+            {occupancy && selectedEvent ? (
+                <MembershipScheduleChangePanel
+                    eventId={selectedEvent.id}
+                    eventTitle={selectedEvent.title}
+                    onApplied={() => void load(selectedEvent.id)}
+                />
             ) : null}
 
             {occupancy && capacityRows.length > 0 ? (
