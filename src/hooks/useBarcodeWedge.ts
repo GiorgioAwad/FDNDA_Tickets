@@ -113,6 +113,14 @@ export function shouldAutofocusBarcodeWedge(
     return activeElement === null || activeElement === body || activeElement === captureElement
 }
 
+function isManualEditingTarget(
+    target: EventTarget | null,
+    captureElement: HTMLTextAreaElement | null
+) {
+    if (!(target instanceof HTMLElement) || target === captureElement) return false
+    return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+}
+
 interface UseBarcodeWedgeOptions {
     enabled: boolean
     paused: boolean
@@ -128,6 +136,8 @@ export function useBarcodeWedge({
 }: UseBarcodeWedgeOptions) {
     const inputRef = useRef<HTMLTextAreaElement | null>(null)
     const [isFocused, setIsFocused] = useState(false)
+    const [isReceiving, setIsReceiving] = useState(false)
+    const activityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [buffer] = useState(
         () => new BarcodeWedgeBuffer({ onScan, flushDelayMs })
     )
@@ -140,6 +150,15 @@ export function useBarcodeWedge({
         if (!enabled) return
         inputRef.current?.focus({ preventScroll: true })
     }, [enabled])
+
+    const markActivity = useCallback(() => {
+        setIsReceiving(true)
+        if (activityTimerRef.current !== null) clearTimeout(activityTimerRef.current)
+        activityTimerRef.current = setTimeout(() => {
+            activityTimerRef.current = null
+            setIsReceiving(false)
+        }, flushDelayMs)
+    }, [flushDelayMs])
 
     useEffect(() => {
         buffer.setPaused(paused || !enabled)
@@ -157,50 +176,112 @@ export function useBarcodeWedge({
     useEffect(() => {
         const handleWindowBlur = () => setIsFocused(false)
         const handleWindowFocus = () => {
-            if (!enabled) return
-            if (shouldAutofocusBarcodeWedge(document.activeElement, document.body, inputRef.current)) {
-                focusCapture()
-                setIsFocused(true)
-            }
+            if (!enabled || isManualEditingTarget(document.activeElement, inputRef.current)) return
+            setTimeout(focusCapture, 0)
+        }
+
+        const handleDocumentClick = (event: MouseEvent) => {
+            if (!enabled || isManualEditingTarget(event.target, inputRef.current)) return
+            setTimeout(focusCapture, 0)
+        }
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== "visible" || !enabled) return
+            if (isManualEditingTarget(document.activeElement, inputRef.current)) return
+            setTimeout(focusCapture, 0)
         }
 
         window.addEventListener("blur", handleWindowBlur)
         window.addEventListener("focus", handleWindowFocus)
+        document.addEventListener("click", handleDocumentClick, true)
+        document.addEventListener("visibilitychange", handleVisibilityChange)
         return () => {
             window.removeEventListener("blur", handleWindowBlur)
             window.removeEventListener("focus", handleWindowFocus)
+            document.removeEventListener("click", handleDocumentClick, true)
+            document.removeEventListener("visibilitychange", handleVisibilityChange)
         }
     }, [enabled, focusCapture])
 
     useEffect(() => {
-        return () => buffer.dispose()
+        if (!enabled) return
+
+        const handleGlobalKeyDown = (event: KeyboardEvent) => {
+            if (paused || event.target === inputRef.current) return
+            if (isManualEditingTarget(event.target, inputRef.current)) return
+
+            if (event.key === "Enter") {
+                event.preventDefault()
+                markActivity()
+                buffer.flush()
+                focusCapture()
+                return
+            }
+
+            if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault()
+                markActivity()
+                buffer.push(event.key)
+                focusCapture()
+                return
+            }
+
+            // Keypad emulation composes punctuation with Alt+numpad. Moving
+            // focus on the first Alt event lets the browser insert the final
+            // composed character into the capture textarea.
+            if (event.key === "Alt" || event.altKey) focusCapture()
+        }
+
+        window.addEventListener("keydown", handleGlobalKeyDown, true)
+        return () => window.removeEventListener("keydown", handleGlobalKeyDown, true)
+    }, [buffer, enabled, focusCapture, markActivity, paused])
+
+    useEffect(() => {
+        return () => {
+            buffer.dispose()
+            if (activityTimerRef.current !== null) clearTimeout(activityTimerRef.current)
+        }
     }, [buffer])
+
+    const handleBeforeInput = useCallback((event: React.FormEvent<HTMLTextAreaElement>) => {
+        const nativeEvent = event.nativeEvent as InputEvent
+        const chunk = nativeEvent.inputType === "insertLineBreak" ? "\n" : nativeEvent.data
+        if (!chunk) return
+
+        event.preventDefault()
+        markActivity()
+        buffer.push(chunk)
+    }, [buffer, markActivity])
 
     const handleInput = useCallback((event: React.FormEvent<HTMLTextAreaElement>) => {
         const chunk = event.currentTarget.value
         event.currentTarget.value = ""
+        markActivity()
         buffer.push(chunk)
-    }, [buffer])
+    }, [buffer, markActivity])
 
     const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (event.key !== "Enter") return
 
         event.preventDefault()
+        markActivity()
         const pendingChunk = event.currentTarget.value
         event.currentTarget.value = ""
         if (pendingChunk) buffer.push(pendingChunk)
         buffer.flush()
-    }, [buffer])
+    }, [buffer, markActivity])
 
     return {
         inputRef,
         inputProps: {
+            onBeforeInput: handleBeforeInput,
             onInput: handleInput,
             onKeyDown: handleKeyDown,
             onFocus: () => setIsFocused(true),
             onBlur: () => setIsFocused(false),
         },
         isFocused: enabled && isFocused,
+        isReceiving: enabled && isReceiving,
         focusCapture,
     }
 }

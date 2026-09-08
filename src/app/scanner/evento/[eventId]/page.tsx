@@ -943,6 +943,7 @@ export default function EventScannerPage() {
         inputRef: readerInputRef,
         inputProps: readerInputProps,
         isFocused: readerInputFocused,
+        isReceiving: readerInputReceiving,
         focusCapture,
     } = useBarcodeWedge({
         enabled: settingsLoaded && readerMode,
@@ -1289,9 +1290,13 @@ export default function EventScannerPage() {
                                     )}
                                 </div>
                                 <h1 className="text-2xl font-bold text-white">
-                                    {isProcessing ? "Validando ingreso" : "Listo para leer"}
+                                    {isProcessing
+                                        ? "Validando ingreso"
+                                        : readerInputReceiving
+                                          ? "Recibiendo lectura…"
+                                          : "Listo para leer"}
                                 </h1>
-                                <p className="mt-2 text-sm leading-6 text-gray-400">
+                                <p aria-live="polite" className="mt-2 text-sm leading-6 text-gray-400">
                                     {isProcessing
                                         ? "Espera la señal antes de leer el siguiente ticket."
                                         : readerInputFocused
