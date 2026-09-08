@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
-const DEFAULT_FLUSH_DELAY_MS = 1000
+const DEFAULT_FLUSH_DELAY_MS = 180
 const LINE_ENDING_REGEX = /[\r\n]/
 
 type TimeoutHandle = ReturnType<typeof setTimeout>
