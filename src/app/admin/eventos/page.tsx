@@ -11,12 +11,17 @@ import {
     type CompletedEventExportRow,
 } from "@/components/treasury/CompletedEventsExportButton"
 import {
+    ArrowUpDown,
     Plus,
     MapPin,
     Ticket,
     Calendar,
+    ChevronLeft,
+    ChevronRight,
     Eye,
+    Search,
     Users,
+    X,
 } from "lucide-react"
 import { Prisma } from "@prisma/client"
 
@@ -48,6 +53,36 @@ type EventWithStats = {
     }[]
 }
 
+type EventsSearchParams = {
+    q?: string | string[]
+    category?: string | string[]
+    status?: string | string[]
+    sort?: string | string[]
+    pastPage?: string | string[]
+}
+
+const PAST_EVENTS_PER_PAGE = 6
+
+function getSearchParam(value: string | string[] | undefined) {
+    return Array.isArray(value) ? value[0] ?? '' : value ?? ''
+}
+
+function buildEventsHref(
+    params: { q: string; category: string; status: string; sort: string },
+    pastPage: number
+) {
+    const searchParams = new URLSearchParams()
+
+    if (params.q) searchParams.set('q', params.q)
+    if (params.category !== 'all') searchParams.set('category', params.category)
+    if (params.status !== 'all') searchParams.set('status', params.status)
+    if (params.sort !== 'date_desc') searchParams.set('sort', params.sort)
+    if (pastPage > 1) searchParams.set('pastPage', String(pastPage))
+
+    const query = searchParams.toString()
+    return `/admin/eventos${query ? `?${query}` : ''}#eventos-pasados`
+}
+
 function getCategoryLabel(category: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA") {
     switch (category) {
         case "PISCINA_LIBRE":
@@ -59,7 +94,28 @@ function getCategoryLabel(category: "EVENTO" | "PISCINA_LIBRE" | "ACADEMIA") {
     }
 }
 
-export default async function AdminEventsPage() {
+export default async function AdminEventsPage({
+    searchParams,
+}: {
+    searchParams: Promise<EventsSearchParams>
+}) {
+    const resolvedSearchParams = await searchParams
+    const query = getSearchParam(resolvedSearchParams.q).trim()
+    const normalizedQuery = query.toLocaleLowerCase('es-PE')
+    const requestedCategory = getSearchParam(resolvedSearchParams.category)
+    const category = ['EVENTO', 'PISCINA_LIBRE', 'ACADEMIA'].includes(requestedCategory)
+        ? requestedCategory
+        : 'all'
+    const requestedStatus = getSearchParam(resolvedSearchParams.status)
+    const status = ['ongoing', 'upcoming', 'past'].includes(requestedStatus)
+        ? requestedStatus
+        : 'all'
+    const requestedSort = getSearchParam(resolvedSearchParams.sort)
+    const sort = ['date_asc', 'title_asc'].includes(requestedSort)
+        ? requestedSort
+        : 'date_desc'
+    const requestedPastPage = Number.parseInt(getSearchParam(resolvedSearchParams.pastPage), 10)
+
     const [events, financeSummaries, poolOccupancyRows] = await Promise.all([
         prisma.event.findMany({
             include: {
@@ -116,12 +172,57 @@ export default async function AdminEventsPage() {
     // ver getEventActiveThreshold). Con `new Date()` un evento en su ultimo dia
     // dejaba de ser "en curso" a las 7am Lima pero todavia no era "pasado", asi
     // que no caia en ninguna seccion y desaparecia del listado.
-    const upcomingEvents = events.filter((event) => new Date(event.startDate) > activeThreshold)
-    const ongoingEvents = events.filter(
-        (event) =>
-            new Date(event.startDate) <= activeThreshold && new Date(event.endDate) >= activeThreshold
+    const matchesFilters = (event: EventWithStats) => {
+        const matchesCategory = category === 'all' || event.category === category
+        const searchableText = [event.title, event.discipline, event.venue, event.location]
+            .filter(Boolean)
+            .join(' ')
+            .toLocaleLowerCase('es-PE')
+
+        return matchesCategory && (!normalizedQuery || searchableText.includes(normalizedQuery))
+    }
+
+    const sortEvents = (eventList: EventWithStats[]) =>
+        [...eventList].sort((a, b) => {
+            if (sort === 'title_asc') {
+                return a.title.localeCompare(b.title, 'es', { sensitivity: 'base' })
+            }
+
+            const difference = a.startDate.getTime() - b.startDate.getTime()
+            return sort === 'date_asc' ? difference : -difference
+        })
+
+    const filteredEvents = events.filter(matchesFilters)
+    const upcomingEvents = sortEvents(
+        filteredEvents.filter((event) => new Date(event.startDate) > activeThreshold)
     )
-    const pastEvents = events.filter((event) => new Date(event.endDate) < activeThreshold)
+    const ongoingEvents = sortEvents(
+        filteredEvents.filter(
+            (event) =>
+                new Date(event.startDate) <= activeThreshold &&
+                new Date(event.endDate) >= activeThreshold
+        )
+    )
+    const pastEvents = sortEvents(
+        filteredEvents.filter((event) => new Date(event.endDate) < activeThreshold)
+    )
+    const visibleOngoingEvents = status === 'all' || status === 'ongoing' ? ongoingEvents : []
+    const visibleUpcomingEvents = status === 'all' || status === 'upcoming' ? upcomingEvents : []
+    const visiblePastEvents = status === 'all' || status === 'past' ? pastEvents : []
+    const pastTotalPages = Math.max(1, Math.ceil(visiblePastEvents.length / PAST_EVENTS_PER_PAGE))
+    const pastPage = Math.min(
+        Math.max(Number.isFinite(requestedPastPage) ? requestedPastPage : 1, 1),
+        pastTotalPages
+    )
+    const paginatedPastEvents = visiblePastEvents.slice(
+        (pastPage - 1) * PAST_EVENTS_PER_PAGE,
+        pastPage * PAST_EVENTS_PER_PAGE
+    )
+    const visibleEventCount =
+        visibleOngoingEvents.length + visibleUpcomingEvents.length + visiblePastEvents.length
+    const hasActiveFilters =
+        Boolean(query) || category !== 'all' || status !== 'all' || sort !== 'date_desc'
+    const navigationParams = { q: query, category, status, sort }
 
     const financeByEvent = new Map(
         financeSummaries.map((summary) => [summary.id, summary])
@@ -215,40 +316,186 @@ export default async function AdminEventsPage() {
                 </Card>
             </div>
 
-            {ongoingEvents.length > 0 && (
+            <Card>
+                <CardContent className='p-4'>
+                    <form
+                        method='get'
+                        className='grid gap-3 lg:grid-cols-[minmax(16rem,1fr)_minmax(10rem,0.45fr)_minmax(10rem,0.45fr)_minmax(11rem,0.5fr)_auto] lg:items-end'
+                    >
+                        <label className='block'>
+                            <span className='mb-1.5 block text-xs font-medium text-gray-600'>
+                                Buscar evento
+                            </span>
+                            <span className='relative block'>
+                                <Search className='pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400' />
+                                <input
+                                    type='search'
+                                    name='q'
+                                    defaultValue={query}
+                                    placeholder='Nombre, disciplina o sede'
+                                    className='h-10 w-full rounded-lg border border-gray-300 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-blue-700 focus:ring-2 focus:ring-blue-700/20'
+                                />
+                            </span>
+                        </label>
+
+                        <label className='block'>
+                            <span className='mb-1.5 block text-xs font-medium text-gray-600'>Estado</span>
+                            <select
+                                name='status'
+                                defaultValue={status}
+                                className='h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition-colors focus:border-blue-700 focus:ring-2 focus:ring-blue-700/20'
+                            >
+                                <option value='all'>Todos</option>
+                                <option value='ongoing'>En curso</option>
+                                <option value='upcoming'>Próximos</option>
+                                <option value='past'>Pasados</option>
+                            </select>
+                        </label>
+
+                        <label className='block'>
+                            <span className='mb-1.5 block text-xs font-medium text-gray-600'>Tipo</span>
+                            <select
+                                name='category'
+                                defaultValue={category}
+                                className='h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition-colors focus:border-blue-700 focus:ring-2 focus:ring-blue-700/20'
+                            >
+                                <option value='all'>Todos</option>
+                                <option value='EVENTO'>Eventos</option>
+                                <option value='PISCINA_LIBRE'>Piscina libre</option>
+                                <option value='ACADEMIA'>Academias</option>
+                            </select>
+                        </label>
+
+                        <label className='block'>
+                            <span className='mb-1.5 flex items-center gap-1.5 text-xs font-medium text-gray-600'>
+                                <ArrowUpDown className='h-3.5 w-3.5' />
+                                Ordenar por
+                            </span>
+                            <select
+                                name='sort'
+                                defaultValue={sort}
+                                className='h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition-colors focus:border-blue-700 focus:ring-2 focus:ring-blue-700/20'
+                            >
+                                <option value='date_desc'>Más recientes</option>
+                                <option value='date_asc'>Más antiguos</option>
+                                <option value='title_asc'>Nombre A–Z</option>
+                            </select>
+                        </label>
+
+                        <Button type='submit' className='h-10'>Aplicar</Button>
+                    </form>
+
+                    <div className='mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-3'>
+                        <p className='text-sm text-gray-600' aria-live='polite'>
+                            <span className='font-semibold text-gray-900'>{visibleEventCount}</span>{' '}
+                            {visibleEventCount === 1 ? 'evento encontrado' : 'eventos encontrados'}
+                        </p>
+                        {hasActiveFilters && (
+                            <Button asChild variant='ghost' size='sm' className='text-gray-600'>
+                                <Link href='/admin/eventos'>
+                                    <X className='h-4 w-4' />
+                                    Limpiar filtros
+                                </Link>
+                            </Button>
+                        )}
+                    </div>
+                </CardContent>
+            </Card>
+
+            {visibleOngoingEvents.length > 0 && (
                 <div>
                     <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold">
                         <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                        En Curso ({ongoingEvents.length})
+                        En Curso ({visibleOngoingEvents.length})
                     </h2>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {ongoingEvents.map((event) => (
+                        {visibleOngoingEvents.map((event) => (
                             <EventCard key={event.id} event={event} status="ongoing" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} poolOccupancy={poolOccupancyByEvent.get(event.id) ?? null} />
                         ))}
                     </div>
                 </div>
             )}
 
-            {upcomingEvents.length > 0 && (
+            {visibleUpcomingEvents.length > 0 && (
                 <div>
-                    <h2 className="mb-3 text-lg font-semibold">Proximos ({upcomingEvents.length})</h2>
+                    <h2 className="mb-3 text-lg font-semibold">Próximos ({visibleUpcomingEvents.length})</h2>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {upcomingEvents.map((event) => (
+                        {visibleUpcomingEvents.map((event) => (
                             <EventCard key={event.id} event={event} status="upcoming" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} poolOccupancy={poolOccupancyByEvent.get(event.id) ?? null} />
                         ))}
                     </div>
                 </div>
             )}
 
-            {pastEvents.length > 0 && (
-                <div>
-                    <h2 className="mb-3 text-lg font-semibold text-gray-500">Pasados ({pastEvents.length})</h2>
+            {visiblePastEvents.length > 0 && (
+                <div id="eventos-pasados" className="scroll-mt-6">
+                    <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                        <div>
+                            <h2 className="text-lg font-semibold text-gray-700">
+                                Pasados ({visiblePastEvents.length})
+                            </h2>
+                            <p className="text-sm text-gray-500">
+                                Mostrando {Math.min((pastPage - 1) * PAST_EVENTS_PER_PAGE + 1, visiblePastEvents.length)}–{Math.min(pastPage * PAST_EVENTS_PER_PAGE, visiblePastEvents.length)}
+                            </p>
+                        </div>
+                        {pastTotalPages > 1 && (
+                            <p className="text-sm tabular-nums text-gray-500">
+                                Página {pastPage} de {pastTotalPages}
+                            </p>
+                        )}
+                    </div>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {pastEvents.map((event) => (
+                        {paginatedPastEvents.map((event) => (
                             <EventCard key={event.id} event={event} status="past" paidRevenue={financeByEvent.get(event.id)?.grossRevenue ?? 0} poolOccupancy={poolOccupancyByEvent.get(event.id) ?? null} />
                         ))}
                     </div>
+                    {pastTotalPages > 1 && (
+                        <nav
+                            className="mt-4 flex items-center justify-end gap-2"
+                            aria-label="Paginación de eventos pasados"
+                        >
+                            {pastPage > 1 ? (
+                                <Button asChild variant="outline" size="sm">
+                                    <Link href={buildEventsHref(navigationParams, pastPage - 1)}>
+                                        <ChevronLeft className="h-4 w-4" />
+                                        Anterior
+                                    </Link>
+                                </Button>
+                            ) : (
+                                <Button variant="outline" size="sm" disabled>
+                                    <ChevronLeft className="h-4 w-4" />
+                                    Anterior
+                                </Button>
+                            )}
+                            {pastPage < pastTotalPages ? (
+                                <Button asChild variant="outline" size="sm">
+                                    <Link href={buildEventsHref(navigationParams, pastPage + 1)}>
+                                        Siguiente
+                                        <ChevronRight className="h-4 w-4" />
+                                    </Link>
+                                </Button>
+                            ) : (
+                                <Button variant="outline" size="sm" disabled>
+                                    Siguiente
+                                    <ChevronRight className="h-4 w-4" />
+                                </Button>
+                            )}
+                        </nav>
+                    )}
                 </div>
+            )}
+
+            {events.length > 0 && visibleEventCount === 0 && (
+                <Card className="border-dashed p-10 text-center">
+                    <Search className="mx-auto mb-3 h-9 w-9 text-gray-300" />
+                    <h2 className="font-semibold text-gray-900">No encontramos eventos</h2>
+                    <p className="mt-1 text-sm text-gray-500">
+                        Prueba otro nombre o elimina alguno de los filtros.
+                    </p>
+                    <Button asChild variant="outline" size="sm" className="mt-4">
+                        <Link href="/admin/eventos">Limpiar filtros</Link>
+                    </Button>
+                </Card>
             )}
 
             <Card>
