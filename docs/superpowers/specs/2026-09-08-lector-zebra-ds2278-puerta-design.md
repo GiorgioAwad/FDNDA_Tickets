@@ -1,7 +1,7 @@
 # Lector Zebra DS2278 en la puerta (modo lector en /scanner)
 
 Fecha: 2026-09-08
-Estado: aprobado, pendiente de plan de implementacion
+Estado: implementado, pendiente de prueba operativa en /scanner
 
 ## Problema
 
@@ -163,17 +163,25 @@ datos, y la cuna CR2278-PC es de solo carga, asi que igual habria que terminar
 configurando por codigos escaneados. Solo se justifica si se activa el plan B,
 porque armar una regla ADF a mano desde el PDF es impracticable.
 
-Secuencia:
+Secuencia confirmada contra el PDF de 476 paginas y probada con el lector real:
 
-1. Restaurar valores de fabrica.
-2. Host Bluetooth = **HID Keyboard**. El lector queda visible y se empareja
+1. PDF 62 (impresa `5-5`): **Set Factory Defaults**. No usar `Restore
+   Defaults`, porque puede recuperar valores personalizados anteriores.
+2. PDF 102 (`6-6`): **HID Bluetooth Classic**. Luego emparejar el DS2278
    desde Ajustes -> Bluetooth de Windows.
-3. Emulacion = **Emulate Keypad**.
-4. Sufijo = **Enter**.
-5. Verificar que QR Code este habilitado.
+3. PDF 114 (`6-18`): **No Delay (0 msec)** y **Override Caps Lock Key**.
+4. PDF 115 (`6-19`): **Enable Keypad Emulation**.
+5. PDF 116 (`6-20`): **Quick Keypad Emulation Disable** y **Fast HID
+   Disable**. En la prueba, Fast HID llego a omitir parte de `nonce`; al
+   desactivarlo el JSON se transmitio completo y siguio siendo rapido.
+6. PDF 88 (`5-31`): **Add Enter Key (Carriage Return/Line Feed)**.
+7. PDF 318 (`13-92`): **Enable QR Code**.
 
-Los valores numericos exactos de cada opcion se confirman contra el PDF al
-momento de configurar.
+La primera prueba con la configuracion de teclado por defecto deformo los
+signos del JSON (por ejemplo, `"` como `¨` y `:` como `Ñ`). Al
+desactivar Quick Keypad Emulation se conservaron los signos. La prueba final
+entrego el JSON completo, incluidos `{`, `}`, `nonce` y `signature`, a
+velocidad apta para la puerta.
 
 ## Orden de trabajo y riesgo principal
 

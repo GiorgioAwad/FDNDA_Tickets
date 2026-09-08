@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { useBarcodeWedge } from "@/hooks/useBarcodeWedge"
 import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { 
     Camera, 
@@ -23,7 +24,8 @@ import {
     VolumeX,
     Loader2,
     BarChart3,
-    ShieldAlert
+    ShieldAlert,
+    ScanLine
 } from "lucide-react"
 import type { Html5Qrcode, Html5QrcodeCameraScanConfig } from "html5-qrcode"
 
@@ -92,6 +94,8 @@ const SCAN_DEBOUNCE_MS = 300 // Ultra-fast response between scans
 const MAX_HISTORY_ITEMS = 50
 const STORAGE_KEY_HISTORY = "scan-history"
 const STORAGE_KEY_SOUND = "scan-sound-enabled"
+const STORAGE_KEY_READER_MODE = "scan-reader-mode"
+const READER_SUCCESS_RESET_MS = 2500
 const TICKET_CODE_REGEX = /^[A-Z2-9]{4}(?:-[A-Z2-9]{4}){2}$/
 const TICKET_CODE_COMPACT_REGEX = /^[A-Z2-9]{12}$/
 const TICKET_CODE_GROUP_FINDER_REGEX = /([A-Z2-9]{4}(?:-[A-Z2-9]{4}){2})/i
@@ -312,6 +316,7 @@ export default function EventScannerPage() {
     const audioSuccessRef = useRef<HTMLAudioElement | null>(null)
     const audioErrorRef = useRef<HTMLAudioElement | null>(null)
     const wakeLockRef = useRef<WakeLockSentinel | null>(null)
+    const autoResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     // State
     const [scanning, setScanning] = useState(false)
@@ -322,6 +327,8 @@ export default function EventScannerPage() {
     const [isOnline, setIsOnline] = useState(true)
     const [isProcessing, setIsProcessing] = useState(false)
     const [soundEnabled, setSoundEnabled] = useState(true)
+    const [readerMode, setReaderMode] = useState(false)
+    const [settingsLoaded, setSettingsLoaded] = useState(false)
     const [torchEnabled, setTorchEnabled] = useState(false)
     const [torchSupported, setTorchSupported] = useState(false)
     const [showHistory, setShowHistory] = useState(false)
@@ -359,6 +366,8 @@ export default function EventScannerPage() {
                 setSoundEnabled(savedSound === "true")
             }
 
+            setReaderMode(localStorage.getItem(STORAGE_KEY_READER_MODE) === "true")
+
             const savedHistory = localStorage.getItem(`${STORAGE_KEY_HISTORY}-${eventId}`)
             if (savedHistory) {
                 try {
@@ -381,6 +390,7 @@ export default function EventScannerPage() {
             audioRef.current.load()
             audioSuccessRef.current?.load()
             audioErrorRef.current?.load()
+            setSettingsLoaded(true)
         }
     }, [eventId])
 
@@ -400,6 +410,13 @@ export default function EventScannerPage() {
             localStorage.setItem(STORAGE_KEY_SOUND, String(soundEnabled))
         }
     }, [soundEnabled])
+
+    // Reader mode belongs to this device, not to the user or event.
+    useEffect(() => {
+        if (settingsLoaded) {
+            localStorage.setItem(STORAGE_KEY_READER_MODE, String(readerMode))
+        }
+    }, [readerMode, settingsLoaded])
 
     // Network status
     useEffect(() => {
@@ -469,10 +486,8 @@ export default function EventScannerPage() {
         })
     }, [scanHistory])
 
-    // Start camera on mount
+    // Keep the screen awake in both camera and reader modes.
     useEffect(() => {
-        startCamera()
-        
         // Request Wake Lock to keep screen on
         const requestWakeLock = async () => {
             try {
@@ -490,10 +505,6 @@ export default function EventScannerPage() {
         const handleVisibilityChange = async () => {
             if (document.visibilityState === 'visible' && !wakeLockRef.current) {
                 await requestWakeLock()
-                // Also restart camera if it was stopped
-                if (!scannerRef.current?.isScanning) {
-                    startCamera()
-                }
             }
         }
         document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -507,6 +518,7 @@ export default function EventScannerPage() {
                 wakeLockRef.current = null
             }
         }
+        // stopCamera is intentionally stable and declared below this mount-only effect.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
@@ -686,7 +698,7 @@ export default function EventScannerPage() {
                         return
                     }
                     
-                    if (scanLockedRef.current || isProcessing) {
+                    if (scanLockedRef.current) {
                         return
                     }
                     
@@ -725,7 +737,7 @@ export default function EventScannerPage() {
         } finally {
             isStartingRef.current = false
         }
-    }, [scannerId, stopCamera, isProcessing])
+    }, [scannerId, stopCamera])
     
     // Fallback camera start without exact constraint
     const startCameraFallback = useCallback(async () => {
@@ -768,6 +780,31 @@ export default function EventScannerPage() {
             () => {}
         )
     }, [scannerId])
+
+    // Camera remains the default on phones. A device that remembers reader
+    // mode never requests webcam permission when this page opens.
+    useEffect(() => {
+        if (!settingsLoaded) return
+
+        const handleVisibilityChange = () => {
+            if (
+                document.visibilityState === "visible" &&
+                !readerMode &&
+                !scannerRef.current?.isScanning
+            ) {
+                void startCamera()
+            }
+        }
+
+        if (readerMode) {
+            void stopCamera()
+        } else {
+            void startCamera()
+        }
+
+        document.addEventListener("visibilitychange", handleVisibilityChange)
+        return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
+    }, [readerMode, settingsLoaded, startCamera, stopCamera])
 
     // ==================== SCAN HANDLERS ====================
 
@@ -855,71 +892,93 @@ export default function EventScannerPage() {
         handleScan(raw, { override: true })
     }, [handleScan, isProcessing])
 
-    const handleManualSubmit = useCallback(async (e: React.FormEvent) => {
-        e.preventDefault()
-        const parsedManual = parseLookupPayload(manualCode)
-        if (!parsedManual || parsedManual.kind !== "lookup") {
+    const handleManualSubmit = useCallback(async (event: React.FormEvent) => {
+        event.preventDefault()
+        const raw = manualCode
+        if (!parseScannedPayload(raw)) {
             setScanResult({
                 valid: false,
                 reason: "INVALID",
-                message: "Codigo invalido",
+                message: "Código inválido",
             })
             return
         }
 
-        setScanning(false)
-        lastScannedCodeRef.current = parsedManual.displayCode
-        lastScannedRawRef.current = manualCode
-        scanLockedRef.current = true
-        setIsProcessing(true)
-
-        try {
-            const response = await fetch("/api/scans/lookup", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    ticketCode: parsedManual.ticketCode,
-                    ticketId: parsedManual.ticketId,
-                    rawInput: manualCode,
-                    eventId,
-                    currentShift: currentShiftRef.current || null,
-                }),
-            })
-
-            const data = await response.json() as ScanResult
-            setScanResult(data)
-            addToHistory(data, parsedManual.displayCode)
-            setManualCode("")
-
-            if (data.valid) {
-                playSound("success")
-                vibrate([100, 50, 100])
-            } else {
-                playSound("error")
-                vibrate([200, 100, 200])
-            }
-        } catch (err) {
-            console.error("Manual lookup error:", err)
-            setScanResult({
-                valid: false,
-                reason: "ERROR",
-                message: "Error de conexión",
-            })
-            playSound("error")
-        } finally {
-            setIsProcessing(false)
-        }
-    }, [manualCode, eventId, playSound, vibrate, addToHistory])
+        setManualCode("")
+        await handleScan(raw)
+    }, [manualCode, handleScan])
 
     const resetScan = useCallback(() => {
+        if (autoResetTimerRef.current !== null) {
+            clearTimeout(autoResetTimerRef.current)
+            autoResetTimerRef.current = null
+        }
         setScanResult(null)
         lastScannedCodeRef.current = null
-        setScanning(true)
+        setScanning(!readerMode)
         scanLockedRef.current = false
-        if (!cameraActive) {
-            startCamera()
+        if (!readerMode && !cameraActive) {
+            void startCamera()
         }
-    }, [cameraActive, startCamera])
+    }, [cameraActive, readerMode, startCamera])
+
+    const handleReaderScan = useCallback((raw: string) => {
+        if (autoResetTimerRef.current !== null) {
+            clearTimeout(autoResetTimerRef.current)
+            autoResetTimerRef.current = null
+        }
+
+        // A new trigger pull replaces any result left on screen, including a
+        // rejection, without requiring the operator to touch the laptop.
+        setScanResult(null)
+        scanLockedRef.current = false
+        void handleScan(raw)
+    }, [handleScan])
+
+    const {
+        inputRef: readerInputRef,
+        inputProps: readerInputProps,
+        isFocused: readerInputFocused,
+        focusCapture,
+    } = useBarcodeWedge({
+        enabled: settingsLoaded && readerMode,
+        paused: isProcessing,
+        onScan: handleReaderScan,
+    })
+
+    useEffect(() => {
+        if (autoResetTimerRef.current !== null) {
+            clearTimeout(autoResetTimerRef.current)
+            autoResetTimerRef.current = null
+        }
+
+        if (!readerMode || !scanResult?.valid) return
+
+        autoResetTimerRef.current = setTimeout(() => {
+            autoResetTimerRef.current = null
+            resetScan()
+        }, READER_SUCCESS_RESET_MS)
+
+        return () => {
+            if (autoResetTimerRef.current !== null) {
+                clearTimeout(autoResetTimerRef.current)
+                autoResetTimerRef.current = null
+            }
+        }
+    }, [readerMode, resetScan, scanResult])
+
+    const toggleReaderMode = useCallback(() => {
+        const nextReaderMode = !readerMode
+        setCameraError("")
+        setScanResult(null)
+        scanLockedRef.current = false
+        setReaderMode(nextReaderMode)
+
+        if (nextReaderMode) {
+            void stopCamera()
+            setTimeout(() => readerInputRef.current?.focus({ preventScroll: true }), 0)
+        }
+    }, [readerInputRef, readerMode, stopCamera])
 
     const restartCamera = useCallback(async () => {
         await stopCamera()
@@ -931,6 +990,18 @@ export default function EventScannerPage() {
 
     return (
         <div className="min-h-screen bg-black text-white flex flex-col">
+            <textarea
+                ref={readerInputRef}
+                {...readerInputProps}
+                aria-hidden="true"
+                tabIndex={-1}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                className="fixed -left-[9999px] top-0 h-px w-px opacity-0 pointer-events-none"
+            />
+
             {/* Header */}
             <div className="p-3 flex items-center justify-between bg-gray-900 border-b border-gray-800">
                 <Button 
@@ -956,6 +1027,26 @@ export default function EventScannerPage() {
                         {isOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
                     </div>
                     
+                    {/* Reader mode */}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={toggleReaderMode}
+                        aria-pressed={readerMode}
+                        aria-label={readerMode ? "Desactivar modo lector" : "Activar modo lector"}
+                        title={readerMode ? "Modo lector activo" : "Activar modo lector"}
+                        className={
+                            readerMode
+                                ? "bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 hover:text-cyan-200 px-2"
+                                : "text-white hover:bg-white/10 px-2"
+                        }
+                    >
+                        <ScanLine className="h-4 w-4" />
+                        <span className="hidden sm:inline ml-1.5 text-xs font-semibold">
+                            {readerMode ? "Lector activo" : "Modo lector"}
+                        </span>
+                    </Button>
+
                     {/* Sound toggle */}
                     <Button
                         variant="ghost"
@@ -1014,6 +1105,17 @@ export default function EventScannerPage() {
                         ))}
                     </select>
                 </div>
+            )}
+
+            {readerMode && !readerInputFocused && !isProcessing && (
+                <button
+                    type="button"
+                    onClick={focusCapture}
+                    className="flex w-full items-center justify-center gap-2 border-b border-amber-700 bg-amber-400 px-4 py-2.5 text-sm font-semibold text-amber-950 outline-none transition-colors hover:bg-amber-300 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
+                >
+                    <ScanLine className="h-4 w-4 shrink-0" />
+                    Lectura pausada. Haz clic aquí para reactivarla.
+                </button>
             )}
 
             {/* History Panel */}
@@ -1173,18 +1275,50 @@ export default function EventScannerPage() {
                 {/* Camera inactive state */}
                 {!cameraActive && !scanResult && (
                     <div className="absolute inset-0 flex items-center justify-center z-10">
-                        <div className="text-center p-6">
-                            <Camera className="h-16 w-16 mx-auto text-gray-500 mb-4" />
-                            <p className="text-gray-400 mb-6">La cámara está desactivada</p>
-                            <Button 
-                                onClick={startCamera} 
-                                size="lg" 
-                                className="bg-blue-600 hover:bg-blue-700"
-                            >
-                                <Camera className="h-5 w-5 mr-2" />
-                                Activar Cámara
-                            </Button>
-                        </div>
+                        {readerMode ? (
+                            <div className="max-w-md px-6 text-center">
+                                <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl border border-cyan-400/30 bg-cyan-400/10 text-cyan-300">
+                                    {isProcessing ? (
+                                        <Loader2 className="h-10 w-10 animate-spin" />
+                                    ) : (
+                                        <ScanLine className="h-10 w-10" />
+                                    )}
+                                </div>
+                                <h1 className="text-2xl font-bold text-white">
+                                    {isProcessing ? "Validando ingreso" : "Listo para leer"}
+                                </h1>
+                                <p className="mt-2 text-sm leading-6 text-gray-400">
+                                    {isProcessing
+                                        ? "Espera la señal antes de leer el siguiente ticket."
+                                        : readerInputFocused
+                                          ? "Apunta el Zebra al QR y presiona el gatillo."
+                                          : "La captura perdió el foco. Reactívala en la banda amarilla."}
+                                </p>
+                                {!isProcessing && (
+                                    <Button
+                                        onClick={toggleReaderMode}
+                                        variant="outline"
+                                        className="mt-6 border-gray-700 bg-gray-900 text-white hover:bg-gray-800 hover:text-white"
+                                    >
+                                        <Camera className="h-5 w-5 mr-2" />
+                                        Usar cámara
+                                    </Button>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="text-center p-6">
+                                <Camera className="h-16 w-16 mx-auto text-gray-500 mb-4" />
+                                <p className="text-gray-400 mb-6">La cámara está desactivada</p>
+                                <Button
+                                    onClick={startCamera}
+                                    size="lg"
+                                    className="bg-blue-600 hover:bg-blue-700"
+                                >
+                                    <Camera className="h-5 w-5 mr-2" />
+                                    Activar Cámara
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -1370,6 +1504,12 @@ export default function EventScannerPage() {
                                     )}
 
                                 {/* Action button */}
+                                {readerMode && scanResult.valid && (
+                                    <p className="mb-3 text-sm font-medium text-white/80" aria-live="polite">
+                                        Preparando la siguiente lectura…
+                                    </p>
+                                )}
+
                                 <Button
                                     onClick={resetScan}
                                     className="w-full bg-white text-gray-900 hover:bg-white/90 font-bold h-12 text-lg shadow-lg"
@@ -1404,9 +1544,12 @@ export default function EventScannerPage() {
                         <form onSubmit={handleManualSubmit} className="flex gap-2">
                             <Input
                                 value={manualCode}
-                                onChange={(e) => setManualCode(e.target.value.toUpperCase())}
+                                onChange={(event) => {
+                                    const nextValue = event.target.value
+                                    setManualCode(nextValue.trimStart().startsWith("{") ? nextValue : nextValue.toUpperCase())
+                                }}
                                 placeholder="Código manual..."
-                                className="bg-gray-800 border-gray-700 text-white uppercase font-mono"
+                                className="bg-gray-800 border-gray-700 text-white font-mono"
                                 autoComplete="off"
                                 autoCorrect="off"
                                 autoCapitalize="characters"
