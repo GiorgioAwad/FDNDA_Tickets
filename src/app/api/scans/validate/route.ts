@@ -66,7 +66,29 @@ export async function GET() {
     }
 }
 
+/**
+ * Marca hitos del camino de validacion para poder responder, con datos y no con
+ * suposiciones, en que tramo se van los milisegundos de un escaneo en la puerta.
+ * Se publica como cabecera `Server-Timing`, que Chrome grafica en la pestana Red
+ * y que el escaner ademas imprime en consola.
+ */
+type ScanTimeline = (label: string) => void
+
 export async function POST(request: NextRequest) {
+    const startedAt = performance.now()
+    const marks: string[] = []
+    const mark: ScanTimeline = (label) => {
+        marks.push(`${label};dur=${Math.round(performance.now() - startedAt)}`)
+    }
+
+    const response = await handleValidate(request, mark)
+
+    mark("total")
+    response.headers.set("Server-Timing", marks.join(", "))
+    return response
+}
+
+async function handleValidate(request: NextRequest, mark: ScanTimeline) {
     try {
         const user = await getCurrentUser()
 
@@ -89,6 +111,8 @@ export async function POST(request: NextRequest) {
                       { status: 429 }
                   )
         }
+
+        mark("auth")
 
         const body = await request.json()
         const { qrData, eventId } = body
@@ -150,6 +174,7 @@ export async function POST(request: NextRequest) {
             ticketPromise,
         ])
         if (rateLimitError) return rateLimitError
+        mark("ticket")
         const ticket = ticketResult as ScanTicket | null
 
         if (!ticket) {
@@ -181,6 +206,7 @@ export async function POST(request: NextRequest) {
                 where: { ticketId: ticket.id },
                 orderBy: { date: "asc" },
             })
+            mark("backfill")
         }
 
         if (ticket.status !== "ACTIVE") {
@@ -453,6 +479,7 @@ export async function POST(request: NextRequest) {
                 where: { ticketId: ticket.id, result: "VALID" },
             }),
         ])
+        mark("schedule")
         const usesPurchasedDates = ticketUsesPurchasedDates({
             eventCategory: ticket.event?.category,
             scheduleSelections,
@@ -879,6 +906,8 @@ export async function POST(request: NextRequest) {
             },
         })
 
+        mark("markUsed")
+
         if (markUsed.count === 0) {
             const latest = await prisma.ticketDayEntitlement.findUnique({
                 where: { id: entitlement.id },
@@ -973,8 +1002,14 @@ async function logScan(
 ) {
     if (!ticketId) return
 
-    try {
-        await prisma.scan.create({
+    // El registro de auditoría NO bloquea la respuesta. Antes cada camino hacía
+    // `await` de este INSERT, así que el operador en la puerta pagaba un viaje
+    // completo a Neon por escaneo para una escritura que nadie lee dentro del
+    // request (`initialScanCount` y `todayScans` se leen al inicio, antes de
+    // este log). El proceso es un Node de larga vida en Docker, no serverless,
+    // así que la escritura se completa igual después de responder.
+    void prisma.scan
+        .create({
             data: {
                 ticketId,
                 staffId,
@@ -989,7 +1024,7 @@ async function logScan(
                 notes,
             },
         })
-    } catch (error) {
-        console.error("Failed to log scan:", error)
-    }
+        .catch((error) => {
+            console.error("Failed to log scan:", error)
+        })
 }
