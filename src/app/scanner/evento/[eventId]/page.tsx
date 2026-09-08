@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { useBarcodeWedge } from "@/hooks/useBarcodeWedge"
+import { ScanQueue } from "@/lib/scan-queue"
 import { getScannedJsonCandidates } from "@/lib/scanner-input"
 import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { 
@@ -311,6 +312,9 @@ export default function EventScannerPage() {
 
     const wakeLockRef = useRef<WakeLockSentinel | null>(null)
     const autoResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    // Espejo sincrono de `isProcessing`: el estado de React llega un render tarde
+    // y la pistola dispara mas rapido que eso.
+    const isProcessingRef = useRef(false)
 
     // State
     const [scanning, setScanning] = useState(false)
@@ -814,7 +818,10 @@ export default function EventScannerPage() {
         const override = opts?.override === true
 
         // Prevent duplicate processing (el forzado de emergencia sí puede reintentar).
-        if (!override && (scanLockedRef.current || isProcessing)) {
+        // Se lee del ref y no del estado: `isProcessing` no esta en las deps de
+        // este callback, asi que la variable capturada quedaba congelada en su
+        // valor inicial y el guard dependia solo de `scanLockedRef`.
+        if (!override && (scanLockedRef.current || isProcessingRef.current)) {
             return
         }
 
@@ -835,6 +842,7 @@ export default function EventScannerPage() {
         lastScannedRawRef.current = qrData
         setScanning(false)
         scanLockedRef.current = true
+        isProcessingRef.current = true
         setIsProcessing(true)
 
         // Immediate feedback
@@ -862,9 +870,16 @@ export default function EventScannerPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
             })
+            const serverTiming = response.headers.get("Server-Timing")
             const data = await response.json() as ScanResult
             const validationDurationMs = Math.round(performance.now() - validationStartedAt)
-            console.info(`[scanner] ${endpoint}: ${validationDurationMs} ms`)
+            // El desglose del servidor llega por `Server-Timing`. Restarlo del
+            // total de ida y vuelta separa el tiempo de red del de la base de
+            // datos, que es lo que no se podía distinguir desde la puerta.
+            console.info(
+                `[scanner] ${endpoint}: ${validationDurationMs} ms total` +
+                    (serverTiming ? ` | servidor: ${serverTiming}` : "")
+            )
             setScanResult(data)
             addToHistory(data, parsedPayload.displayCode)
 
@@ -887,6 +902,7 @@ export default function EventScannerPage() {
             playSound("error")
             vibrate([300, 100, 300])
         } finally {
+            isProcessingRef.current = false
             setIsProcessing(false)
         }
     }, [eventId, playSound, vibrate, addToHistory])
@@ -934,7 +950,7 @@ export default function EventScannerPage() {
         }
     }, [cameraActive, readerMode, startCamera])
 
-    const handleReaderScan = useCallback((raw: string) => {
+    const runReaderScan = useCallback(async (raw: string) => {
         if (autoResetTimerRef.current !== null) {
             clearTimeout(autoResetTimerRef.current)
             autoResetTimerRef.current = null
@@ -944,8 +960,25 @@ export default function EventScannerPage() {
         // rejection, without requiring the operator to touch the laptop.
         setScanResult(null)
         scanLockedRef.current = false
-        void handleScan(raw)
+        await handleScan(raw)
     }, [handleScan])
+
+    const runReaderScanRef = useRef(runReaderScan)
+    useEffect(() => {
+        runReaderScanRef.current = runReaderScan
+    }, [runReaderScan])
+
+    // Una lectura que llega mientras la anterior sigue validandose se ENCOLA, no
+    // se descarta (ver `ScanQueue`). La cola vive en un ref para sobrevivir a los
+    // renders sin reiniciarse a media fila.
+    const scanQueueRef = useRef<ScanQueue | null>(null)
+    if (scanQueueRef.current === null) {
+        scanQueueRef.current = new ScanQueue((raw) => runReaderScanRef.current(raw))
+    }
+
+    const handleReaderScan = useCallback((raw: string) => {
+        void scanQueueRef.current?.push(raw)
+    }, [])
 
     const {
         inputRef: readerInputRef,
@@ -955,7 +988,12 @@ export default function EventScannerPage() {
         focusCapture,
     } = useBarcodeWedge({
         enabled: settingsLoaded && readerMode,
-        paused: isProcessing,
+        // La captura NO se pausa durante la validacion. Pausarla hacia que
+        // `BarcodeWedgeBuffer` descartara los caracteres que llegaran mientras el
+        // fetch estaba en vuelo, asi que un pistoletazo disparado en ese lapso se
+        // perdia en silencio. Ahora se captura siempre y la re-entrada se resuelve
+        // encolando en `handleReaderScan`.
+        paused: false,
         onScan: handleReaderScan,
     })
 
