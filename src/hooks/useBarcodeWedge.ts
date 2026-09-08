@@ -30,8 +30,8 @@ export class BarcodeWedgeBuffer {
     constructor({
         onScan,
         flushDelayMs = DEFAULT_FLUSH_DELAY_MS,
-        schedule = setTimeout,
-        cancel = clearTimeout,
+        schedule = (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+        cancel = (handle) => globalThis.clearTimeout(handle),
     }: BarcodeWedgeBufferOptions) {
         this.onScan = onScan
         this.flushDelayMs = flushDelayMs

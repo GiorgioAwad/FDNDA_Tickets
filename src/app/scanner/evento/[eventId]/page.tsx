@@ -308,9 +308,7 @@ export default function EventScannerPage() {
     // Último input crudo (QR o código) para poder reintentar con forzado de ingreso.
     const lastScannedRawRef = useRef<string | null>(null)
     const currentShiftRef = useRef("")
-    const audioRef = useRef<HTMLAudioElement | null>(null)
-    const audioSuccessRef = useRef<HTMLAudioElement | null>(null)
-    const audioErrorRef = useRef<HTMLAudioElement | null>(null)
+
     const wakeLockRef = useRef<WakeLockSentinel | null>(null)
     const autoResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -377,15 +375,7 @@ export default function EventScannerPage() {
                 }
             }
 
-            // Preload audio files
-            audioRef.current = new Audio("/beep.mp3")
-            audioSuccessRef.current = new Audio("/success.mp3")
-            audioErrorRef.current = new Audio("/error.mp3")
-            
-            // Preload
-            audioRef.current.load()
-            audioSuccessRef.current?.load()
-            audioErrorRef.current?.load()
+
             setSettingsLoaded(true)
         }
     }, [eventId])
@@ -532,26 +522,27 @@ export default function EventScannerPage() {
 
     const playSound = useCallback((type: "beep" | "success" | "error") => {
         if (!soundEnabled) return
-        
+
         try {
-            let audio: HTMLAudioElement | null = null
-            switch (type) {
-                case "success":
-                    audio = audioSuccessRef.current
-                    break
-                case "error":
-                    audio = audioErrorRef.current
-                    break
-                default:
-                    audio = audioRef.current
-            }
-            
-            if (audio) {
-                audio.currentTime = 0
-                audio.play().catch(() => {})
-            }
+            const context = new AudioContext()
+            const oscillator = context.createOscillator()
+            const gain = context.createGain()
+            const now = context.currentTime
+            const frequency = type === "success" ? 1047 : type === "error" ? 220 : 880
+            const duration = type === "error" ? 0.18 : type === "success" ? 0.12 : 0.06
+
+            oscillator.type = type === "error" ? "square" : "sine"
+            oscillator.frequency.setValueAtTime(frequency, now)
+            gain.gain.setValueAtTime(0.0001, now)
+            gain.gain.exponentialRampToValueAtTime(0.12, now + 0.01)
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+            oscillator.connect(gain)
+            gain.connect(context.destination)
+            oscillator.start(now)
+            oscillator.stop(now + duration)
+            oscillator.addEventListener("ended", () => void context.close(), { once: true })
         } catch {
-            // Ignore audio errors
+            // Sound feedback must never interrupt ticket validation.
         }
     }, [soundEnabled])
 
