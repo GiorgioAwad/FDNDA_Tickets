@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
+import { looksLikeSignedQrAttempt } from "@/lib/scan-payload"
+import { getScannedJsonCandidates } from "@/lib/scanner-input"
+
 const DEFAULT_FLUSH_DELAY_MS = 180
+// Techo de espera cuando el buffer trae un JSON a medio llegar. Acota cuanto se
+// aguanta una transmision estancada antes de despachar lo que haya (que el
+// parser rechazara), para que una lectura rota aflore en vez de colgarse.
+const DEFAULT_MAX_PARTIAL_WAIT_MS = 2500
 const LINE_ENDING_REGEX = /[\r\n]/
 
 type TimeoutHandle = ReturnType<typeof setTimeout>
@@ -10,8 +17,23 @@ type TimeoutHandle = ReturnType<typeof setTimeout>
 interface BarcodeWedgeBufferOptions {
     onScan: (raw: string) => void
     flushDelayMs?: number
+    maxPartialWaitMs?: number
     schedule?: (callback: () => void, delayMs: number) => TimeoutHandle
     cancel?: (handle: TimeoutHandle) => void
+}
+
+/** Un JSON que empezo a llegar pero todavia no cierra. */
+function isIncompleteJsonPayload(buffer: string): boolean {
+    const trimmed = buffer.trim()
+    if (!trimmed || !looksLikeSignedQrAttempt(trimmed)) return false
+
+    return !getScannedJsonCandidates(trimmed).some((candidate) => {
+        try {
+            return typeof JSON.parse(candidate) === "object"
+        } catch {
+            return false
+        }
+    })
 }
 
 /**
@@ -23,18 +45,22 @@ export class BarcodeWedgeBuffer {
     private paused = false
     private timeout: TimeoutHandle | null = null
     private onScan: (raw: string) => void
+    private stalledMs = 0
     private readonly flushDelayMs: number
+    private readonly maxPartialWaitMs: number
     private readonly schedule: (callback: () => void, delayMs: number) => TimeoutHandle
     private readonly cancel: (handle: TimeoutHandle) => void
 
     constructor({
         onScan,
         flushDelayMs = DEFAULT_FLUSH_DELAY_MS,
+        maxPartialWaitMs = DEFAULT_MAX_PARTIAL_WAIT_MS,
         schedule = (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
         cancel = (handle) => globalThis.clearTimeout(handle),
     }: BarcodeWedgeBufferOptions) {
         this.onScan = onScan
         this.flushDelayMs = flushDelayMs
+        this.maxPartialWaitMs = maxPartialWaitMs
         this.schedule = schedule
         this.cancel = cancel
     }
@@ -63,6 +89,9 @@ export class BarcodeWedgeBuffer {
             return
         }
 
+        // Llegaron caracteres nuevos: la transmision avanza, el techo de espera
+        // por estancamiento vuelve a cero.
+        this.stalledMs = 0
         this.scheduleFlush()
     }
 
@@ -83,6 +112,7 @@ export class BarcodeWedgeBuffer {
             this.timeout = null
         }
         this.buffer = ""
+        this.stalledMs = 0
     }
 
     dispose() {
@@ -93,8 +123,25 @@ export class BarcodeWedgeBuffer {
         if (this.timeout !== null) this.cancel(this.timeout)
         this.timeout = this.schedule(() => {
             this.timeout = null
+
+            // El DS2278 en "Emulate Keypad" manda cada caracter como una
+            // composicion Alt+numpad y deja pausas mayores a `flushDelayMs` a
+            // media transmision. Despachar ahi partia el QR firmado por la mitad,
+            // y esa mitad se colaba por el camino sin firma (`/api/scans/lookup`)
+            // registrando la asistencia. Mientras el buffer sea un JSON a medio
+            // llegar seguimos esperando; un codigo corto sigue saliendo al toque.
+            if (
+                isIncompleteJsonPayload(this.buffer) &&
+                this.stalledMs + this.flushDelayMs < this.maxPartialWaitMs
+            ) {
+                this.stalledMs += this.flushDelayMs
+                this.scheduleFlush()
+                return
+            }
+
             const completed = this.buffer
             this.buffer = ""
+            this.stalledMs = 0
             this.emit(completed)
         }, this.flushDelayMs)
     }
