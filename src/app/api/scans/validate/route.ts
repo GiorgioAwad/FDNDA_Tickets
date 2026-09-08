@@ -47,6 +47,25 @@ export const runtime = "nodejs"
 // horario semanal, acceso libre) mantiene ingresos ilimitados por día.
 const SCHEDULED_MEMBERSHIP_MAX_DAILY_SCANS = 2
 
+// Prewarms this route and its database connection before the first scan.
+export async function GET() {
+    const user = await getCurrentUser()
+    if (!user || !hasRole(user.role, "STAFF")) {
+        return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 })
+    }
+
+    try {
+        await prisma.$queryRaw`SELECT 1`
+        return new NextResponse(null, {
+            status: 204,
+            headers: { "Cache-Control": "no-store" },
+        })
+    } catch (error) {
+        console.error("Scanner warmup error:", error)
+        return NextResponse.json({ success: false }, { status: 503 })
+    }
+}
+
 export async function POST(request: NextRequest) {
     try {
         const user = await getCurrentUser()
@@ -58,13 +77,17 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // Rate limiting para scanner: 60 escaneos por minuto por staff
-        const { success: rateLimitOk } = await rateLimit(`scanner:${user.id}`, "scanner")
-        if (!rateLimitOk) {
-            return NextResponse.json(
-                { success: false, error: "Demasiados escaneos. Espera un momento." },
-                { status: 429 }
-            )
+        // Start the remote limiter immediately so request parsing and the
+        // ticket lookup can overlap it instead of adding serial latency.
+        const rateLimitPromise = rateLimit(`scanner:${user.id}`, "scanner")
+        const enforceRateLimit = async () => {
+            const { success } = await rateLimitPromise
+            return success
+                ? null
+                : NextResponse.json(
+                      { success: false, error: "Demasiados escaneos. Espera un momento." },
+                      { status: 429 }
+                  )
         }
 
         const body = await request.json()
@@ -76,6 +99,8 @@ export async function POST(request: NextRequest) {
         const override = body.override === true
 
         if (!qrData || !eventId) {
+            const rateLimitError = await enforceRateLimit()
+            if (rateLimitError) return rateLimitError
             return NextResponse.json(
                 { success: false, error: "Datos incompletos" },
                 { status: 400 }
@@ -87,6 +112,8 @@ export async function POST(request: NextRequest) {
         const todayDate = new Date(`${today}T12:00:00Z`)
 
         if (!payload) {
+            const rateLimitError = await enforceRateLimit()
+            if (rateLimitError) return rateLimitError
             await logScan(null, user.id, eventId, "INVALID", "QR invalido o mal formado")
             return NextResponse.json({
                 success: false,
@@ -97,6 +124,8 @@ export async function POST(request: NextRequest) {
         }
 
         if (!verifySignature(payload)) {
+            const rateLimitError = await enforceRateLimit()
+            if (rateLimitError) return rateLimitError
             await logScan(payload.ticketId, user.id, eventId, "INVALID", "Firma invalida")
             return NextResponse.json({
                 success: false,
@@ -106,7 +135,7 @@ export async function POST(request: NextRequest) {
             })
         }
 
-        const ticket = await prisma.ticket.findUnique({
+        const ticketPromise = prisma.ticket.findUnique({
             where: { id: payload.ticketId },
             include: {
                 event: true,
@@ -115,7 +144,13 @@ export async function POST(request: NextRequest) {
                 monthlySchedules: { select: { monthIndex: true, selection: true } },
                 membershipFreeze: true,
             },
-        }) as ScanTicket | null
+        })
+        const [rateLimitError, ticketResult] = await Promise.all([
+            enforceRateLimit(),
+            ticketPromise,
+        ])
+        if (rateLimitError) return rateLimitError
+        const ticket = ticketResult as ScanTicket | null
 
         if (!ticket) {
             await logScan(payload.ticketId, user.id, eventId, "INVALID", "Ticket no existe")
@@ -407,12 +442,17 @@ export async function POST(request: NextRequest) {
         const requiresShiftSelection = scheduleConfig.requireShiftSelection && configuredShifts.length > 0
         const hasMultipleShifts = configuredShifts.length > 1
 
-        const scheduleSelections = await getTicketScheduleSelectionsForAttendee({
-            orderId: ticket.orderId,
-            ticketTypeId: ticket.ticketTypeId,
-            attendeeName: ticket.attendeeName,
-            attendeeDni: ticket.attendeeDni,
-        })
+        const [scheduleSelections, initialScanCount] = await Promise.all([
+            getTicketScheduleSelectionsForAttendee({
+                orderId: ticket.orderId,
+                ticketTypeId: ticket.ticketTypeId,
+                attendeeName: ticket.attendeeName,
+                attendeeDni: ticket.attendeeDni,
+            }),
+            prisma.scan.count({
+                where: { ticketId: ticket.id, result: "VALID" },
+            }),
+        ])
         const usesPurchasedDates = ticketUsesPurchasedDates({
             eventCategory: ticket.event?.category,
             scheduleSelections,
@@ -543,9 +583,7 @@ export async function POST(request: NextRequest) {
         // cada turno escaneado es una entrada independiente, asi que contamos por scans,
         // no por dias/entitlements.
         const multiShiftAttendance = !requiresShiftSelection && hasMultipleShifts
-        let scanCount = await prisma.scan.count({
-            where: { ticketId: ticket.id, result: "VALID" },
-        })
+        let scanCount = initialScanCount
 
         const computeAttendance = () => {
             // Membresía: cupo del mes en curso (las clases de meses anteriores no
@@ -579,8 +617,8 @@ export async function POST(request: NextRequest) {
             const anchor = getMembershipAnchor(ticket)
             const period = anchor ? getMembershipQuotaPeriod(today, anchor) : null
             const limit = ticket.ticketType.monthlyClassLimit ?? 0
-            const monthlyUsed = period
-                ? await prisma.scan.count({
+            const monthlyUsedPromise = period
+                ? prisma.scan.count({
                       where: {
                           ticketId: ticket.id,
                           result: "VALID",
@@ -590,15 +628,20 @@ export async function POST(request: NextRequest) {
                           },
                       },
                   })
-                : 0
+                : Promise.resolve(0)
+            const todayScansPromise = weeklySchedule
+                ? prisma.scan.count({
+                      where: { ticketId: ticket.id, result: "VALID", date: todayDate },
+                  })
+                : Promise.resolve(0)
+            const [monthlyUsed, todayScans] = await Promise.all([
+                monthlyUsedPromise,
+                todayScansPromise,
+            ])
 
             // Planes con horario semanal (BRONCE/PLATA): tope de 2 ingresos/día,
             // igual que el panel manual. ORO (sin horario) no tiene tope.
-            let todayScans = 0
             if (weeklySchedule) {
-                todayScans = await prisma.scan.count({
-                    where: { ticketId: ticket.id, result: "VALID", date: todayDate },
-                })
                 if (todayScans >= SCHEDULED_MEMBERSHIP_MAX_DAILY_SCANS) {
                     await logScan(ticket.id, user.id, eventId, "ALREADY_USED", "Límite 2 ingresos/día (doble asistencia)", currentShift, todayDate)
                     return NextResponse.json({

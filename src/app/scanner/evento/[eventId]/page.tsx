@@ -404,6 +404,21 @@ export default function EventScannerPage() {
         }
     }, [readerMode, settingsLoaded])
 
+    // Warm the authenticated validation function and database connection
+    // while the operator prepares the first ticket.
+    useEffect(() => {
+        if (!settingsLoaded || !readerMode) return
+
+        const controller = new AbortController()
+        void fetch("/api/scans/validate", {
+            method: "GET",
+            cache: "no-store",
+            signal: controller.signal,
+        }).catch(() => {})
+
+        return () => controller.abort()
+    }, [readerMode, settingsLoaded])
+
     // Network status
     useEffect(() => {
         const handleOnline = () => setIsOnline(true)
@@ -841,13 +856,15 @@ export default function EventScannerPage() {
                           override,
                       }
 
+            const validationStartedAt = performance.now()
             const response = await fetch(endpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
             })
-
             const data = await response.json() as ScanResult
+            const validationDurationMs = Math.round(performance.now() - validationStartedAt)
+            console.info(`[scanner] ${endpoint}: ${validationDurationMs} ms`)
             setScanResult(data)
             addToHistory(data, parsedPayload.displayCode)
 
