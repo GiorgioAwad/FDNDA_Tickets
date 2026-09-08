@@ -154,9 +154,16 @@ No hay nada que comprar. El DS2278 con la cuna **CR2278-PC10004WW** (que es de
 o a un puerto de la laptop. Verificar que la laptop tenga Bluetooth; si no, un
 dongle USB.
 
-Secuencia de configuracion, con codigos de la *DS2278 Product Reference Guide*
-o, mejor, con **123Scan** (utilitario gratis de Windows que arma el perfil sin
-adivinar codigos):
+La configuracion se hace **sin instalar nada**: se abre el PDF *DS2278 Product
+Reference Guide* de Zebra en pantalla y se dispara la pistola contra los codigos
+de barras impresos en el propio PDF, que el lector interpreta como comandos.
+
+**123Scan no hace falta para el enfoque A.** Ademas programa por cable USB de
+datos, y la cuna CR2278-PC es de solo carga, asi que igual habria que terminar
+configurando por codigos escaneados. Solo se justifica si se activa el plan B,
+porque armar una regla ADF a mano desde el PDF es impracticable.
+
+Secuencia:
 
 1. Restaurar valores de fabrica.
 2. Host Bluetooth = **HID Keyboard**. El lector queda visible y se empareja
