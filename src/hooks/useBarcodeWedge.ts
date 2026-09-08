@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
-const DEFAULT_FLUSH_DELAY_MS = 300
+const DEFAULT_FLUSH_DELAY_MS = 1000
 const LINE_ENDING_REGEX = /[\r\n]/
 
 type TimeoutHandle = ReturnType<typeof setTimeout>
@@ -182,10 +182,21 @@ export function useBarcodeWedge({
         buffer.push(chunk)
     }, [buffer])
 
+    const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.key !== "Enter") return
+
+        event.preventDefault()
+        const pendingChunk = event.currentTarget.value
+        event.currentTarget.value = ""
+        if (pendingChunk) buffer.push(pendingChunk)
+        buffer.flush()
+    }, [buffer])
+
     return {
         inputRef,
         inputProps: {
             onInput: handleInput,
+            onKeyDown: handleKeyDown,
             onFocus: () => setIsFocused(true),
             onBlur: () => setIsFocused(false),
         },

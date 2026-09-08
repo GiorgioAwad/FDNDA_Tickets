@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { useBarcodeWedge } from "@/hooks/useBarcodeWedge"
+import { getScannedJsonCandidates } from "@/lib/scanner-input"
 import { parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import { 
     Camera, 
@@ -160,12 +161,7 @@ function parseJsonObject(input: string): Record<string, unknown> | null {
     const trimmed = input.trim()
     if (!trimmed) return null
 
-    const candidates = [trimmed]
-    const firstBrace = trimmed.indexOf("{")
-    const lastBrace = trimmed.lastIndexOf("}")
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-        candidates.push(trimmed.slice(firstBrace, lastBrace + 1))
-    }
+    const candidates = getScannedJsonCandidates(trimmed)
 
     for (const candidate of candidates) {
         try {
@@ -818,6 +814,14 @@ export default function EventScannerPage() {
 
         const parsedPayload = parseScannedPayload(qrData)
         if (!parsedPayload) {
+            setScanning(false)
+            setScanResult({
+                valid: false,
+                reason: "INVALID",
+                message: "Lectura no reconocida. Vuelve a escanear el QR.",
+            })
+            playSound("error")
+            vibrate([200, 100, 200])
             return
         }
 
