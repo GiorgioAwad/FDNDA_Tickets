@@ -657,14 +657,15 @@ model Scan {
   @@map("scans")
 }
 
-// Cada membresía ORO incluye hasta 3 pases gratuitos durante la vigencia del
-// ticket. `number` (1..3) y el índice único hacen que el límite sea seguro aun
+// Cada membresía ORO incluye hasta 3 pases gratuitos por mes calendario (Lima).
+// `month` (YYYY-MM), `number` (1..3) y el índice único protegen el límite aun
 // cuando dos operadores registran pases al mismo tiempo.
 model MembershipGuestPass {
   id           String   @id @default(cuid())
   ticketId     String
   staffId      String
   eventId      String
+  month        String
   number       Int
   date         DateTime @db.Date
   registeredAt DateTime @default(now())
@@ -673,7 +674,7 @@ model MembershipGuestPass {
   staff  User   @relation("MembershipGuestPassStaff", fields: [staffId], references: [id])
   event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  @@unique([ticketId, number])
+  @@unique([ticketId, month, number])
   @@index([eventId, date])
   @@index([staffId])
   @@index([registeredAt])

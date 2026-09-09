@@ -187,7 +187,7 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
 
         const confirmed = window.confirm(
             `¿Registrar un pase gratis para un acompañante de ${ticket.attendeeName || "esta membresía"}? ` +
-                `Después quedarán ${guestPasses.remaining - 1}.`
+                `Después quedarán ${guestPasses.remaining - 1} este mes.`
         )
         if (!confirmed) return
 
@@ -391,7 +391,7 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                                 )}
                                                 {membership.guestPasses && (
                                                     <p className="text-xs font-medium text-amber-700">
-                                                        Pases gratis: {membership.guestPasses.used}/{membership.guestPasses.limit}
+                                                        Pases gratis del mes: {membership.guestPasses.used}/{membership.guestPasses.limit}
                                                         {membership.guestPasses.remaining > 0
                                                             ? ` (${membership.guestPasses.remaining} disponibles)`
                                                             : " (agotados)"}
@@ -500,7 +500,7 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                         )}
                                         {membership?.guestPasses?.remaining === 0 && !guestPassMark && (
                                             <Badge className="bg-gray-100 text-gray-600 border-gray-200">
-                                                3 pases gratis utilizados
+                                                3 pases gratis utilizados este mes
                                             </Badge>
                                         )}
                                     </div>

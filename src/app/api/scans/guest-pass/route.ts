@@ -1,11 +1,10 @@
-import { Prisma } from "@prisma/client"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import {
     GOLD_MEMBERSHIP_GUEST_PASS_LIMIT,
-    buildMembershipGuestPassSummary,
     isGoldMembershipDisplay,
 } from "@/lib/membership-guest-pass"
+import { registerMembershipGuestPass } from "@/lib/membership-guest-pass-registration"
 import { prisma } from "@/lib/prisma"
 import { getTodayDateString } from "@/lib/qr"
 import {
@@ -93,40 +92,16 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        const date = new Date(`${today}T12:00:00Z`)
-        let registeredNumber: number | null = null
-
-        // Cada intento toma uno de los tres slots protegidos por el índice único
-        // (ticketId, number). Si otro staff ganó el slot, se prueba el siguiente.
-        for (let number = 1; number <= GOLD_MEMBERSHIP_GUEST_PASS_LIMIT; number += 1) {
-            try {
-                await prisma.membershipGuestPass.create({
-                    data: {
-                        ticketId: ticket.id,
-                        staffId: user.id,
-                        eventId,
-                        number,
-                        date,
-                    },
-                })
-                registeredNumber = number
-                break
-            } catch (error) {
-                if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-                    continue
-                }
-                throw error
-            }
-        }
-
-        const used = await prisma.membershipGuestPass.count({ where: { ticketId: ticket.id } })
-        const guestPasses = buildMembershipGuestPassSummary(used)
+        const { registeredNumber, guestPasses } = await registerMembershipGuestPass(
+            prisma.membershipGuestPass,
+            { ticketId: ticket.id, staffId: user.id, eventId, today }
+        )
 
         if (registeredNumber === null) {
             return NextResponse.json(
                 {
                     success: false,
-                    error: "La membresía ya utilizó sus 3 pases gratis",
+                    error: "La membresía ya utilizó sus 3 pases gratis de este mes",
                     guestPasses,
                 },
                 { status: 409 }
@@ -135,7 +110,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: `Pase gratis ${registeredNumber} de ${GOLD_MEMBERSHIP_GUEST_PASS_LIMIT} registrado`,
+            message: `Pase gratis ${registeredNumber} de ${GOLD_MEMBERSHIP_GUEST_PASS_LIMIT} del mes registrado`,
             guestPasses,
         })
     } catch (error) {

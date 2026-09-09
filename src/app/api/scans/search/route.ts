@@ -54,6 +54,8 @@ export async function POST(request: NextRequest) {
             )
         }
 
+        const today = getTodayDateString()
+        const month = today.slice(0, 7)
         const tickets = await prisma.ticket.findMany({
             where: {
                 eventId,
@@ -70,14 +72,13 @@ export async function POST(request: NextRequest) {
                 ticketType: true,
                 entitlements: { orderBy: { date: "asc" } },
                 monthlySchedules: true,
-                _count: { select: { membershipGuestPasses: true } },
+                _count: { select: { membershipGuestPasses: { where: { month } } } },
                 user: { select: { name: true, dni: true } },
             },
             take: 20,
             orderBy: { createdAt: "desc" },
         })
 
-        const today = getTodayDateString()
         const todayDate = new Date(`${today}T12:00:00Z`)
 
         const results = await Promise.all(
