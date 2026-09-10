@@ -7,6 +7,7 @@
  * `BarcodeWedgeBuffer` y `ScanQueue`.
  */
 import { getScannedJsonCandidates } from "@/lib/scanner-input"
+import { looksLikeQRToken, normalizeQRToken } from "@/lib/qr-token-format"
 
 const TICKET_CODE_REGEX = /^[A-Z2-9]{4}(?:-[A-Z2-9]{4}){2}$/
 const TICKET_CODE_COMPACT_REGEX = /^[A-Z2-9]{12}$/
@@ -201,6 +202,13 @@ export function looksLikeSignedQrAttempt(input: string): boolean {
 export function parseScannedPayload(rawData: string): ParsedScanPayload | null {
     const trimmed = rawData.trim()
     if (!trimmed) return null
+
+    // A token must use signed validation. A partial token must never fall back
+    // to extracting a manual ticket code from its characters.
+    if (looksLikeQRToken(trimmed)) {
+        const token = normalizeQRToken(trimmed)
+        return token ? { kind: "signed-qr", qrData: token, displayCode: "QR" } : null
+    }
 
     const signedPayload = parseSignedQrPayload(trimmed)
     if (signedPayload) {

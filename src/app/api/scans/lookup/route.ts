@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
+import { looksLikeQRToken } from "@/lib/qr-token-format"
 import { formatDateUTC, getTodayDateString } from "@/lib/qr"
 import { getShiftOptionsForDate, normalizeShiftLabel, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import {
@@ -211,6 +212,17 @@ export async function POST(request: NextRequest) {
                 { success: false, error: "Datos incompletos" },
                 { status: 400 }
             )
+        }
+
+        // Cached clients may still send new QR tokens to the manual endpoint.
+        // Never extract an unsigned ticket code from an opaque credential.
+        if ([rawInput, ticketCodeInput, ticketIdInput].some((value) => value && looksLikeQRToken(value))) {
+            return NextResponse.json({
+                success: false,
+                valid: false,
+                reason: "INVALID",
+                message: "Actualiza el escaner y vuelve a leer el QR.",
+            })
         }
 
         const { ticketCodes, ticketId } = parseLookupCandidates(ticketCodeInput, ticketIdInput, rawInput)

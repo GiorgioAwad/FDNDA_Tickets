@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 
 import { looksLikeSignedQrAttempt } from "@/lib/scan-payload"
 import { getScannedJsonCandidates } from "@/lib/scanner-input"
+import { looksLikeQRToken, QR_TOKEN_LENGTH, QR_TOKEN_PREFIX } from "@/lib/qr-token-format"
 
 const DEFAULT_FLUSH_DELAY_MS = 180
 // Techo de espera cuando el buffer trae un JSON a medio llegar. Acota cuanto se
@@ -23,8 +24,10 @@ interface BarcodeWedgeBufferOptions {
 }
 
 /** Un JSON que empezo a llegar pero todavia no cierra. */
-function isIncompleteJsonPayload(buffer: string): boolean {
+function isIncompletePayload(buffer: string): boolean {
     const trimmed = buffer.trim()
+    if (trimmed && QR_TOKEN_PREFIX.startsWith(trimmed.toUpperCase())) return true
+    if (looksLikeQRToken(trimmed)) return trimmed.length < QR_TOKEN_LENGTH
     if (!trimmed || !looksLikeSignedQrAttempt(trimmed)) return false
 
     return !getScannedJsonCandidates(trimmed).some((candidate) => {
@@ -131,7 +134,7 @@ export class BarcodeWedgeBuffer {
             // registrando la asistencia. Mientras el buffer sea un JSON a medio
             // llegar seguimos esperando; un codigo corto sigue saliendo al toque.
             if (
-                isIncompleteJsonPayload(this.buffer) &&
+                isIncompletePayload(this.buffer) &&
                 this.stalledMs + this.flushDelayMs < this.maxPartialWaitMs
             ) {
                 this.stalledMs += this.flushDelayMs

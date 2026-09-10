@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
 import { parseQRPayload, verifySignature, getTodayDateString, getLimaTime, formatDateUTC } from "@/lib/qr"
+import { resolveQRToken } from "@/lib/qr-token"
+import { looksLikeQRToken } from "@/lib/qr-token-format"
 import { getShiftOptionsForDate, normalizeShiftLabel, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 import {
     matchMembershipSession,
@@ -122,7 +124,7 @@ async function handleValidate(request: NextRequest, mark: ScanTimeline) {
         // Lo pueden activar Staff y Admin (la ruta ya exige STAFF+) y queda registrado.
         const override = body.override === true
 
-        if (!qrData || !eventId) {
+        if (typeof qrData !== "string" || !qrData.trim() || typeof eventId !== "string" || !eventId.trim()) {
             const rateLimitError = await enforceRateLimit()
             if (rateLimitError) return rateLimitError
             return NextResponse.json(
@@ -131,7 +133,9 @@ async function handleValidate(request: NextRequest, mark: ScanTimeline) {
             )
         }
 
-        const payload = parseQRPayload(qrData)
+        const payload = looksLikeQRToken(qrData)
+            ? await resolveQRToken(qrData)
+            : parseQRPayload(qrData)
         const today = getTodayDateString()
         const todayDate = new Date(`${today}T12:00:00Z`)
 

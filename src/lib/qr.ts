@@ -106,9 +106,10 @@ export function createQRPayload(
  * Generate QR code as data URL (base64)
  */
 export async function generateQRDataURL(payload: SignedQRPayload): Promise<string> {
-    const jsonPayload = JSON.stringify(payload)
+    const { issueQRToken } = await import("@/lib/qr-token")
+    const token = await issueQRToken(payload)
 
-    return QRCode.toDataURL(jsonPayload, {
+    return QRCode.toDataURL(token, {
         errorCorrectionLevel: "M",
         type: "image/png",
         width: 400,
@@ -124,9 +125,10 @@ export async function generateQRDataURL(payload: SignedQRPayload): Promise<strin
  * Generate QR code as SVG string
  */
 export async function generateQRSVG(payload: SignedQRPayload): Promise<string> {
-    const jsonPayload = JSON.stringify(payload)
+    const { issueQRToken } = await import("@/lib/qr-token")
+    const token = await issueQRToken(payload)
 
-    return QRCode.toString(jsonPayload, {
+    return QRCode.toString(token, {
         type: "svg",
         errorCorrectionLevel: "M",
         width: 400,
@@ -143,22 +145,17 @@ export async function generateQRSVG(payload: SignedQRPayload): Promise<string> {
  */
 export function parseQRPayload(qrData: string): SignedQRPayload | null {
     try {
-        const payload = JSON.parse(qrData) as SignedQRPayload
+        const payload: unknown = JSON.parse(qrData)
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null
 
-        // Validate required fields
-        if (
-            !payload.ticketId ||
-            !payload.eventId ||
-            !payload.userId ||
-            !payload.date ||
-            !payload.ticketCode ||
-            !payload.nonce ||
-            !payload.signature
-        ) {
+        const record = payload as Record<string, unknown>
+        const required = ["ticketId", "eventId", "userId", "date", "ticketCode", "nonce", "signature"]
+        if (!required.every((field) => typeof record[field] === "string" && record[field].trim().length > 0)) {
             return null
         }
+        if (record.shift !== undefined && typeof record.shift !== "string") return null
 
-        return payload
+        return record as unknown as SignedQRPayload
     } catch {
         return null
     }

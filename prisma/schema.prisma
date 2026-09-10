@@ -542,12 +542,26 @@ model Ticket {
   membershipGuestPasses MembershipGuestPass[]
   // Correcciones administrativas de horario/sede hechas desde el panel.
   adminChanges          MembershipAdminChange[]
+  qrTokens              TicketQRToken[]
 
   @@index([eventId])
   @@index([userId])
   @@index([orderId])
   @@index([status])
   @@map("tickets")
+}
+
+// Short QR references: only the credential hash is stored.
+model TicketQRToken {
+  tokenHash String   @id
+  ticketId  String
+  payload   String   @db.Text
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_qr_tokens")
 }
 
 // Cambio de horario por mes para membresías a término fijo (semestral/anual)
