@@ -2,8 +2,17 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 import { extractOrderPaymentDetails } from "@/lib/payment-details"
+import {
+    getCurrentLimaMonth,
+    getLimaDateKey,
+    getReportPeriodStart,
+    projectMonthlyRevenue,
+    type ReportPeriod,
+} from "@/lib/reporting-period"
 import type { Prisma } from "@prisma/client"
+
 export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
 type OrderWhereInput = Prisma.OrderWhereInput
 
@@ -17,6 +26,15 @@ type ReportOrderItem = Prisma.OrderGetPayload<{
         }
     }
 }>
+
+function paymentDateRange(start: Date, end: Date): OrderWhereInput {
+    return {
+        OR: [
+            { paidAt: { gte: start, lt: end } },
+            { paidAt: null, createdAt: { gte: start, lt: end } },
+        ],
+    }
+}
 
 export async function GET(request: NextRequest) {
     try {
@@ -33,39 +51,64 @@ export async function GET(request: NextRequest) {
         const eventId = searchParams.get("eventId")
         const startDate = searchParams.get("startDate")
         const endDate = searchParams.get("endDate")
+        const periodParam = searchParams.get("period")
+        if (periodParam && !["7d", "30d", "all"].includes(periodParam)) {
+            return NextResponse.json({ success: false, error: "Periodo inválido" }, { status: 400 })
+        }
 
-        // Build query
+        const period = (periodParam || "all") as ReportPeriod
+        const now = new Date()
+        const periodStart = getReportPeriodStart(period, now)
+        const month = getCurrentLimaMonth(now)
+
         const where: OrderWhereInput = { status: "PAID", orderType: "TICKET" }
-
-        if (startDate && endDate) {
+        if (periodStart) {
+            where.AND = [paymentDateRange(periodStart, now)]
+        } else if (!periodParam && startDate && endDate) {
+            // Preserve custom ranges for existing API consumers.
             where.createdAt = {
                 gte: new Date(startDate),
                 lte: new Date(endDate),
             }
         }
 
-        // Fetch orders
-        const orders = await prisma.order.findMany({
-            where,
-            include: {
-                user: { select: { name: true, email: true } },
-                orderItems: {
-                    include: {
-                        ticketType: { select: { name: true, eventId: true } }
+        const [orders, monthlyOrders] = await Promise.all([
+            prisma.order.findMany({
+                where,
+                include: {
+                    user: { select: { name: true, email: true } },
+                    orderItems: {
+                        include: {
+                            ticketType: { select: { name: true, eventId: true } }
+                        }
                     }
-                }
-            },
-            orderBy: { createdAt: "desc" },
-        })
+                },
+                orderBy: { createdAt: "desc" },
+            }),
+            prisma.order.findMany({
+                where: {
+                    status: "PAID",
+                    orderType: "TICKET",
+                    AND: [paymentDateRange(month.start, now)],
+                },
+                select: {
+                    totalAmount: true,
+                    orderItems: { select: { ticketType: { select: { eventId: true } } } },
+                },
+            }),
+        ])
 
-        // Filter by event if needed (post-fetch since orderItems are nested)
         const filteredOrders = eventId
             ? orders.filter((order: ReportOrderItem) =>
                 order.orderItems.some((item) => item.ticketType?.eventId === eventId)
             )
             : orders
+        const filteredMonthlyOrders = eventId
+            ? monthlyOrders.filter((order) =>
+                order.orderItems.some((item) => item.ticketType?.eventId === eventId)
+            )
+            : monthlyOrders
 
-        // Calculate stats
         const totalRevenue = filteredOrders.reduce(
             (sum: number, order: ReportOrderItem) => sum + Number(order.totalAmount),
             0
@@ -73,15 +116,17 @@ export async function GET(request: NextRequest) {
         const totalOrders = filteredOrders.length
         const ticketsSold = filteredOrders.reduce(
             (sum: number, order: ReportOrderItem) =>
-                sum +
-                order.orderItems.reduce((itemSum, item) => itemSum + item.quantity, 0),
+                sum + order.orderItems.reduce((itemSum, item) => itemSum + item.quantity, 0),
+            0
+        )
+        const monthToDateRevenue = filteredMonthlyOrders.reduce(
+            (sum, order) => sum + Number(order.totalAmount),
             0
         )
 
-        // Group by day
         const salesByDay: Record<string, number> = {}
         filteredOrders.forEach((order: ReportOrderItem) => {
-            const day = order.createdAt.toISOString().split("T")[0]
+            const day = getLimaDateKey(order.paidAt || order.createdAt)
             salesByDay[day] = (salesByDay[day] || 0) + Number(order.totalAmount)
         })
 
@@ -96,6 +141,10 @@ export async function GET(request: NextRequest) {
                 totalOrders,
                 ticketsSold,
                 chartData,
+                monthToDateRevenue,
+                monthlyProjection: projectMonthlyRevenue(monthToDateRevenue, now),
+                projectionElapsedDays: month.elapsedDays,
+                projectionDaysInMonth: month.daysInMonth,
                 recentOrders: filteredOrders.slice(0, 10).map((order) => ({
                     ...order,
                     paymentOperationNumber: extractOrderPaymentDetails(order).operationNumber,

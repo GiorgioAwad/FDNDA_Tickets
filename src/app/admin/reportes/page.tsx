@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { formatPrice } from "@/lib/utils"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import * as XLSX from "xlsx"
 import { 
     Loader2, 
@@ -13,9 +12,7 @@ import {
     Ticket, 
     TrendingUp, 
     Percent,
-    Calendar,
     Download,
-    Filter,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -30,6 +27,10 @@ interface ReportsData {
     totalRevenue: number
     totalOrders: number
     ticketsSold: number
+    monthToDateRevenue: number
+    monthlyProjection: number
+    projectionElapsedDays: number
+    projectionDaysInMonth: number
     chartData: {
         date: string
         amount: number
@@ -44,31 +45,58 @@ export default function ReportsPage() {
     const [usdRateSource, setUsdRateSource] = useState<"BCRP" | "SUNAT" | "fallback">("fallback")
 
     useEffect(() => {
+        const controller = new AbortController()
+        let fetching = false
+
         const fetchReports = async () => {
+            if (fetching) return
+            fetching = true
             try {
-                const [reportsRes, rateRes] = await Promise.all([
-                    fetch("/api/admin/reports"),
-                    fetch("/api/exchange-rate"),
-                ])
-                const result = await reportsRes.json()
-                if (result.success) {
-                    setData(result.data)
-                }
-                if (rateRes.ok) {
-                    const rateResult = await rateRes.json()
-                    if (rateResult.success && Number.isFinite(rateResult.data.rate)) {
-                        setUsdRate(rateResult.data.rate)
-                        setUsdRateSource(rateResult.data.source)
-                    }
-                }
+                const response = await fetch("/api/admin/reports?period=" + period, {
+                    signal: controller.signal,
+                    cache: "no-store",
+                })
+                if (!response.ok) throw new Error("Error al cargar reportes")
+                const result = await response.json()
+                if (!result.success) throw new Error(result.error || "Error al cargar reportes")
+                setData(result.data)
             } catch (error) {
-                console.error("Error loading reports:", error)
+                if (!controller.signal.aborted) {
+                    console.error("Error loading reports:", error)
+                    setData(null)
+                }
             } finally {
-                setLoading(false)
+                fetching = false
+                if (!controller.signal.aborted) setLoading(false)
             }
         }
 
+        setLoading(true)
         fetchReports()
+        const refreshInterval = setInterval(fetchReports, 5 * 60 * 1000)
+        return () => {
+            controller.abort()
+            clearInterval(refreshInterval)
+        }
+    }, [period])
+
+    useEffect(() => {
+        const controller = new AbortController()
+        const fetchRate = async () => {
+            try {
+                const response = await fetch("/api/exchange-rate", { signal: controller.signal })
+                if (!response.ok) return
+                const result = await response.json()
+                if (result.success && Number.isFinite(result.data?.rate)) {
+                    setUsdRate(result.data.rate)
+                    setUsdRateSource(result.data.source)
+                }
+            } catch (error) {
+                if (!controller.signal.aborted) console.error("Error loading exchange rate:", error)
+            }
+        }
+        fetchRate()
+        return () => controller.abort()
     }, [])
 
     if (loading) {
@@ -103,6 +131,8 @@ export default function ReportsPage() {
             { "Métrica": "Entradas Vendidas", "Valor": data.ticketsSold },
             { "Métrica": "Ticket Promedio", "Valor": avgOrderValue },
             { "Métrica": "Entradas por Orden", "Valor": data.totalOrders > 0 ? data.ticketsSold / data.totalOrders : 0 },
+            { "Métrica": "Ventas del Mes Actual", "Valor": data.monthToDateRevenue },
+            { "Métrica": "Proyección Mensual", "Valor": data.monthlyProjection },
         ]
         const wsSummary = XLSX.utils.json_to_sheet(summaryData)
         wsSummary['!cols'] = [{ wch: 25 }, { wch: 15 }]
@@ -110,7 +140,7 @@ export default function ReportsPage() {
 
         // Sheet 2: Daily Sales
         const dailyData = data.chartData.map(d => ({
-            "Fecha": new Date(d.date).toLocaleDateString("es-PE"),
+            "Fecha": new Date(d.date + "T12:00:00Z").toLocaleDateString("es-PE", { timeZone: "UTC" }),
             "Ventas (S/)": d.amount
         }))
         const wsDaily = XLSX.utils.json_to_sheet(dailyData)
@@ -255,8 +285,8 @@ export default function ReportsPage() {
                                         dataKey="date" 
                                         tick={{ fontSize: 12 }}
                                         tickFormatter={(value) => {
-                                            const date = new Date(value)
-                                            return `${date.getDate()}/${date.getMonth() + 1}`
+                                            const [, month, day] = String(value).split("-").map(Number)
+                                            return `${day}/${month}`
                                         }}
                                     />
                                     <YAxis 
@@ -267,7 +297,8 @@ export default function ReportsPage() {
                                         formatter={(value: number | undefined) => [formatPrice(value || 0), "Ventas"]}
                                         labelFormatter={(label) => {
                                             if (typeof label === "string" || typeof label === "number") {
-                                                return new Date(label).toLocaleDateString("es-PE", {
+                                                return new Date(String(label) + "T12:00:00Z").toLocaleDateString("es-PE", {
+                                                    timeZone: "UTC",
                                                     weekday: "long",
                                                     day: "numeric",
                                                     month: "long"
@@ -317,7 +348,10 @@ export default function ReportsPage() {
                         <div className="p-4 rounded-lg bg-blue-50">
                             <p className="text-xs text-gray-500 mb-1">Proyección Mensual</p>
                             <p className="text-2xl font-bold text-blue-700">
-                                {formatPrice((data.totalRevenue / 30) * 30)}
+                                {formatPrice(data.monthlyProjection)}
+                            </p>
+                            <p className="text-xs text-blue-700 mt-1">
+                                {formatPrice(data.monthToDateRevenue)} recaudados este mes ÷ {data.projectionElapsedDays} días × {data.projectionDaysInMonth} días
                             </p>
                         </div>
                     </CardContent>
