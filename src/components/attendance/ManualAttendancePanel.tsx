@@ -1,10 +1,11 @@
 "use client"
 
+import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Search, UserCheck, UserPlus, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react"
+import { Search, UserCheck, UserPlus, CheckCircle2, XCircle, Clock, Loader2, CalendarDays } from "lucide-react"
 
 export interface AttendanceEventOption {
     id: string
@@ -503,6 +504,12 @@ export default function ManualAttendancePanel({ events }: ManualAttendancePanelP
                                                 3 pases gratis utilizados este mes
                                             </Badge>
                                         )}
+                                        <Button size="sm" variant="outline" asChild className="gap-1.5">
+                                            <Link href={`/scanner/asistencia/${ticket.id}`}>
+                                                <CalendarDays className="h-4 w-4" />
+                                                Ver asistencias y comprador
+                                            </Link>
+                                        </Button>
                                     </div>
                                 </div>
                             </div>

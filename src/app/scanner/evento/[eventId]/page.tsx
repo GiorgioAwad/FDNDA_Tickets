@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -27,7 +28,8 @@ import {
     Loader2,
     BarChart3,
     ShieldAlert,
-    ScanLine
+    ScanLine,
+    CalendarDays
 } from "lucide-react"
 import type { Html5Qrcode, Html5QrcodeCameraScanConfig } from "html5-qrcode"
 
@@ -1363,6 +1365,19 @@ export default function EventScannerPage() {
                                             Forzar ingreso (emergencia)
                                         </Button>
                                     )}
+
+                                {scanResult.ticket && (
+                                    <Button
+                                        asChild
+                                        variant="outline"
+                                        className="mb-3 w-full border-white/60 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                                    >
+                                        <Link href={"/scanner/asistencia/" + scanResult.ticket.id + "?evento=" + encodeURIComponent(eventId)}>
+                                            <CalendarDays className="mr-2 h-4 w-4" />
+                                            Ver asistencias y comprador
+                                        </Link>
+                                    </Button>
+                                )}
 
                                 {/* Action button */}
                                 {readerMode && scanResult.valid && (
