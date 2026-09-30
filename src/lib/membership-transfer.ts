@@ -17,6 +17,7 @@
  */
 import {
     formatScheduleSummary,
+    getEffectiveMembershipSchedule,
     getMembershipScheduleProfile,
     parseMembershipScheduleSelection,
     validateMembershipScheduleSelection,
@@ -80,9 +81,13 @@ export interface MembershipChangeSnapshot {
         eventId: string
         ticketTypeId: string
         membershipSchedule: unknown
-        /** Filas de MembershipMonthlySchedule. > 0 bloquea: mover la base dejaria
-         *  esos meses apuntando a un catalogo que ya no aplica. */
-        monthlyScheduleCount: number
+        /** Filas de MembershipMonthlySchedule: el horario que el alumno fijo
+         *  para un mes concreto. Rige ese mes y los siguientes hasta el proximo
+         *  cambio; el escaner lo prefiere sobre `membershipSchedule`. */
+        monthlySchedules: Array<{ monthIndex: number; selection: unknown }>
+        /** Mes de la membresia que corre hoy (0-based desde el ancla), el mismo
+         *  indice que usa el escaner. 0 si hoy cae fuera de la vigencia. */
+        currentMonthIndex: number
     }
     order: {
         id: string
@@ -121,7 +126,6 @@ export type MembershipChangeBlockerCode =
     | "TICKET_NOT_ACTIVE"
     | "ORDER_NOT_PAID"
     | "ATTENDEE_DATA_INVALID"
-    | "HAS_MONTHLY_SCHEDULES"
     | "TICKET_EVENT_DRIFT"
     | "NO_SCHEDULE_PROFILE"
     | "SCHEDULE_INVALID"
@@ -154,6 +158,9 @@ export interface MembershipChangeState {
     targetSold: number | null
     /** Queda persistido en el JSON de auditoria del estado destino. */
     capacityOverride?: boolean
+    /** Que pasa con los horarios por mes del carnet. Solo cuando tiene alguno;
+     *  la UI lo muestra tal cual y queda en el historial. */
+    monthlyNote?: string
 }
 
 export interface MembershipChangeWrites {
@@ -170,6 +177,12 @@ export interface MembershipChangeWrites {
     soldIncrementTypeId?: string
     /** El límite real ya se validó y reservó en el inventario diario. */
     soldIncrementUsesDateCapacity?: boolean
+    /** Horarios por mes: se borran los de `monthIndex >= deleteFromIndex` y,
+     *  si viene `upsert`, se fija el del mes en curso. */
+    monthlySchedules?: {
+        deleteFromIndex: number
+        upsert?: { monthIndex: number; selection: MembershipScheduleSelection }
+    }
 }
 
 export type MembershipChangePlan =
@@ -304,6 +317,69 @@ function sessionKeys(selection: MembershipScheduleSelection | null): string[] {
 }
 
 /**
+ * Horario que rige HOY en la puerta: el del mes en curso si el alumno fijo uno
+ * (o heredado de un mes anterior), si no el de checkout. Es contra esto que el
+ * admin compara, no contra la base: con horarios por mes la base puede ser un
+ * horario que ya no aplica hace meses.
+ */
+function getCurrentSelection(snapshot: MembershipChangeSnapshot): MembershipScheduleSelection | null {
+    return getEffectiveMembershipSchedule(
+        parseMembershipScheduleSelection(snapshot.ticket.membershipSchedule),
+        snapshot.ticket.monthlySchedules.map((row) => ({
+            monthIndex: row.monthIndex,
+            selection: parseMembershipScheduleSelection(row.selection),
+        })),
+        snapshot.ticket.currentMonthIndex
+    )
+}
+
+function formatMonthList(indexes: number[]): string {
+    return [...indexes]
+        .sort((a, b) => a - b)
+        .map((index) => `#${index + 1}`)
+        .join(", ")
+}
+
+/**
+ * Cambio de horario desde el panel en un carnet con horarios por mes: el nuevo
+ * horario rige desde el mes en curso en adelante.
+ *
+ * - Se escribe la base (como siempre) para que cualquier lector de
+ *   `membershipSchedule` vea el horario nuevo.
+ * - Si algun mes anterior o el actual tiene horario propio, la base sola no
+ *   alcanza (el escaner preferiria ese override): se fija el mes en curso.
+ * - Los meses siguientes que el alumno ya habia elegido se descartan; si no, el
+ *   cambio del admin duraria solo hasta fin de mes. El alumno puede volver a
+ *   elegir el del proximo mes desde su carnet.
+ * - Los meses pasados quedan intactos: son historia.
+ */
+function planMonthlyScheduleChange(
+    snapshot: MembershipChangeSnapshot,
+    selection: MembershipScheduleSelection
+): { writes?: MembershipChangeWrites["monthlySchedules"]; note?: string } {
+    const rows = snapshot.ticket.monthlySchedules
+    if (rows.length === 0) return {}
+    const current = snapshot.ticket.currentMonthIndex
+    const discarded = rows.map((row) => row.monthIndex).filter((index) => index > current)
+    const needsCurrentOverride = rows.some((row) => row.monthIndex <= current)
+    const note = [
+        `Rige desde el mes en curso (#${current + 1}) en adelante.`,
+        discarded.length > 0
+            ? `Se descartan los horarios que el alumno eligio para los meses ${formatMonthList(discarded)}; puede volver a elegir el del proximo mes desde su carnet.`
+            : null,
+    ]
+        .filter(Boolean)
+        .join(" ")
+    return {
+        writes: {
+            deleteFromIndex: current + 1,
+            upsert: needsCurrentOverride ? { monthIndex: current, selection } : undefined,
+        },
+        note,
+    }
+}
+
+/**
  * Forma comparable de una seleccion de horario pedida por el admin. Las horas
  * van ordenadas por clave a proposito: la misma eleccion no puede producir dos
  * huellas distintas solo porque el JSON llego con las claves en otro orden.
@@ -340,7 +416,10 @@ export function buildMembershipChangeFingerprint(
         e: snapshot.ticket.eventId,
         tt: snapshot.ticket.ticketTypeId,
         s: normalizeSessions(snapshot.ticket.membershipSchedule),
-        m: snapshot.ticket.monthlyScheduleCount,
+        m: snapshot.ticket.monthlySchedules
+            .map((row) => [row.monthIndex, normalizeSessions(row.selection)] as const)
+            .sort((a, b) => a[0] - b[0]),
+        cm: snapshot.ticket.currentMonthIndex,
         o: snapshot.order.status,
         p: snapshot.order.provider,
         oi: snapshot.orderItem.ticketTypeId,
@@ -372,13 +451,6 @@ function commonBlockers(
         blockers.push({
             code: "ORDER_NOT_PAID",
             message: `La orden esta ${snapshot.order.status}, no PAID.`,
-        })
-    }
-    if (snapshot.ticket.monthlyScheduleCount > 0) {
-        blockers.push({
-            code: "HAS_MONTHLY_SCHEDULES",
-            message:
-                "El carnet tiene horarios definidos por mes. Cambiar el horario base dejaria esos meses apuntando a un catalogo que ya no aplica: requiere revision manual por script.",
         })
     }
     if (snapshot.orderItem.quantity !== 1) {
@@ -462,8 +534,9 @@ function planScheduleChange(
     }
     if (blockers.length > 0) return { ok: false, blockers }
 
-    const beforeSelection = parseMembershipScheduleSelection(snapshot.ticket.membershipSchedule)
+    const beforeSelection = getCurrentSelection(snapshot)
     const attendee = asRecord((snapshot.orderItem.attendeeData as unknown[])[0])
+    const monthly = planMonthlyScheduleChange(snapshot, result.selection)
 
     return {
         ok: true,
@@ -472,17 +545,20 @@ function planScheduleChange(
         before: buildState(
             sourceType,
             beforeSelection,
-            normalizeSessions(snapshot.ticket.membershipSchedule),
+            sessionKeys(beforeSelection),
             sourceType.sold,
             null
         ),
-        after: buildState(
-            sourceType,
-            result.selection,
-            sessionKeys(result.selection),
-            sourceType.sold,
-            null
-        ),
+        after: {
+            ...buildState(
+                sourceType,
+                result.selection,
+                sessionKeys(result.selection),
+                sourceType.sold,
+                null
+            ),
+            ...(monthly.note ? { monthlyNote: monthly.note } : {}),
+        },
         writes: {
             ticket: { membershipSchedule: result.selection },
             // Las dos escrituras van juntas: Ticket.membershipSchedule es lo que
@@ -491,6 +567,7 @@ function planScheduleChange(
             orderItem: {
                 attendeeData: [{ ...attendee, membershipSchedule: result.selection }],
             },
+            ...(monthly.writes ? { monthlySchedules: monthly.writes } : {}),
         },
         fingerprint: buildMembershipChangeFingerprint(snapshot, intent),
         overCapacityOverride: false,
@@ -708,7 +785,9 @@ function planTransfer(
         targetType.sucursalCode,
         targetType.membershipScheduleKey
     )
-    const beforeSelection = parseMembershipScheduleSelection(snapshot.ticket.membershipSchedule)
+    // El horario que rige hoy (con horarios por mes, no necesariamente la base)
+    // es el que se intenta conservar en el destino.
+    const beforeSelection = getCurrentSelection(snapshot)
     let afterSelection: MembershipScheduleSelection | null = null
 
     if (targetProfile) {
@@ -754,11 +833,18 @@ function planTransfer(
         soldIncrementUsesDateCapacity: targetUsesDateCapacity,
     }
     if (!sameEvent) writes.ticket.eventId = targetType.eventId
-    if (afterSelection) {
-        writes.ticket.membershipSchedule = afterSelection
+    // Los horarios por mes se eligieron contra el catalogo del tipo origen: al
+    // moverse se descartan todos y el horario resultante pasa a ser la base.
+    // Sin catalogo en el destino se consolida en la base el que rige hoy, para
+    // que borrar los meses no reviva un horario de checkout viejo.
+    const monthlyIndexes = snapshot.ticket.monthlySchedules.map((row) => row.monthIndex)
+    const newBase = afterSelection ?? (monthlyIndexes.length > 0 ? beforeSelection : null)
+    if (newBase) {
+        writes.ticket.membershipSchedule = newBase
         const attendee = asRecord((snapshot.orderItem.attendeeData as unknown[])[0])
-        writes.orderItem.attendeeData = [{ ...attendee, membershipSchedule: afterSelection }]
+        writes.orderItem.attendeeData = [{ ...attendee, membershipSchedule: newBase }]
     }
+    if (monthlyIndexes.length > 0) writes.monthlySchedules = { deleteFromIndex: 0 }
     if (
         genericSameEvent &&
         targetType.eventCategory === "PISCINA_LIBRE" &&
@@ -785,7 +871,7 @@ function planTransfer(
         before: buildState(
             sourceType,
             beforeSelection,
-            normalizeSessions(snapshot.ticket.membershipSchedule),
+            sessionKeys(beforeSelection),
             sourceType.sold,
             targetType.sold
         ),
@@ -798,6 +884,11 @@ function planTransfer(
                 targetType.sold + 1
             ),
             capacityOverride: overCapacityOverride,
+            ...(monthlyIndexes.length > 0
+                ? {
+                      monthlyNote: `Se descartan los horarios por mes del carnet (meses ${formatMonthList(monthlyIndexes)}); el horario resultante rige toda la membresia.`,
+                  }
+                : {}),
         },
         writes,
         fingerprint: buildMembershipChangeFingerprint(snapshot, intent),

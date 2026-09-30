@@ -118,6 +118,21 @@ export async function applyMembershipChange(
         await tx.orderItem.update({ where: { id: orderItemId }, data: itemData })
     }
 
+    if (writes.monthlySchedules) {
+        const { deleteFromIndex, upsert } = writes.monthlySchedules
+        await tx.membershipMonthlySchedule.deleteMany({
+            where: { ticketId, monthIndex: { gte: deleteFromIndex } },
+        })
+        if (upsert) {
+            const selection = upsert.selection as unknown as Prisma.InputJsonValue
+            await tx.membershipMonthlySchedule.upsert({
+                where: { ticketId_monthIndex: { ticketId, monthIndex: upsert.monthIndex } },
+                create: { ticketId, monthIndex: upsert.monthIndex, selection },
+                update: { selection },
+            })
+        }
+    }
+
     await tx.membershipAdminChange.create({
         data: {
             ticketId,

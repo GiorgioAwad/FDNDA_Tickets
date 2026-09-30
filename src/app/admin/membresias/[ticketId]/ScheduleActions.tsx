@@ -673,6 +673,7 @@ function PlanColumn({
             <p className="text-slate-900">{state.ticketTypeName}</p>
             <p className="text-slate-600">Sede {state.sucursalCode ?? "—"}</p>
             <p className="text-slate-600">{state.scheduleSummary}</p>
+            {state.monthlyNote ? <p className="text-amber-800">{state.monthlyNote}</p> : null}
             <p className="text-slate-500">
                 Vendidos origen {state.sourceSold}
                 {state.targetSold !== null ? ` · destino ${state.targetSold}` : ""}

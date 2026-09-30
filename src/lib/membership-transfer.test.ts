@@ -70,7 +70,8 @@ function baseSnapshot(overrides: Partial<MembershipChangeSnapshot> = {}): Member
                     { id: "main", label: "Lun, Mie y Vie", weekdays: [1, 3, 5], start: "16:00", end: "17:00" },
                 ],
             },
-            monthlyScheduleCount: 0,
+            monthlySchedules: [],
+            currentMonthIndex: 0,
         },
         order: {
             id: "or-1",
@@ -247,10 +248,84 @@ test("SCHEDULE bloquea si la orden no esta PAID", () => {
     assert.ok(blockerCodes(snapshot).includes("ORDER_NOT_PAID"))
 })
 
-test("SCHEDULE bloquea si el carnet tiene horarios mensuales definidos", () => {
+// Horario por mes elegido por el alumno: L-M-V 17:00-18:00.
+const MONTHLY_17H = {
+    ...(baseSnapshot().ticket.membershipSchedule as Record<string, unknown>),
+    sessions: [1, 3, 5].map((weekday) => ({ weekday, start: "17:00", end: "18:00" })),
+    groups: [{ id: "main", label: "Lun, Mie y Vie", weekdays: [1, 3, 5], start: "17:00", end: "18:00" }],
+}
+
+const TO_15H: MembershipScheduleInput = {
+    category: "NINOS",
+    frequency: "LMV",
+    hours: { main: "15:00-16:00" },
+}
+
+test("SCHEDULE sin horarios por mes no toca la tabla mensual", () => {
+    const plan = planMembershipChange(baseSnapshot(), { kind: "SCHEDULE", scheduleInput: TO_15H })
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.writes.monthlySchedules, undefined)
+    assert.equal(plan.after.monthlyNote, undefined)
+})
+
+test("SCHEDULE con horarios por mes rige desde el mes en curso y descarta los siguientes", () => {
     const snapshot = baseSnapshot()
-    snapshot.ticket.monthlyScheduleCount = 2
-    assert.ok(blockerCodes(snapshot).includes("HAS_MONTHLY_SCHEDULES"))
+    snapshot.ticket.currentMonthIndex = 2
+    snapshot.ticket.monthlySchedules = [
+        { monthIndex: 1, selection: MONTHLY_17H },
+        { monthIndex: 3, selection: MONTHLY_17H },
+    ]
+    const plan = planMembershipChange(snapshot, { kind: "SCHEDULE", scheduleInput: TO_15H })
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    // Lo que rige hoy es el override del mes #2 (heredado), no la base 16:00.
+    assert.deepEqual(plan.before.sessions, ["1:17:00-18:00", "3:17:00-18:00", "5:17:00-18:00"])
+    assert.deepEqual(plan.after.sessions, ["1:15:00-16:00", "3:15:00-16:00", "5:15:00-16:00"])
+    assert.equal(plan.writes.monthlySchedules?.deleteFromIndex, 3)
+    // Hay un override anterior (mes 1): la base sola no ganaria en la puerta.
+    assert.equal(plan.writes.monthlySchedules?.upsert?.monthIndex, 2)
+    assert.equal(plan.writes.monthlySchedules?.upsert?.selection.groups[0].start, "15:00")
+    assert.equal(plan.writes.ticket.membershipSchedule?.groups[0].start, "15:00")
+    assert.match(plan.after.monthlyNote ?? "", /#4/)
+})
+
+test("SCHEDULE con solo meses futuros escribe la base y los borra, sin override", () => {
+    const snapshot = baseSnapshot()
+    snapshot.ticket.currentMonthIndex = 0
+    snapshot.ticket.monthlySchedules = [{ monthIndex: 1, selection: MONTHLY_17H }]
+    const plan = planMembershipChange(snapshot, { kind: "SCHEDULE", scheduleInput: TO_15H })
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.writes.monthlySchedules?.deleteFromIndex, 1)
+    assert.equal(plan.writes.monthlySchedules?.upsert, undefined)
+})
+
+test("TRANSFER con horarios por mes conserva el que rige hoy y los descarta todos", () => {
+    const snapshot = plataSnapshot()
+    const monthly = {
+        ...(snapshot.ticket.membershipSchedule as Record<string, unknown>),
+        sessions: [1, 2, 3, 4, 5].map((weekday) => ({ weekday, start: "08:00", end: "09:00" })),
+        groups: [{ id: "main", label: "Lun a Vie", weekdays: [1, 2, 3, 4, 5], start: "08:00", end: "09:00" }],
+    }
+    snapshot.ticket.currentMonthIndex = 1
+    snapshot.ticket.monthlySchedules = [{ monthIndex: 1, selection: monthly }]
+    const plan = transferPlan(snapshot)
+    assert.equal(plan.ok, true)
+    if (!plan.ok) return
+    assert.equal(plan.writes.ticket.membershipSchedule?.groups[0].start, "08:00")
+    assert.deepEqual(plan.writes.monthlySchedules, { deleteFromIndex: 0 })
+    assert.ok(plan.after.monthlyNote)
+})
+
+test("el fingerprint cambia si cambian los horarios por mes o el mes en curso", () => {
+    const withMonthly = baseSnapshot()
+    withMonthly.ticket.monthlySchedules = [{ monthIndex: 1, selection: MONTHLY_17H }]
+    const nextMonth = baseSnapshot()
+    nextMonth.ticket.currentMonthIndex = 1
+    const base = buildMembershipChangeFingerprint(baseSnapshot())
+    assert.notEqual(buildMembershipChangeFingerprint(withMonthly), base)
+    assert.notEqual(buildMembershipChangeFingerprint(nextMonth), base)
 })
 
 test("SCHEDULE bloquea si el attendeeData trae mas de una persona", () => {
@@ -444,7 +519,8 @@ function plataSnapshot(): MembershipChangeSnapshot {
                     { id: "main", label: "Lun a Vie", weekdays: [1, 2, 3, 4, 5], start: "07:00", end: "08:00" },
                 ],
             },
-            monthlyScheduleCount: 0,
+            monthlySchedules: [],
+            currentMonthIndex: 0,
         },
         order: {
             id: "or-2",
@@ -737,7 +813,8 @@ function vmtSnapshot(): MembershipChangeSnapshot {
             eventId: "ev-vmt",
             ticketTypeId: "tt-vmt-lmv-4pm",
             membershipSchedule: null,
-            monthlyScheduleCount: 0,
+            monthlySchedules: [],
+            currentMonthIndex: 0,
         },
         order: {
             id: "or-3",

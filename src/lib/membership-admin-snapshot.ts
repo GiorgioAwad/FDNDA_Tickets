@@ -17,7 +17,13 @@ import type {
     MembershipChangeSnapshot,
     MembershipTicketTypeSnapshot,
 } from "@/lib/membership-transfer"
-import type { ScanTicket, TicketEntitlement } from "@/lib/scan-helpers"
+import { getTodayDateString } from "@/lib/qr"
+import {
+    getMembershipAnchor,
+    getMembershipPeriod,
+    type ScanTicket,
+    type TicketEntitlement,
+} from "@/lib/scan-helpers"
 
 export const ticketTypeSnapshotSelect = {
     id: true,
@@ -158,7 +164,37 @@ export function findMembershipOrderItem(record: MembershipChangeRecord) {
     return matches.length === 1 ? matches[0] : null
 }
 
-export function toChangeSnapshot(record: MembershipChangeRecord): MembershipChangeSnapshot | null {
+/**
+ * Indice del mes de la membresia que corre `today`, con el mismo ancla y el
+ * mismo corte que el escaner y la ficha. 0 si hoy cae fuera de la vigencia: es
+ * el mismo fallback con el que la ficha calcula el horario efectivo.
+ */
+export function getCurrentMembershipMonthIndex(
+    record: MembershipChangeRecord,
+    today: string
+): number {
+    const anchor = getMembershipAnchor(
+        toScanTicket({
+            id: record.id,
+            ticketTypeId: record.ticketTypeId,
+            status: record.status,
+            eventId: record.eventId,
+            membershipStartDate: record.membershipStartDate,
+            membershipSchedule: record.membershipSchedule,
+            monthlySchedules: record.monthlySchedules,
+            membershipFreeze: record.membershipFreeze,
+            event: record.event,
+            ticketType: record.ticketType,
+            entitlements: [],
+        })
+    )
+    return (anchor ? getMembershipPeriod(today, anchor)?.index : null) ?? 0
+}
+
+export function toChangeSnapshot(
+    record: MembershipChangeRecord,
+    today: string = getTodayDateString()
+): MembershipChangeSnapshot | null {
     const orderItem = findMembershipOrderItem(record)
     if (!orderItem) return null
     return {
@@ -168,7 +204,8 @@ export function toChangeSnapshot(record: MembershipChangeRecord): MembershipChan
             eventId: record.eventId,
             ticketTypeId: record.ticketTypeId,
             membershipSchedule: record.membershipSchedule,
-            monthlyScheduleCount: record.monthlySchedules.length,
+            monthlySchedules: record.monthlySchedules,
+            currentMonthIndex: getCurrentMembershipMonthIndex(record, today),
         },
         order: {
             id: record.order.id,

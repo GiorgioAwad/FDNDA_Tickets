@@ -62,7 +62,17 @@ function changeRecord(overrides: Partial<Record<string, unknown>> = {}): Members
         ticketTypeId: "tt-videna-plata",
         attendeeDni: "10203040",
         membershipSchedule: null,
+        membershipStartDate: null,
         ticketType: ticketTypeRecord(),
+        event: {
+            id: "ev-videna",
+            title: "Academia VIDENA",
+            servilexSucursalCode: "03",
+            startDate: new Date("2026-01-01T00:00:00Z"),
+            endDate: new Date("2026-12-31T00:00:00Z"),
+            category: "ACADEMIA",
+            membershipStartFixed: null,
+        },
         order: {
             id: "or-1",
             status: "PAID",
@@ -215,16 +225,29 @@ test("toChangeSnapshot copia estado, orden y comprobantes del carnet", () => {
     assert.equal(snapshot.sourceType.price, 1240)
 })
 
-test("toChangeSnapshot cuenta los horarios mensuales, no los copia", () => {
+test("toChangeSnapshot copia los horarios mensuales y calcula el mes en curso", () => {
+    const monthlySchedules = [
+        { monthIndex: 1, selection: {} },
+        { monthIndex: 2, selection: {} },
+    ]
     const snapshot = toChangeSnapshot(
         changeRecord({
-            monthlySchedules: [
-                { monthIndex: 1, selection: {} },
-                { monthIndex: 2, selection: {} },
-            ],
-        })
+            monthlySchedules,
+            membershipStartDate: new Date("2026-07-15T00:00:00Z"),
+        }),
+        "2026-09-30"
     )
     assert.ok(snapshot)
-    // Es lo unico que mira el bloqueo HAS_MONTHLY_SCHEDULES.
-    assert.equal(snapshot.ticket.monthlyScheduleCount, 2)
+    assert.deepEqual(snapshot.ticket.monthlySchedules, monthlySchedules)
+    // El corte cae en el dia del ancla: 15-jul (0), 15-ago (1), 15-sep (2).
+    assert.equal(snapshot.ticket.currentMonthIndex, 2)
+})
+
+test("toChangeSnapshot usa el mes 0 si hoy cae antes del inicio", () => {
+    const snapshot = toChangeSnapshot(
+        changeRecord({ membershipStartDate: new Date("2026-10-15T00:00:00Z") }),
+        "2026-09-30"
+    )
+    assert.ok(snapshot)
+    assert.equal(snapshot.ticket.currentMonthIndex, 0)
 })

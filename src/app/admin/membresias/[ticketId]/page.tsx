@@ -230,8 +230,9 @@ export default function MembershipDetailPage({
                     </div>
                     {diagnosis.monthlyScheduleCount > 0 ? (
                         <p className="rounded-lg bg-amber-50 p-3 text-amber-800">
-                            Este carnet tiene horarios definidos por mes. Mientras los tenga, el panel no
-                            deja cambiar el horario base ni la sede: hay que resolverlo por script.
+                            Este carnet tiene horarios definidos por mes. Un cambio de horario desde aqui
+                            rige desde el mes en curso y descarta los que el alumno ya eligio para meses
+                            siguientes; un cambio de sede o tipo descarta todos los horarios por mes.
                         </p>
                     ) : null}
 
