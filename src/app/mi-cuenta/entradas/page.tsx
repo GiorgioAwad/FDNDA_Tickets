@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { TicketCardItem } from "@/components/tickets/TicketCardItem"
 import { formatDate, getEventActiveThreshold } from "@/lib/utils"
 import type { ScheduleSelection } from "@/lib/ticket-schedule"
+import { ticketUsesPurchasedDates } from "@/lib/ticket-date-policy"
 import {
     alignSelectionsToTicketDates,
     buildTicketDateGroupKey,
@@ -118,9 +119,11 @@ export default async function MyTicketsPage() {
         // Entitlements identify the exact dates issued to this ticket, while
         // attendeeData contributes its selected turn. Only use them as a schedule
         // when the purchase actually selected dates (or for piscina libre).
-        const hasSpecificSchedule =
-            storedSelections.length > 0 ||
-            (ticket.event.category === "PISCINA_LIBRE" && ticketDates.length > 0)
+        const hasSpecificSchedule = ticketUsesPurchasedDates({
+            eventCategory: ticket.event.category,
+            isMembership: (ticket.ticketType.monthlyClassLimit ?? 0) > 0,
+            scheduleSelections: storedSelections,
+        })
         const selections = hasSpecificSchedule
             ? alignSelectionsToTicketDates(storedSelections, ticketDates)
             : []

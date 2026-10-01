@@ -390,7 +390,7 @@ export async function GET(
             entitlementDates = fallbackDates.map((date) => date.toISOString().split("T")[0])
         }
 
-        const scheduleSelections = await getTicketScheduleSelectionsForAttendee({
+        const scheduleSelections = isMembership ? [] : await getTicketScheduleSelectionsForAttendee({
             orderId: ticket.orderId,
             ticketTypeId: ticket.ticketTypeId,
             attendeeName: ticket.attendeeName,
@@ -400,6 +400,7 @@ export async function GET(
         const todayStr = getTodayDateString()
         const usesPurchasedDates = ticketUsesPurchasedDates({
             eventCategory: ticket.event?.category,
+            isMembership,
             scheduleSelections,
         })
         const selectedQrDate = pickQrDateForTicket({

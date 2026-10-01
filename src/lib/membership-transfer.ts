@@ -460,10 +460,21 @@ function commonBlockers(
                 "La compra agrupa varias entradas en un mismo item. No se puede cambiar una sola sin separar primero la compra.",
         })
     }
-    if (
-        options.requireMatricula !== false &&
-        getAttendeeMatricula(snapshot.orderItem.attendeeData) === null
-    ) {
+    const attendees = snapshot.orderItem.attendeeData
+    const hasSingleAttendee = Array.isArray(attendees) && attendees.length === 1 &&
+        attendees[0] !== null && typeof attendees[0] === "object" && !Array.isArray(attendees[0])
+    if (!hasSingleAttendee) {
+        blockers.push({
+            code: "ATTENDEE_DATA_INVALID",
+            message: "El item de la orden debe contener exactamente una persona con datos validos.",
+        })
+    }
+    // Las ventas presenciales y cortesias no emiten boleta: no necesitan una
+    // matricula para vincular el comprobante. La identidad individual se exige
+    // igual, porque el plan reescribe el snapshot del asistente.
+    const requiresMatricula = options.requireMatricula !== false &&
+        !PROVIDERS_SIN_BOLETA.has(snapshot.order.provider.trim().toUpperCase())
+    if (hasSingleAttendee && requiresMatricula && getAttendeeMatricula(attendees) === null) {
         blockers.push({
             code: "ATTENDEE_DATA_INVALID",
             message:

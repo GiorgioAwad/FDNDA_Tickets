@@ -34,8 +34,12 @@ export function getPurchasedDateKeys(
 
 export function ticketUsesPurchasedDates(input: {
     eventCategory?: string | null
+    isMembership?: boolean
     scheduleSelections?: ScheduleSelection[] | null
 }): boolean {
+    // Una membresia usa su vigencia, horario semanal y cupo mensual. Las fechas
+    // heredadas del checkout no deben fijar el QR al primer dia de ese mes.
+    if (input.isMembership) return false
     return input.eventCategory === "PISCINA_LIBRE" || getPurchasedDateKeys(input.scheduleSelections).length > 0
 }
 

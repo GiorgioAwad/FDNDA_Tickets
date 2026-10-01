@@ -54,6 +54,37 @@ test("ticketUsesPurchasedDates locks piscina libre even without stored selection
     )
 })
 
+test("membership QR uses today despite legacy July selections and entitlements", () => {
+    const scheduleSelections = [{ date: "2026-07-02", shift: null }]
+    const usePurchasedDates = ticketUsesPurchasedDates({
+        eventCategory: "ACADEMIA",
+        isMembership: true,
+        scheduleSelections,
+    })
+    assert.equal(usePurchasedDates, false)
+    const today = "2026-10-01"
+    const selectedDate = pickQrDateForTicket({
+        today,
+        scheduleSelections,
+        entitlements: [{ date: new Date("2026-07-02T12:00:00Z"), status: "AVAILABLE" }],
+        usePurchasedDates,
+    })
+    assert.equal(selectedDate ?? today, today)
+    assert.equal(canReassignToScanDate({
+        strictDateSchedule: true,
+        isPackageLike: true,
+        usesPurchasedDates: usePurchasedDates,
+    }), true)
+})
+
+test("ordinary tickets keep their purchased dates", () => {
+    assert.equal(ticketUsesPurchasedDates({
+        eventCategory: "EVENTO",
+        isMembership: false,
+        scheduleSelections: [{ date: "2026-07-02", shift: null }],
+    }), true)
+})
+
 test("canReassignToScanDate keeps flexible packages reassignable", () => {
     assert.equal(
         canReassignToScanDate({

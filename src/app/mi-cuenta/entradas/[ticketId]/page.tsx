@@ -340,9 +340,9 @@ export default function TicketDetailPage() {
     const selectedQrShift = ticket.qrShift || null
     const hasMultipleShifts = shifts.length > 1 && !selectedQrShift
     const scans = ticket.scans || []
-    const scheduleSelections = (ticket.scheduleSelections || []).filter((sel) => sel.date)
+    const scheduleSelections = isMembership ? [] : (ticket.scheduleSelections || []).filter((sel) => sel.date)
     const hasShiftSelections = scheduleSelections.some((sel) => sel.shift)
-    const usesPurchasedDate = isPiscina || scheduleSelections.length > 0
+    const usesPurchasedDate = !isMembership && (isPiscina || scheduleSelections.length > 0)
     // Días concretos que el comprador eligió (entrada full-day / fecha comprada).
     // Cuando existen, el carnet debe limitarse a esos días en vez del rango completo
     // del evento, incluso si la selección no trae turno (full-day = todos los turnos del día).

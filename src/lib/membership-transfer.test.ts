@@ -334,6 +334,38 @@ test("SCHEDULE bloquea si el attendeeData trae mas de una persona", () => {
     assert.ok(blockerCodes(snapshot).includes("ATTENDEE_DATA_INVALID"))
 })
 
+for (const provider of ["PRESENCIAL", "COURTESY", " presencial "]) {
+    test(`SCHEDULE permite ${provider} sin matricula y conserva los datos del asistente`, () => {
+        const snapshot = baseSnapshot()
+        snapshot.order.provider = provider
+        snapshot.order.invoices = []
+        const attendee = { name: "Mathyas", dni: "77727393", membershipStartDate: "2026-07-01" }
+        snapshot.orderItem.attendeeData = [attendee]
+        const plan = planMembershipChange(snapshot, { kind: "SCHEDULE", scheduleInput: TO_15H })
+        assert.equal(plan.ok, true)
+        if (!plan.ok) return
+        assert.deepEqual(plan.writes.orderItem.attendeeData, [{
+            ...attendee,
+            membershipSchedule: plan.writes.ticket.membershipSchedule,
+        }])
+    })
+}
+
+test("SCHEDULE conserva el requisito de matricula para ventas web", () => {
+    const snapshot = baseSnapshot()
+    snapshot.orderItem.attendeeData = [{ name: "Sin matricula" }]
+    assert.ok(blockerCodes(snapshot).includes("ATTENDEE_DATA_INVALID"))
+})
+
+for (const attendeeData of [null, [], {}, [null], ["persona"], [[]], [{}, {}]]) {
+    test(`SCHEDULE presencial bloquea datos de asistente invalidos: ${JSON.stringify(attendeeData)}`, () => {
+        const snapshot = baseSnapshot()
+        snapshot.order.provider = "PRESENCIAL"
+        snapshot.orderItem.attendeeData = attendeeData
+        assert.ok(blockerCodes(snapshot).includes("ATTENDEE_DATA_INVALID"))
+    })
+}
+
 test("SCHEDULE bloquea en una sede sin catalogo de horarios", () => {
     const snapshot = baseSnapshot()
     snapshot.sourceType = { ...VIDENA_BRONCE_TYPE, sucursalCode: "04" }
@@ -765,6 +797,22 @@ test("COURTESY no consulta comprobantes", () => {
     snapshot.order.invoices = []
     const plan = transferPlan(snapshot)
     assert.equal(plan.ok, true)
+})
+
+for (const provider of ["PRESENCIAL", "COURTESY"]) {
+    test(`TRANSFER permite ${provider} sin matricula al mover un carnet individual`, () => {
+        const snapshot = plataSnapshot()
+        snapshot.order.provider = provider
+        snapshot.order.invoices = []
+        snapshot.orderItem.attendeeData = [{ name: "Alumno", dni: "12345678" }]
+        assert.equal(transferPlan(snapshot).ok, true)
+    })
+}
+
+test("TRANSFER sigue exigiendo matricula para vincular boletas de ventas web", () => {
+    const snapshot = plataSnapshot()
+    snapshot.orderItem.attendeeData = [{ name: "Sin matricula" }]
+    assert.ok(transferBlockers(snapshot).includes("ATTENDEE_DATA_INVALID"))
 })
 
 test("MOCK bloquea: viene del incidente de pagos simulados en produccion", () => {

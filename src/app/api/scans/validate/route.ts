@@ -473,7 +473,7 @@ async function handleValidate(request: NextRequest, mark: ScanTimeline) {
         const hasMultipleShifts = configuredShifts.length > 1
 
         const [scheduleSelections, initialScanCount] = await Promise.all([
-            getTicketScheduleSelectionsForAttendee({
+            isMembershipTicket(ticket) ? Promise.resolve([]) : getTicketScheduleSelectionsForAttendee({
                 orderId: ticket.orderId,
                 ticketTypeId: ticket.ticketTypeId,
                 attendeeName: ticket.attendeeName,
@@ -486,6 +486,7 @@ async function handleValidate(request: NextRequest, mark: ScanTimeline) {
         mark("schedule")
         const usesPurchasedDates = ticketUsesPurchasedDates({
             eventCategory: ticket.event?.category,
+            isMembership: isMembershipTicket(ticket),
             scheduleSelections,
         })
         const expectedShift = getExpectedShiftForDate(scheduleSelections, today)
