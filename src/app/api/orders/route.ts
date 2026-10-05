@@ -833,6 +833,7 @@ export async function POST(request: NextRequest) {
             if (rememberBilling) {
                 const profileData = {
                     documentType: billing.documentType,
+                    buyerDocType: billingSnapshot.buyerDocType,
                     buyerDocNumber: billing.buyerDocNumber,
                     buyerName: billing.buyerName ?? null,
                     buyerAddress: billing.buyerAddress ?? null,

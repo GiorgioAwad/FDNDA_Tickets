@@ -159,6 +159,7 @@ model User {
   resetToken      String?
   resetTokenExp   DateTime?
   dni             String?
+  identityDocType String    @default("1") // SUNAT: 1 DNI, 6 RUC, 4 C.E., 7 PAS
   phone           String?
   birthDate       DateTime?
   departamento    String?
@@ -192,6 +193,7 @@ model UserBillingProfile {
   id                    String       @id @default(cuid())
   userId                String       @unique
   documentType          DocumentType @default(BOLETA)
+  buyerDocType          String       @default("1") // SUNAT: 1 DNI, 6 RUC, 4 C.E., 7 PAS
   buyerDocNumber        String
   buyerName             String?
   buyerAddress          String?
@@ -451,8 +453,8 @@ model Order {
   trackingCode           String?
   // Billing data
   documentType           String? // "BOLETA" or "FACTURA"
-  buyerDocType           String? // "1" = DNI, "6" = RUC
-  buyerDocNumber         String? // DNI (8 digits) or RUC (11 digits)
+  buyerDocType           String? // SUNAT: "1" DNI, "6" RUC, "4" C.E., "7" PAS
+  buyerDocNumber         String? // Identity document number, including alphanumeric PAS
   buyerName              String? // Full name or business name
   buyerAddress           String? // Fiscal address (for FACTURA)
   buyerEmail             String?
@@ -930,8 +932,8 @@ model Invoice {
   servilexPayloadSnapshot Json?
   invoiceNumber           String? // SUNAT serie-correlativo (e.g. B001-00000001)
   // Buyer fiscal data
-  buyerDocType            String? // "1" = DNI, "6" = RUC
-  buyerDocNumber          String? // DNI (8 digits) or RUC (11 digits)
+  buyerDocType            String? // SUNAT: "1" DNI, "6" RUC, "4" C.E., "7" PAS
+  buyerDocNumber          String? // Identity document number, including alphanumeric PAS
   buyerName               String? // Full name or business name (razón social)
   buyerAddress            String? // Fiscal address (for FACTURA)
   buyerEmail              String?

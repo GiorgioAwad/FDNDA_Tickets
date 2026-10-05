@@ -1,4 +1,5 @@
 import { formatUbigeoLocation } from "@/lib/ubigeo-peru"
+import { getBillingIdentityError, resolveBuyerDocType } from "@/lib/identity-document"
 
 export type BillingDocumentType = "BOLETA" | "FACTURA"
 
@@ -40,6 +41,7 @@ function composeBuyerAddress(street: string, ubigeo: string): string {
 
 export interface BillingSnapshotInput {
     documentType: BillingDocumentType
+    buyerDocType?: string | null
     buyerDocNumber: string
     buyerName?: string | null
     buyerAddress?: string | null
@@ -82,14 +84,9 @@ export function getBillingValidationIssues(
     const value = (field: Exclude<keyof BillingSnapshotInput, "documentType">) =>
         normalizeSpaces(input[field])
 
-    if (input.documentType === "BOLETA") {
-        if (!/^\d{8}$/.test(value("buyerDocNumber"))) {
-            issues.push({ field: "buyerDocNumber", message: "Ingresa un DNI válido de 8 dígitos." })
-        }
-    } else {
-        if (!/^\d{11}$/.test(value("buyerDocNumber"))) {
-            issues.push({ field: "buyerDocNumber", message: "Ingresa un RUC válido de 11 dígitos." })
-        }
+    const identityError = getBillingIdentityError(input)
+    if (identityError) issues.push({ field: "buyerDocNumber", message: identityError })
+    if (input.documentType === "FACTURA") {
         if (value("buyerName").length < 2) {
             issues.push({ field: "buyerName", message: "Ingresa la razón social." })
         }
@@ -200,8 +197,8 @@ export function buildBillingSnapshot(
 
     return {
         documentType: input.documentType,
-        buyerDocType: input.documentType === "FACTURA" ? "6" : "1",
-        buyerDocNumber: normalizeSpaces(input.buyerDocNumber),
+        buyerDocType: resolveBuyerDocType(input.documentType, input.buyerDocType),
+        buyerDocNumber: normalizeSpaces(input.buyerDocNumber).toUpperCase(),
         buyerName:
             input.documentType === "BOLETA"
                 ? buildNaturalPersonFullName({

@@ -30,6 +30,8 @@ import type { IzipayCheckoutConfig } from "@/lib/izipay"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText, CalendarCheck } from "lucide-react"
 import AuthModal from "@/components/auth/AuthModal"
 import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
+import { IdentityDocumentFields } from "@/components/ui/identity-document-fields"
+import { resolveBuyerDocType } from "@/lib/identity-document"
 
 const IzipayCheckout = dynamic(
     () => import("@/components/checkout/izipay-checkout"),
@@ -494,6 +496,7 @@ export default function CheckoutPage() {
 
                 prefillBillingData({
                     documentType: profile.documentType === "FACTURA" ? "FACTURA" : "BOLETA",
+                    buyerDocType: resolveBuyerDocType(profile.documentType, profile.buyerDocType),
                     buyerDocNumber: profile.buyerDocNumber ?? "",
                     buyerName: profile.buyerName ?? "",
                     buyerAddress: profile.buyerAddress ?? "",
@@ -682,6 +685,7 @@ export default function CheckoutPage() {
                 })),
                 billing: {
                     documentType: billingData.documentType,
+                    buyerDocType: billingData.buyerDocType,
                     buyerDocNumber: billingData.buyerDocNumber,
                     buyerName: billingData.documentType === "FACTURA" ? billingData.buyerName : boletaFullName,
                     buyerAddress: billingData.buyerAddress,
@@ -913,31 +917,15 @@ export default function CheckoutPage() {
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-xs text-gray-500 mb-1 block">
-                                            {billingData.documentType === "BOLETA" ? "DNI" : "RUC"}
-                                        </label>
-                                        <Input
-                                            value={billingData.buyerDocNumber}
-                                            onChange={(e) => {
-                                                const value = e.target.value.replace(/\D/g, "")
-                                                const maxLen = billingData.documentType === "BOLETA" ? 8 : 11
-                                                updateBillingData("buyerDocNumber", value.slice(0, maxLen))
-                                            }}
-                                            placeholder={billingData.documentType === "BOLETA" ? "12345678" : "20123456789"}
-                                            maxLength={billingData.documentType === "BOLETA" ? 8 : 11}
-                                            className="bg-white"
-                                        />
-                                        {billingData.buyerDocNumber && (
-                                            billingData.documentType === "BOLETA"
-                                                ? !/^\d{8}$/.test(billingData.buyerDocNumber) && (
-                                                    <p className="text-xs text-red-500 mt-1">DNI debe tener 8 dígitos</p>
-                                                )
-                                                : !/^\d{11}$/.test(billingData.buyerDocNumber) && (
-                                                    <p className="text-xs text-red-500 mt-1">RUC debe tener 11 dígitos</p>
-                                                )
-                                        )}
-                                    </div>
+                                    <IdentityDocumentFields
+                                        idPrefix="checkout-document"
+                                        documentType={billingData.buyerDocType}
+                                        number={billingData.buyerDocNumber}
+                                        onTypeChange={(type) => updateBillingData("buyerDocType", type)}
+                                        onNumberChange={(number) => updateBillingData("buyerDocNumber", number)}
+                                        factura={billingData.documentType === "FACTURA"}
+                                        error={billingData.buyerDocNumber ? billingIssueByField.get("buyerDocNumber") : undefined}
+                                    />
                                     {billingData.documentType === "FACTURA" && (
                                         <div>
                                             <label className="text-xs text-gray-500 mb-1 block">

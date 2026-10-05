@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { buildBillingSnapshot } from "@/lib/billing"
 import { rateLimit } from "@/lib/rate-limit"
 import { resolveMerchPickupAssignments } from "@/lib/merch-pickup"
+import { getBillingIdentityError } from "@/lib/identity-document"
 
 export const runtime = "nodejs"
 
@@ -28,6 +29,7 @@ const merchItemSchema = z.object({
 
 const billingSchema = z.object({
     documentType: z.enum(["BOLETA", "FACTURA"]),
+    buyerDocType: z.enum(["1", "6", "4", "7"]).optional(),
     buyerDocNumber: z.string().min(1),
     buyerName: z.string().optional().nullable(),
     buyerAddress: z.string().optional().nullable(),
@@ -38,6 +40,9 @@ const billingSchema = z.object({
     buyerSecondName: z.string().optional().nullable(),
     buyerLastNamePaternal: z.string().optional().nullable(),
     buyerLastNameMaternal: z.string().optional().nullable(),
+}).superRefine((data, ctx) => {
+    const message = getBillingIdentityError(data)
+    if (message) ctx.addIssue({ code: "custom", path: ["buyerDocNumber"], message })
 })
 
 const merchOrderSchema = z.object({

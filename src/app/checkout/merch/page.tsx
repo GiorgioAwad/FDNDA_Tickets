@@ -30,6 +30,8 @@ import {
 } from "lucide-react"
 import AuthModal from "@/components/auth/AuthModal"
 import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
+import { IdentityDocumentFields } from "@/components/ui/identity-document-fields"
+import { getBillingIdentityError, type IdentityDocumentType } from "@/lib/identity-document"
 
 const IzipayCheckout = dynamic(
     () => import("@/components/checkout/izipay-checkout"),
@@ -54,6 +56,7 @@ type PickupResolution =
 
 interface BillingState {
     documentType: "BOLETA" | "FACTURA"
+    buyerDocType: IdentityDocumentType
     buyerDocNumber: string
     buyerFirstName: string
     buyerSecondName: string
@@ -68,6 +71,7 @@ interface BillingState {
 
 const DEFAULT_BILLING: BillingState = {
     documentType: "BOLETA",
+    buyerDocType: "1",
     buyerDocNumber: "",
     buyerFirstName: "",
     buyerSecondName: "",
@@ -242,13 +246,13 @@ export default function MerchCheckoutPage() {
         if (!billing.buyerEmail || !/\S+@\S+\.\S+/.test(billing.buyerEmail)) return "Email inválido"
         if (!billing.buyerPhone || billing.buyerPhone.length < 6) return "Teléfono requerido"
 
+        const documentError = getBillingIdentityError(billing)
+        if (documentError) return documentError
         if (billing.documentType === "BOLETA") {
-            if (!billing.buyerDocNumber || billing.buyerDocNumber.length < 8) return "DNI inválido"
             if (!billing.buyerFirstName.trim() || !billing.buyerLastNamePaternal.trim()) {
                 return "Completa nombres y apellidos para la boleta"
             }
         } else {
-            if (!billing.buyerDocNumber || billing.buyerDocNumber.length !== 11) return "RUC debe tener 11 dígitos"
             if (!billing.buyerName.trim()) return "Razón social requerida"
             if (!billing.buyerAddress.trim()) return "Dirección fiscal requerida (factura)"
         }
@@ -711,18 +715,18 @@ export default function MerchCheckoutPage() {
                                 <div className="flex gap-2">
                                     <button
                                         type="button"
-                                        onClick={() => setBilling({ ...billing, documentType: "BOLETA", buyerDocNumber: "", buyerName: "", buyerAddress: "" })}
+                                        onClick={() => setBilling({ ...billing, documentType: "BOLETA", buyerDocType: "1", buyerDocNumber: "", buyerName: "", buyerAddress: "" })}
                                         className={`flex-1 h-10 rounded-lg border-2 text-sm font-semibold ${
                                             billing.documentType === "BOLETA"
                                                 ? "border-fdnda-primary bg-fdnda-primary/5 text-fdnda-primary"
                                                 : "border-border text-foreground"
                                         }`}
                                     >
-                                        Boleta (DNI)
+                                        Boleta
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => setBilling({ ...billing, documentType: "FACTURA", buyerDocNumber: "", buyerName: "", buyerAddress: "" })}
+                                        onClick={() => setBilling({ ...billing, documentType: "FACTURA", buyerDocType: "6", buyerDocNumber: "", buyerName: "", buyerAddress: "" })}
                                         className={`flex-1 h-10 rounded-lg border-2 text-sm font-semibold ${
                                             billing.documentType === "FACTURA"
                                                 ? "border-fdnda-primary bg-fdnda-primary/5 text-fdnda-primary"
@@ -733,18 +737,17 @@ export default function MerchCheckoutPage() {
                                     </button>
                                 </div>
 
+                                <IdentityDocumentFields
+                                    idPrefix="merch-checkout-document"
+                                    documentType={billing.buyerDocType}
+                                    number={billing.buyerDocNumber}
+                                    onTypeChange={(buyerDocType) => setBilling((current) => ({ ...current, buyerDocType, buyerDocNumber: "" }))}
+                                    onNumberChange={(buyerDocNumber) => setBilling((current) => ({ ...current, buyerDocNumber }))}
+                                    factura={billing.documentType === "FACTURA"}
+                                    error={billing.buyerDocNumber ? getBillingIdentityError(billing) ?? undefined : undefined}
+                                />
                                 {billing.documentType === "BOLETA" ? (
                                     <>
-                                        <div>
-                                            <label className="text-sm font-semibold block mb-1.5">DNI *</label>
-                                            <Input
-                                                value={billing.buyerDocNumber}
-                                                onChange={(e) => setBilling({ ...billing, buyerDocNumber: e.target.value.replace(/\D/g, "").slice(0, 8) })}
-                                                placeholder="12345678"
-                                                inputMode="numeric"
-                                                maxLength={8}
-                                            />
-                                        </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             <Input value={billing.buyerFirstName} onChange={(e) => setBilling({ ...billing, buyerFirstName: e.target.value })} placeholder="Primer nombre *" />
                                             <Input value={billing.buyerSecondName} onChange={(e) => setBilling({ ...billing, buyerSecondName: e.target.value })} placeholder="Segundo nombre" />
@@ -754,16 +757,6 @@ export default function MerchCheckoutPage() {
                                     </>
                                 ) : (
                                     <>
-                                        <div>
-                                            <label className="text-sm font-semibold block mb-1.5">RUC *</label>
-                                            <Input
-                                                value={billing.buyerDocNumber}
-                                                onChange={(e) => setBilling({ ...billing, buyerDocNumber: e.target.value.replace(/\D/g, "").slice(0, 11) })}
-                                                placeholder="20XXXXXXXXX"
-                                                inputMode="numeric"
-                                                maxLength={11}
-                                            />
-                                        </div>
                                         <div>
                                             <label className="text-sm font-semibold block mb-1.5">Razón social *</label>
                                             <Input value={billing.buyerName} onChange={(e) => setBilling({ ...billing, buyerName: e.target.value })} />

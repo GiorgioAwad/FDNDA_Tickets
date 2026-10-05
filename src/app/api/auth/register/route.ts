@@ -5,6 +5,7 @@ import { sendVerificationEmail } from "@/lib/email"
 import { randomBytes } from "crypto"
 import { rateLimit, getClientIP } from "@/lib/rate-limit"
 import { parseRegistrationLocation } from "@/lib/registration-location"
+import { getIdentityDocumentError } from "@/lib/identity-document"
 
 export const runtime = "nodejs"
 
@@ -25,7 +26,8 @@ export async function POST(request: NextRequest) {
         const name = String(body.name || "").trim()
         const email = String(body.email || "").trim().toLowerCase()
         const password = String(body.password || "")
-        const dni = String(body.dni || "").trim()
+        const dni = String(body.dni || "").trim().toUpperCase()
+        const identityDocType = body.identityDocType ?? "1"
         const phone = String(body.phone || "").trim()
         const birthDate = body.birthDate ? String(body.birthDate).trim() : ""
         const ubigeo = String(body.ubigeo || "").trim()
@@ -46,10 +48,10 @@ export async function POST(request: NextRequest) {
         }
         const { departamento, provincia, distrito } = location
 
-        // Validate DNI format (8 digits)
-        if (!/^\d{8}$/.test(dni)) {
+        const documentError = getIdentityDocumentError(identityDocType, dni)
+        if (documentError) {
             return NextResponse.json(
-                { success: false, error: "El DNI debe tener exactamente 8 dígitos" },
+                { success: false, error: documentError },
                 { status: 400 }
             )
         }
@@ -95,6 +97,7 @@ export async function POST(request: NextRequest) {
                     email,
                     passwordHash,
                     dni,
+                    identityDocType,
                     phone,
                     birthDate: parsedBirthDate,
                     departamento,
@@ -142,6 +145,7 @@ export async function POST(request: NextRequest) {
                 email,
                 passwordHash,
                 dni,
+                identityDocType,
                 phone,
                 birthDate: parsedBirthDate,
                 departamento,
@@ -181,4 +185,3 @@ export async function POST(request: NextRequest) {
         )
     }
 }
-

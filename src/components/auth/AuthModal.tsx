@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
-import { Mail, Lock, User, AlertCircle, CheckCircle, X, Phone, CreditCard, Calendar, MapPin } from "lucide-react"
+import { Mail, Lock, User, AlertCircle, CheckCircle, X, Phone, Calendar, MapPin } from "lucide-react"
+import { IdentityDocumentFields } from "@/components/ui/identity-document-fields"
+import { getIdentityDocumentError, type IdentityDocumentType } from "@/lib/identity-document"
 
 interface AuthModalProps {
     open: boolean
@@ -27,6 +29,7 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
     const [registerData, setRegisterData] = useState({
         name: "",
         dni: "",
+        identityDocType: "1" as IdentityDocumentType,
         phone: "",
         birthDate: "",
         ubigeo: "",
@@ -72,8 +75,9 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
             return
         }
 
-        if (!/^\d{8}$/.test(registerData.dni)) {
-            setRegisterError("El DNI debe tener exactamente 8 dígitos")
+        const documentError = getIdentityDocumentError(registerData.identityDocType, registerData.dni)
+        if (documentError) {
+            setRegisterError(documentError)
             return
         }
 
@@ -275,26 +279,15 @@ export default function AuthModal({ open, onClose, onSuccess }: AuthModalProps) 
                                         </div>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <label htmlFor="modal-reg-dni" className="text-sm font-medium text-gray-700">
-                                            DNI
-                                        </label>
-                                        <div className="relative">
-                                            <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                            <Input
-                                                id="modal-reg-dni"
-                                                name="dni"
-                                                type="text"
-                                                inputMode="numeric"
-                                                placeholder="12345678"
-                                                value={registerData.dni}
-                                                onChange={handleRegisterChange}
-                                                className="pl-10"
-                                                maxLength={8}
-                                                required
-                                            />
-                                        </div>
-                                    </div>
+                                    <IdentityDocumentFields
+                                        idPrefix="modal-register-document"
+                                        stacked
+                                        documentType={registerData.identityDocType}
+                                        number={registerData.dni}
+                                        onTypeChange={(identityDocType) => setRegisterData((current) => ({ ...current, identityDocType, dni: "" }))}
+                                        onNumberChange={(dni) => setRegisterData((current) => ({ ...current, dni }))}
+                                        error={registerData.dni ? getIdentityDocumentError(registerData.identityDocType, registerData.dni) ?? undefined : undefined}
+                                    />
 
                                     <div className="space-y-2">
                                         <label htmlFor="modal-reg-phone" className="text-sm font-medium text-gray-700">

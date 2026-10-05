@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AuthShell } from "@/components/auth/AuthShell"
 import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
-import { Mail, Lock, User, AlertCircle, CheckCircle, Phone, CreditCard, Calendar, MapPin, Eye, EyeOff } from "lucide-react"
+import { Mail, Lock, User, AlertCircle, CheckCircle, Phone, Calendar, MapPin, Eye, EyeOff } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { IdentityDocumentFields } from "@/components/ui/identity-document-fields"
+import { getIdentityDocumentError, type IdentityDocumentType } from "@/lib/identity-document"
 
 function calculatePasswordStrength(pw: string): { score: number; label: string; color: string } {
     let score = 0
@@ -26,6 +28,7 @@ export default function RegisterPage() {
     const [formData, setFormData] = useState({
         name: "",
         dni: "",
+        identityDocType: "1" as IdentityDocumentType,
         phone: "",
         birthDate: "",
         ubigeo: "",
@@ -49,8 +52,9 @@ export default function RegisterPage() {
         setError("")
         setLoading(true)
 
-        if (!/^\d{8}$/.test(formData.dni)) {
-            setError("El DNI debe tener exactamente 8 dígitos")
+        const documentError = getIdentityDocumentError(formData.identityDocType, formData.dni)
+        if (documentError) {
+            setError(documentError)
             setLoading(false)
             return
         }
@@ -151,10 +155,15 @@ export default function RegisterPage() {
                     <Input id="name" name="name" type="text" placeholder="Juan Pérez" value={formData.name} onChange={handleChange} className="pl-10 h-11" required />
                 </Field>
 
-                <div className="grid grid-cols-2 gap-3">
-                    <Field id="dni" label="DNI" icon={CreditCard}>
-                        <Input id="dni" name="dni" type="text" inputMode="numeric" placeholder="12345678" value={formData.dni} onChange={handleChange} className="pl-10 h-11" maxLength={8} required />
-                    </Field>
+                <IdentityDocumentFields
+                    idPrefix="register-document"
+                    documentType={formData.identityDocType}
+                    number={formData.dni}
+                    onTypeChange={(identityDocType) => setFormData((current) => ({ ...current, identityDocType, dni: "" }))}
+                    onNumberChange={(dni) => setFormData((current) => ({ ...current, dni }))}
+                    error={formData.dni ? getIdentityDocumentError(formData.identityDocType, formData.dni) ?? undefined : undefined}
+                />
+                <div>
                     <Field id="phone" label="Teléfono" icon={Phone}>
                         <Input id="phone" name="phone" type="tel" inputMode="numeric" placeholder="987654321" value={formData.phone} onChange={handleChange} className="pl-10 h-11" maxLength={9} required />
                     </Field>

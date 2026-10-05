@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
 import { useSession } from "next-auth/react"
 import { buildNaturalPersonFullName, splitNaturalPersonName } from "@/lib/billing"
+import { resolveBuyerDocType } from "@/lib/identity-document"
 
 export interface CartScheduleConfig {
     dates: string[]
@@ -79,6 +80,7 @@ export interface CartItem {
 
 export interface BillingData {
     documentType: "BOLETA" | "FACTURA"
+    buyerDocType: "1" | "6" | "4" | "7"
     buyerDocNumber: string
     buyerName: string
     buyerAddress: string
@@ -131,6 +133,7 @@ const CartContext = createContext<CartContextType | undefined>(undefined)
 
 const DEFAULT_BILLING_DATA: BillingData = {
     documentType: "BOLETA",
+    buyerDocType: "1",
     buyerDocNumber: "",
     buyerName: "",
     buyerAddress: "",
@@ -825,6 +828,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             const parsed = JSON.parse(rawBilling)
             return {
                 documentType: parsed.documentType === "FACTURA" ? "FACTURA" : "BOLETA",
+                buyerDocType: resolveBuyerDocType(parsed.documentType, parsed.buyerDocType),
                 buyerDocNumber: typeof parsed.buyerDocNumber === "string" ? parsed.buyerDocNumber : "",
                 buyerName: typeof parsed.buyerName === "string" ? parsed.buyerName : "",
                 buyerAddress: typeof parsed.buyerAddress === "string" ? parsed.buyerAddress : "",
@@ -848,6 +852,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const updated = { ...current, [field]: value }
         // Reset doc number and address when switching document type
         if (field === "documentType") {
+            updated.buyerDocType = value === "FACTURA" ? "6" : "1"
             updated.buyerDocNumber = ""
             updated.buyerName = ""
             updated.buyerAddress = ""
@@ -855,6 +860,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             updated.buyerSecondName = ""
             updated.buyerLastNamePaternal = ""
             updated.buyerLastNameMaternal = ""
+        }
+        if (field === "buyerDocType") {
+            updated.buyerDocType = resolveBuyerDocType(current.documentType, value)
+            updated.buyerDocNumber = ""
         }
         window.localStorage.setItem(billingKey, JSON.stringify(updated))
         emitCartChange()

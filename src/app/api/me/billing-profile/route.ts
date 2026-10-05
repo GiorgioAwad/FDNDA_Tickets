@@ -16,6 +16,7 @@ export async function GET() {
         where: { userId: user.id },
         select: {
             documentType: true,
+            buyerDocType: true,
             buyerDocNumber: true,
             buyerName: true,
             buyerAddress: true,

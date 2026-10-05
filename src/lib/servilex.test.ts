@@ -178,6 +178,22 @@ test("OS genera detalle con servicio, cantidad, descuento y precio", () => {
     assert.equal(payload.cobranza.totalPago, 40)
 })
 
+test("ABIO recibe C.E. y PAS del comprador en boleta sin convertirlos a DNI", () => {
+    for (const [buyerDocType, buyerDocNumber] of [["4", "001234567"], ["7", "AB123456"], ["7", "12345678"]]) {
+        const order = buildOrder({
+            buyerDocType,
+            buyerDocNumber,
+            totalAmount: 40,
+            orderItems: [{ quantity: 1, unitPrice: 40, attendeeData: [], ticketType: buildTicketType("OS") }],
+        })
+        const [source] = buildServilexPreviewSources(order, `identity-${buyerDocType}`)
+        const payload = buildServilexPayload(source, TEST_CONFIG)
+        assert.equal(payload.cabecera.comprobante.tipo, "BOL")
+        assert.equal(payload.cabecera.entidad.tipoDocumento, buyerDocType)
+        assert.equal(payload.cabecera.entidad.numeroDocumento, buyerDocNumber)
+    }
+})
+
 test("OS genera un comprobante separado por cada item del mismo servicio", () => {
     const order = buildOrder({
         totalAmount: 23,

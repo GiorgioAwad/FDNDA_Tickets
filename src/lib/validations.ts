@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { buildNaturalPersonFullName } from "@/lib/billing"
+import { getBillingIdentityError } from "@/lib/identity-document"
 
 // ==================== USER SCHEMAS ====================
 
@@ -98,17 +99,22 @@ const commonBillingFields = {
 
 export const boletaBillingSchema = z.object({
     documentType: z.literal("BOLETA"),
-    buyerDocNumber: z.string().regex(/^\d{8}$/, "DNI debe tener 8 digitos"),
+    buyerDocType: z.enum(["1", "6", "4", "7"]).default("1"),
+    buyerDocNumber: z.string().trim().toUpperCase(),
     buyerName: z.string().min(2, "Nombre requerido"),
     buyerFirstName: z.string().min(2, "Primer nombre requerido"),
     buyerSecondName: z.string().optional(),
     buyerLastNamePaternal: z.string().min(2, "Apellido paterno requerido"),
     buyerLastNameMaternal: z.string().min(2, "Apellido materno requerido"),
     ...commonBillingFields,
+}).superRefine((data, ctx) => {
+    const message = getBillingIdentityError(data)
+    if (message) ctx.addIssue({ code: "custom", path: ["buyerDocNumber"], message })
 })
 
 export const facturaBillingSchema = z.object({
     documentType: z.literal("FACTURA"),
+    buyerDocType: z.literal("6").default("6"),
     buyerDocNumber: z.string().regex(/^\d{11}$/, "RUC debe tener 11 digitos"),
     buyerName: z.string().min(2, "Razon social requerida"),
     buyerFirstName: z.string().optional(),

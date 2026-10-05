@@ -75,6 +75,14 @@ export function resolveIzipayDocument(
         return { documentType: "RUC", document }
     }
 
+    // El tipo elegido prevalece sobre inferencias por longitud (PAS puede ser numérico).
+    if (docTypeCode === "4" && digitsOnly && document.length >= 9 && document.length <= 12) {
+        return { documentType: "CE", document }
+    }
+    if (docTypeCode === "7" && document.length >= 8 && document.length <= 12) {
+        return { documentType: "PASAPORTE", document }
+    }
+
     if (digitsOnly && document.length === 8) {
         return { documentType: "DNI", document }
     }
