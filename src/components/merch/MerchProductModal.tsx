@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { useMerchCart } from "@/hooks/merch-cart-context"
 import { formatPrice, cn } from "@/lib/utils"
 import { MerchSpinPreview } from "./MerchSpinPreview"
-import { ZONE_THEME, CATEGORY_SINGULAR } from "./theme"
+import { ZONE_THEME } from "./theme"
+import { merchCategoryLabel } from "@/lib/merch-category"
 import type { MerchProductView, MerchVariantView } from "./types"
 
 interface MerchProductModalProps {
@@ -119,7 +120,7 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
                         <div className="flex flex-col gap-4 p-5 sm:p-8 lg:overflow-y-auto">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <Badge className={ZONE_THEME[product.zone].badge}>
-                                    {product.zone === "GENERICA" ? CATEGORY_SINGULAR[product.category] : `Zona ${ZONE_THEME[product.zone].short}`}
+                                    {product.zone === "GENERICA" ? merchCategoryLabel(product.category) : `Zona ${ZONE_THEME[product.zone].short}`}
                                 </Badge>
                                 {product.etapa && (
                                     <Badge variant="outline" className="font-semibold">
@@ -127,7 +128,7 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
                                     </Badge>
                                 )}
                                 <Badge variant="outline" className="font-semibold">
-                                    {CATEGORY_SINGULAR[product.category]}
+                                    {merchCategoryLabel(product.category)}
                                 </Badge>
                             </div>
 
@@ -170,11 +171,6 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
                                 <div className="mt-2">
                                     <div className="flex items-center justify-between mb-2">
                                         <p className="text-sm font-semibold text-foreground">Selecciona tu talla</p>
-                                        {selectedVariant?.size && (
-                                            <span className="text-xs text-muted-foreground">
-                                                {selectedVariant.available > 0 ? `${selectedVariant.available} disponibles` : "Agotado"}
-                                            </span>
-                                        )}
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {product.variants.map((variant) => {

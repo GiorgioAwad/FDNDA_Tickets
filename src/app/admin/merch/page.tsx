@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatPrice } from "@/lib/utils"
+import { merchCategoryLabel } from "@/lib/merch-category"
 import { Plus, Pencil, Package, ShoppingBag, MapPin } from "lucide-react"
 
 export const dynamic = "force-dynamic"
@@ -15,13 +16,6 @@ const ZONE_LABELS: Record<string, string> = {
     NORTE: "Norte",
     ORIENTE: "Oriente",
     GENERICA: "General",
-}
-
-const CATEGORY_LABELS: Record<string, string> = {
-    POLERA: "Polera",
-    GORRA: "Gorra",
-    PIN: "Pin",
-    OTROS: "Otros",
 }
 
 async function getProducts() {
@@ -131,7 +125,7 @@ export default async function AdminMerchPage() {
                                 <div className="p-4 space-y-2">
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <Badge variant="outline" className="font-semibold">
-                                            {CATEGORY_LABELS[product.category]}
+                                            {merchCategoryLabel(product.category)}
                                         </Badge>
                                         {product.zone !== "GENERICA" && (
                                             <Badge variant="outline" className="font-semibold">

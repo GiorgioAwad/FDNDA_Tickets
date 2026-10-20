@@ -6,6 +6,11 @@ import { prisma } from "@/lib/prisma"
 export const dynamic = "force-dynamic"
 
 export default async function NuevoMerchPage() {
+    const categories = await prisma.merchProduct.findMany({
+        distinct: ["category"],
+        select: { category: true },
+        orderBy: { category: "asc" },
+    })
     const pickupLocations = await prisma.merchPickupLocation.findMany({
         where: { isActive: true },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -35,7 +40,7 @@ export default async function NuevoMerchPage() {
                 </p>
             </div>
 
-            <MerchProductForm pickupLocations={pickupLocations} />
+            <MerchProductForm pickupLocations={pickupLocations} categories={categories.map((product) => product.category)} />
         </div>
     )
 }

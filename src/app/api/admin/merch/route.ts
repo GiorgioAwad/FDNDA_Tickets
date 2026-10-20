@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import slugify from "slugify"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
-import { MerchCategory, MerchZone, Prisma } from "@prisma/client"
+import { MerchZone, Prisma } from "@prisma/client"
+import { normalizeMerchCategory } from "@/lib/merch-category"
 
 export const runtime = "nodejs"
 
@@ -32,15 +33,11 @@ function normalizeSizes(input: unknown): string[] {
     })
 }
 
-function buildSku(category: MerchCategory, zone: MerchZone, size: string | null, suffix: string): string {
+function buildSku(category: string, zone: MerchZone, size: string | null, suffix: string): string {
     const cat = category.slice(0, 3)
     const zon = zone === "GENERICA" ? "GEN" : zone.slice(0, 3)
     const siz = size || "UNI"
     return `${cat}-${zon}-${siz}-${suffix}`
-}
-
-function isMerchCategory(value: unknown): value is MerchCategory {
-    return value === "POLERA" || value === "GORRA" || value === "PIN" || value === "OTROS"
 }
 
 function isMerchZone(value: unknown): value is MerchZone {
@@ -91,7 +88,7 @@ export async function POST(request: NextRequest) {
         const {
             name,
             description,
-            category,
+            category: rawCategory,
             zone = "GENERICA",
             etapa,
             price,
@@ -110,7 +107,8 @@ export async function POST(request: NextRequest) {
         if (typeof name !== "string" || !name.trim()) {
             return NextResponse.json({ success: false, error: "Nombre requerido" }, { status: 400 })
         }
-        if (!isMerchCategory(category)) {
+        const category = normalizeMerchCategory(rawCategory)
+        if (!category) {
             return NextResponse.json({ success: false, error: "Categoría inválida" }, { status: 400 })
         }
         if (!isMerchZone(zone)) {

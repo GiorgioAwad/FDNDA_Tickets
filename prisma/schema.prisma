@@ -116,13 +116,6 @@ enum OrderType {
   MERCH
 }
 
-enum MerchCategory {
-  POLERA
-  GORRA
-  PIN
-  OTROS
-}
-
 enum MerchZone {
   LIMA
   SUR
@@ -1009,7 +1002,7 @@ model MerchProduct {
   slug                 String        @unique
   name                 String
   description          String?       @db.Text
-  category             MerchCategory
+  category             String
   zone                 MerchZone     @default(GENERICA)
   etapa                String?
   price                Decimal       @db.Decimal(10, 2)

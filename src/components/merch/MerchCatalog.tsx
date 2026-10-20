@@ -7,7 +7,8 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { cn } from "@/lib/utils"
 import { MerchProductCard } from "./MerchProductCard"
 import { MerchProductModal } from "./MerchProductModal"
-import { CATEGORY_LABEL, ZONE_THEME } from "./theme"
+import { ZONE_THEME } from "./theme"
+import { merchCategoryLabel } from "@/lib/merch-category"
 import type { MerchCategory, MerchProductView, MerchZone } from "./types"
 
 interface MerchCatalogProps {
@@ -25,17 +26,18 @@ const ZONE_FILTERS: { value: ZoneFilter; label: string }[] = [
     { value: "ORIENTE", label: "Zona 4 · Oriente" },
 ]
 
-const CATEGORY_FILTERS: { value: CategoryFilter; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { value: "ALL", label: "Todo", icon: ShoppingBag },
-    { value: "POLERA", label: "Poleras", icon: Shirt },
-    { value: "GORRA", label: "Gorras", icon: Tag },
-    { value: "PIN", label: "Pines", icon: Tag },
-]
-
 export function MerchCatalog({ products }: MerchCatalogProps) {
     const [zoneFilter, setZoneFilter] = useState<ZoneFilter>("ALL")
     const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("ALL")
     const [openProduct, setOpenProduct] = useState<MerchProductView | null>(null)
+    const categoryFilters = useMemo(() => [
+        { value: "ALL", label: "Todo", icon: ShoppingBag },
+        ...Array.from(new Set(products.map((product) => product.category))).map((category) => ({
+            value: category,
+            label: merchCategoryLabel(category, true),
+            icon: category === "POLERA" || category === "POLO" ? Shirt : Tag,
+        })),
+    ], [products])
 
     const filtered = useMemo(() => {
         return products.filter((p) => {
@@ -46,14 +48,11 @@ export function MerchCatalog({ products }: MerchCatalogProps) {
     }, [products, zoneFilter, categoryFilter])
 
     const groupedByCategory = useMemo(() => {
-        const groups: Record<MerchCategory, MerchProductView[]> = {
-            POLERA: [],
-            GORRA: [],
-            PIN: [],
-            OTROS: [],
-        }
+        const groups = new Map<string, MerchProductView[]>()
         for (const product of filtered) {
-            groups[product.category].push(product)
+            const list = groups.get(product.category) ?? []
+            list.push(product)
+            groups.set(product.category, list)
         }
         return groups
     }, [filtered])
@@ -63,7 +62,7 @@ export function MerchCatalog({ products }: MerchCatalogProps) {
             {/* Filters */}
             <div className="mb-8 space-y-4">
                 <div className="flex flex-wrap gap-2">
-                    {CATEGORY_FILTERS.map((filter) => {
+                    {categoryFilters.map((filter) => {
                         const Icon = filter.icon
                         const active = categoryFilter === filter.value
                         return (
@@ -119,14 +118,13 @@ export function MerchCatalog({ products }: MerchCatalogProps) {
                 />
             ) : (
                 <div className="space-y-12">
-                    {(Object.keys(groupedByCategory) as MerchCategory[]).map((category) => {
-                        const list = groupedByCategory[category]
+                    {Array.from(groupedByCategory, ([category, list]) => {
                         if (list.length === 0) return null
                         return (
                             <section key={category}>
                                 {categoryFilter === "ALL" && (
                                     <h3 className="font-display text-2xl sm:text-3xl font-bold text-foreground mb-5">
-                                        {CATEGORY_LABEL[category]}
+                                        {merchCategoryLabel(category, true)}
                                     </h3>
                                 )}
                                 <motion.div

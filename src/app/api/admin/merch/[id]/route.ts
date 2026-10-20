@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
-import { MerchCategory, MerchZone, Prisma } from "@prisma/client"
+import { MerchZone, Prisma } from "@prisma/client"
+import { normalizeMerchCategory } from "@/lib/merch-category"
 
 export const runtime = "nodejs"
 
@@ -31,15 +32,11 @@ function normalizeSizes(input: unknown): string[] {
     })
 }
 
-function buildSku(category: MerchCategory, zone: MerchZone, size: string | null, suffix: string): string {
+function buildSku(category: string, zone: MerchZone, size: string | null, suffix: string): string {
     const cat = category.slice(0, 3)
     const zon = zone === "GENERICA" ? "GEN" : zone.slice(0, 3)
     const siz = size || "UNI"
     return `${cat}-${zon}-${siz}-${suffix}`
-}
-
-function isMerchCategory(value: unknown): value is MerchCategory {
-    return value === "POLERA" || value === "GORRA" || value === "PIN" || value === "OTROS"
 }
 
 function isMerchZone(value: unknown): value is MerchZone {
@@ -106,7 +103,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
         if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim()
         if (typeof body.description === "string" || body.description === null) data.description = body.description
-        if (isMerchCategory(body.category)) data.category = body.category
+        if (body.category !== undefined) {
+            const category = normalizeMerchCategory(body.category)
+            if (!category) {
+                return NextResponse.json({ success: false, error: "Tipo de merch inválido" }, { status: 400 })
+            }
+            data.category = category
+        }
         if (isMerchZone(body.zone)) data.zone = body.zone
         if (typeof body.etapa === "string" || body.etapa === null) data.etapa = body.etapa
         if (body.price !== undefined) {

@@ -1,4 +1,4 @@
-export type MerchCategory = "POLERA" | "GORRA" | "PIN" | "OTROS"
+export type MerchCategory = string
 export type MerchZone = "LIMA" | "SUR" | "NORTE" | "ORIENTE" | "GENERICA"
 
 export interface MerchVariantView {

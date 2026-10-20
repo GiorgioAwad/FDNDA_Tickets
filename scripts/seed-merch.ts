@@ -10,7 +10,7 @@
  * Idempotente: si un slug ya existe, actualiza imageUrl/precio/stock; no duplica.
  */
 
-import { PrismaClient, MerchCategory, MerchZone } from "@prisma/client"
+import { PrismaClient, MerchZone } from "@prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { Pool } from "pg"
 
@@ -32,7 +32,7 @@ const prisma = new PrismaClient({ adapter: new PrismaPg(pool) })
 interface SeedProduct {
     slug: string
     name: string
-    category: MerchCategory
+    category: string
     zone: MerchZone
     etapa: string
     price: number
@@ -206,7 +206,7 @@ const PRODUCTS: SeedProduct[] = [
     },
 ]
 
-function buildSku(category: MerchCategory, zone: MerchZone, size: string | null, suffix: string): string {
+function buildSku(category: string, zone: MerchZone, size: string | null, suffix: string): string {
     const cat = category.slice(0, 3)
     const zon = zone === "GENERICA" ? "GEN" : zone.slice(0, 3)
     const siz = size || "UNI"

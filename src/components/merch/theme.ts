@@ -1,4 +1,4 @@
-import type { MerchZone, MerchCategory } from "./types"
+import type { MerchZone } from "./types"
 
 interface ZoneThemeEntry {
     label: string
@@ -44,18 +44,4 @@ export const ZONE_THEME: Record<MerchZone, ZoneThemeEntry> = {
         bg: "bg-gradient-to-br from-slate-100 via-white to-slate-50",
         accent: "text-slate-700",
     },
-}
-
-export const CATEGORY_LABEL: Record<MerchCategory, string> = {
-    POLERA: "Poleras",
-    GORRA: "Gorras",
-    PIN: "Pines",
-    OTROS: "Otros",
-}
-
-export const CATEGORY_SINGULAR: Record<MerchCategory, string> = {
-    POLERA: "Polera",
-    GORRA: "Gorra",
-    PIN: "Pin",
-    OTROS: "Producto",
 }

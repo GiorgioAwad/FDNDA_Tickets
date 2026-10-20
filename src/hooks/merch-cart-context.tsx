@@ -2,13 +2,14 @@
 
 import React, { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from "react"
 import { useSession } from "next-auth/react"
+import { normalizeMerchCategory } from "@/lib/merch-category"
 
 export interface MerchCartItem {
     lineKey: string
     productId: string
     variantId: string
     productName: string
-    category: "POLERA" | "GORRA" | "PIN" | "OTROS"
+    category: string
     zone: "LIMA" | "SUR" | "NORTE" | "ORIENTE" | "GENERICA"
     size: string | null
     imageUrl: string | null
@@ -39,8 +40,7 @@ const emit = () => listeners.forEach((l) => l())
 const buildLineKey = (productId: string, variantId: string): string => `${productId}::${variantId}`
 
 const normalizeCategory = (raw: unknown): MerchCartItem["category"] => {
-    if (raw === "POLERA" || raw === "GORRA" || raw === "PIN" || raw === "OTROS") return raw
-    return "OTROS"
+    return normalizeMerchCategory(raw) ?? "OTROS"
 }
 
 const normalizeZone = (raw: unknown): MerchCartItem["zone"] => {

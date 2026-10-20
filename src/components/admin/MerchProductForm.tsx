@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ImageUploader } from "@/components/ui/image-uploader"
 import { ExternalLink, MapPin, Save, Trash2 } from "lucide-react"
+import { DEFAULT_MERCH_CATEGORIES, merchCategoryHasBackImage, merchCategoryLabel, normalizeMerchCategory } from "@/lib/merch-category"
 
-type Category = "POLERA" | "GORRA" | "PIN" | "OTROS"
+type Category = string
 type Zone = "LIMA" | "SUR" | "NORTE" | "ORIENTE" | "GENERICA"
 
 interface AbioServiceOption {
@@ -51,16 +52,10 @@ interface MerchProductFormProps {
     initialData?: Partial<MerchProductFormData> & { imageUrls?: string[] }
     isEdit?: boolean
     pickupLocations: MerchPickupLocationOption[]
+    categories: string[]
 }
 
 const DEFAULT_SIZES = ["S", "M", "L", "XL"]
-
-const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
-    { value: "POLERA", label: "Polera" },
-    { value: "GORRA", label: "Gorra" },
-    { value: "PIN", label: "Pin" },
-    { value: "OTROS", label: "Otros" },
-]
 
 const ZONE_OPTIONS: { value: Zone; label: string }[] = [
     { value: "GENERICA", label: "Genérica (sin zona)" },
@@ -70,10 +65,12 @@ const ZONE_OPTIONS: { value: Zone; label: string }[] = [
     { value: "ORIENTE", label: "Zona 4 — Oriente" },
 ]
 
-export function MerchProductForm({ initialData, isEdit = false, pickupLocations }: MerchProductFormProps) {
+export function MerchProductForm({ initialData, isEdit = false, pickupLocations, categories }: MerchProductFormProps) {
     const router = useRouter()
     const [submitting, setSubmitting] = useState(false)
     const [deleting, setDeleting] = useState(false)
+    const categoryOptions = Array.from(new Set([...DEFAULT_MERCH_CATEGORIES, ...categories]))
+    const [categoryInput, setCategoryInput] = useState(merchCategoryLabel(initialData?.category ?? "POLERA"))
     const [abioServices, setAbioServices] = useState<AbioServiceOption[]>([])
     const [abioSucursal, setAbioSucursal] = useState<string>(
         initialData?.servilexSucursalCode ?? ""
@@ -154,7 +151,7 @@ export function MerchProductForm({ initialData, isEdit = false, pickupLocations 
     // Auto-suggest hasSizes based on category
     useEffect(() => {
         if (isEdit) return
-        if (form.category === "POLERA") {
+        if (merchCategoryHasBackImage(form.category)) {
             setForm((f) => ({ ...f, hasSizes: true, availableSizes: f.availableSizes.length ? f.availableSizes : DEFAULT_SIZES }))
         } else {
             setForm((f) => ({ ...f, hasSizes: false }))
@@ -177,6 +174,11 @@ export function MerchProductForm({ initialData, isEdit = false, pickupLocations 
 
         if (!form.name.trim()) {
             toast.error("El nombre es requerido")
+            return
+        }
+        const category = normalizeMerchCategory(categoryInput)
+        if (!category) {
+            toast.error("Indica un tipo de merch de hasta 40 caracteres, con letras y números")
             return
         }
         const priceNum = Number(form.price)
@@ -205,11 +207,11 @@ export function MerchProductForm({ initialData, isEdit = false, pickupLocations 
             const url = isEdit && initialData?.id ? `/api/admin/merch/${initialData.id}` : "/api/admin/merch"
             const method = isEdit ? "PATCH" : "POST"
 
-            const backImage = form.category === "POLERA" ? form.backImageUrl.trim() : ""
+            const backImage = form.backImageUrl.trim()
             const payload = {
                 name: form.name.trim(),
                 description: form.description.trim() || null,
-                category: form.category,
+                category,
                 zone: form.zone,
                 etapa: form.etapa.trim() || null,
                 price: priceNum,
@@ -298,16 +300,28 @@ export function MerchProductForm({ initialData, isEdit = false, pickupLocations 
 
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="text-sm font-semibold text-foreground block mb-1.5">Categoría *</label>
-                                <select
-                                    value={form.category}
-                                    onChange={(e) => setForm({ ...form, category: e.target.value as Category })}
-                                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                                >
-                                    {CATEGORY_OPTIONS.map((opt) => (
-                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                <label htmlFor="merch-category" className="text-sm font-semibold text-foreground block mb-1.5">Tipo de merch *</label>
+                                <Input
+                                    id="merch-category"
+                                    list="merch-category-options"
+                                    value={categoryInput}
+                                    onChange={(e) => {
+                                        setCategoryInput(e.target.value)
+                                        setForm((current) => ({ ...current, category: normalizeMerchCategory(e.target.value) ?? "" }))
+                                    }}
+                                    maxLength={40}
+                                    placeholder="Ej. Polo, pin, llavero"
+                                    aria-describedby="merch-category-help"
+                                    required
+                                />
+                                <datalist id="merch-category-options">
+                                    {categoryOptions.map((category) => (
+                                        <option key={category} value={merchCategoryLabel(category)} />
                                     ))}
-                                </select>
+                                </datalist>
+                                <p id="merch-category-help" className="mt-1.5 text-xs text-muted-foreground">
+                                    Elige un tipo o escribe uno nuevo. Se guardará con el producto y podrás reutilizarlo.
+                                </p>
                             </div>
                             <div>
                                 <label className="text-sm font-semibold text-foreground block mb-1.5">Zona *</label>
@@ -541,10 +555,10 @@ export function MerchProductForm({ initialData, isEdit = false, pickupLocations 
                 <div className="space-y-6">
                     <div className="bg-white rounded-xl border border-border p-5 space-y-4">
                         <h3 className="font-display font-bold text-lg text-foreground">
-                            {form.category === "POLERA" ? "Imágenes (Frente y Espalda)" : "Imagen"}
+                            {merchCategoryHasBackImage(form.category) ? "Imágenes (Frente y Espalda)" : "Imagen"}
                         </h3>
                         <div>
-                            {form.category === "POLERA" && (
+                            {merchCategoryHasBackImage(form.category) && (
                                 <p className="text-xs font-semibold text-foreground mb-1.5">Frente</p>
                             )}
                             <ImageUploader
@@ -555,7 +569,7 @@ export function MerchProductForm({ initialData, isEdit = false, pickupLocations 
                                 placeholder="URL de la imagen del producto"
                             />
                         </div>
-                        {form.category === "POLERA" && (
+                        {(merchCategoryHasBackImage(form.category) || form.backImageUrl) && (
                             <div>
                                 <p className="text-xs font-semibold text-foreground mb-1.5">Espalda</p>
                                 <ImageUploader

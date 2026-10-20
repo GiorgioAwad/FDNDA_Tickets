@@ -97,17 +97,6 @@ export default async function MerchPage() {
                         Lleva la camiseta de tu zona. Poleras, gorras y pines oficiales del Campeonato Descentralizado de Natación FDNDA 2026.
                     </p>
 
-                    <div className="mt-8 inline-flex flex-wrap gap-3 justify-center text-sm font-semibold">
-                        <span className="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur-sm rounded-full px-4 py-1.5">
-                            Pines · S/ 10
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur-sm rounded-full px-4 py-1.5">
-                            Gorras · S/ 20
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur-sm rounded-full px-4 py-1.5">
-                            Poleras · S/ 80
-                        </span>
-                    </div>
                 </div>
             </section>
 

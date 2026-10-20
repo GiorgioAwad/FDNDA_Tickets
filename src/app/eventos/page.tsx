@@ -192,7 +192,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                         </div>
                         <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-bold mb-4 tracking-tight leading-[1.05]">
                             Encuentra tu próxima{" "}
-                            <span className="text-gradient-coral">experiencia acuática</span>
+                            <span className="text-white">experiencia acuática</span>
                         </h1>
                         <p className="text-white/85 text-base sm:text-lg max-w-2xl mx-auto">
                             Explora los eventos oficiales de la FDNDA y asegura tu lugar.

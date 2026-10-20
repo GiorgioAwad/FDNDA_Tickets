@@ -8,6 +8,7 @@ import { formatPrice } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 import type { MerchProductView } from "./types"
 import { ZONE_THEME } from "./theme"
+import { merchCategoryLabel } from "@/lib/merch-category"
 
 interface MerchProductCardProps {
     product: MerchProductView
@@ -18,7 +19,7 @@ interface MerchProductCardProps {
 export function MerchProductCard({ product, onOpen, priority }: MerchProductCardProps) {
     const prefersReducedMotion = useReducedMotion()
     const zoneTheme = ZONE_THEME[product.zone]
-    const categoryLabel = product.category === "POLERA" ? "Polera" : product.category === "GORRA" ? "Gorra" : product.category === "PIN" ? "Pin" : "Producto"
+    const categoryLabel = merchCategoryLabel(product.category)
     const displayImageUrl = product.imageUrl || product.imageUrls[0] || null
     const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null)
     const imageFailed = Boolean(displayImageUrl && failedImageUrl === displayImageUrl)
