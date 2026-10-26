@@ -1012,6 +1012,7 @@ model MerchProduct {
   hasSizes             Boolean       @default(false)
   availableSizes       Json?
   isActive             Boolean       @default(true)
+  pickupOnly           Boolean       @default(false)
   sortOrder            Int           @default(0)
   servilexServiceId    String? // deprecated: usar servilexServiceCode (codigo del catalogo ABIO)
   servilexServiceCode  String? // codigo ABIO (AbioCatalogService.servicioCodigo) para emitir boleta OS

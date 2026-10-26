@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
                 select: {
                     id: true,
                     isActive: true,
+                    pickupOnly: true,
                     pickupLocationId: true,
                     pickupLocation: {
                         select: {
@@ -57,7 +58,14 @@ export async function GET(request: NextRequest) {
             )
 
             return NextResponse.json(
-                { success: true, data: locations, resolution },
+                {
+                    success: true,
+                    data: locations,
+                    resolution,
+                    shippingAllowed: productIds.length > 0 &&
+                        products.length === productIds.length &&
+                        products.every((product) => product.isActive && !product.pickupOnly),
+                },
                 { headers: { "Cache-Control": "no-store" } }
             )
         }

@@ -157,6 +157,7 @@ export async function POST(request: NextRequest) {
                         price: true,
                         imageUrl: true,
                         isActive: true,
+                        pickupOnly: true,
                         pickupLocationId: true,
                         pickupLocation: {
                             select: {
@@ -173,6 +174,10 @@ export async function POST(request: NextRequest) {
 
                 if (!product || !product.isActive) {
                     throw new Error(`Producto no disponible: ${item.productId}`)
+                }
+
+                if (delivery.method === "SHIPPING_HOME" && product.pickupOnly) {
+                    throw new Error(`${product.name} está disponible solo para recojo en sede. Selecciona recojo en sede para continuar.`)
                 }
 
                 if (delivery.method === "PICKUP_OFFICE") {

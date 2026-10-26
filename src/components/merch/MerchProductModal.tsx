@@ -258,7 +258,7 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
                                     </Button>
                                 )}
                                 <p className="text-[11px] text-center text-muted-foreground mt-3">
-                                    Pago seguro Izipay · Boleta o factura · Recojo o envío
+                                    Pago seguro Izipay · Boleta o factura · {product.pickupOnly ? "Recojo en sede" : "Recojo o envío"}
                                 </p>
                             </div>
                         </div>

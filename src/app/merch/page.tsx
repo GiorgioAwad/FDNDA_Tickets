@@ -64,6 +64,7 @@ async function getProducts(): Promise<MerchProductView[]> {
                 imageUrl: product.imageUrl,
                 imageUrls,
                 hasSizes: product.hasSizes,
+                pickupOnly: product.pickupOnly,
                 availableSizes,
                 pickupLocation: product.pickupLocation,
                 isSoldOut: totalAvailable === 0,

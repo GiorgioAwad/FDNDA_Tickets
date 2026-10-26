@@ -109,7 +109,9 @@ export default function MerchCheckoutPage() {
     } | null>(null)
 
     const [billing, setBilling] = useState<BillingState>(DEFAULT_BILLING)
-    const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("PICKUP_OFFICE")
+    const [preferredDeliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("PICKUP_OFFICE")
+    const [shippingAllowed, setShippingAllowed] = useState(false)
+    const deliveryMethod: DeliveryMethod = shippingAllowed ? preferredDeliveryMethod : "PICKUP_OFFICE"
     const [shippingAddress, setShippingAddress] = useState("")
     const [shippingDistrito, setShippingDistrito] = useState("")
     const [shippingReference, setShippingReference] = useState("")
@@ -128,6 +130,7 @@ export default function MerchCheckoutPage() {
 
     const loadPickupLocations = useCallback(async () => {
         if (!pickupProductIds) {
+            setShippingAllowed(false)
             setPickupLocations([])
             setPickupResolution({ kind: "empty" })
             setPickupLocationsError("")
@@ -135,6 +138,7 @@ export default function MerchCheckoutPage() {
             return
         }
         setPickupLocationsLoading(true)
+        setShippingAllowed(false)
         setPickupLocationsError("")
         try {
             const response = await fetch(
@@ -149,7 +153,9 @@ export default function MerchCheckoutPage() {
             const locations = payload.data as PickupLocation[]
             setPickupLocations(locations)
             setPickupResolution(payload.resolution as PickupResolution)
+            setShippingAllowed(payload.shippingAllowed === true)
         } catch (loadError) {
+            setShippingAllowed(false)
             setPickupLocations([])
             setPickupResolution({ kind: "empty" })
             setPickupLocationsError((loadError as Error).message)
@@ -192,9 +198,13 @@ export default function MerchCheckoutPage() {
     }, [shippingUbigeo])
 
     useEffect(() => {
+        if (!shippingAllowed) {
+            setDeliveryMethod("PICKUP_OFFICE")
+            return
+        }
         if (destinationIsLima === null) return
         setDeliveryMethod(destinationIsLima ? "PICKUP_OFFICE" : "SHIPPING_HOME")
-    }, [destinationIsLima])
+    }, [destinationIsLima, shippingAllowed])
 
     const shippingCost = useMemo(() => {
         if (deliveryMethod !== "SHIPPING_HOME") return 0
@@ -216,6 +226,7 @@ export default function MerchCheckoutPage() {
 
     useEffect(() => {
         if (
+            shippingAllowed &&
             destinationIsLima === false &&
             deliveryMethod === "PICKUP_OFFICE" &&
             !pickupLocationsLoading &&
@@ -223,7 +234,7 @@ export default function MerchCheckoutPage() {
         ) {
             setDeliveryMethod("SHIPPING_HOME")
         }
-    }, [canPickup, deliveryMethod, destinationIsLima, pickupLocationsLoading])
+    }, [canPickup, deliveryMethod, destinationIsLima, pickupLocationsLoading, shippingAllowed])
 
     const grandTotal = itemsTotal + shippingCost
     const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
@@ -270,10 +281,12 @@ export default function MerchCheckoutPage() {
         } else if (pickupResolution.kind === "mixed") {
             return "Tu carrito contiene productos de sedes distintas. Para recojo, cómpralos en pedidos separados."
         } else if (pickupResolution.kind === "unavailable" || !selectedPickupLocation) {
-            return "Uno o más productos no tiene una sede de recojo activa. Actualiza tu carrito o elige envío."
+            return shippingAllowed
+                ? "Uno o más productos no tiene una sede de recojo activa. Actualiza tu carrito o elige envío."
+                : "Uno o más productos no tiene una sede de recojo activa. Actualiza tu carrito para continuar."
         }
         return null
-    }, [items.length, itemsTotal, billing, destinationIsLima, deliveryMethod, selectedPickupLocation, pickupLocationsError, pickupLocationsLoading, pickupResolution, shippingAddress, shippingDistrito, shippingPhone])
+    }, [items.length, itemsTotal, billing, destinationIsLima, deliveryMethod, selectedPickupLocation, pickupLocationsError, pickupLocationsLoading, pickupResolution, shippingAddress, shippingDistrito, shippingPhone, shippingAllowed])
 
     const handleCheckout = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -555,32 +568,38 @@ export default function MerchCheckoutPage() {
                         <Card>
                             <CardHeader>
                                 <CardTitle className="flex items-center gap-2">
-                                    <Truck className="h-5 w-5 text-fdnda-secondary" />
-                                    ¿Cómo quieres recibirlo?
+                                    <MapPin className="h-5 w-5 text-fdnda-secondary" />
+                                    {shippingAllowed ? "¿Cómo quieres recibirlo?" : "Recojo en sede"}
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <div className="rounded-lg border border-fdnda-primary/20 bg-fdnda-primary/5 p-3 text-sm text-foreground">
-                                    El recojo en sede no tiene costo. Para provincia también puedes elegir envío a domicilio por S/ {SHIPPING_COST_PROVINCE}.
+                                    {pickupLocationsLoading
+                                        ? "Confirmando las opciones de entrega de tus productos..."
+                                        : shippingAllowed
+                                            ? `El recojo en sede no tiene costo. Para provincia también puedes elegir envío a domicilio por S/ ${SHIPPING_COST_PROVINCE}.`
+                                            : "Estos productos se entregan únicamente por recojo en la sede asignada, sin costo."}
                                 </div>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => setDeliveryMethod("SHIPPING_HOME")}
-                                        disabled={destinationIsLima === true}
-                                        className={`p-4 rounded-xl border-2 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                                            deliveryMethod === "SHIPPING_HOME"
-                                                ? "border-fdnda-primary bg-fdnda-primary/5"
-                                                : "border-border bg-white hover:border-fdnda-primary/50"
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <Truck className="h-4 w-4 text-fdnda-primary" />
-                                            <span className="font-semibold text-sm">Envío a domicilio</span>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground">Solo provincia · S/ {SHIPPING_COST_PROVINCE}</p>
-                                    </button>
+                                <div className={`grid grid-cols-1 gap-3 ${shippingAllowed ? "sm:grid-cols-2" : ""}`}>
+                                    {shippingAllowed && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setDeliveryMethod("SHIPPING_HOME")}
+                                            disabled={destinationIsLima === true}
+                                            className={`p-4 rounded-xl border-2 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                                                deliveryMethod === "SHIPPING_HOME"
+                                                    ? "border-fdnda-primary bg-fdnda-primary/5"
+                                                    : "border-border bg-white hover:border-fdnda-primary/50"
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <Truck className="h-4 w-4 text-fdnda-primary" />
+                                                <span className="font-semibold text-sm">Envío a domicilio</span>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">Solo provincia · S/ {SHIPPING_COST_PROVINCE}</p>
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
                                         onClick={() => setDeliveryMethod("PICKUP_OFFICE")}
@@ -641,7 +660,9 @@ export default function MerchCheckoutPage() {
                                             </div>
                                         ) : pickupResolution.kind === "unavailable" || !selectedPickupLocation ? (
                                             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                                                Uno o más productos no tiene una sede de recojo activa. Retíralo del carrito o elige envío a provincia.
+                                                {shippingAllowed
+                                                    ? "Uno o más productos no tiene una sede de recojo activa. Retíralo del carrito o elige envío a provincia."
+                                                    : "Uno o más productos no tiene una sede de recojo activa. Retíralo del carrito para continuar."}
                                             </div>
                                         ) : (
                                             <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">

@@ -21,6 +21,7 @@ export interface MerchProductView {
     imageUrl: string | null
     imageUrls: string[]
     hasSizes: boolean
+    pickupOnly: boolean
     availableSizes: string[]
     pickupLocation: {
         id: string

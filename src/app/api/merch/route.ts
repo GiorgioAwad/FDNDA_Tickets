@@ -50,6 +50,7 @@ export async function GET() {
                 imageUrl: product.imageUrl,
                 imageUrls: Array.isArray(product.imageUrls) ? product.imageUrls : [],
                 hasSizes: product.hasSizes,
+                pickupOnly: product.pickupOnly,
                 availableSizes: Array.isArray(product.availableSizes) ? product.availableSizes : [],
                 pickupLocation: product.pickupLocation,
                 isSoldOut: totalAvailable === 0,
