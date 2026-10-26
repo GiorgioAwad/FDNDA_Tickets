@@ -113,6 +113,7 @@ export function MerchProductModal({ product, onClose }: MerchProductModalProps) 
                                 backImageUrl={backImageUrl}
                                 alt={product.name}
                                 bgClass={ZONE_THEME[product.zone].bg}
+                                rotationEnabled={product.category !== "TOALLA"}
                             />
                         </div>
 

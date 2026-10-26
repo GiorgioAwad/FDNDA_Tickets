@@ -9,16 +9,17 @@ interface MerchSpinPreviewProps {
     backImageUrl?: string | null
     alt: string
     bgClass?: string
+    rotationEnabled?: boolean
 }
 
-export function MerchSpinPreview({ imageUrl, backImageUrl, alt, bgClass = "bg-gradient-to-br from-fdnda-light/50 via-white to-coral/10" }: MerchSpinPreviewProps) {
-    const rotation = useMotionValue(-180)
+export function MerchSpinPreview({ imageUrl, backImageUrl, alt, bgClass = "bg-gradient-to-br from-fdnda-light/50 via-white to-coral/10", rotationEnabled = true }: MerchSpinPreviewProps) {
+    const rotation = useMotionValue(rotationEnabled ? -180 : 0)
     const [failedFront, setFailedFront] = useState<string | null>(null)
     const [failedBack, setFailedBack] = useState<string | null>(null)
     const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const autoSpinControls = useRef<ReturnType<typeof animate> | null>(null)
 
-    const hasTwoSides = Boolean(imageUrl && backImageUrl && backImageUrl !== imageUrl)
+    const hasTwoSides = Boolean(rotationEnabled && imageUrl && backImageUrl && backImageUrl !== imageUrl)
 
     const transform = useTransform(rotation, (deg) => `rotateY(${deg}deg)`)
     const shadowOpacity = useTransform(rotation, (deg) => {
@@ -27,6 +28,8 @@ export function MerchSpinPreview({ imageUrl, backImageUrl, alt, bgClass = "bg-gr
     })
 
     useEffect(() => {
+        if (!rotationEnabled) return
+
         const controls = animate(rotation, 0, {
             type: "spring",
             damping: 16,
@@ -38,7 +41,7 @@ export function MerchSpinPreview({ imageUrl, backImageUrl, alt, bgClass = "bg-gr
             controls.stop()
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [rotationEnabled])
 
     const frontFailed = Boolean(imageUrl && failedFront === imageUrl)
     const backFailed = Boolean(backImageUrl && failedBack === backImageUrl)
@@ -63,13 +66,15 @@ export function MerchSpinPreview({ imageUrl, backImageUrl, alt, bgClass = "bg-gr
     }
 
     useEffect(() => {
+        if (!rotationEnabled) return
+
         scheduleAutoSpin()
         return () => {
             if (idleTimer.current) clearTimeout(idleTimer.current)
             stopAutoSpin()
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [rotationEnabled])
 
     return (
         <div className={`relative w-full h-full overflow-hidden rounded-2xl ${bgClass}`}>
@@ -80,7 +85,7 @@ export function MerchSpinPreview({ imageUrl, backImageUrl, alt, bgClass = "bg-gr
                 <motion.div
                     className="absolute inset-0 flex items-center justify-center"
                     style={{
-                        transform,
+                        transform: rotationEnabled ? transform : "none",
                         transformStyle: "preserve-3d",
                     }}
                 >
@@ -142,7 +147,7 @@ export function MerchSpinPreview({ imageUrl, backImageUrl, alt, bgClass = "bg-gr
                 <motion.div
                     aria-hidden
                     className="absolute bottom-4 left-1/2 -translate-x-1/2 h-3 w-[55%] rounded-full bg-black blur-md"
-                    style={{ opacity: shadowOpacity }}
+                    style={{ opacity: rotationEnabled ? shadowOpacity : 0.4 }}
                 />
             </div>
 
