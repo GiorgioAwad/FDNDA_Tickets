@@ -83,7 +83,14 @@ const ticketSelect = {
     membershipSchedule: true,
     status: true,
     event: {
-        select: { startDate: true, membershipStartFixed: true, servilexSucursalCode: true },
+        select: {
+            startDate: true,
+            membershipStartFixed: true,
+            servilexSucursalCode: true,
+            membershipFreezeStart: true,
+            membershipFreezeEnd: true,
+            membershipFreezeExtensionMonths: true,
+        },
     },
     ticketType: {
         select: {

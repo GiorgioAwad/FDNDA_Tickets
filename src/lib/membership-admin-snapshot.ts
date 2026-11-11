@@ -79,6 +79,10 @@ export const membershipChangeInclude = {
             endDate: true,
             category: true,
             membershipStartFixed: true,
+            membershipFreezeStart: true,
+            membershipFreezeEnd: true,
+            membershipFreezeExtensionMonths: true,
+            membershipBlackoutExceptions: true,
         },
     },
     order: {
@@ -251,7 +255,16 @@ export function toScanTicket(args: {
     membershipSchedule: unknown
     monthlySchedules: Array<{ monthIndex: number; selection: unknown }>
     membershipFreeze: { month: string; startDate: Date; endDate: Date } | null
-    event: { title: string; startDate: Date; endDate: Date; membershipStartFixed: Date | null }
+    event: {
+        title: string
+        startDate: Date
+        endDate: Date
+        membershipStartFixed: Date | null
+        membershipFreezeStart?: Date | null
+        membershipFreezeEnd?: Date | null
+        membershipFreezeExtensionMonths?: number
+        membershipBlackoutExceptions?: readonly string[]
+    }
     ticketType: {
         name: string
         isPackage: boolean
@@ -279,6 +292,10 @@ export function toScanTicket(args: {
             startDate: args.event.startDate,
             endDate: args.event.endDate,
             membershipStartFixed: args.event.membershipStartFixed,
+            membershipFreezeStart: args.event.membershipFreezeStart,
+            membershipFreezeEnd: args.event.membershipFreezeEnd,
+            membershipFreezeExtensionMonths: args.event.membershipFreezeExtensionMonths,
+            membershipBlackoutExceptions: args.event.membershipBlackoutExceptions,
         },
         ticketType: {
             name: args.ticketType.name,

@@ -9,6 +9,7 @@ import {
     getEligibleMembershipFreezeMonths,
     getMembershipAnchor,
     getMembershipExpiry,
+    getMembershipFreezeRanges,
     validateMembershipFreezeMonth,
     type ScanTicket,
 } from "@/lib/scan-helpers"
@@ -70,7 +71,10 @@ export async function POST(
         const anchor = getMembershipAnchor(scanTicket)
         const duration = ticket.ticketType.membershipDurationMonths ?? 0
         const membershipExpiry = anchor && duration > 0
-            ? getMembershipExpiry(anchor, duration, undefined, [validation.range])
+            ? getMembershipExpiry(anchor, duration, undefined, [
+                  ...getMembershipFreezeRanges(scanTicket),
+                  validation.range,
+              ])
             : null
 
         return NextResponse.json({

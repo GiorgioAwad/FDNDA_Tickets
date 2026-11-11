@@ -74,7 +74,16 @@ export async function GET(request: NextRequest) {
                     monthlySchedules: { select: { monthIndex: true, selection: true } },
                     membershipFreeze: { select: { month: true, startDate: true, endDate: true } },
                     event: {
-                        select: { title: true, startDate: true, endDate: true, membershipStartFixed: true },
+                        select: {
+                            title: true,
+                            startDate: true,
+                            endDate: true,
+                            membershipStartFixed: true,
+                            membershipFreezeStart: true,
+                            membershipFreezeEnd: true,
+                            membershipFreezeExtensionMonths: true,
+                            membershipBlackoutExceptions: true,
+                        },
                     },
                     ticketType: {
                         select: {
@@ -135,6 +144,10 @@ export async function GET(request: NextRequest) {
                     startDate: ticket.event.startDate,
                     endDate: ticket.event.endDate,
                     membershipStartFixed: ticket.event.membershipStartFixed,
+                    membershipFreezeStart: ticket.event.membershipFreezeStart,
+                    membershipFreezeEnd: ticket.event.membershipFreezeEnd,
+                    membershipFreezeExtensionMonths: ticket.event.membershipFreezeExtensionMonths,
+                    membershipBlackoutExceptions: ticket.event.membershipBlackoutExceptions,
                 },
                 ticketType: {
                     name: ticket.ticketType.name,

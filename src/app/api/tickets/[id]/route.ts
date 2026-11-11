@@ -18,6 +18,8 @@ import {
     getMembershipAccessStatus,
     getEligibleMembershipFreezeMonths,
     getMembershipAnchor,
+    getMembershipFreezeRanges,
+    getMembershipScheduledFreeze,
     isFixedTermMembership,
 } from "@/lib/scan-helpers"
 import {
@@ -424,13 +426,8 @@ export async function GET(
             ? getMembershipQuotaPeriod(todayStr, membershipAnchor)
             : null
         const isFixedTerm = isFixedTermMembership(ticket)
-        const freezeRanges = ticket.membershipFreeze
-            ? [{
-                  month: ticket.membershipFreeze.month,
-                  startStr: formatDateUTC(ticket.membershipFreeze.startDate),
-                  endStr: formatDateUTC(ticket.membershipFreeze.endDate),
-              }]
-            : []
+        const freezeRanges = getMembershipFreezeRanges(ticket)
+        const scheduledFreeze = getMembershipScheduledFreeze(ticket)
         const membershipExpiry = isFixedTerm && membershipAnchor
             ? getMembershipExpiry(membershipAnchor, ticket.ticketType.membershipDurationMonths!, undefined, freezeRanges)
             : null
@@ -658,6 +655,14 @@ export async function GET(
                                     month: membershipAccess.freeze.month,
                                     start: membershipAccess.freeze.startStr,
                                     end: membershipAccess.freeze.endStr,
+                                }
+                              : null,
+                          scheduled: scheduledFreeze
+                              ? {
+                                    start: scheduledFreeze.startStr,
+                                    end: scheduledFreeze.endStr,
+                                    extensionMonths: scheduledFreeze.extensionMonths ?? 1,
+                                    accessExceptions: ticket.event.membershipBlackoutExceptions,
                                 }
                               : null,
                       }

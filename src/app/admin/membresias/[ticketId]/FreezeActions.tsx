@@ -39,7 +39,7 @@ export function FreezeActions({
     detail: MembershipDetail
     onFrozen: () => void
 }) {
-    const { applied, availableMonths } = detail.membershipFreeze
+    const { applied, availableMonths, scheduled } = detail.membershipFreeze
     const [month, setMonth] = useState(availableMonths[0]?.month ?? "")
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -102,6 +102,13 @@ export function FreezeActions({
                 </p>
             </CardHeader>
             <CardContent className="space-y-4">
+                {scheduled && (
+                    <div className="rounded-lg bg-sky-50 p-4 text-sm text-sky-900">
+                        Cierre programado del evento: {formatDateLabel(scheduled.start)} al{" "}
+                        {formatDateLabel(previousDateKey(scheduled.end))}. La vigencia se extiende{" "}
+                        {scheduled.extensionMonths} meses.
+                    </div>
+                )}
                 {applied ? (
                     <div className="flex items-start gap-3 rounded-lg bg-sky-50 p-4 text-sm text-sky-900">
                         <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-sky-700" />

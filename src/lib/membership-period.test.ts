@@ -13,6 +13,7 @@ import {
     membershipAllowsMultipleDailyScans,
     buildMembershipMonthlySummary,
     getMembershipAnchor,
+    getMembershipScheduledFreeze,
     type ScanTicket,
 } from "@/lib/scan-helpers"
 import { isBlackoutMonth } from "@/lib/membership-config"
@@ -296,6 +297,96 @@ test("validateMembershipFreezeMonth rejects January and February", () => {
     if (!result.ok) {
         assert.match(result.error, /Enero y febrero/)
     }
+})
+
+test("event closure covers November and December without counting an existing November freeze twice", () => {
+    const ticket = makeTicket("2026-06-25", 12, [], {
+        membershipStartDate: "2026-08-03",
+        membershipDurationMonths: 6,
+        membershipFreeze: { month: "2026-11", startDate: "2026-11-01", endDate: "2026-12-01" },
+    })
+    ticket.event.membershipFreezeStart = new Date("2026-11-01T00:00:00Z")
+    ticket.event.membershipFreezeEnd = new Date("2027-01-01T00:00:00Z")
+    ticket.event.membershipFreezeExtensionMonths = 2
+    assert.equal(getMembershipAccessStatus(ticket, "2026-11-15").status, "FROZEN")
+    assert.equal(getMembershipAccessStatus(ticket, "2026-12-31").status, "FROZEN")
+    assert.equal(getMembershipAccessStatus(ticket, "2026-12-31").expiryStr, "2027-06-03")
+    assert.equal(getMembershipAccessStatus(ticket, "2027-01-01").status, "BLACKOUT")
+    assert.equal(ticket.membershipFreeze?.month, "2026-11")
+})
+
+test("event closure preserves the extension for a previous voluntary freeze outside its dates", () => {
+    const ticket = makeTicket("2026-06-25", 12, [], {
+        membershipStartDate: "2026-08-03",
+        membershipDurationMonths: 6,
+        membershipFreeze: { month: "2026-09", startDate: "2026-09-01", endDate: "2026-10-01" },
+    })
+    ticket.event.membershipFreezeStart = new Date("2026-11-01T00:00:00Z")
+    ticket.event.membershipFreezeEnd = new Date("2027-01-01T00:00:00Z")
+    ticket.event.membershipFreezeExtensionMonths = 2
+    assert.equal(getMembershipAccessStatus(ticket, "2026-09-15").status, "FROZEN")
+    assert.equal(getMembershipAccessStatus(ticket, "2026-12-15").status, "FROZEN")
+    assert.equal(getMembershipAccessStatus(ticket, "2026-12-15").expiryStr, "2027-07-03")
+})
+
+test("a membership starting after the closure keeps its original expiry and has no scheduled freeze", () => {
+    for (const start of ["2027-01-01", "2027-03-01", "2027-05-03"]) {
+        const ticket = makeTicket("2026-06-25", 20, [], {
+            membershipStartDate: start,
+            membershipDurationMonths: 6,
+        })
+        const before = getMembershipAccessStatus(ticket, "2027-05-15").expiryStr
+        ticket.event.membershipFreezeStart = new Date("2026-11-01T00:00:00Z")
+        ticket.event.membershipFreezeEnd = new Date("2027-01-01T00:00:00Z")
+        ticket.event.membershipFreezeExtensionMonths = 2
+        assert.equal(getMembershipAccessStatus(ticket, "2027-05-15").expiryStr, before)
+        assert.equal(getMembershipScheduledFreeze(ticket), null)
+    }
+})
+
+test("a membership expired before the closure is not extended or reactivated", () => {
+    const ticket = makeTicket("2026-03-01", 12, [], {
+        membershipStartDate: "2026-03-01", membershipDurationMonths: 6,
+    })
+    ticket.event.membershipFreezeStart = new Date("2026-11-01T00:00:00Z")
+    ticket.event.membershipFreezeEnd = new Date("2027-01-01T00:00:00Z")
+    ticket.event.membershipFreezeExtensionMonths = 2
+    assert.equal(getMembershipAccessStatus(ticket, "2026-11-15").status, "EXPIRED")
+    assert.equal(getMembershipAccessStatus(ticket, "2026-11-15").expiryStr, "2026-09-01")
+    assert.equal(getMembershipScheduledFreeze(ticket), null)
+})
+
+test("the January 2027 exception permits access without shortening the compensated expiry", () => {
+    const ticket = makeTicket("2026-06-25", 12, [], {
+        membershipStartDate: "2026-08-03", membershipDurationMonths: 6,
+        membershipFreeze: { month: "2026-11", startDate: "2026-11-01", endDate: "2026-12-01" },
+    })
+    ticket.event.membershipFreezeStart = new Date("2026-11-01T00:00:00Z")
+    ticket.event.membershipFreezeEnd = new Date("2027-01-01T00:00:00Z")
+    ticket.event.membershipFreezeExtensionMonths = 2
+    const originalExpiry = getMembershipAccessStatus(ticket, "2027-01-01").expiryStr
+    ticket.event.membershipBlackoutExceptions = ["2027-01"]
+    assert.equal(getMembershipAccessStatus(ticket, "2026-12-31").status, "FROZEN")
+    assert.equal(getMembershipAccessStatus(ticket, "2027-01-01").status, "OK")
+    assert.equal(getMembershipAccessStatus(ticket, "2027-01-31").status, "OK")
+    assert.equal(isWithinMembershipWindow(ticket, "2027-01-15"), true)
+    assert.equal(getMembershipAccessStatus(ticket, "2027-01-15").expiryStr, originalExpiry)
+    assert.equal(originalExpiry, "2027-06-03")
+    assert.equal(getMembershipAccessStatus(ticket, "2027-02-01").status, "BLACKOUT")
+    assert.equal(getMembershipAccessStatus(ticket, "2027-06-03").status, "EXPIRED")
+})
+
+test("the access exception applies only to its event and exact year-month", () => {
+    const ticket = makeTicket("2026-08-03", 12, [], {
+        membershipStartDate: "2026-08-03", membershipDurationMonths: 24,
+    })
+    assert.equal(getMembershipAccessStatus(ticket, "2027-01-15").status, "BLACKOUT")
+    ticket.event.membershipBlackoutExceptions = ["2027-01"]
+    assert.equal(getMembershipAccessStatus(ticket, "2027-01-15").status, "OK")
+    assert.equal(getMembershipAccessStatus(ticket, "2028-01-15").status, "BLACKOUT")
+    assert.equal(getMembershipAccessStatus(ticket, "2027-02-15").status, "BLACKOUT")
+    ticket.event.membershipBlackoutExceptions = []
+    assert.equal(getMembershipAccessStatus(ticket, "2027-01-15").status, "BLACKOUT")
 })
 
 test("validateMembershipFreezeMonth requires 48 hours notice", () => {

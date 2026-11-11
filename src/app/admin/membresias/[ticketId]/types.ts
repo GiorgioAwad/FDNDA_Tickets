@@ -116,6 +116,11 @@ export interface MembershipDetail {
         }>
     }
     membershipFreeze: {
+        scheduled: {
+            start: string
+            end: string
+            extensionMonths: number
+        } | null
         applied: {
             month: string
             start: string

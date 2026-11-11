@@ -28,6 +28,7 @@ import {
     buildAttendanceSummary,
     getEffectiveScheduleSelection,
     getMembershipAccessStatus,
+    getMembershipScheduledFreeze,
     getMembershipAnchor,
     getEligibleMembershipFreezeMonths,
     getMembershipPeriod,
@@ -102,6 +103,10 @@ export async function GET(
                 startDate: record.event.startDate,
                 endDate: record.event.endDate,
                 membershipStartFixed: record.event.membershipStartFixed,
+                membershipFreezeStart: record.event.membershipFreezeStart,
+                membershipFreezeEnd: record.event.membershipFreezeEnd,
+                membershipFreezeExtensionMonths: record.event.membershipFreezeExtensionMonths,
+                membershipBlackoutExceptions: record.event.membershipBlackoutExceptions,
             },
             ticketType: {
                 name: record.ticketType.name,
@@ -114,6 +119,7 @@ export async function GET(
         })
 
         const access = getMembershipAccessStatus(scanTicket, today)
+        const scheduledFreeze = getMembershipScheduledFreeze(scanTicket)
         const attendance = buildAttendanceSummary(scanTicket, today)
         const anchor = getMembershipAnchor(scanTicket)
         const period = anchor ? getMembershipPeriod(today, anchor) : null
@@ -315,6 +321,13 @@ export async function GET(
                     })),
                 },
                 membershipFreeze: {
+                    scheduled: scheduledFreeze
+                        ? {
+                              start: scheduledFreeze.startStr,
+                              end: scheduledFreeze.endStr,
+                              extensionMonths: scheduledFreeze.extensionMonths ?? 1,
+                          }
+                        : null,
                     applied: record.membershipFreeze
                         ? {
                               month: record.membershipFreeze.month,

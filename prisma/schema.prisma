@@ -289,6 +289,13 @@ model Event {
   membershipStartFixed    DateTime?         @db.Date
   membershipStartMin      DateTime?         @db.Date
   membershipStartMax      DateTime?         @db.Date
+  // Cierre extraordinario programado para todas las membresías de este evento.
+  // A diferencia del congelamiento voluntario individual, puede abarcar varios meses.
+  membershipFreezeStart   DateTime?         @db.Date
+  membershipFreezeEnd     DateTime?         @db.Date
+  membershipFreezeExtensionMonths Int       @default(0)
+  // Meses YYYY-MM habilitados de forma excepcional; no alteran el vencimiento.
+  membershipBlackoutExceptions String[]     @default([])
   createdAt               DateTime          @default(now())
   updatedAt               DateTime          @updatedAt
 

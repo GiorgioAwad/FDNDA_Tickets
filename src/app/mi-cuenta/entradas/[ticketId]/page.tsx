@@ -70,6 +70,12 @@ interface TicketDetail {
             start: string
             end: string
         } | null
+        scheduled: {
+            start: string
+            end: string
+            extensionMonths: number
+            accessExceptions: string[]
+        } | null
     } | null
     // Cambio de horario mensual (semestral/anual BRONCE/PLATA).
     monthlySchedule?: {
@@ -715,6 +721,17 @@ export default function TicketDetailPage() {
                                             )}
                                         </div>
 
+                                        {ticket.membershipFreeze.scheduled && (
+                                            <div className="rounded-lg bg-white/70 px-3 py-2 text-xs text-sky-900">
+                                                <div className="font-semibold">Cierre programado de la sede</div>
+                                                <div>
+                                                    Del {formatDate(ticket.membershipFreeze.scheduled.start)} al{" "}
+                                                    {formatDate(previousDateKey(ticket.membershipFreeze.scheduled.end))};
+                                                    la culminación se extiende {ticket.membershipFreeze.scheduled.extensionMonths} meses.
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {ticket.membershipFreeze.applied ? (
                                             <div className="rounded-lg bg-white/70 px-3 py-2 text-xs text-sky-900">
                                                 <div className="font-semibold">
@@ -809,7 +826,9 @@ export default function TicketDetailPage() {
                                             {formatDate(ticket.membershipAttendance.membershipExpiry, { dateStyle: "medium" })}
                                         </p>
                                         <p className="text-amber-600">
-                                            No aplica en enero ni febrero; la vigencia se extiende esos meses.
+                                            {ticket.membershipFreeze?.scheduled?.accessExceptions?.includes("2027-01")
+                                                ? "Regreso habilitado en enero de 2027. Febrero conserva la restricción habitual."
+                                                : "No aplica en enero ni febrero; la vigencia se extiende esos meses."}
                                         </p>
                                         {ticket.membershipFreeze?.applied && (
                                             <p className="text-sky-600">

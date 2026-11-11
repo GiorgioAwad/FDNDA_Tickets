@@ -32,6 +32,8 @@ export type MembershipFreezeMonthRange = {
     month: string
     startStr: string
     endStr: string
+    /** Additional months added to expiry by this freeze; defaults to one. */
+    extensionMonths?: number
 }
 
 export type ScanTicket = {
@@ -60,6 +62,10 @@ export type ScanTicket = {
         endDate: Date
         category?: string
         membershipStartFixed?: Date | null
+        membershipFreezeStart?: Date | null
+        membershipFreezeEnd?: Date | null
+        membershipFreezeExtensionMonths?: number | null
+        membershipBlackoutExceptions?: readonly string[] | null
     }
     ticketType: {
         name: string
@@ -231,21 +237,61 @@ export const getMembershipFreezeMonthRange = (month: string): MembershipFreezeMo
     return { month, startStr, endStr }
 }
 
-export const getMembershipFreezeRanges = (ticket: Pick<ScanTicket, "membershipFreeze">): MembershipFreezeMonthRange[] => {
+type MembershipFreezeTicket = Pick<ScanTicket, "membershipFreeze" | "membershipStartDate"> & {
+    event: Pick<ScanTicket["event"], "startDate"> & Partial<ScanTicket["event"]>
+    ticketType?: Pick<ScanTicket["ticketType"], "membershipDurationMonths">
+}
+
+export const getMembershipFreezeRanges = (ticket: MembershipFreezeTicket): MembershipFreezeMonthRange[] => {
+    const ranges: MembershipFreezeMonthRange[] = []
     const freeze = ticket.membershipFreeze
-    if (!freeze) return []
+    if (freeze) {
+        const byMonth = getMembershipFreezeMonthRange(freeze.month)
+        if (byMonth) ranges.push(byMonth)
+        else {
+            const startStr = formatDateLikeUTC(freeze.startDate)
+            const endStr = formatDateLikeUTC(freeze.endDate)
+            if (/^\d{4}-\d{2}-\d{2}$/.test(startStr) && /^\d{4}-\d{2}-\d{2}$/.test(endStr)) {
+                ranges.push({ month: startStr.slice(0, 7), startStr, endStr })
+            }
+        }
+    }
 
-    const byMonth = getMembershipFreezeMonthRange(freeze.month)
-    if (byMonth) return [byMonth]
+    const event = ticket.event
+    const startStr = event?.membershipFreezeStart ? formatDateLikeUTC(event.membershipFreezeStart) : ""
+    const endStr = event?.membershipFreezeEnd ? formatDateLikeUTC(event.membershipFreezeEnd) : ""
+    const extensionMonths = event?.membershipFreezeExtensionMonths ?? 0
+    if (/^\d{4}-\d{2}-\d{2}$/.test(startStr) && /^\d{4}-\d{2}-\d{2}$/.test(endStr) && endStr > startStr) {
+        const anchor = ticket.membershipStartDate ?? event.membershipStartFixed ?? event.startDate
+        if (formatDateUTC(anchor) >= endStr) return ranges
+        const duration = ticket.ticketType?.membershipDurationMonths ?? 0
+        if (duration > 0 && getMembershipExpiry(anchor, duration, undefined, ranges) <= startStr) return ranges
+        // A voluntary month already covered by the closure must not extend
+        // expiry twice. Keep its database record as the original freeze history.
+        for (let i = ranges.length - 1; i >= 0; i -= 1) {
+            if (ranges[i].startStr >= startStr && ranges[i].endStr <= endStr) ranges.splice(i, 1)
+        }
+        ranges.push({
+            month: startStr.slice(0, 7),
+            startStr,
+            endStr,
+            extensionMonths: extensionMonths > 0 ? extensionMonths : undefined,
+        })
+    }
+    return ranges
+}
 
-    const startStr = formatDateLikeUTC(freeze.startDate)
-    const endStr = formatDateLikeUTC(freeze.endDate)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startStr) || !/^\d{4}-\d{2}-\d{2}$/.test(endStr)) return []
-    return [{ month: startStr.slice(0, 7), startStr, endStr }]
+export const getMembershipScheduledFreeze = (ticket: MembershipFreezeTicket): MembershipFreezeMonthRange | null => {
+    const start = ticket.event.membershipFreezeStart
+    const end = ticket.event.membershipFreezeEnd
+    if (!start || !end) return null
+    return getMembershipFreezeRanges(ticket).find(
+        (range) => range.startStr === formatDateLikeUTC(start) && range.endStr === formatDateLikeUTC(end)
+    ) ?? null
 }
 
 export const findMembershipFreezeForDate = (
-    ticket: Pick<ScanTicket, "membershipFreeze">,
+    ticket: MembershipFreezeTicket,
     today: string
 ): MembershipFreezeMonthRange | null =>
     getMembershipFreezeRanges(ticket).find((freeze) => today >= freeze.startStr && today < freeze.endStr) ?? null
@@ -409,7 +455,8 @@ export const getMembershipExpiry = (
         k += 1
     }
     const baseExpiry = addMonthsToParts(sy, sm, sd, k)
-    return addMonthsToDateStr(baseExpiry, freezes.length)
+    const extensionMonths = freezes.reduce((total, freeze) => total + (freeze.extensionMonths ?? 1), 0)
+    return addMonthsToDateStr(baseExpiry, extensionMonths)
 }
 
 export type MembershipAccessStatus = "OK" | "NOT_STARTED" | "EXPIRED" | "BLACKOUT" | "FROZEN" | "NOT_APPLICABLE"
@@ -442,9 +489,10 @@ export const getMembershipAccessStatus = (
 
     if (today < startStr) return { status: "NOT_STARTED", startStr, expiryStr }
     if (today >= expiryStr) return { status: "EXPIRED", startStr, expiryStr }
-    if (isBlackoutMonth(monthOneBased, blackout)) return { status: "BLACKOUT", startStr, expiryStr }
     const freeze = findMembershipFreezeForDate(ticket, today)
     if (freeze) return { status: "FROZEN", startStr, expiryStr, freeze }
+    const hasAccessException = ticket.event.membershipBlackoutExceptions?.includes(today.slice(0, 7)) === true
+    if (isBlackoutMonth(monthOneBased, blackout) && !hasAccessException) return { status: "BLACKOUT", startStr, expiryStr }
     return { status: "OK", startStr, expiryStr }
 }
 
@@ -485,13 +533,17 @@ export const validateMembershipFreezeMonth = (
     if (ticket.status !== "ACTIVE") {
         return { ok: false, error: "La membresía no está activa." }
     }
-    if (getMembershipFreezeRanges(ticket).length > 0) {
+    if (ticket.membershipFreeze) {
         return { ok: false, error: "Esta membresía ya usó su congelamiento." }
     }
 
     const range = getMembershipFreezeMonthRange(month)
     if (!range) {
         return { ok: false, error: "Selecciona un mes válido para congelar." }
+    }
+
+    if (getMembershipFreezeRanges(ticket).some((freeze) => range.startStr < freeze.endStr && range.endStr > freeze.startStr)) {
+        return { ok: false, error: "Este mes ya tiene un congelamiento programado." }
     }
 
     const monthOneBased = Number(month.slice(5, 7))
@@ -526,7 +578,7 @@ export const validateMembershipFreezeMonth = (
     }
 
     const membershipStart = formatDateUTC(anchor)
-    const membershipExpiry = getMembershipExpiry(anchor, duration, blackout)
+    const membershipExpiry = getMembershipExpiry(anchor, duration, blackout, getMembershipFreezeRanges(ticket))
     const latestFreezeMonth = getLatestMembershipFreezeMonth(anchor)
     if (range.month > latestFreezeMonth) {
         return {

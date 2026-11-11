@@ -49,6 +49,10 @@ const membershipTicketSelect = {
             membershipStartFixed: true,
             membershipStartMin: true,
             membershipStartMax: true,
+            membershipFreezeStart: true,
+            membershipFreezeEnd: true,
+            membershipFreezeExtensionMonths: true,
+            membershipBlackoutExceptions: true,
         },
     },
     ticketType: {
@@ -107,11 +111,12 @@ function dateKey(date: Date | null | undefined) {
     return date ? formatDateUTC(date) : null
 }
 
-function getFreezeRanges(ticket: Pick<MembershipTicketRecord, "membershipFreeze">) {
+function getFreezeRanges(ticket: MembershipTicketRecord) {
     return getMembershipFreezeRanges(ticket).map((freeze) => ({
         month: freeze.month,
         startStr: freeze.startStr,
         endStr: freeze.endStr,
+        ...(freeze.extensionMonths ? { extensionMonths: freeze.extensionMonths } : {}),
     }))
 }
 
@@ -160,6 +165,9 @@ function serializeMembershipTicket(ticket: MembershipTicketRecord) {
             membershipStartFixed: dateKey(ticket.event.membershipStartFixed),
             membershipStartMin: dateKey(ticket.event.membershipStartMin),
             membershipStartMax: dateKey(ticket.event.membershipStartMax),
+            membershipFreezeStart: dateKey(ticket.event.membershipFreezeStart),
+            membershipFreezeEnd: dateKey(ticket.event.membershipFreezeEnd),
+            membershipFreezeExtensionMonths: ticket.event.membershipFreezeExtensionMonths,
         },
         ticketType: {
             id: ticket.ticketType.id,

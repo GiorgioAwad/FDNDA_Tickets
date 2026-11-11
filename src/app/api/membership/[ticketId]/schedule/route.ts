@@ -12,6 +12,7 @@ import {
     getMembershipAnchor,
     getMembershipPeriod,
     getMembershipExpiry,
+    getMembershipFreezeRanges,
     type ScanTicket,
 } from "@/lib/scan-helpers"
 
@@ -94,13 +95,7 @@ export async function POST(
         const targetStart = period?.endStr ?? null
 
         // No permitir fijar un mes fuera de la vigencia de la membresía.
-        const freezeRanges = ticket.membershipFreeze
-            ? [{
-                  month: ticket.membershipFreeze.month,
-                  startStr: ticket.membershipFreeze.startDate.toISOString().slice(0, 10),
-                  endStr: ticket.membershipFreeze.endDate.toISOString().slice(0, 10),
-              }]
-            : []
+        const freezeRanges = getMembershipFreezeRanges(scanTicket)
         const expiryStr = getMembershipExpiry(anchor, duration, undefined, freezeRanges)
         if (targetStart && targetStart >= expiryStr) {
             return NextResponse.json(
