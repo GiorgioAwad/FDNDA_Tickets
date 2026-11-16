@@ -9,6 +9,7 @@ import {
     type IzipayCheckoutConfig,
 } from "@/lib/izipay"
 import { isIzipayUserCancellationMessage } from "@/lib/izipay-client-response"
+import { startIzipayFormWatchdog, type IzipayFormWatchdog } from "@/lib/izipay-form-watchdog"
 
 interface IzipayCheckoutProps {
     authorization: string
@@ -42,10 +43,13 @@ declare global {
                 authorization: string
                 keyRSA: string
                 callbackResponse?: (response: IzipayPaymentResponse) => void | Promise<void>
-            }) => void
+            }) => void | Promise<void>
+            destroy?: () => void
         }
     }
 }
+
+type IzipayCheckoutInstance = InstanceType<NonNullable<Window["Izipay"]>>
 
 const SDK_LOAD_ERROR_MESSAGE =
     "No pudimos cargar el método de pago. Suele deberse a un bloqueador de anuncios, una extensión del navegador o tu red. Prueba: desactivar extensiones, usar modo incógnito o cambiar de navegador, y vuelve a intentar."
@@ -59,10 +63,18 @@ const PAYMENT_FORM_CLOSED_MESSAGE =
 const REDIRECT_TIMEOUT_MESSAGE =
     "No pudimos redirigirte a la pasarela de Izipay. Vuelve a intentarlo; si persiste, desactiva extensiones del navegador o prueba en modo incógnito."
 
+const FORM_LOAD_FAILED_MESSAGE =
+    "El formulario de pago de Izipay no terminó de cargar, así que no se realizó ningún cobro. Vuelve a intentarlo; si persiste, revisa tu conexión, desactiva bloqueadores de anuncios o prueba con otro navegador."
+
 // Tiempo máximo esperando que el SDK nos lleve a la página de pago de Izipay.
 // Si no navegó en este lapso, el SDK rechazó el config silenciosamente (en modo
 // redirect no reporta errores) y sin esto el usuario queda en un spinner eterno.
 const REDIRECT_WATCHDOG_MS = 20_000
+// Tiempo máximo esperando la primera señal del formulario popup. Un formulario
+// sano responde en ~5s con buena conexión; el margen cubre redes móviles lentas.
+// Sin esto, si el iframe de Izipay no arranca, el spinner a pantalla completa
+// del SDK se queda girando para siempre y tapa toda la página.
+const POPUP_FORM_WATCHDOG_MS = 30_000
 const SDK_LOAD_TIMEOUT_MS = 8_000
 const FIRST_PARTY_SDK_PATH = "/api/checkout/runtime"
 
@@ -233,7 +245,10 @@ export default function IzipayCheckout({
     const mountedRef = useRef(true)
     const startedRef = useRef(false)
     const handledRef = useRef(false)
+    const failedRef = useRef(false)
     const redirectWatchdogRef = useRef<number | null>(null)
+    const formWatchdogRef = useRef<IzipayFormWatchdog | null>(null)
+    const checkoutRef = useRef<IzipayCheckoutInstance | null>(null)
     const mode =
         config.render?.typeForm === "embedded"
             ? "embedded"
@@ -248,6 +263,22 @@ export default function IzipayCheckout({
         }
     }, [])
 
+    // Retira lo que el SDK colgó en document.body (spinner a pantalla completa e
+    // iframe). El SDK no lo limpia por su cuenta cuando falla, y como vive fuera
+    // de este componente tampoco desaparece al desmontarlo.
+    const teardownCheckout = useCallback(() => {
+        formWatchdogRef.current?.stop()
+        formWatchdogRef.current = null
+
+        const checkout = checkoutRef.current
+        checkoutRef.current = null
+        try {
+            checkout?.destroy?.()
+        } catch (destroyError) {
+            console.error("No se pudo cerrar el checkout de Izipay:", destroyError)
+        }
+    }, [])
+
     useEffect(() => {
         mountedRef.current = true
         window.addEventListener("pagehide", clearRedirectWatchdog)
@@ -255,8 +286,9 @@ export default function IzipayCheckout({
             mountedRef.current = false
             window.removeEventListener("pagehide", clearRedirectWatchdog)
             clearRedirectWatchdog()
+            teardownCheckout()
         }
-    }, [clearRedirectWatchdog])
+    }, [clearRedirectWatchdog, teardownCheckout])
 
     useEffect(() => {
         if (startedRef.current) {
@@ -269,6 +301,8 @@ export default function IzipayCheckout({
             }
 
             clearRedirectWatchdog()
+            // Si el SDK ya respondió, el formulario cargó: el vigilante sobra.
+            formWatchdogRef.current?.stop()
             handledRef.current = true
             const rawSdkMessage = (
                 paymentResult.messageUser ||
@@ -380,6 +414,28 @@ export default function IzipayCheckout({
             }
         }
 
+        // El SDK no pudo mostrar el formulario (o no navegó, en redirect). Se
+        // retira su spinner, se informa al comprador y vuelve el botón Pagar.
+        const failCheckout = (input: { message: string; stage: string; detail: string }) => {
+            if (!mountedRef.current || handledRef.current || failedRef.current) {
+                return
+            }
+
+            failedRef.current = true
+            clearRedirectWatchdog()
+            teardownCheckout()
+            setError(input.message)
+            setLoading(false)
+            onError?.(input.message)
+            void reportCheckoutFailure({
+                orderId,
+                stage: input.stage,
+                mode,
+                message: input.detail.slice(0, 300),
+                scriptUrl,
+            })
+        }
+
         const initCheckout = async () => {
             try {
                 startedRef.current = true
@@ -400,43 +456,76 @@ export default function IzipayCheckout({
                     throw new Error("El SDK de Izipay no se inicializo correctamente")
                 }
 
+                // Si el componente se desmontó mientras bajaba el SDK, abrir el
+                // formulario dejaría su spinner huérfano sobre la página.
+                if (!mountedRef.current) {
+                    return
+                }
+
                 const checkout = new window.Izipay({ config })
+                checkoutRef.current = checkout
+
+                // LoadForm es async: si falla rechaza la promesa en vez de lanzar,
+                // y el SDK deja su spinner a pantalla completa puesto.
+                const loadForm = () => {
+                    void Promise.resolve(
+                        checkout.LoadForm({
+                            authorization,
+                            keyRSA,
+                            callbackResponse: async (paymentResult) => validatePayment(paymentResult),
+                        })
+                    ).catch((loadError: unknown) => {
+                        const detail = (loadError as Error)?.message || String(loadError)
+                        console.error("Izipay LoadForm fallo:", detail)
+                        failCheckout({
+                            message:
+                                mode === "redirect"
+                                    ? REDIRECT_TIMEOUT_MESSAGE
+                                    : FORM_LOAD_FAILED_MESSAGE,
+                            stage: "sdk-loadform-rejected",
+                            detail,
+                        })
+                    })
+                }
+
                 if (mode === "redirect") {
                     // La doc dice que callbackResponse "no aplica" en redirect,
                     // pero si el SDK rechaza el config ANTES de navegar es la
                     // unica via para enterarnos del motivo; el watchdog cubre el
                     // caso en que ni siquiera invoque el callback (spinner eterno).
-                    checkout.LoadForm({
-                        authorization,
-                        keyRSA,
-                        callbackResponse: async (paymentResult) => validatePayment(paymentResult),
-                    })
+                    loadForm()
                     redirectWatchdogRef.current = window.setTimeout(() => {
-                        if (!mountedRef.current || handledRef.current) {
-                            return
-                        }
                         console.error(
                             "Izipay redirect no navego tras",
                             REDIRECT_WATCHDOG_MS,
                             "ms; config rechazado o red bloqueada"
                         )
-                        setError(REDIRECT_TIMEOUT_MESSAGE)
-                        setLoading(false)
-                        onError?.(REDIRECT_TIMEOUT_MESSAGE)
-                        void reportCheckoutFailure({
-                            orderId,
+                        failCheckout({
+                            message: REDIRECT_TIMEOUT_MESSAGE,
                             stage: "redirect-timeout",
-                            mode,
-                            message: `sin navegacion tras ${REDIRECT_WATCHDOG_MS}ms`,
-                            scriptUrl,
+                            detail: `sin navegacion tras ${REDIRECT_WATCHDOG_MS}ms`,
                         })
                     }, REDIRECT_WATCHDOG_MS)
                 } else {
-                    checkout.LoadForm({
-                        authorization,
-                        keyRSA,
-                        callbackResponse: async (paymentResult) => validatePayment(paymentResult),
-                    })
+                    if (mode === "popup") {
+                        // Se arma ANTES de LoadForm para no perder la primera señal.
+                        formWatchdogRef.current = startIzipayFormWatchdog({
+                            timeoutMs: POPUP_FORM_WATCHDOG_MS,
+                            onTimeout: () => {
+                                console.error(
+                                    "El formulario popup de Izipay no dio señales tras",
+                                    POPUP_FORM_WATCHDOG_MS,
+                                    "ms"
+                                )
+                                failCheckout({
+                                    message: FORM_LOAD_FAILED_MESSAGE,
+                                    stage: "popup-form-timeout",
+                                    detail: `sin señales del formulario tras ${POPUP_FORM_WATCHDOG_MS}ms`,
+                                })
+                            },
+                        })
+                    }
+                    loadForm()
                 }
 
                 // En redirect el spinner se mantiene hasta que el navegador
@@ -471,7 +560,7 @@ export default function IzipayCheckout({
         }
 
         void initCheckout()
-    }, [authorization, clearRedirectWatchdog, config, keyRSA, mode, onError, onSuccess, orderId, router, scriptUrl])
+    }, [authorization, clearRedirectWatchdog, config, keyRSA, mode, onError, onSuccess, orderId, router, scriptUrl, teardownCheckout])
 
     return (
         <div className="space-y-4">

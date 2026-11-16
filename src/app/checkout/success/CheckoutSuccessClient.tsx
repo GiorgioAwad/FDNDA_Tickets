@@ -9,10 +9,18 @@ import { Card, CardContent } from "@/components/ui/card"
 import { useCart } from "@/hooks/cart-context"
 import { useMerchCart } from "@/hooks/merch-cart-context"
 import { Confetti } from "@/components/checkout/Confetti"
-import { AlertCircle, CheckCircle, Loader2, Ticket, XCircle, ArrowRight, Calendar, ShoppingBag, Package } from "lucide-react"
+import { AlertCircle, CheckCircle, Clock, Loader2, Ticket, XCircle, ArrowRight, Calendar, ShoppingBag, Package } from "lucide-react"
+import {
+    getCheckoutSuccessPollPhase,
+    getNextCheckoutSuccessPollDelayMs,
+    type CheckoutSuccessPollPhase,
+} from "@/lib/checkout-success-polling"
 
 type OrderStatus = "PENDING" | "PAID" | "CANCELLED" | "REFUNDED"
 type OrderType = "TICKET" | "MERCH"
+
+// Fallos seguidos de la consulta de estado que se toleran antes de mostrar error.
+const MAX_CONSECUTIVE_POLL_ERRORS = 10
 
 export default function CheckoutSuccessClient() {
     const searchParams = useSearchParams()
@@ -26,6 +34,9 @@ export default function CheckoutSuccessClient() {
     const [reviewRequired, setReviewRequired] = useState(false)
     const [statusMessage, setStatusMessage] = useState("")
     const [error, setError] = useState("")
+    const [pollPhase, setPollPhase] = useState<CheckoutSuccessPollPhase>("fast")
+    // Cambia cuando el comprador pide volver a consultar: reinicia el sondeo.
+    const [pollRun, setPollRun] = useState(0)
 
     useEffect(() => {
         if (status !== "PAID" || !orderType) return
@@ -42,6 +53,7 @@ export default function CheckoutSuccessClient() {
 
         let active = true
         let attempts = 0
+        let consecutiveErrors = 0
         let timeoutId: ReturnType<typeof setTimeout> | null = null
 
         const pollOrder = async () => {
@@ -59,28 +71,37 @@ export default function CheckoutSuccessClient() {
                     return
                 }
 
+                consecutiveErrors = 0
                 setStatus(data.data.status)
                 setOrderType(data.data.orderType)
                 setEventTitle(data.data.eventTitle)
                 setReviewRequired(Boolean(data.data.reviewRequired))
                 setStatusMessage(data.data.message || "")
 
-                if (
-                    data.data.status === "PENDING" &&
-                    !data.data.reviewRequired &&
-                    attempts < 10
-                ) {
-                    attempts += 1
-                    timeoutId = setTimeout(pollOrder, 3000)
+                if (data.data.status === "PENDING" && !data.data.reviewRequired) {
+                    // Pasada la fase rápida la pantalla deja el spinner de "unos
+                    // segundos", pero se sigue consultando (más espaciado) para
+                    // reflejar el pago apenas se confirme. Antes se dejaba de
+                    // consultar a los ~30s y el spinner giraba para siempre.
+                    const delay = getNextCheckoutSuccessPollDelayMs(attempts)
+                    setPollPhase(getCheckoutSuccessPollPhase(attempts))
+
+                    if (delay !== null) {
+                        attempts += 1
+                        timeoutId = setTimeout(pollOrder, delay)
+                    }
                 }
             } catch (err) {
                 if (!active) {
                     return
                 }
 
-                if (attempts < 10) {
+                consecutiveErrors += 1
+                const delay = getNextCheckoutSuccessPollDelayMs(attempts)
+
+                if (delay !== null && consecutiveErrors <= MAX_CONSECUTIVE_POLL_ERRORS) {
                     attempts += 1
-                    timeoutId = setTimeout(pollOrder, 3000)
+                    timeoutId = setTimeout(pollOrder, delay)
                     return
                 }
 
@@ -94,7 +115,7 @@ export default function CheckoutSuccessClient() {
             active = false
             if (timeoutId) clearTimeout(timeoutId)
         }
-    }, [orderId])
+    }, [orderId, pollRun])
 
     if (!orderId) {
         return (
@@ -133,7 +154,15 @@ export default function CheckoutSuccessClient() {
     const isPaid = status === "PAID"
     const isMerchOrder = orderType === "MERCH"
     const isManualReview = status === "PENDING" && reviewRequired
-    const isProcessing = status === null || (status === "PENDING" && !reviewRequired)
+    const isAwaitingConfirmation = status === "PENDING" && !reviewRequired
+    // La confirmación se demora más de lo normal: se informa en vez de girar.
+    const isSlowConfirmation = isAwaitingConfirmation && pollPhase !== "fast"
+    const isProcessing = status === null || (isAwaitingConfirmation && !isSlowConfirmation)
+
+    const handleCheckAgain = () => {
+        setPollPhase("fast")
+        setPollRun((run) => run + 1)
+    }
 
     return (
         <div className="relative min-h-screen flex items-center justify-center py-10 sm:py-16 px-4 overflow-hidden bg-gradient-to-br from-fdnda-light/40 via-white to-fdnda-light/20">
@@ -247,6 +276,52 @@ export default function CheckoutSuccessClient() {
                                         {isMerchOrder ? "Volver a merch" : "Volver a eventos"}
                                     </Button>
                                 </Link>
+                            </>
+                        ) : isSlowConfirmation ? (
+                            <>
+                                <div className="relative inline-flex items-center justify-center mb-6">
+                                    <div className="absolute inset-0 rounded-full bg-warning/20 blur-xl" />
+                                    <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-warning text-white shadow-lg">
+                                        <Clock className="h-10 w-10" />
+                                    </div>
+                                </div>
+                                <h1 className="font-display text-2xl sm:text-3xl font-bold mb-3">
+                                    Tu pago aún se está confirmando
+                                </h1>
+                                <p className="text-muted-foreground mb-2">
+                                    Orden <span className="font-mono font-semibold text-foreground">#{orderId.slice(-8).toUpperCase()}</span>.
+                                </p>
+                                {eventTitle && <p className="text-sm font-semibold mb-4">{eventTitle}</p>}
+                                <p className="text-sm text-muted-foreground mb-4">
+                                    La confirmación está tardando más de lo habitual. Si ya completaste el pago, <strong>no vuelvas a pagar</strong>: apenas se confirme te lo enviaremos por correo y aparecerá en tu cuenta.
+                                </p>
+                                <p className="text-xs text-muted-foreground mb-6" role="status" aria-live="polite">
+                                    {pollPhase === "slow"
+                                        ? "Seguimos consultando automáticamente; esta página se actualizará sola."
+                                        : "Dejamos de consultar automáticamente. Puedes volver a consultar cuando quieras."}
+                                </p>
+                                <div className="space-y-3">
+                                    {pollPhase === "stopped" && (
+                                        <Button
+                                            variant="coral"
+                                            className="w-full rounded-full"
+                                            size="lg"
+                                            onClick={handleCheckAgain}
+                                        >
+                                            Volver a consultar
+                                        </Button>
+                                    )}
+                                    <Link href={isMerchOrder ? "/mi-cuenta/merch" : "/mi-cuenta/entradas"}>
+                                        <Button variant="outline" className="w-full rounded-full">
+                                            {isMerchOrder ? "Ver mi merch" : "Ver mis entradas"}
+                                        </Button>
+                                    </Link>
+                                    <a href="https://wa.me/51941632535" target="_blank" rel="noopener noreferrer">
+                                        <Button variant="ghost" className="w-full">
+                                            Contactar soporte
+                                        </Button>
+                                    </a>
+                                </div>
                             </>
                         ) : (
                             <>
