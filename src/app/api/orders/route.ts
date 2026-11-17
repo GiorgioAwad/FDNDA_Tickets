@@ -31,6 +31,7 @@ import { calculateDiscountAmount, getDiscountEligibleSubtotal, type DiscountCart
 import { z } from "zod"
 import { enforceMembershipSlotInventory } from "@/lib/membership-slot-inventory"
 import { isSummerMembership } from "@/lib/membership-config"
+import { resolveAcademiaAbioSchedule } from "@/lib/abio-membership-schedule"
 
 export const runtime = "nodejs"
 
@@ -628,7 +629,6 @@ export async function POST(request: NextRequest) {
                     if (indicator === "AC") {
                         const requiredCodes = [
                             reservedTicketType.servilexDisciplineCode,
-                            reservedTicketType.servilexScheduleCode,
                             reservedTicketType.servilexPoolCode,
                         ]
 
@@ -639,6 +639,15 @@ export async function POST(request: NextRequest) {
                         const attendees = attendeeData
                         if (attendees.length < item.quantity) {
                             throw new Error(`Debes completar todos los asistentes para "${reservedTicketType.name}"`)
+                        }
+
+                        for (const attendee of attendees) {
+                            resolveAcademiaAbioSchedule({
+                                extraConfig: reservedTicketType.servilexExtraConfig,
+                                scheduleCode: reservedTicketType.servilexScheduleCode,
+                                selection: attendee.membershipSchedule,
+                                sucursalCode: eventConfig.servilexSucursalCode,
+                            })
                         }
 
                         attendeeData = attendees.map((attendee, attendeeIndex) => ({
@@ -894,7 +903,9 @@ export async function POST(request: NextRequest) {
             message.includes("fecha") ||
             message.includes("dia") ||
             message.includes("turno") ||
-            message.includes("Servilex")
+            message.includes("Servilex") ||
+            message.includes("ABIO") ||
+            message.includes("horario")
 
         return NextResponse.json(
             { success: false, error: message },

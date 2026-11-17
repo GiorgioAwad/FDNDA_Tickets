@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { SUMMER_ABIO_SCHEDULES, SUMMER_ABIO_EXTRA_CONFIG } from "./summer-abio-config"
+import { getMembershipScheduleProfile, validateMembershipScheduleSelection } from "./membership-schedule"
 import {
     buildServilexInvoiceSnapshots,
     buildServilexPayload,
@@ -35,6 +37,63 @@ const TEST_CONFIG: ServilexConfig = {
     ejecutivo: "WEB",
     maxRetries: 3,
 }
+
+function summerSelection(row: typeof SUMMER_ABIO_SCHEDULES[number]) {
+    const profile = getMembershipScheduleProfile("01", "VERANO_3X")!
+    const result = validateMembershipScheduleSelection(profile, { category: row.category, frequency: "LMV", hours: { main: `${row.start}-${row.end}` } }, "01")
+    if (!result.ok) throw new Error(result.error)
+    return result.selection
+}
+
+test("verano usa K14 y el código ABIO de cada uno de los 15 horarios con periodo enero 2027", () => {
+    for (const row of SUMMER_ABIO_SCHEDULES) {
+        const order = buildOrder({
+            totalAmount: 640,
+            orderItems: [{
+                quantity: 1, unitPrice: 640,
+                attendeeData: [{ name: "Alumno Prueba", dni: "12345678", matricula: "MAT-001", membershipSchedule: summerSelection(row) }],
+                ticketType: buildTicketType("AC", {
+                    servilexServiceCode: "K14", servilexScheduleCode: null, servilexExtraConfig: SUMMER_ABIO_EXTRA_CONFIG,
+                    event: { id: "summer", category: "ACADEMIA", servilexSucursalCode: "01", startDate: new Date("2026-11-17T17:00:00Z") },
+                }),
+            }],
+        })
+        const [source] = buildServilexPreviewSources(order, `summer-${row.start}`)
+        const payload = buildServilexPayload(source, TEST_CONFIG)
+        const detail = payload.detalle[0]
+        assert.ok("horario" in detail)
+        assert.equal(detail.servicio, "K14")
+        assert.equal(detail.horario, row.scheduleCode)
+        assert.equal(detail.disciplina, "00")
+        assert.equal(detail.piscina, "01")
+        assert.equal(detail.periodo, "2027")
+        assert.equal(detail.mes, "01")
+        assert.equal(payload.cabecera.total, 640)
+    }
+})
+
+test("una compra familiar conserva un horario ABIO distinto para cada alumno", () => {
+    const order = buildOrder({ totalAmount: 1280, orderItems: [{
+        quantity: 2, unitPrice: 640,
+        attendeeData: SUMMER_ABIO_SCHEDULES.slice(0,2).map((row,index) => ({ name: `Alumno ${index}`, dni: `1234567${index}`, matricula: `MAT-${index}`, membershipSchedule: summerSelection(row) })),
+        ticketType: buildTicketType("AC", { servilexServiceCode: "K14", servilexScheduleCode: null, servilexExtraConfig: SUMMER_ABIO_EXTRA_CONFIG }),
+    }] })
+    const snapshots = buildServilexInvoiceSnapshots(order)
+    assert.equal(snapshots.length, 2)
+    assert.deepEqual(snapshots.map(s => (s.detalle[0] as { horario: string }).horario).sort(), ["000001", "000002"])
+})
+
+test("un mapa ABIO incompleto o un alumno sin selección falla sin usar un horario de respaldo", () => {
+    const row = SUMMER_ABIO_SCHEDULES[0]
+    for (const selection of [undefined, summerSelection(row)]) {
+        const order = buildOrder({ totalAmount: 640, orderItems: [{
+            quantity: 1, unitPrice: 640,
+            attendeeData: [{ name: "Alumno Prueba", dni: "12345678", matricula: "MAT-001", membershipSchedule: selection }],
+            ticketType: buildTicketType("AC", { servilexServiceCode: "K14", servilexScheduleCode: "000148", servilexExtraConfig: { membershipSchedules: { ...SUMMER_ABIO_EXTRA_CONFIG.membershipSchedules, codes: {} } } }),
+        }] })
+        assert.throws(() => buildServilexInvoiceSnapshots(order), /horario|ABIO/i)
+    }
+})
 
 function buildTicketType(
     indicator: ServilexIndicator,

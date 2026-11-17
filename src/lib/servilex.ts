@@ -5,6 +5,7 @@ import {
     IZIPAY_OPERATION_NUMBER_MAX_LENGTH,
 } from "@/lib/payment-details"
 import { normalizeScheduleSelections } from "@/lib/ticket-schedule"
+import { resolveAcademiaAbioSchedule } from "@/lib/abio-membership-schedule"
 
 export type ServilexIndicator = "AC" | "OS" | "PN" | "PA"
 export type ServilexInvoiceGroupType = "ALUMNO" | "INDICATOR"
@@ -334,6 +335,7 @@ export interface ServilexPayloadSource {
 }
 
 type ServilexAttendeeRecord = {
+    membershipSchedule: unknown
     name: string
     firstName: string
     secondName: string
@@ -684,6 +686,7 @@ function getAcAttendeeData(raw: unknown): ServilexAttendeeRecord {
         dni,
         matricula,
         scheduleSelections: normalizeScheduleSelections(attendeeRecord?.scheduleSelections),
+        membershipSchedule: attendeeRecord?.membershipSchedule,
     }
 }
 
@@ -921,12 +924,19 @@ function buildAcademiaUnit(
     const ticketType = item.ticketType
     const servicio = normalizeCode(ticketType.servilexServiceCode, "servicio")
     const disciplina = normalizeCode(ticketType.servilexDisciplineCode, "disciplina")
-    const horario = normalizeCode(ticketType.servilexScheduleCode, "horario")
     const piscina = normalizeCode(ticketType.servilexPoolCode, "piscina")
     const sucursal = getServilexItemSucursal(item)
+    const resolvedSchedule = resolveAcademiaAbioSchedule({
+        extraConfig: ticketType.servilexExtraConfig,
+        scheduleCode: ticketType.servilexScheduleCode,
+        selection: attendee.membershipSchedule,
+        sucursalCode: sucursal,
+    })
+    const horario = normalizeCode(resolvedSchedule.scheduleCode, "horario")
     const selectedDate = attendee.scheduleSelections[0]?.date
-    const serviceDate = selectedDate
-        ? new Date(`${selectedDate}T12:00:00Z`)
+    const serviceDateKey = resolvedSchedule.serviceDate ?? selectedDate
+    const serviceDate = serviceDateKey
+        ? new Date(`${serviceDateKey}T12:00:00Z`)
         : ticketType.event.startDate
 
     return {

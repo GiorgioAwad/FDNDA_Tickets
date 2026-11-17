@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { isSummerMembership } from "@/lib/membership-config"
+import { hasMembershipAbioScheduleMapping } from "@/lib/abio-membership-schedule"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -762,7 +763,7 @@ export function TicketTypeManager({
             if (servilexIndicator === "AC") {
                 const requiredServilexFields = [
                     formData.servilexDisciplineCode,
-                    formData.servilexScheduleCode,
+                    hasMembershipAbioScheduleMapping(extraConfig) ? "POR_HORARIO" : formData.servilexScheduleCode,
                     formData.servilexPoolCode,
                 ]
                 if (requiredServilexFields.some((value) => !String(value || "").trim())) {
@@ -2069,6 +2070,7 @@ export function TicketTypeManager({
                                             <div className="space-y-2">
                                                 <label className="text-xs font-medium">Codigo horario</label>
                                                 <Input
+                                                    disabled={hasMembershipAbioScheduleMapping(currentServilexExtraConfig)}
                                                     value={formData.servilexScheduleCode || ""}
                                                     onChange={(e) =>
                                                         setFormData({
@@ -2077,8 +2079,11 @@ export function TicketTypeManager({
                                                             servilexBindingId: null,
                                                         })
                                                     }
-                                                    placeholder="000001"
+                                                    placeholder={hasMembershipAbioScheduleMapping(currentServilexExtraConfig) ? "Automático según el horario elegido" : "000001"}
                                                 />
+                                                {hasMembershipAbioScheduleMapping(currentServilexExtraConfig) && (
+                                                    <p className="text-[11px] text-gray-500">Cada alumno se factura con el código ABIO de su propio horario.</p>
+                                                )}
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-xs font-medium">Codigo piscina</label>
