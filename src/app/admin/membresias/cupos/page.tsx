@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { MembershipScheduleChangePanel } from "@/components/admin/MembershipScheduleChangePanel"
+import { MembershipSlotCapacityPanel } from "@/components/admin/MembershipSlotCapacityPanel"
 
 const WEEKDAY_LABEL: Record<number, string> = {
     0: "Domingo",
@@ -341,6 +342,14 @@ export default function MembershipOccupancyPage() {
                 <p className="text-sm text-slate-500">
                     Este evento todavia no tiene tipos de entrada para reportar.
                 </p>
+            ) : null}
+
+            {selectedEvent ? (
+                <MembershipSlotCapacityPanel
+                    key={selectedEvent.id}
+                    eventId={selectedEvent.id}
+                    onSaved={() => void load(selectedEvent.id)}
+                />
             ) : null}
 
             {occupancy && selectedEvent ? (

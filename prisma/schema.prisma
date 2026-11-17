@@ -365,6 +365,10 @@ model TicketType {
   // elige frecuencia + hora en el checkout y el escáner valida día+hora.
   // null = sin horario semanal (ORO / legacy intactos).
   membershipScheduleKey    String?
+  // Cupos por franja editados desde /admin/membresias/cupos, sobre los del
+  // catálogo (src/lib/membership-schedule.ts). { "<cat>:<frec>:<grupo>:<HH:MM>:<HH:MM>": n }.
+  // Solo aplica a perfiles que ya traen cupo por franja (VERANO_3X). null = catálogo.
+  membershipSlotCapacities Json?
   validDays                Json? // Array of dates ["2024-03-15", "2024-03-16"]
   // Presentación tipo "plan" (layout PLANS del evento)
   originalPrice            Decimal? @db.Decimal(10, 2) // Precio regular para mostrar tachado

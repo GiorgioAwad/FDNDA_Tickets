@@ -281,7 +281,7 @@ const LEGACY_KEY_ALIASES: Record<string, MembershipScheduleKey> = {
  * Matriz sede → plan → perfil de horario. Para agregar una sede nueva basta con
  * añadir su `servilexSucursalCode` aquí.
  */
-const summerHours: HourSlot[] = [6, 6, 6, 6, 7, 7, 6, 8, 8, 8, 7, 7, 6, 6, 6].map((capacity, index) => ({
+const summerHours: HourSlot[] = [12, 6, 6, 6, 7, 7, 6, 8, 8, 8, 7, 7, 6, 6, 6].map((capacity, index) => ({
     start: `${String(index + 6).padStart(2, "0")}:00`,
     end: `${String(index + 7).padStart(2, "0")}:00`,
     capacity,
