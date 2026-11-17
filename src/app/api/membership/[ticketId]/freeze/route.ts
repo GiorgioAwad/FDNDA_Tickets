@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getMembershipBlackoutMonths } from "@/lib/membership-config"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
@@ -71,7 +72,7 @@ export async function POST(
         const anchor = getMembershipAnchor(scanTicket)
         const duration = ticket.ticketType.membershipDurationMonths ?? 0
         const membershipExpiry = anchor && duration > 0
-            ? getMembershipExpiry(anchor, duration, undefined, [
+            ? getMembershipExpiry(anchor, duration, getMembershipBlackoutMonths(ticket.ticketType.membershipScheduleKey), [
                   ...getMembershipFreezeRanges(scanTicket),
                   validation.range,
               ])

@@ -19,12 +19,15 @@
  */
 
 // Convención de día de semana = JS Date.getDay(): Dom=0, Lun=1 … Sáb=6.
+import { SUMMER_MEMBERSHIP_SCHEDULE_KEY } from "@/lib/membership-config"
+
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
 
 /** Franja de una hora "HH:MM"–"HH:MM" (24h). */
 export interface HourSlot {
     start: string
     end: string
+    capacity?: number
 }
 
 /**
@@ -262,7 +265,7 @@ const bronce2x = (adultMj: ScheduleFrequencyOption, kidMj: ScheduleFrequencyOpti
 })
 
 /** Claves de perfil disponibles (= plan; la categoría se elige en checkout). */
-export const MEMBERSHIP_SCHEDULE_KEYS = ["BRONCE", "PLATA", "BRONCE_2X"] as const
+export const MEMBERSHIP_SCHEDULE_KEYS = ["BRONCE", "PLATA", "BRONCE_2X", SUMMER_MEMBERSHIP_SCHEDULE_KEY] as const
 export type MembershipScheduleKey = (typeof MEMBERSHIP_SCHEDULE_KEYS)[number]
 
 // Compatibilidad con claves antiguas (categoría + plan) por si quedó alguna
@@ -278,9 +281,24 @@ const LEGACY_KEY_ALIASES: Record<string, MembershipScheduleKey> = {
  * Matriz sede → plan → perfil de horario. Para agregar una sede nueva basta con
  * añadir su `servilexSucursalCode` aquí.
  */
+const summerHours: HourSlot[] = [6, 6, 6, 6, 7, 7, 6, 8, 8, 8, 7, 7, 6, 6, 6].map((capacity, index) => ({
+    start: `${String(index + 6).padStart(2, "0")}:00`,
+    end: `${String(index + 7).padStart(2, "0")}:00`,
+    capacity,
+}))
+
 export const MEMBERSHIP_SCHEDULES: Record<string, Partial<Record<MembershipScheduleKey, MembershipScheduleProfile>>> = {
     // Campo de Marte
     "01": {
+        VERANO_3X: {
+            key: SUMMER_MEMBERSHIP_SCHEDULE_KEY,
+            label: "Verano (lunes, miércoles y viernes)",
+            planMode: "FIXED_FREQUENCY",
+            categories: [
+                { id: "ADULTOS", label: "Adultos (18 años a más)", frequencies: [lmv(summerHours.filter(h => h.start < "08:00" || h.start >= "19:00"))] },
+                category("NINOS", [lmv(summerHours.filter(h => h.start >= "08:00" && h.start < "19:00"))]),
+            ],
+        },
         BRONCE: bronce(
             lmv(CM_ADULT_HOURS),
             mjs(CM_ADULT_HOURS, CM_ADULT_SAT_HOURS),

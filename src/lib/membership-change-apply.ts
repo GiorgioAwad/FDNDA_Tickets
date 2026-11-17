@@ -6,6 +6,7 @@
  * llamador; aqui no se decide nada, solo se escribe.
  */
 import { Prisma, type MembershipChangeKind } from "@prisma/client"
+import { enforceMembershipSlotInventory } from "@/lib/membership-slot-inventory"
 
 import type { MembershipChangePlan } from "@/lib/membership-transfer"
 
@@ -132,6 +133,9 @@ export async function applyMembershipChange(
             })
         }
     }
+
+    const updatedTicket = await tx.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { ticketTypeId: true } })
+    await enforceMembershipSlotInventory(tx, updatedTicket.ticketTypeId)
 
     await tx.membershipAdminChange.create({
         data: {

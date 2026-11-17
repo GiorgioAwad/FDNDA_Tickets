@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getMembershipBlackoutMonths, isSummerMembership } from "@/lib/membership-config"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
 import { createQRPayload, generateQRDataURL, formatDateLocal, formatDateUTC, getTodayDateString } from "@/lib/qr"
@@ -429,7 +430,7 @@ export async function GET(
         const freezeRanges = getMembershipFreezeRanges(ticket)
         const scheduledFreeze = getMembershipScheduledFreeze(ticket)
         const membershipExpiry = isFixedTerm && membershipAnchor
-            ? getMembershipExpiry(membershipAnchor, ticket.ticketType.membershipDurationMonths!, undefined, freezeRanges)
+            ? getMembershipExpiry(membershipAnchor, ticket.ticketType.membershipDurationMonths!, getMembershipBlackoutMonths(ticket.ticketType.membershipScheduleKey), freezeRanges)
             : null
         const membershipAccess = isFixedTerm
             ? getMembershipAccessStatus(ticket, dateStr)
@@ -579,7 +580,7 @@ export async function GET(
         // Cambio de horario mensual (semestral/anual BRONCE/PLATA): horario
         // efectivo del mes en curso + el del próximo mes (para mantener o cambiar).
         const scheduleProfile =
-            isFixedTerm && (ticket.ticketType.membershipDurationMonths ?? 0) > 1
+            isFixedTerm && (ticket.ticketType.membershipDurationMonths ?? 0) > 1 && !isSummerMembership(ticket.ticketType.membershipScheduleKey)
                 ? getMembershipScheduleProfile(
                       ticket.event.servilexSucursalCode,
                       ticket.ticketType.membershipScheduleKey

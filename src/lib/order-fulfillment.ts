@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma"
+import { enforceMembershipSlotInventory } from "@/lib/membership-slot-inventory"
+import { isSummerMembership } from "@/lib/membership-config"
 import { generateTicketCode, formatPrice } from "@/lib/utils"
 import { sendPurchaseEmail, sendMerchOrderConfirmationEmail, type MerchOrderEmailItem } from "@/lib/email"
 import { onTicketSold } from "@/lib/cached-queries"
@@ -657,6 +659,12 @@ export async function fulfillPaidOrder({
                 cacheToInvalidate.set(ticketType.eventId, new Set())
             }
             cacheToInvalidate.get(ticketType.eventId)?.add(ticketTypeId)
+        }
+
+        for (const item of ticketOrderItems) {
+            if (isSummerMembership(item.ticketType.membershipScheduleKey)) {
+                await enforceMembershipSlotInventory(tx, item.ticketType.id)
+            }
         }
 
         await syncServilexInvoices(tx, orderForInvoicing)

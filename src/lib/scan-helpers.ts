@@ -1,7 +1,7 @@
 import { formatDateUTC, formatDateLocal, getTodayDateString } from "@/lib/qr"
 import { getDaysBetween } from "@/lib/utils"
 import { extractTicketValidDates, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
-import { MEMBERSHIP_BLACKOUT_MONTHS, isBlackoutMonth } from "@/lib/membership-config"
+import { MEMBERSHIP_BLACKOUT_MONTHS, isBlackoutMonth, getMembershipBlackoutMonths, isSummerMembership } from "@/lib/membership-config"
 import {
     parseMembershipScheduleSelection,
     getEffectiveMembershipSchedule,
@@ -239,7 +239,7 @@ export const getMembershipFreezeMonthRange = (month: string): MembershipFreezeMo
 
 type MembershipFreezeTicket = Pick<ScanTicket, "membershipFreeze" | "membershipStartDate"> & {
     event: Pick<ScanTicket["event"], "startDate"> & Partial<ScanTicket["event"]>
-    ticketType?: Pick<ScanTicket["ticketType"], "membershipDurationMonths">
+    ticketType?: Pick<ScanTicket["ticketType"], "membershipDurationMonths" | "membershipScheduleKey">
 }
 
 export const getMembershipFreezeRanges = (ticket: MembershipFreezeTicket): MembershipFreezeMonthRange[] => {
@@ -265,7 +265,7 @@ export const getMembershipFreezeRanges = (ticket: MembershipFreezeTicket): Membe
         const anchor = ticket.membershipStartDate ?? event.membershipStartFixed ?? event.startDate
         if (formatDateUTC(anchor) >= endStr) return ranges
         const duration = ticket.ticketType?.membershipDurationMonths ?? 0
-        if (duration > 0 && getMembershipExpiry(anchor, duration, undefined, ranges) <= startStr) return ranges
+        if (duration > 0 && getMembershipExpiry(anchor, duration, getMembershipBlackoutMonths(ticket.ticketType?.membershipScheduleKey), ranges) <= startStr) return ranges
         // A voluntary month already covered by the closure must not extend
         // expiry twice. Keep its database record as the original freeze history.
         for (let i = ranges.length - 1; i >= 0; i -= 1) {
@@ -470,7 +470,7 @@ export type MembershipAccessStatus = "OK" | "NOT_STARTED" | "EXPIRED" | "BLACKOU
 export const getMembershipAccessStatus = (
     ticket: ScanTicket,
     today: string,
-    blackout: readonly number[] = MEMBERSHIP_BLACKOUT_MONTHS
+    blackout: readonly number[] = getMembershipBlackoutMonths(ticket.ticketType.membershipScheduleKey)
 ): {
     status: MembershipAccessStatus
     startStr: string
@@ -503,7 +503,7 @@ export const getMembershipAccessStatus = (
 export const isWithinMembershipWindow = (
     ticket: ScanTicket,
     today: string,
-    blackout: readonly number[] = MEMBERSHIP_BLACKOUT_MONTHS
+    blackout: readonly number[] = getMembershipBlackoutMonths(ticket.ticketType.membershipScheduleKey)
 ): boolean => getMembershipAccessStatus(ticket, today, blackout).status === "OK"
 
 export type MembershipFreezeValidationResult =
@@ -527,6 +527,9 @@ export const validateMembershipFreezeMonth = (
     options: MembershipFreezeValidationOptions = {},
     blackout: readonly number[] = MEMBERSHIP_BLACKOUT_MONTHS
 ): MembershipFreezeValidationResult => {
+    if (isSummerMembership(ticket.ticketType.membershipScheduleKey)) {
+        return { ok: false, error: "El plan de verano solo es válido en enero y febrero y no permite congelamientos." }
+    }
     if (!isFixedTermMembership(ticket)) {
         return { ok: false, error: "Esta entrada no es una membresía congelable." }
     }

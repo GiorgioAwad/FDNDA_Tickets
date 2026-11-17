@@ -29,6 +29,8 @@ import {
 } from "@/lib/ticket-schedule"
 import { calculateDiscountAmount, getDiscountEligibleSubtotal, type DiscountCartItem } from "@/lib/discounts"
 import { z } from "zod"
+import { enforceMembershipSlotInventory } from "@/lib/membership-slot-inventory"
+import { isSummerMembership } from "@/lib/membership-config"
 
 export const runtime = "nodejs"
 
@@ -181,6 +183,7 @@ export async function POST(request: NextRequest) {
             // concurrentes ~2-2.5x). La atomicidad se mantiene: todo va en la misma
             // transaccion, asi que si una reserva falla, la orden hace rollback.
             const simpleReserves: Array<{ ticketTypeId: string; quantity: number; name: string }> = []
+            const limitedMembershipTypeIds = new Set<string>()
             const dateReserves: Array<{
                 ticketTypeId: string
                 quantity: number
@@ -562,6 +565,7 @@ export async function POST(request: NextRequest) {
                     reservedTicketType.membershipScheduleKey
                 )
                 if (membershipScheduleProfile) {
+                    if (isSummerMembership(reservedTicketType.membershipScheduleKey)) limitedMembershipTypeIds.add(reservedTicketType.id)
                     if (attendeeData.length < item.quantity) {
                         throw new Error(`Selecciona el horario de membresía para "${reservedTicketType.name}"`)
                     }
@@ -794,6 +798,8 @@ export async function POST(request: NextRequest) {
                 if (!reserved[0]) {
                     throw new Error(`El tipo de entrada "${r.name}" esta agotado`)
                 }
+
+                if (limitedMembershipTypeIds.has(r.ticketTypeId)) await enforceMembershipSlotInventory(tx, r.ticketTypeId)
             }
 
             for (const r of dateReserves) {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { OrderStatus, Prisma, TicketStatus, UserRole } from "@prisma/client"
 
 import { getCurrentUser } from "@/lib/auth"
-import { isBlackoutMonth } from "@/lib/membership-config"
+import { isBlackoutMonth, getMembershipBlackoutMonths, isSummerMembership } from "@/lib/membership-config"
 import { prisma } from "@/lib/prisma"
 import { formatDateUTC } from "@/lib/qr"
 import {
@@ -127,7 +127,7 @@ function serializeMembershipTicket(ticket: MembershipTicketRecord) {
     const freezeRanges = getFreezeRanges(ticket)
     const membershipExpiry =
         resolvedStartDate && durationMonths > 0
-            ? getMembershipExpiry(resolvedStartDate, durationMonths, undefined, freezeRanges)
+            ? getMembershipExpiry(resolvedStartDate, durationMonths, getMembershipBlackoutMonths(ticket.ticketType.membershipScheduleKey), freezeRanges)
             : null
 
     return {
@@ -232,13 +232,13 @@ function isValidDateKey(value: string) {
     )
 }
 
-function validateMembershipStartDateInput(value: string) {
+function validateMembershipStartDateInput(value: string, blackout?: readonly number[]) {
     if (!isValidDateKey(value)) {
         return "Selecciona una fecha valida."
     }
 
     const month = Number(value.slice(5, 7))
-    if (isBlackoutMonth(month)) {
+    if (isBlackoutMonth(month, blackout)) {
         return "Enero y febrero no se pueden usar como inicio de membresia."
     }
 
@@ -356,14 +356,6 @@ export async function PATCH(request: NextRequest) {
             )
         }
 
-        const validationError = validateMembershipStartDateInput(membershipStartDate)
-        if (validationError) {
-            return NextResponse.json(
-                { success: false, error: validationError },
-                { status: 400 }
-            )
-        }
-
         const ticket = await prisma.ticket.findUnique({
             where: { id: ticketId },
             select: membershipTicketSelect,
@@ -377,6 +369,11 @@ export async function PATCH(request: NextRequest) {
         }
 
         const durationMonths = ticket.ticketType.membershipDurationMonths ?? 0
+        const validationError = validateMembershipStartDateInput(membershipStartDate, getMembershipBlackoutMonths(ticket.ticketType.membershipScheduleKey))
+        if (validationError) return NextResponse.json({ success: false, error: validationError }, { status: 400 })
+        if (isSummerMembership(ticket.ticketType.membershipScheduleKey) && membershipStartDate !== dateKey(ticket.event.membershipStartFixed)) {
+            return NextResponse.json({ success: false, error: "El plan de verano tiene una fecha de inicio fija para enero y febrero." }, { status: 400 })
+        }
         const monthlyClassLimit = ticket.ticketType.monthlyClassLimit ?? 0
         if (
             ticket.order.status !== OrderStatus.PAID ||

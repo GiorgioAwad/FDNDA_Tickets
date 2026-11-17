@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { isSummerMembership } from "@/lib/membership-config"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1774,12 +1775,14 @@ export function TicketTypeManager({
                                         }}
                                     >
                                         <option value="">Sin duración fija (ligada al evento)</option>
+                                        <option value="2">Verano (2 meses)</option>
                                         <option value="6">Semestral (6 meses)</option>
                                         <option value="12">Anual (12 meses)</option>
                                     </select>
                                     <p className="text-[11px] text-gray-500">
-                                        Con duración fija, el comprador elige su fecha de inicio en el checkout
-                                        y la vigencia se desacopla del rango del evento (blackout enero/febrero).
+                                        {isSummerMembership(formData.membershipScheduleKey)
+                                            ? "Verano: enero y febrero son meses válidos. Configura el inicio fijo del evento al 1 de enero y la duración en 2 meses."
+                                            : "Con duración fija, el comprador elige su fecha de inicio en el checkout y la vigencia se desacopla del rango del evento (blackout enero/febrero)."}
                                     </p>
                                 </div>
                                 <div className="md:col-span-2 space-y-2">

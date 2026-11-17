@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { sendPurchaseEmail } from "@/lib/email"
 import { usesTicketDateCapacity } from "@/lib/ticket-date-capacity"
 import { reserveTicketTypeDateInventory } from "@/lib/ticket-date-inventory"
+import { enforceMembershipSlotInventory } from "@/lib/membership-slot-inventory"
 import { formatPrice, generateTicketCode, parseDateOnly } from "@/lib/utils"
 import {
     CarnetIssuanceError,
@@ -375,6 +376,7 @@ export async function issueCarnet(
             select: { ticketCode: true },
         })
 
+        await enforceMembershipSlotInventory(tx, plan.ticketTypeId)
         return { orderId: order.id, ticketCode: ticket.ticketCode }
     }, { timeout: 30_000 })
 

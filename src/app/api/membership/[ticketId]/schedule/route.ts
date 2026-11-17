@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getMembershipBlackoutMonths, isSummerMembership } from "@/lib/membership-config"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser, hasRole } from "@/lib/auth"
@@ -64,7 +65,7 @@ export async function POST(
         // Elegibilidad: término fijo multi-mes (semestral/anual). Mensual (1) y ORO
         // (sin horario) quedan fuera.
         const duration = ticket.ticketType.membershipDurationMonths ?? 0
-        if (!isFixedTermMembership(scanTicket) || duration <= 1) {
+        if (!isFixedTermMembership(scanTicket) || duration <= 1 || isSummerMembership(ticket.ticketType.membershipScheduleKey)) {
             return NextResponse.json(
                 { success: false, error: "Esta membresía no permite cambiar el horario por mes." },
                 { status: 400 }
@@ -96,7 +97,7 @@ export async function POST(
 
         // No permitir fijar un mes fuera de la vigencia de la membresía.
         const freezeRanges = getMembershipFreezeRanges(scanTicket)
-        const expiryStr = getMembershipExpiry(anchor, duration, undefined, freezeRanges)
+        const expiryStr = getMembershipExpiry(anchor, duration, getMembershipBlackoutMonths(ticket.ticketType.membershipScheduleKey), freezeRanges)
         if (targetStart && targetStart >= expiryStr) {
             return NextResponse.json(
                 { success: false, error: "Tu membresía no tiene un mes siguiente disponible." },

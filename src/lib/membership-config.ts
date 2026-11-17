@@ -12,6 +12,15 @@
  */
 export const MEMBERSHIP_BLACKOUT_MONTHS: readonly number[] = [1, 2] // enero, febrero
 
+export const SUMMER_MEMBERSHIP_SCHEDULE_KEY = "VERANO_3X"
+
+export const isSummerMembership = (scheduleKey?: string | null): boolean =>
+    scheduleKey === SUMMER_MEMBERSHIP_SCHEDULE_KEY
+
+/** Summer passes use consecutive calendar months, including January and February. */
+export const getMembershipBlackoutMonths = (scheduleKey?: string | null): readonly number[] =>
+    isSummerMembership(scheduleKey) ? [] : MEMBERSHIP_BLACKOUT_MONTHS
+
 /** ¿El mes (1-based) cae en el blackout de la membresía? */
 export const isBlackoutMonth = (
     monthOneBased: number,

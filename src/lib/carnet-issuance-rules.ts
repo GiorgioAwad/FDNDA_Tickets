@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client"
 
-import { isBlackoutMonth } from "@/lib/membership-config"
+import { isBlackoutMonth, getMembershipBlackoutMonths } from "@/lib/membership-config"
 import {
     getMembershipScheduleProfile,
     validateMembershipScheduleSelection,
@@ -299,7 +299,7 @@ export function validateCarnetRequest(ctx: CarnetValidationContext): CarnetValid
             )
             membershipStartDate = null
         } else {
-            if (isBlackoutMonth(Number(membershipStartDate.slice(5, 7)))) {
+            if (isBlackoutMonth(Number(membershipStartDate.slice(5, 7)), getMembershipBlackoutMonths(ticketType.membershipScheduleKey))) {
                 addError("La membresia no puede empezar en enero ni febrero.")
             }
             const min = ticketType.event.membershipStartMin

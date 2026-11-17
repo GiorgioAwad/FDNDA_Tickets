@@ -16,6 +16,7 @@ import {
 } from "@/lib/ticket-schedule"
 import {
     validateMembershipStartDate,
+    isSummerMembership,
     resolveMembershipStartSetup,
     type MembershipStartConfig,
 } from "@/lib/membership-config"
@@ -1293,7 +1294,9 @@ export default function CheckoutPage() {
                                                                         {formatDate(setup.fixed, { dateStyle: "long" })}
                                                                     </p>
                                                                     <p className="mt-1 text-[11px] text-emerald-700">
-                                                                        Todas las membresías de este plan inician en esta fecha. No aplica en enero ni febrero.
+                                                                        {isSummerMembership(item.membershipScheduleKey)
+                                                                            ? "Pago único por enero y febrero de 2027. Vigencia hasta el 28 de febrero."
+                                                                            : "Todas las membresías de este plan inician en esta fecha. No aplica en enero ni febrero."}
                                                                     </p>
                                                                 </div>
                                                             )
@@ -1445,7 +1448,7 @@ export default function CheckoutPage() {
                                                                                             const v = slotToValue(h)
                                                                                             return (
                                                                                                 <option key={v} value={v}>
-                                                                                                    {formatSlotLabel(h)}
+                                                                                                    {formatSlotLabel(h)}{h.capacity !== undefined ? ` · Máximo ${h.capacity} alumnos` : ""}
                                                                                                 </option>
                                                                                             )
                                                                                         })}
