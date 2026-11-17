@@ -1448,7 +1448,7 @@ export default function CheckoutPage() {
                                                                                             const v = slotToValue(h)
                                                                                             return (
                                                                                                 <option key={v} value={v}>
-                                                                                                    {formatSlotLabel(h)}{h.capacity !== undefined ? ` · Máximo ${h.capacity} alumnos` : ""}
+                                                                                                    {formatSlotLabel(h)}
                                                                                                 </option>
                                                                                             )
                                                                                         })}
