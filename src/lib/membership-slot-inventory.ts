@@ -6,6 +6,7 @@ import {
     countMembershipSlotReservations,
     listMembershipLimitedSlots,
     MAX_MEMBERSHIP_SLOT_CAPACITY,
+    maxMembershipStudents,
     parseSlotCapacityOverrides,
     profileHasSlotCapacity,
 } from "@/lib/membership-slot-capacity"
@@ -68,7 +69,9 @@ export interface MembershipSlotInventoryRow {
     key: string
     category: string
     categoryLabel: string
+    frequency: string
     frequencyLabel: string
+    groupId: string
     groupLabel: string
     start: string
     end: string
@@ -115,7 +118,9 @@ export async function getMembershipSlotInventoryReport(db: SlotDb, ticketTypeId:
                 key: slot.key,
                 category: slot.category,
                 categoryLabel: slot.categoryLabel,
+                frequency: slot.frequency,
                 frequencyLabel: slot.frequencyLabel,
+                groupId: slot.groupId,
                 groupLabel: slot.groupLabel,
                 start: slot.start,
                 end: slot.end,
@@ -176,11 +181,12 @@ export async function saveMembershipSlotCapacities(
         const next = effective.get(slot.key)!
         if (next !== slot.defaultCapacity) after[slot.key] = next
     }
-    const total = [...effective.values()].reduce((sum, n) => sum + n, 0)
+    // Alumnos, no franjas: un niño M-J-S ocupa una franja Mar/Jue y otra de sábado.
+    const total = maxMembershipStudents(slots.map(slot => ({ ...slot, capacity: effective.get(slot.key)! })))
     const planCapacityBefore = loaded.type.capacity
     const planCapacityAfter = planCapacityBefore > 0 ? total : 0
     if (planCapacityAfter > 0 && planCapacityAfter < loaded.type.sold) {
-        throw new MembershipSlotCapacityError(`La suma de cupos (${total}) queda por debajo de lo ya vendido en el plan (${loaded.type.sold}).`)
+        throw new MembershipSlotCapacityError(`Los cupos por horario (${total} alumnos) quedan por debajo de lo ya vendido en el plan (${loaded.type.sold}).`)
     }
 
     await tx.ticketType.update({

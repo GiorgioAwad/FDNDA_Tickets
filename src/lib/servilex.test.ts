@@ -83,6 +83,28 @@ test("una compra familiar conserva un horario ABIO distinto para cada alumno", (
     assert.deepEqual(snapshots.map(s => (s.detalle[0] as { horario: string }).horario).sort(), ["000001", "000002"])
 })
 
+test("verano M-J-S: ABIO recibe el código del horario de Mar/Jue (el sábado del niño no lo cambia) y sin código falla", () => {
+    const profile = getMembershipScheduleProfile("01", "VERANO_3X")!
+    const kid = validateMembershipScheduleSelection(profile, { category: "NINOS", frequency: "MJS", hours: { weekday: "15:00-16:00", saturday: "10:00-11:00" } }, "01")
+    const adult = validateMembershipScheduleSelection(profile, { category: "ADULTOS", frequency: "MJS", hours: { main: "06:00-07:00" } }, "01")
+    if (!kid.ok || !adult.ok) throw new Error("selección inválida")
+    const extraConfig = { membershipSchedules: { ...SUMMER_ABIO_EXTRA_CONFIG.membershipSchedules, codes: {
+        ...SUMMER_ABIO_EXTRA_CONFIG.membershipSchedules.codes, "NINOS:MJS:15:00-16:00": "000210", "ADULTOS:MJS:06:00-07:00": "000201",
+    } } }
+    const order = buildOrder({ totalAmount: 1280, orderItems: [{
+        quantity: 2, unitPrice: 640,
+        attendeeData: [kid.selection, adult.selection].map((membershipSchedule, index) => ({ name: `Alumno ${index}`, dni: `1234567${index}`, matricula: `MAT-${index}`, membershipSchedule })),
+        ticketType: buildTicketType("AC", { servilexServiceCode: "K14", servilexScheduleCode: null, servilexExtraConfig: extraConfig }),
+    }] })
+    assert.deepEqual(buildServilexInvoiceSnapshots(order).map(s => (s.detalle[0] as { horario: string }).horario).sort(), ["000201", "000210"])
+    const unmapped = buildOrder({ totalAmount: 640, orderItems: [{
+        quantity: 1, unitPrice: 640,
+        attendeeData: [{ name: "Alumno", dni: "12345678", matricula: "MAT-1", membershipSchedule: kid.selection }],
+        ticketType: buildTicketType("AC", { servilexServiceCode: "K14", servilexScheduleCode: null, servilexExtraConfig: SUMMER_ABIO_EXTRA_CONFIG }),
+    }] })
+    assert.throws(() => buildServilexInvoiceSnapshots(unmapped), /código ABIO/)
+})
+
 test("un mapa ABIO incompleto o un alumno sin selección falla sin usar un horario de respaldo", () => {
     const row = SUMMER_ABIO_SCHEDULES[0]
     for (const selection of [undefined, summerSelection(row)]) {

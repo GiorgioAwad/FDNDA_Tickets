@@ -281,22 +281,38 @@ const LEGACY_KEY_ALIASES: Record<string, MembershipScheduleKey> = {
  * Matriz sede → plan → perfil de horario. Para agregar una sede nueva basta con
  * añadir su `servilexSucursalCode` aquí.
  */
+// Verano 2027 (Campo de Marte): cupo propio por franja. Cada FRECUENCIA tiene sus
+// propios cupos (la clave de franja incluye la frecuencia): M-J-S usa los mismos
+// números por hora que L-M-V, sin compartirlos.
 const summerHours: HourSlot[] = [12, 6, 6, 6, 7, 7, 6, 8, 8, 8, 7, 7, 6, 6, 6].map((capacity, index) => ({
     start: `${String(index + 6).padStart(2, "0")}:00`,
     end: `${String(index + 7).padStart(2, "0")}:00`,
     capacity,
 }))
+const summerBetween = (from: string, to: string): HourSlot[] => summerHours.filter(h => h.start >= from && h.start < to)
+// L-M-V: adultos 6-8am y 7-9pm; niños 8am-7pm.
+const SUMMER_LMV_ADULT_HOURS = summerHours.filter(h => h.start < "08:00" || h.start >= "19:00")
+const SUMMER_KIDS_WEEKDAY_HOURS = summerBetween("08:00", "19:00")
+// M-J-S: adultos 6-7 y 7-8am los tres días (una sola hora para los tres);
+// niños Mar/Jue igual que L-M-V (8am-7pm) y sábado 8am-2pm (hora propia).
+const SUMMER_MJS_ADULT_HOURS = summerBetween("06:00", "08:00")
+const SUMMER_KIDS_SAT_HOURS = summerBetween("08:00", "14:00")
+const summerAdultMjs: ScheduleFrequencyOption = {
+    id: "MJS",
+    label: FREQ_LABEL.MJS,
+    dayGroups: [{ id: "main", label: "Martes, Jueves y Sábado", weekdays: [2, 4, 6], hours: SUMMER_MJS_ADULT_HOURS }],
+}
 
 export const MEMBERSHIP_SCHEDULES: Record<string, Partial<Record<MembershipScheduleKey, MembershipScheduleProfile>>> = {
     // Campo de Marte
     "01": {
         VERANO_3X: {
             key: SUMMER_MEMBERSHIP_SCHEDULE_KEY,
-            label: "Verano (lunes, miércoles y viernes)",
-            planMode: "FIXED_FREQUENCY",
+            label: "Verano (3 veces por semana)",
+            planMode: "CHOOSE_FREQUENCY",
             categories: [
-                { id: "ADULTOS", label: "Adultos (18 años a más)", frequencies: [lmv(summerHours.filter(h => h.start < "08:00" || h.start >= "19:00"))] },
-                category("NINOS", [lmv(summerHours.filter(h => h.start >= "08:00" && h.start < "19:00"))]),
+                { id: "ADULTOS", label: "Adultos (18 años a más)", frequencies: [lmv(SUMMER_LMV_ADULT_HOURS), summerAdultMjs] },
+                category("NINOS", [lmv(SUMMER_KIDS_WEEKDAY_HOURS), mjs(SUMMER_KIDS_WEEKDAY_HOURS, SUMMER_KIDS_SAT_HOURS)]),
             ],
         },
         BRONCE: bronce(

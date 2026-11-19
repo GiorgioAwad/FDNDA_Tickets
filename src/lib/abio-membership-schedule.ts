@@ -27,7 +27,9 @@ export function resolveAcademiaAbioSchedule(input: {
         throw new Error("Selecciona un horario de membresía válido para ABIO.")
     }
     const checked = validateMembershipScheduleSelection(profile, scheduleSelectionToInput(selection), input.sucursalCode)
-    if (!checked.ok || checked.selection.groups.length !== 1) throw new Error("El horario de membresía no tiene una asociación ABIO válida.")
+    if (!checked.ok || checked.selection.groups.length === 0) throw new Error("El horario de membresía no tiene una asociación ABIO válida.")
+    // ABIO recibe UN código por alumno. Con varios grupos de días (niños de verano
+    // M-J-S: Mar/Jue + Sábado) manda el primero (Mar/Jue); el sábado no cambia el código.
     const group = checked.selection.groups[0]
     const key = `${selection.category}:${selection.frequency}:${group.start}-${group.end}`
     const code = codes?.[key]

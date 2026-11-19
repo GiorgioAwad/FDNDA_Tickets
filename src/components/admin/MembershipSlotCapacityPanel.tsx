@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { formatTime12h } from "@/lib/membership-schedule"
+import { summarizeMembershipSlotsByStudent } from "@/lib/membership-slot-capacity"
 import type { MembershipSlotInventoryReport, MembershipSlotInventoryRow } from "@/lib/membership-slot-inventory"
 
 interface ApiResponse<T> {
@@ -114,16 +115,9 @@ function PlanSlotCapacityCard({
         const value = parsed(slot)
         return value === null || value < slot.paid + slot.pending
     })
-    const totals = plan.slots.reduce(
-        (acc, slot) => {
-            const capacity = parsed(slot) ?? slot.capacity
-            acc.capacity += capacity
-            acc.paid += slot.paid
-            acc.pending += slot.pending
-            acc.available += Math.max(capacity - slot.paid - slot.pending, 0)
-            return acc
-        },
-        { capacity: 0, paid: 0, pending: 0, available: 0 }
+    // En alumnos: un niño M-J-S ocupa una franja Mar/Jue y otra de sábado.
+    const totals = summarizeMembershipSlotsByStudent(
+        plan.slots.map((slot) => ({ ...slot, capacity: parsed(slot) ?? slot.capacity }))
     )
     const categories = [...new Set(plan.slots.map((slot) => slot.categoryLabel))]
     const showGroup = new Set(plan.slots.map((slot) => `${slot.frequencyLabel} · ${slot.groupLabel}`)).size > 1
@@ -161,7 +155,8 @@ function PlanSlotCapacityCard({
                 </CardTitle>
                 <p className="text-sm text-slate-500">
                     Vendidos por franja y cupo editable. Los pendientes son compras en proceso de pago: retienen la
-                    franja hasta que se pagan o vencen. El cupo total del plan se ajusta a la suma de las franjas.
+                    franja hasta que se pagan o vencen. Los totales están en alumnos y el cupo total del plan se ajusta a
+                    ellos (un niño de Mar-Jue-Sáb ocupa una franja de Mar/Jue y otra de sábado).
                 </p>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -196,6 +191,12 @@ function PlanSlotCapacityCard({
                             {categories.flatMap((categoryLabel) =>
                                 plan.slots
                                     .filter((slot) => slot.categoryLabel === categoryLabel)
+                                    // Por frecuencia (L-M-V, luego M-J-S), sábado al final, y por hora.
+                                    .sort((a, b) =>
+                                        a.frequency.localeCompare(b.frequency) ||
+                                        Number(a.groupId === "saturday") - Number(b.groupId === "saturday") ||
+                                        a.start.localeCompare(b.start)
+                                    )
                                     .map((slot) => {
                                         const value = parsed(slot)
                                         const reserved = slot.paid + slot.pending

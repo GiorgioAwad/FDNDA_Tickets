@@ -97,6 +97,57 @@ export function listMembershipLimitedSlots(profile: MembershipScheduleProfile, r
 }
 
 /**
+ * Máximo de ALUMNOS que caben en el plan con estos cupos. Un alumno ocupa una
+ * franja en CADA grupo de días de su frecuencia (niños M-J-S: Mar/Jue + Sábado),
+ * así que por (categoría, frecuencia) el tope es el grupo más chico; luego se
+ * suman. Con un solo grupo por frecuencia equivale a sumar todas las franjas.
+ */
+export function maxMembershipStudents(slots: Array<Pick<MembershipLimitedSlot, "category" | "frequency" | "groupId" | "capacity">>): number {
+    const byFrequency = new Map<string, Map<string, number>>()
+    for (const slot of slots) {
+        const freqKey = `${slot.category}:${slot.frequency}`
+        const groups = byFrequency.get(freqKey) ?? new Map<string, number>()
+        groups.set(slot.groupId, (groups.get(slot.groupId) ?? 0) + slot.capacity)
+        byFrequency.set(freqKey, groups)
+    }
+    let total = 0
+    for (const groups of byFrequency.values()) total += Math.min(...groups.values())
+    return total
+}
+
+/**
+ * Totales del plan en ALUMNOS (no en franjas) para el panel admin. Cada alumno
+ * reserva una franja por grupo de días, así que pagados/pendientes se toman de un
+ * solo grupo por frecuencia y cupo/libres del grupo más chico.
+ */
+export function summarizeMembershipSlotsByStudent(
+    rows: Array<{ category: string; frequency: string; groupId: string; capacity: number; paid: number; pending: number }>
+): { capacity: number; paid: number; pending: number; available: number } {
+    type Sums = { capacity: number; paid: number; pending: number; available: number }
+    const byFrequency = new Map<string, Map<string, Sums>>()
+    for (const row of rows) {
+        const freqKey = `${row.category}:${row.frequency}`
+        const groups = byFrequency.get(freqKey) ?? new Map<string, Sums>()
+        const sums = groups.get(row.groupId) ?? { capacity: 0, paid: 0, pending: 0, available: 0 }
+        sums.capacity += row.capacity
+        sums.paid += row.paid
+        sums.pending += row.pending
+        sums.available += Math.max(row.capacity - row.paid - row.pending, 0)
+        groups.set(row.groupId, sums)
+        byFrequency.set(freqKey, groups)
+    }
+    const total = { capacity: 0, paid: 0, pending: 0, available: 0 }
+    for (const groups of byFrequency.values()) {
+        const list = [...groups.values()]
+        total.capacity += Math.min(...list.map(g => g.capacity))
+        total.paid += Math.max(...list.map(g => g.paid))
+        total.pending += Math.max(...list.map(g => g.pending))
+        total.available += Math.min(...list.map(g => g.available))
+    }
+    return total
+}
+
+/**
  * Cuenta reservas por franja. Los horarios que no se pueden leer o no validan
  * contra el catálogo se cuentan aparte en `invalid` (no se descartan en silencio).
  */
