@@ -400,6 +400,7 @@ model TicketType {
   tickets          Ticket[]
   courtesyBatches  CourtesyBatch[]
   discountCodes    DiscountCode[]
+  discountCodeSelections DiscountCodeTicketType[]
   // Reservas de bolsa que consumen el cupo de este horario (relación inversa).
   poolReservations PoolVisitReservation[]    @relation("PoolReservationSlot")
 
@@ -715,7 +716,7 @@ model DiscountCode {
   type           DiscountType @default(PERCENTAGE)
   value          Decimal      @db.Decimal(10, 2) // 20 for 20%, or 10 for S/10
   eventId        String? // null = applies to all events
-  ticketTypeId   String? // null = applies to every ticket type in the event
+  ticketTypeId   String? // Legacy single selection; multiple selections are stored in ticketTypes
   validDate      DateTime?    @db.Date // null = applies to every configured date
   minPurchase    Decimal?     @db.Decimal(10, 2) // Minimum purchase amount
   maxUses        Int? // null = unlimited
@@ -733,9 +734,22 @@ model DiscountCode {
   event      Event?          @relation(fields: [eventId], references: [id])
   creator    User            @relation("DiscountCreator", fields: [createdBy], references: [id])
   usages     DiscountUsage[]
+  ticketTypes DiscountCodeTicketType[]
 
   @@index([ticketTypeId, validDate])
   @@map("discount_codes")
+}
+
+model DiscountCodeTicketType {
+  discountCodeId String
+  ticketTypeId   String
+
+  discountCode DiscountCode @relation(fields: [discountCodeId], references: [id], onDelete: Cascade)
+  ticketType   TicketType   @relation(fields: [ticketTypeId], references: [id], onDelete: Restrict)
+
+  @@id([discountCodeId, ticketTypeId])
+  @@index([ticketTypeId])
+  @@map("discount_code_ticket_types")
 }
 
 model DiscountUsage {

@@ -83,6 +83,8 @@ type DiscountCode = {
     event: { id: string; title: string } | null
     ticketTypeId: string | null
     ticketType: { id: string; name: string } | null
+    ticketTypeIds: string[]
+    ticketTypes: Array<{ id: string; name: string }>
     validDate: string | null
     minPurchase: number | null
     maxUses: number | null
@@ -116,7 +118,7 @@ export default function CourtesyPage() {
         type: "PERCENTAGE" as "PERCENTAGE" | "FIXED",
         value: 10,
         eventId: "",
-        ticketTypeId: "",
+        ticketTypeIds: [] as string[],
         validDate: "",
         minPurchase: "",
         maxUses: "",
@@ -129,15 +131,20 @@ export default function CourtesyPage() {
         () => events.find((event) => event.id === discountForm.eventId) ?? null,
         [discountForm.eventId, events]
     )
-    const discountTicketType = useMemo(
-        () => discountEvent?.ticketTypes.find((ticketType) => ticketType.id === discountForm.ticketTypeId) ?? null,
-        [discountEvent, discountForm.ticketTypeId]
+    const discountTicketTypes = useMemo(
+        () => discountEvent?.ticketTypes.filter((ticketType) => discountForm.ticketTypeIds.includes(ticketType.id)) ?? [],
+        [discountEvent, discountForm.ticketTypeIds]
+    )
+    const discountAvailableTicketTypes = useMemo(
+        () => discountEvent?.ticketTypes.filter((ticketType) => ticketType.isActive !== false || discountForm.ticketTypeIds.includes(ticketType.id)) ?? [],
+        [discountEvent, discountForm.ticketTypeIds]
     )
     const discountDateOptions = useMemo(() => {
         if (!discountEvent) return []
 
-        const ticketDates = discountTicketType
-            ? extractTicketValidDates(discountTicketType.validDays)
+        const selectedDates = discountTicketTypes.map((ticketType) => extractTicketValidDates(ticketType.validDays))
+        const ticketDates = selectedDates.length > 0 && selectedDates.every((dates) => dates.length > 0)
+            ? Array.from(new Set(selectedDates.flat())).sort()
             : []
         if (ticketDates.length > 0) return ticketDates
 
@@ -158,7 +165,7 @@ export default function CourtesyPage() {
             cursor.setUTCDate(cursor.getUTCDate() + 1)
         }
         return dates
-    }, [discountEvent, discountTicketType])
+    }, [discountEvent, discountTicketTypes])
 
     const formatDiscountDate = (dateKey: string) =>
         new Intl.DateTimeFormat("es-PE", {
@@ -248,7 +255,7 @@ export default function CourtesyPage() {
             type: "PERCENTAGE",
             value: 10,
             eventId: "",
-            ticketTypeId: "",
+            ticketTypeIds: [],
             validDate: "",
             minPurchase: "",
             maxUses: "",
@@ -270,7 +277,7 @@ export default function CourtesyPage() {
                 type: discountForm.type,
                 value: discountForm.value,
                 eventId: discountForm.eventId || null,
-                ticketTypeId: discountForm.ticketTypeId || null,
+                ticketTypeIds: discountForm.ticketTypeIds,
                 validDate: discountForm.validDate || null,
                 minPurchase: discountForm.minPurchase ? parseFloat(discountForm.minPurchase) : null,
                 maxUses: discountForm.maxUses ? parseInt(discountForm.maxUses) : null,
@@ -314,7 +321,7 @@ export default function CourtesyPage() {
             type: discount.type,
             value: Number(discount.value),
             eventId: discount.eventId || "",
-            ticketTypeId: discount.ticketTypeId || "",
+            ticketTypeIds: discount.ticketTypeIds ?? (discount.ticketTypeId ? [discount.ticketTypeId] : []),
             validDate: discount.validDate ? discount.validDate.split("T")[0] : "",
             minPurchase: discount.minPurchase?.toString() || "",
             maxUses: discount.maxUses?.toString() || "",
@@ -883,7 +890,7 @@ export default function CourtesyPage() {
                                         <div>
                                             <h3 className="text-sm font-semibold text-blue-950">¿Dónde aplica?</h3>
                                             <p className="mt-1 text-xs text-blue-800">
-                                                Déjalo en “Todos” para un código general, o limita progresivamente por evento, entrada y día.
+                                                Elige un evento y marca las entradas u horarios válidos. Sin marcar horarios, el código aplica a todos.
                                             </p>
                                         </div>
                                         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -896,7 +903,7 @@ export default function CourtesyPage() {
                                                     onChange={(e) => setDiscountForm({
                                                         ...discountForm,
                                                         eventId: e.target.value,
-                                                        ticketTypeId: "",
+                                                        ticketTypeIds: [],
                                                         validDate: "",
                                                     })}
                                                 >
@@ -906,27 +913,49 @@ export default function CourtesyPage() {
                                                     ))}
                                                 </select>
                                             </div>
-                                            <div className="min-w-0 space-y-2">
-                                                <label htmlFor="discount-ticket-type" className="text-sm font-medium">Entrada</label>
-                                                <select
-                                                    id="discount-ticket-type"
-                                                    className="h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                                    value={discountForm.ticketTypeId}
-                                                    onChange={(e) => setDiscountForm({
-                                                        ...discountForm,
-                                                        ticketTypeId: e.target.value,
-                                                        validDate: "",
-                                                    })}
-                                                    disabled={!discountEvent}
-                                                >
-                                                    <option value="">Todas las entradas</option>
-                                                    {discountEvent?.ticketTypes
-                                                        .filter((ticketType) => ticketType.isActive !== false)
+                                            <fieldset className="min-w-0 space-y-2" disabled={!discountEvent} aria-describedby="discount-schedules-help">
+                                                <legend className="text-sm font-medium">Entradas / horarios</legend>
+                                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-blue-800">
+                                                    <span aria-live="polite">
+                                                        {discountForm.ticketTypeIds.length > 0
+                                                            ? `${discountForm.ticketTypeIds.length} seleccionados`
+                                                            : "Todos los horarios"}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        className="rounded text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                                        disabled={discountForm.ticketTypeIds.length === 0}
+                                                        onClick={() => setDiscountForm({ ...discountForm, ticketTypeIds: [], validDate: "" })}
+                                                    >
+                                                        Aplicar a todos
+                                                    </button>
+                                                </div>
+                                                <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-input bg-background p-2">
+                                                    {!discountEvent ? (
+                                                        <p className="p-1 text-xs text-muted-foreground">Selecciona un evento para ver sus horarios.</p>
+                                                    ) : discountAvailableTicketTypes.length === 0 ? (
+                                                        <p className="p-1 text-xs text-muted-foreground">Este evento no tiene entradas u horarios disponibles.</p>
+                                                    ) : discountAvailableTicketTypes
                                                         .map((ticketType) => (
-                                                            <option key={ticketType.id} value={ticketType.id}>{ticketType.name}</option>
+                                                            <label key={ticketType.id} className="flex cursor-pointer items-start gap-2 rounded p-2 text-sm hover:bg-secondary">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    className="mt-0.5 h-4 w-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                                                    checked={discountForm.ticketTypeIds.includes(ticketType.id)}
+                                                                    onChange={(e) => setDiscountForm((current) => ({
+                                                                        ...current,
+                                                                        ticketTypeIds: e.target.checked
+                                                                            ? [...current.ticketTypeIds, ticketType.id]
+                                                                            : current.ticketTypeIds.filter((id) => id !== ticketType.id),
+                                                                        validDate: "",
+                                                                    }))}
+                                                                />
+                                                                <span className="min-w-0 break-words">{ticketType.name}{ticketType.isActive === false ? " (Inactivo)" : ""}</span>
+                                                            </label>
                                                         ))}
-                                                </select>
-                                            </div>
+                                                </div>
+                                                <p id="discount-schedules-help" className="text-xs text-blue-800">Puedes marcar varios. El descuento se aplica solo a los seleccionados.</p>
+                                            </fieldset>
                                             <div className="min-w-0 space-y-2">
                                                 <label htmlFor="discount-valid-date" className="text-sm font-medium">Día</label>
                                                 <select
@@ -1066,11 +1095,11 @@ export default function CourtesyPage() {
                                                         Solo: {discount.event.title}
                                                     </Badge>
                                                 )}
-                                                {discount.ticketType && (
-                                                    <Badge variant="outline">
-                                                        Entrada: {discount.ticketType.name}
+                                                {(discount.ticketTypes ?? (discount.ticketType ? [discount.ticketType] : [])).map((ticketType) => (
+                                                    <Badge key={ticketType.id} variant="outline" className="max-w-full whitespace-normal break-words">
+                                                        Horario / entrada: {ticketType.name}
                                                     </Badge>
-                                                )}
+                                                ))}
                                                 {discount.validDate && (
                                                     <Badge variant="outline">
                                                         Día: {formatDiscountDate(discount.validDate.split("T")[0])}
@@ -1100,6 +1129,7 @@ export default function CourtesyPage() {
                                                 size="sm" 
                                                 variant="outline"
                                                 onClick={() => handleEditDiscount(discount)}
+                                                aria-label={`Editar código ${discount.code}`}
                                             >
                                                 <Edit2 className="h-4 w-4" />
                                             </Button>
@@ -1108,6 +1138,7 @@ export default function CourtesyPage() {
                                                 variant="outline"
                                                 className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                                 onClick={() => handleDeleteDiscount(discount.id)}
+                                                aria-label={`Eliminar código ${discount.code}`}
                                             >
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>

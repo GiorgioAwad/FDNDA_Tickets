@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
-import { parseLimaDateTimeInput } from "@/lib/discounts"
+import { discountTicketTypeIdsSchema, getDiscountTicketTypeIds, parseLimaDateTimeInput } from "@/lib/discounts"
 import { formatDateUTC } from "@/lib/qr"
 import { parseDateOnly } from "@/lib/utils"
 
@@ -20,12 +20,17 @@ export async function GET() {
             include: {
                 event: { select: { id: true, title: true } },
                 ticketType: { select: { id: true, name: true } },
+                ticketTypes: { include: { ticketType: { select: { id: true, name: true } } } },
                 _count: { select: { usages: true } },
             },
         })
 
         const discountCodes = raw.map((d) => ({
             ...d,
+            ticketTypeIds: getDiscountTicketTypeIds(d),
+            ticketTypes: d.ticketTypes.length > 0
+                ? d.ticketTypes.map((selection) => selection.ticketType)
+                : d.ticketType ? [d.ticketType] : [],
             value: Number(d.value),
             minPurchase: d.minPurchase ? Number(d.minPurchase) : null,
         }))
@@ -53,6 +58,7 @@ export async function POST(request: NextRequest) {
             value,
             eventId,
             ticketTypeId,
+            ticketTypeIds,
             validDate,
             minPurchase,
             maxUses,
@@ -81,7 +87,18 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        if ((ticketTypeId || validDate) && !eventId) {
+        const selection = discountTicketTypeIdsSchema.safeParse(
+            ticketTypeIds === undefined ? (ticketTypeId ? [ticketTypeId] : []) : ticketTypeIds
+        )
+        if (!selection.success) {
+            return NextResponse.json(
+                { success: false, error: "Selecciona entradas u horarios válidos" },
+                { status: 400 }
+            )
+        }
+        const selectedIds = selection.data
+
+        if ((selectedIds.length > 0 || validDate) && !eventId) {
             return NextResponse.json(
                 { success: false, error: "Selecciona un evento antes de limitar por entrada o día" },
                 { status: 400 }
@@ -101,15 +118,15 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        const ticketType = ticketTypeId
-            ? await prisma.ticketType.findUnique({
-                where: { id: ticketTypeId },
-                select: { eventId: true },
+        const ticketTypes = selectedIds.length > 0
+            ? await prisma.ticketType.findMany({
+                where: { id: { in: selectedIds }, eventId },
+                select: { id: true },
             })
-            : null
-        if (ticketTypeId && (!ticketType || ticketType.eventId !== eventId)) {
+            : []
+        if (ticketTypes.length !== selectedIds.length) {
             return NextResponse.json(
-                { success: false, error: "La entrada seleccionada no pertenece al evento" },
+                { success: false, error: "Las entradas u horarios seleccionados deben pertenecer al evento" },
                 { status: 400 }
             )
         }
@@ -169,7 +186,8 @@ export async function POST(request: NextRequest) {
                 type,
                 value: normalizedValue,
                 eventId: eventId || null,
-                ticketTypeId: ticketTypeId || null,
+                ticketTypeId: selectedIds.length === 1 ? selectedIds[0] : null,
+                ticketTypes: { create: selectedIds.map((id) => ({ ticketTypeId: id })) },
                 validDate: validDateKey ? parseDateOnly(validDateKey) : null,
                 minPurchase: minPurchase || null,
                 maxUses: maxUses || null,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
-import { parseLimaDateTimeInput } from "@/lib/discounts"
+import { discountTicketTypeIdsSchema, getDiscountTicketTypeIds, parseLimaDateTimeInput } from "@/lib/discounts"
 import { formatDateUTC } from "@/lib/qr"
 import { parseDateOnly } from "@/lib/utils"
 
@@ -27,6 +27,7 @@ export async function PUT(
             value,
             eventId,
             ticketTypeId,
+            ticketTypeIds,
             validDate,
             minPurchase,
             maxUses,
@@ -39,6 +40,7 @@ export async function PUT(
         // Verificar que el código exista
         const existingCode = await prisma.discountCode.findUnique({
             where: { id },
+            include: { ticketTypes: true },
         })
 
         if (!existingCode) {
@@ -63,14 +65,24 @@ export async function PUT(
         }
 
         const nextEventId = eventId === undefined ? existingCode.eventId : eventId || null
-        const nextTicketTypeId = ticketTypeId === undefined
-            ? existingCode.ticketTypeId
-            : ticketTypeId || null
+        const selectionChanged = ticketTypeIds !== undefined || ticketTypeId !== undefined
+        const selection = discountTicketTypeIdsSchema.safeParse(
+            ticketTypeIds !== undefined ? ticketTypeIds
+                : ticketTypeId !== undefined ? (ticketTypeId ? [ticketTypeId] : [])
+                    : getDiscountTicketTypeIds(existingCode)
+        )
+        if (!selection.success) {
+            return NextResponse.json(
+                { success: false, error: "Selecciona entradas u horarios válidos" },
+                { status: 400 }
+            )
+        }
+        const selectedIds = selection.data
         const nextValidDateKey = validDate === undefined
             ? (existingCode.validDate ? formatDateUTC(existingCode.validDate) : "")
             : (typeof validDate === "string" ? validDate : "")
 
-        if ((nextTicketTypeId || nextValidDateKey) && !nextEventId) {
+        if ((selectedIds.length > 0 || nextValidDateKey) && !nextEventId) {
             return NextResponse.json(
                 { success: false, error: "Selecciona un evento antes de limitar por entrada o día" },
                 { status: 400 }
@@ -90,15 +102,15 @@ export async function PUT(
             )
         }
 
-        const ticketTypeRecord = nextTicketTypeId
-            ? await prisma.ticketType.findUnique({
-                where: { id: nextTicketTypeId },
-                select: { eventId: true },
+        const ticketTypes = selectedIds.length > 0
+            ? await prisma.ticketType.findMany({
+                where: { id: { in: selectedIds }, eventId: nextEventId! },
+                select: { id: true },
             })
-            : null
-        if (nextTicketTypeId && (!ticketTypeRecord || ticketTypeRecord.eventId !== nextEventId)) {
+            : []
+        if (ticketTypes.length !== selectedIds.length) {
             return NextResponse.json(
-                { success: false, error: "La entrada seleccionada no pertenece al evento" },
+                { success: false, error: "Las entradas u horarios seleccionados deben pertenecer al evento" },
                 { status: 400 }
             )
         }
@@ -165,7 +177,13 @@ export async function PUT(
                 ...(type && { type: normalizedType }),
                 ...(value !== undefined && { value: normalizedValue }),
                 ...(eventId !== undefined && { eventId: eventId || null }),
-                ...(ticketTypeId !== undefined && { ticketTypeId: ticketTypeId || null }),
+                ...(selectionChanged && {
+                    ticketTypeId: selectedIds.length === 1 ? selectedIds[0] : null,
+                    ticketTypes: {
+                        deleteMany: {},
+                        create: selectedIds.map((id) => ({ ticketTypeId: id })),
+                    },
+                }),
                 ...(validDate !== undefined && {
                     validDate: nextValidDateKey ? parseDateOnly(nextValidDateKey) : null,
                 }),

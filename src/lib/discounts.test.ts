@@ -2,8 +2,10 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
     calculateDiscountAmount,
+    discountTicketTypeIdsSchema,
     formatLimaDateTimeInput,
     getDiscountEligibleSubtotal,
+    getDiscountTicketTypeIds,
     parseLimaDateTimeInput,
 } from "./discounts"
 
@@ -53,4 +55,77 @@ test("calcula el subtotal solo para la entrada y el día configurados", () => {
 
 test("limita el descuento fijo al subtotal elegible", () => {
     assert.equal(calculateDiscountAmount({ eligibleSubtotal: 30, type: "FIXED", value: 50 }), 30)
+})
+
+test("aplica el descuento a varios horarios sin incluir los demás ni duplicar importes", () => {
+    const eligibleSubtotal = getDiscountEligibleSubtotal({
+        ticketTypeIds: ["manana", "tarde", "manana"],
+        items: [
+            { ticketTypeId: "manana", quantity: 2, unitPrice: 50 },
+            { ticketTypeId: "tarde", quantity: 1, unitPrice: 40 },
+            { ticketTypeId: "noche", quantity: 3, unitPrice: 60 },
+        ],
+    })
+
+    assert.equal(eligibleSubtotal, 140)
+    assert.equal(calculateDiscountAmount({ eligibleSubtotal, type: "PERCENTAGE", value: 20 }), 28)
+    assert.equal(calculateDiscountAmount({ eligibleSubtotal, type: "FIXED", value: 200 }), 140)
+})
+
+test("combina varios horarios con el día de aplicación por asistente", () => {
+    const eligibleSubtotal = getDiscountEligibleSubtotal({
+        ticketTypeIds: ["manana", "tarde"],
+        validDate: "2026-11-25",
+        items: [
+            {
+                ticketTypeId: "manana", quantity: 2, unitPrice: 50,
+                attendees: [
+                    { scheduleSelections: [{ date: "2026-11-25" }] },
+                    { scheduleSelections: [{ date: "2026-11-26" }] },
+                ],
+            },
+            {
+                ticketTypeId: "tarde", quantity: 1, unitPrice: 40,
+                attendees: [{ scheduleSelections: [{ date: "2026-11-25" }, { date: "2026-11-26" }] }],
+            },
+            {
+                ticketTypeId: "noche", quantity: 1, unitPrice: 60,
+                attendees: [{ scheduleSelections: [{ date: "2026-11-25" }] }],
+            },
+        ],
+    })
+
+    assert.equal(eligibleSubtotal, 90)
+})
+
+test("un carrito sin horarios seleccionados no recibe descuento", () => {
+    assert.equal(getDiscountEligibleSubtotal({
+        ticketTypeIds: ["manana", "tarde"],
+        items: [{ ticketTypeId: "noche", quantity: 1, unitPrice: 60 }],
+    }), 0)
+})
+
+test("una selección vacía permite todos los horarios", () => {
+    assert.equal(getDiscountEligibleSubtotal({
+        ticketTypeIds: [],
+        items: [
+            { ticketTypeId: "manana", quantity: 2, unitPrice: 50 },
+            { ticketTypeId: "noche", quantity: 1, unitPrice: 60 },
+        ],
+    }), 160)
+})
+
+test("conserva la selección de los códigos existentes y prioriza la selección múltiple", () => {
+    assert.deepEqual(getDiscountTicketTypeIds({ ticketTypeId: "manana", ticketTypes: [] }), ["manana"])
+    assert.deepEqual(getDiscountTicketTypeIds({ ticketTypeId: "manana", ticketTypes: [
+        { ticketTypeId: "tarde" }, { ticketTypeId: "noche" },
+    ] }), ["tarde", "noche"])
+    assert.deepEqual(getDiscountTicketTypeIds({ ticketTypeId: null, ticketTypes: [] }), [])
+})
+
+test("valida los horarios recibidos y elimina selecciones repetidas", () => {
+    assert.deepEqual(discountTicketTypeIdsSchema.parse(["manana", "tarde", "manana"]), ["manana", "tarde"])
+    for (const invalid of [null, "manana", [""], ["  "], [1], [{}]]) {
+        assert.equal(discountTicketTypeIdsSchema.safeParse(invalid).success, false)
+    }
 })

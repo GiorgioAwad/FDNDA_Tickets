@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 import { rateLimit, getClientIP } from "@/lib/rate-limit"
-import { calculateDiscountAmount, getDiscountEligibleSubtotal } from "@/lib/discounts"
+import { calculateDiscountAmount, getDiscountEligibleSubtotal, getDiscountTicketTypeIds } from "@/lib/discounts"
 import { formatDateUTC } from "@/lib/qr"
 
 export const runtime = "nodejs"
@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
             include: {
                 event: { select: { id: true, title: true } },
                 ticketType: { select: { id: true, name: true } },
+                ticketTypes: { include: { ticketType: { select: { name: true } } } },
                 _count: { select: { usages: true } },
             },
         })
@@ -76,17 +77,20 @@ export async function POST(request: NextRequest) {
         const validDateKey = discountCode.validDate
             ? formatDateUTC(discountCode.validDate)
             : null
-        const eligibleSubtotal = discountCode.ticketTypeId || validDateKey
+        const ticketTypeIds = getDiscountTicketTypeIds(discountCode)
+        const eligibleSubtotal = ticketTypeIds.length > 0 || validDateKey
             ? getDiscountEligibleSubtotal({
                 items: cartItems,
-                ticketTypeId: discountCode.ticketTypeId,
+                ticketTypeIds,
                 validDate: validDateKey,
             })
             : Number(subtotal || 0)
 
         if (eligibleSubtotal <= 0) {
             const scope = [
-                discountCode.ticketType?.name,
+                discountCode.ticketTypes.length > 0
+                    ? discountCode.ticketTypes.map((selection) => selection.ticketType.name).join(", ")
+                    : discountCode.ticketType?.name,
                 validDateKey
                     ? new Intl.DateTimeFormat("es-PE", { dateStyle: "long", timeZone: "UTC" })
                         .format(discountCode.validDate!)
@@ -142,6 +146,7 @@ export async function POST(request: NextRequest) {
                 description: discountCode.description,
                 eventId: discountCode.eventId,
                 ticketTypeId: discountCode.ticketTypeId,
+                ticketTypeIds,
                 validDate: validDateKey,
                 minPurchase: discountCode.minPurchase ? Number(discountCode.minPurchase) : null,
             },

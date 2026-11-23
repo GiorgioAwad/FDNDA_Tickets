@@ -1,4 +1,16 @@
 import { normalizeScheduleSelections } from "@/lib/ticket-schedule"
+import { z } from "zod"
+
+export const discountTicketTypeIdsSchema = z.array(z.string().trim().min(1))
+    .transform((ids) => Array.from(new Set(ids)))
+
+export function getDiscountTicketTypeIds(discount: {
+    ticketTypeId?: string | null
+    ticketTypes?: Array<{ ticketTypeId: string }>
+}): string[] {
+    const ids = discount.ticketTypes?.map((selection) => selection.ticketTypeId) ?? []
+    return ids.length > 0 ? ids : discount.ticketTypeId ? [discount.ticketTypeId] : []
+}
 
 export const LIMA_TIME_ZONE = "America/Lima"
 
@@ -50,12 +62,14 @@ export function formatLimaDateTimeInput(value: Date | string): string {
 export function getDiscountEligibleSubtotal(input: {
     items: DiscountCartItem[]
     ticketTypeId?: string | null
+    ticketTypeIds?: string[]
     validDate?: string | null
 }): number {
-    const { items, ticketTypeId, validDate } = input
+    const { items, ticketTypeId, ticketTypeIds, validDate } = input
+    const allowedIds = new Set(ticketTypeIds ?? (ticketTypeId ? [ticketTypeId] : []))
 
     return items.reduce((total, item) => {
-        if (ticketTypeId && item.ticketTypeId !== ticketTypeId) return total
+        if (allowedIds.size > 0 && !allowedIds.has(item.ticketTypeId)) return total
         if (!Number.isInteger(item.quantity) || item.quantity <= 0) return total
         if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) return total
 

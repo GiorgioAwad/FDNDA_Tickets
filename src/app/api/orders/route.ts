@@ -27,7 +27,7 @@ import {
     normalizeShiftLabel,
     parseTicketScheduleConfig,
 } from "@/lib/ticket-schedule"
-import { calculateDiscountAmount, getDiscountEligibleSubtotal, type DiscountCartItem } from "@/lib/discounts"
+import { calculateDiscountAmount, getDiscountEligibleSubtotal, getDiscountTicketTypeIds, type DiscountCartItem } from "@/lib/discounts"
 import { z } from "zod"
 import { enforceMembershipSlotInventory } from "@/lib/membership-slot-inventory"
 import { isSummerMembership } from "@/lib/membership-config"
@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
                 minPurchase: Prisma.Decimal | null
                 value: Prisma.Decimal
                 type: "PERCENTAGE" | "FIXED"
-                ticketTypeId: string | null
+                ticketTypeIds: string[]
                 validDate: string | null
             } | null = null
             const orderItemsData: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] = []
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
             if (discountCodeId) {
                 const discountCode = await tx.discountCode.findUnique({
                     where: { id: discountCodeId },
-                    include: { _count: { select: { usages: true } } },
+                    include: { ticketTypes: true, _count: { select: { usages: true } } },
                 })
 
                 if (!discountCode || !discountCode.isActive) {
@@ -239,7 +239,7 @@ export async function POST(request: NextRequest) {
                     minPurchase: discountCode.minPurchase,
                     value: discountCode.value,
                     type: discountCode.type,
-                    ticketTypeId: discountCode.ticketTypeId,
+                    ticketTypeIds: getDiscountTicketTypeIds(discountCode),
                     validDate: discountCode.validDate ? formatDateUTC(discountCode.validDate) : null,
                 }
             }
@@ -729,7 +729,7 @@ export async function POST(request: NextRequest) {
                 const discountValue = Number(validatedDiscountCode.value)
                 const eligibleSubtotal = getDiscountEligibleSubtotal({
                     items: discountCartItems,
-                    ticketTypeId: validatedDiscountCode.ticketTypeId,
+                    ticketTypeIds: validatedDiscountCode.ticketTypeIds,
                     validDate: validatedDiscountCode.validDate,
                 })
 
