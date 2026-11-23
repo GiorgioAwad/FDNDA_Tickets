@@ -1,7 +1,36 @@
 import { formatUbigeoLocation } from "@/lib/ubigeo-peru"
 import { getBillingIdentityError, resolveBuyerDocType } from "@/lib/identity-document"
+import { parseRegistrationLocation, resolveRegistrationLocation, type AccountLocation } from "@/lib/registration-location"
 
 export type BillingDocumentType = "BOLETA" | "FACTURA"
+
+export type AccountBillingContact = {
+    email?: string | null
+    phone?: string | null
+}
+
+export function getCheckoutBillingContact(
+    account: AccountBillingContact | null | undefined,
+    fallback?: { buyerEmail?: unknown; buyerPhone?: unknown }
+) {
+    const email = (value: unknown) => typeof value === "string" ? value.trim() : ""
+    const phone = (value: unknown) => typeof value === "string" ? value.replace(/\D/g, "") : ""
+    const registeredEmail = email(account?.email)
+    const registeredPhone = phone(account?.phone)
+    return {
+        buyerEmail: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(registeredEmail) ? registeredEmail : email(fallback?.buyerEmail),
+        buyerPhone: /^\d{7,15}$/.test(registeredPhone) ? registeredPhone : phone(fallback?.buyerPhone),
+    }
+}
+
+/** Conserva los parámetros de dirección y ubigeo para Abio e Izipay, sin pedir calle. */
+export function getCheckoutBillingLocation(account: AccountLocation | null | undefined, fallbackUbigeo?: unknown) {
+    const location = resolveRegistrationLocation(account) ?? parseRegistrationLocation(fallbackUbigeo)
+    return {
+        buyerAddress: location ? formatUbigeoLocation(location.ubigeo) : "",
+        buyerUbigeo: location?.ubigeo ?? "",
+    }
+}
 
 /**
  * Etiqueta legible del comprobante que solicitó el comprador.

@@ -8,7 +8,8 @@ import { useCart } from "@/hooks/cart-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { buildNaturalPersonFullName, getBillingValidationIssues } from "@/lib/billing"
+import { buildNaturalPersonFullName, getBillingValidationIssues, getCheckoutBillingContact, getCheckoutBillingLocation } from "@/lib/billing"
+import { useCheckoutBillingProfile } from "@/hooks/use-checkout-billing-profile"
 import {
     getCurrentOrFutureScheduleDates,
     getLimaDateKey,
@@ -30,7 +31,8 @@ import { formatDate, formatPrice } from "@/lib/utils"
 import type { IzipayCheckoutConfig } from "@/lib/izipay"
 import { Trash2, CreditCard, User, AlertCircle, ArrowLeft, Tag, CheckCircle, X, FileText, CalendarCheck } from "lucide-react"
 import AuthModal from "@/components/auth/AuthModal"
-import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
+import { BillingLocationFields } from "@/components/checkout/billing-location-fields"
+import { BillingContactFields } from "@/components/checkout/billing-contact-fields"
 import { IdentityDocumentFields } from "@/components/ui/identity-document-fields"
 import { resolveBuyerDocType } from "@/lib/identity-document"
 
@@ -66,6 +68,15 @@ export default function CheckoutPage() {
         total,
         clearCart,
     } = useCart()
+    const accountBilling = useCheckoutBillingProfile()
+    const billingLocation = useMemo(
+        () => getCheckoutBillingLocation(accountBilling.location, billingData.buyerUbigeo),
+        [accountBilling.location, billingData.buyerUbigeo]
+    )
+    const billingContact = useMemo(
+        () => getCheckoutBillingContact(accountBilling.contact, billingData),
+        [accountBilling.contact, billingData]
+    )
     const paymentsMode =
         process.env.NEXT_PUBLIC_PAYMENTS_MODE ||
         (process.env.NODE_ENV === "production" ? "izipay" : "mock")
@@ -454,26 +465,13 @@ export default function CheckoutPage() {
         ]
     )
 
-    const emailAutofilledRef = useRef(false)
-    useEffect(() => {
-        if (emailAutofilledRef.current) return
-        if (status !== "authenticated") return
-        if (!session?.user?.email) return
-        if (billingData.buyerEmail) {
-            emailAutofilledRef.current = true
-            return
-        }
-        emailAutofilledRef.current = true
-        updateBillingData("buyerEmail", session.user.email)
-    }, [status, session?.user?.email, billingData.buyerEmail, updateBillingData])
-
     // Autorrelleno opt-in: si el usuario guardó sus datos en una compra previa,
     // los traemos y prerellenamos el formulario (editable). No pisamos lo que ya
     // haya escrito en esta sesión.
     const billingPrefillRef = useRef(false)
     useEffect(() => {
         if (billingPrefillRef.current) return
-        if (status !== "authenticated") return
+        if (status !== "authenticated" || accountBilling.loading || accountBilling.error) return
         billingPrefillRef.current = true
 
         const alreadyTyped = Boolean(
@@ -483,41 +481,29 @@ export default function CheckoutPage() {
             billingData.buyerPhone
         )
 
-        const run = async () => {
-            try {
-                const res = await fetch("/api/me/billing-profile")
-                if (!res.ok) return
-                const json = await res.json()
-                const profile = json?.data
-                if (!profile) return
+        const profile = accountBilling.profile
+        if (!profile) return
 
-                // Tiene perfil guardado -> la casilla queda marcada por defecto.
-                setRememberBilling(true)
-                if (alreadyTyped) return
+        // Tiene perfil guardado -> la casilla queda marcada por defecto.
+        setRememberBilling(true)
+        if (alreadyTyped) return
 
-                prefillBillingData({
-                    documentType: profile.documentType === "FACTURA" ? "FACTURA" : "BOLETA",
-                    buyerDocType: resolveBuyerDocType(profile.documentType, profile.buyerDocType),
-                    buyerDocNumber: profile.buyerDocNumber ?? "",
-                    buyerName: profile.buyerName ?? "",
-                    buyerAddress: profile.buyerAddress ?? "",
-                    buyerEmail: profile.buyerEmail || session?.user?.email || "",
-                    buyerPhone: profile.buyerPhone ?? "",
-                    buyerUbigeo: profile.buyerUbigeo ?? "",
-                    buyerFirstName: profile.buyerFirstName ?? "",
-                    buyerSecondName: profile.buyerSecondName ?? "",
-                    buyerLastNamePaternal: profile.buyerLastNamePaternal ?? "",
-                    buyerLastNameMaternal: profile.buyerLastNameMaternal ?? "",
-                })
-                setBillingPrefilled(true)
-            } catch {
-                // best-effort: si falla, el usuario llena el formulario normalmente
-            }
-        }
-
-        void run()
+        prefillBillingData({
+            documentType: profile.documentType === "FACTURA" ? "FACTURA" : "BOLETA",
+            buyerDocType: resolveBuyerDocType(profile.documentType, profile.buyerDocType),
+            buyerDocNumber: profile.buyerDocNumber ?? "",
+            buyerName: profile.buyerName ?? "",
+            buyerEmail: profile.buyerEmail || session?.user?.email || "",
+            buyerPhone: profile.buyerPhone ?? "",
+            buyerUbigeo: profile.buyerUbigeo ?? "",
+            buyerFirstName: profile.buyerFirstName ?? "",
+            buyerSecondName: profile.buyerSecondName ?? "",
+            buyerLastNamePaternal: profile.buyerLastNamePaternal ?? "",
+            buyerLastNameMaternal: profile.buyerLastNameMaternal ?? "",
+        })
+        setBillingPrefilled(true)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [status])
+    }, [status, accountBilling.loading, accountBilling.error, accountBilling.profile])
 
     const hasMissingAttendeeData = useMemo(
         () =>
@@ -534,14 +520,14 @@ export default function CheckoutPage() {
     )
 
     const billingValidationIssues = useMemo(
-        () => getBillingValidationIssues(billingData),
-        [billingData]
+        () => getBillingValidationIssues({ ...billingData, ...billingLocation, ...billingContact }),
+        [billingData, billingLocation, billingContact]
     )
     const billingIssueByField = useMemo(
         () => new Map(billingValidationIssues.map((issue) => [issue.field, issue.message])),
         [billingValidationIssues]
     )
-    const hasMissingBillingData = billingValidationIssues.length > 0
+    const hasMissingBillingData = accountBilling.loading || accountBilling.error || billingValidationIssues.length > 0
 
     const hasMissingScheduleSelections = useMemo(() => {
         return items.some((item) => {
@@ -661,6 +647,13 @@ export default function CheckoutPage() {
             return
         }
 
+        if (accountBilling.loading || accountBilling.error) {
+            setError(accountBilling.loading
+                ? "Espera mientras cargamos los datos de tu cuenta."
+                : "Reintenta cargar los datos de tu cuenta para continuar.")
+            return
+        }
+
         if (hasExceededDateCapacity) {
             setError("Una de las fechas elegidas ya no tiene cupos suficientes. Elige otra fecha o reduce la cantidad.")
             return
@@ -689,10 +682,10 @@ export default function CheckoutPage() {
                     buyerDocType: billingData.buyerDocType,
                     buyerDocNumber: billingData.buyerDocNumber,
                     buyerName: billingData.documentType === "FACTURA" ? billingData.buyerName : boletaFullName,
-                    buyerAddress: billingData.buyerAddress,
-                    buyerEmail: billingData.buyerEmail,
-                    buyerPhone: billingData.buyerPhone,
-                    buyerUbigeo: billingData.buyerUbigeo,
+                    buyerAddress: billingLocation.buyerAddress,
+                    buyerEmail: billingContact.buyerEmail,
+                    buyerPhone: billingContact.buyerPhone,
+                    buyerUbigeo: billingLocation.buyerUbigeo,
                     buyerFirstName: billingData.buyerFirstName,
                     buyerSecondName: billingData.buyerSecondName,
                     buyerLastNamePaternal: billingData.buyerLastNamePaternal,
@@ -942,81 +935,22 @@ export default function CheckoutPage() {
                                     )}
                                 </div>
 
-                                {billingData.documentType === "FACTURA" && (
-                                    <div>
-                                        <label className="text-xs text-gray-500 mb-1 block">
-                                            Dirección fiscal
-                                        </label>
-                                        <Input
-                                            value={billingData.buyerAddress}
-                                            onChange={(e) => updateBillingData("buyerAddress", e.target.value)}
-                                            placeholder="Av. ejemplo 123, Lima"
-                                            className="bg-white"
-                                        />
-                                        {billingData.buyerAddress && billingData.buyerAddress.length < 5 && (
-                                            <p className="text-xs text-red-500 mt-1">Dirección fiscal debe tener al menos 5 caracteres</p>
-                                        )}
-                                    </div>
-                                )}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-xs text-gray-500 mb-1 block">Email para comprobante</label>
-                                        <Input
-                                            type="email"
-                                            value={billingData.buyerEmail}
-                                            onChange={(e) => updateBillingData("buyerEmail", e.target.value)}
-                                            placeholder="cliente@correo.com"
-                                            className="bg-white"
-                                            aria-invalid={billingIssueByField.has("buyerEmail")}
-                                            aria-describedby={billingIssueByField.has("buyerEmail") ? "buyer-email-error" : undefined}
-                                        />
-                                        {billingData.buyerEmail && billingIssueByField.has("buyerEmail") && (
-                                            <p id="buyer-email-error" className="mt-1 text-xs text-red-600">
-                                                {billingIssueByField.get("buyerEmail")}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-gray-500 mb-1 block">Celular</label>
-                                        <Input
-                                            value={billingData.buyerPhone}
-                                            onChange={(e) => updateBillingData("buyerPhone", e.target.value.replace(/\D/g, "").slice(0, 15))}
-                                            placeholder="999888777"
-                                            className="bg-white"
-                                            aria-invalid={billingIssueByField.has("buyerPhone")}
-                                            aria-describedby={billingIssueByField.has("buyerPhone") ? "buyer-phone-error" : undefined}
-                                        />
-                                        {billingData.buyerPhone && billingIssueByField.has("buyerPhone") && (
-                                            <p id="buyer-phone-error" className="mt-1 text-xs text-red-600">
-                                                {billingIssueByField.get("buyerPhone")}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-xs text-gray-500 mb-1 block">Ubicación (Ubigeo)</label>
-                                    <UbigeoSelector
-                                        value={billingData.buyerUbigeo}
-                                        onChange={(ubigeo) => updateBillingData("buyerUbigeo", ubigeo)}
-                                    />
-                                    {!billingData.buyerUbigeo && (
-                                        <p className="text-xs text-gray-400 mt-1">
-                                            Selecciona departamento, provincia y distrito; el ubigeo se completa automáticamente.
-                                        </p>
-                                    )}
-                                </div>
-
-                                {billingData.documentType === "BOLETA" && (
-                                    <div>
-                                        <label className="text-xs text-gray-500 mb-1 block">Direccion</label>
-                                        <Input
-                                            value={billingData.buyerAddress}
-                                            onChange={(e) => updateBillingData("buyerAddress", e.target.value)}
-                                            placeholder="Av. ejemplo 123, Lima"
-                                            className="bg-white"
-                                        />
-                                    </div>
-                                )}
+                                <BillingContactFields
+                                    account={accountBilling.contact}
+                                    pending={accountBilling.loading || accountBilling.error}
+                                    buyerEmail={billingData.buyerEmail}
+                                    buyerPhone={billingData.buyerPhone}
+                                    onChange={updateBillingData}
+                                    errors={{ buyerEmail: billingIssueByField.get("buyerEmail"), buyerPhone: billingIssueByField.get("buyerPhone") }}
+                                />
+                                <BillingLocationFields
+                                    location={accountBilling.location}
+                                    loading={accountBilling.loading}
+                                    error={accountBilling.error}
+                                    onRetry={accountBilling.retry}
+                                    value={billingData.buyerUbigeo}
+                                    onChange={(ubigeo) => updateBillingData("buyerUbigeo", ubigeo)}
+                                />
 
                                 {billingData.documentType === "BOLETA" && (
                                     <>
@@ -1739,7 +1673,11 @@ export default function CheckoutPage() {
                                                 role="alert"
                                                 aria-live="polite"
                                             >
-                                                {billingValidationIssues[0]?.message}
+                                                {accountBilling.loading
+                                                    ? "Cargando datos de tu cuenta…"
+                                                    : accountBilling.error
+                                                        ? "Reintenta cargar los datos de tu cuenta para continuar."
+                                                        : billingValidationIssues[0]?.message}
                                             </p>
                                         )}
                                         {!hasMissingBillingData && hasMissingAttendeeData && (

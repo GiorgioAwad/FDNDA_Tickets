@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { buildBillingSnapshot, getCheckoutBillingContact, getCheckoutBillingLocation } from "./billing"
+import { buildCheckoutConfig, findIzipayConfigViolations } from "./izipay-config"
 import { SUMMER_ABIO_SCHEDULES, SUMMER_ABIO_EXTRA_CONFIG } from "./summer-abio-config"
 import { getMembershipScheduleProfile, validateMembershipScheduleSelection } from "./membership-schedule"
 import {
@@ -181,6 +183,64 @@ function buildOrder(
         ...overrides,
     }
 }
+
+test("boleta y factura conservan los parámetros de Abio e Izipay usando ubicación y contacto del registro", () => {
+    for (const documentType of ["BOLETA", "FACTURA"] as const) {
+        for (const indicator of ["AC", "OS", "PN", "PA"] as const) {
+            const original = buildOrder({
+                documentType,
+                buyerDocType: documentType === "FACTURA" ? "6" : "1",
+                buyerDocNumber: documentType === "FACTURA" ? "20123456789" : "12345678",
+                orderItems: [{ quantity: 1, unitPrice: 100,
+                    attendeeData: [{ name: "Alumno Prueba", dni: "12345678", matricula: "MAT-001" }],
+                    ticketType: buildTicketType(indicator, {
+                        servilexExtraConfig: { cantidad: 1, horaInicio: "08:00", horaFin: "09:30", duracion: 1.5 },
+                    }),
+                }],
+            })
+            const billing = buildBillingSnapshot({
+                ...original,
+                documentType,
+                buyerDocNumber: original.buyerDocNumber!,
+                ...getCheckoutBillingLocation({
+                    departamento: "Lima", provincia: "Lima", distrito: "Villa Maria Del Triunfo",
+                }, "040101"),
+                ...getCheckoutBillingContact({ email: "registro@example.com", phone: "987654321" }, original),
+            })
+            const order = { ...original, ...billing }
+            const [originalSource] = buildServilexPreviewSources(original, "before-location")
+            const [source] = buildServilexPreviewSources(order, "registration-location")
+            const originalPayload = buildServilexPayload(originalSource, TEST_CONFIG)
+            const payload = buildServilexPayload(source, TEST_CONFIG)
+            assert.equal(payload.cabecera.entidad.direccion, "Villa Maria Del Triunfo, Lima, Lima")
+            assert.equal(payload.cabecera.entidad.ubigeo, "150143")
+            assert.equal(payload.cabecera.entidad.email, "registro@example.com")
+            assert.equal(payload.cabecera.entidad.celular, "987654321")
+            assert.deepEqual(Object.keys(payload.cabecera.entidad).sort(), Object.keys(originalPayload.cabecera.entidad).sort())
+            assert.deepEqual(payload.detalle, originalPayload.detalle)
+            assert.deepEqual(payload.cobranza, originalPayload.cobranza)
+            assert.deepEqual(payload.cabecera.comprobante, originalPayload.cabecera.comprobante)
+            if (indicator === "AC") {
+                assert.equal(payload.cabecera.alumno?.direccion, billing.buyerAddress)
+                assert.equal(payload.cabecera.alumno?.ubigeo, billing.buyerUbigeo)
+                assert.equal(payload.cabecera.alumno?.email, "registro@example.com")
+                assert.equal(payload.cabecera.alumno?.celular, "987654321")
+            }
+            const config = buildCheckoutConfig({
+                order: { ...order, id: "order-location-1", userId: "user-location-1",
+                    user: { name: "Comprador Prueba", email: "buyer@example.com", phone: "999888777" },
+                },
+                merchantCode: "1234567", transactionId: "location-checkout-1",
+                appUrl: "https://checkout.example.test", mode: "embedded",
+            })
+            assert.equal(config.billing.street, billing.buyerAddress)
+            assert.equal(config.billing.postalCode, billing.buyerUbigeo)
+            assert.equal(config.billing.email, "registro@example.com")
+            assert.equal(config.billing.phoneNumber, "987654321")
+            assert.deepEqual(findIzipayConfigViolations(config), [])
+        }
+    }
+})
 
 test("AC genera un comprobante por alumno y payload v1.2 sin campos legacy", () => {
     const order = buildOrder({

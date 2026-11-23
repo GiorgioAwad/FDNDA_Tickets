@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
@@ -9,7 +9,8 @@ import { useMerchCart } from "@/hooks/merch-cart-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { buildNaturalPersonFullName } from "@/lib/billing"
+import { buildNaturalPersonFullName, getCheckoutBillingContact, getCheckoutBillingLocation } from "@/lib/billing"
+import { useCheckoutBillingProfile } from "@/hooks/use-checkout-billing-profile"
 import { formatPrice } from "@/lib/utils"
 import { getUbigeoNames } from "@/lib/ubigeo-peru"
 import { formatMerchPickupAddress } from "@/lib/merch-pickup"
@@ -29,7 +30,8 @@ import {
     Loader2,
 } from "lucide-react"
 import AuthModal from "@/components/auth/AuthModal"
-import { UbigeoSelector } from "@/components/checkout/ubigeo-selector"
+import { BillingLocationFields } from "@/components/checkout/billing-location-fields"
+import { BillingContactFields } from "@/components/checkout/billing-contact-fields"
 import { IdentityDocumentFields } from "@/components/ui/identity-document-fields"
 import { getBillingIdentityError, type IdentityDocumentType } from "@/lib/identity-document"
 
@@ -93,7 +95,7 @@ function isLimaDestination(ubigeo: string | null | undefined): boolean {
 
 export default function MerchCheckoutPage() {
     const router = useRouter()
-    const { data: session, status } = useSession()
+    const { status } = useSession()
     const { items, removeItem, updateQuantity, total: itemsTotal, clearCart } = useMerchCart()
 
     const paymentsMode =
@@ -109,6 +111,15 @@ export default function MerchCheckoutPage() {
     } | null>(null)
 
     const [billing, setBilling] = useState<BillingState>(DEFAULT_BILLING)
+    const accountBilling = useCheckoutBillingProfile()
+    const billingLocation = useMemo(
+        () => getCheckoutBillingLocation(accountBilling.location, billing.buyerUbigeo),
+        [accountBilling.location, billing.buyerUbigeo]
+    )
+    const billingContact = useMemo(
+        () => getCheckoutBillingContact(accountBilling.contact, billing),
+        [accountBilling.contact, billing]
+    )
     const [preferredDeliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("PICKUP_OFFICE")
     const [shippingAllowed, setShippingAllowed] = useState(false)
     const deliveryMethod: DeliveryMethod = shippingAllowed ? preferredDeliveryMethod : "PICKUP_OFFICE"
@@ -121,7 +132,7 @@ export default function MerchCheckoutPage() {
     const [pickupLocationsLoading, setPickupLocationsLoading] = useState(true)
     const [pickupLocationsError, setPickupLocationsError] = useState("")
     // Usamos el ubigeo de facturación también para calcular costo de envío
-    const shippingUbigeo = billing.buyerUbigeo
+    const shippingUbigeo = billingLocation.buyerUbigeo
 
     const pickupProductIds = useMemo(
         () => Array.from(new Set(items.map((item) => item.productId))).sort().join(","),
@@ -171,15 +182,6 @@ export default function MerchCheckoutPage() {
         config: IzipayCheckoutConfig
         orderId: string
     } | null>(null)
-
-    // Autofill email from session
-    const emailAutofilledRef = useRef(false)
-    useEffect(() => {
-        if (emailAutofilledRef.current) return
-        if (status !== "authenticated" || !session?.user?.email) return
-        emailAutofilledRef.current = true
-        setBilling((prev) => (prev.buyerEmail ? prev : { ...prev, buyerEmail: session.user.email ?? "" }))
-    }, [status, session?.user?.email])
 
     useEffect(() => {
         void loadPickupLocations()
@@ -254,8 +256,10 @@ export default function MerchCheckoutPage() {
     const validate = useCallback((): string | null => {
         if (items.length === 0) return "Tu carrito está vacío"
         if (itemsTotal < MIN_MERCH_ORDER_SUBTOTAL) return `La compra minima de merch es de ${formatPrice(MIN_MERCH_ORDER_SUBTOTAL)}.`
-        if (!billing.buyerEmail || !/\S+@\S+\.\S+/.test(billing.buyerEmail)) return "Email inválido"
-        if (!billing.buyerPhone || billing.buyerPhone.length < 6) return "Teléfono requerido"
+        if (accountBilling.loading) return "Espera mientras cargamos los datos de tu cuenta."
+        if (accountBilling.error) return "Reintenta cargar los datos de tu cuenta para continuar."
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billingContact.buyerEmail)) return "Ingresa un correo válido"
+        if (!/^\d{7,15}$/.test(billingContact.buyerPhone)) return "Ingresa un celular válido de 7 a 15 dígitos"
 
         const documentError = getBillingIdentityError(billing)
         if (documentError) return documentError
@@ -265,9 +269,8 @@ export default function MerchCheckoutPage() {
             }
         } else {
             if (!billing.buyerName.trim()) return "Razón social requerida"
-            if (!billing.buyerAddress.trim()) return "Dirección fiscal requerida (factura)"
         }
-        if (!billing.buyerUbigeo) return "Selecciona tu ubicación (departamento/provincia/distrito)"
+        if (!billingLocation.buyerUbigeo) return "Selecciona tu ubicación (departamento/provincia/distrito)"
 
         if (deliveryMethod === "SHIPPING_HOME") {
             if (destinationIsLima) return "El envio a domicilio esta disponible solo para provincia. Elige una sede de recojo."
@@ -286,7 +289,7 @@ export default function MerchCheckoutPage() {
                 : "Uno o más productos no tiene una sede de recojo activa. Actualiza tu carrito para continuar."
         }
         return null
-    }, [items.length, itemsTotal, billing, destinationIsLima, deliveryMethod, selectedPickupLocation, pickupLocationsError, pickupLocationsLoading, pickupResolution, shippingAddress, shippingDistrito, shippingPhone, shippingAllowed])
+    }, [items.length, itemsTotal, billing, billingContact, billingLocation.buyerUbigeo, accountBilling.loading, accountBilling.error, destinationIsLima, deliveryMethod, selectedPickupLocation, pickupLocationsError, pickupLocationsLoading, pickupResolution, shippingAddress, shippingDistrito, shippingPhone, shippingAllowed])
 
     const handleCheckout = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -314,6 +317,8 @@ export default function MerchCheckoutPage() {
                 })),
                 billing: {
                     ...billing,
+                    ...billingLocation,
+                    ...billingContact,
                     buyerName: billing.documentType === "BOLETA" ? boletaFullName : billing.buyerName,
                 },
                 delivery:
@@ -782,22 +787,25 @@ export default function MerchCheckoutPage() {
                                             <label className="text-sm font-semibold block mb-1.5">Razón social *</label>
                                             <Input value={billing.buyerName} onChange={(e) => setBilling({ ...billing, buyerName: e.target.value })} />
                                         </div>
-                                        <div>
-                                            <label className="text-sm font-semibold block mb-1.5">Dirección fiscal *</label>
-                                            <Input value={billing.buyerAddress} onChange={(e) => setBilling({ ...billing, buyerAddress: e.target.value })} />
-                                        </div>
                                     </>
                                 )}
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <Input type="email" value={billing.buyerEmail} onChange={(e) => setBilling({ ...billing, buyerEmail: e.target.value })} placeholder="email *" />
-                                    <Input value={billing.buyerPhone} onChange={(e) => setBilling({ ...billing, buyerPhone: e.target.value })} placeholder="Teléfono *" />
-                                </div>
+                                <BillingContactFields
+                                    account={accountBilling.contact}
+                                    pending={accountBilling.loading || accountBilling.error}
+                                    buyerEmail={billing.buyerEmail}
+                                    buyerPhone={billing.buyerPhone}
+                                    onChange={(field, value) => setBilling((current) => ({ ...current, [field]: value }))}
+                                />
 
-                                <div>
-                                    <label className="text-sm font-semibold block mb-1.5">Ubicación *</label>
-                                    <UbigeoSelector value={billing.buyerUbigeo} onChange={(ubigeo) => setBilling({ ...billing, buyerUbigeo: ubigeo })} />
-                                </div>
+                                <BillingLocationFields
+                                    location={accountBilling.location}
+                                    loading={accountBilling.loading}
+                                    error={accountBilling.error}
+                                    onRetry={accountBilling.retry}
+                                    value={billing.buyerUbigeo}
+                                    onChange={(ubigeo) => setBilling({ ...billing, buyerUbigeo: ubigeo })}
+                                />
                             </CardContent>
                         </Card>
                     </div>

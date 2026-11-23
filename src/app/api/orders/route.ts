@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
-import { buildBillingSnapshot, buildNaturalPersonFullName } from "@/lib/billing"
+import { buildBillingSnapshot, buildNaturalPersonFullName, getCheckoutBillingContact, getCheckoutBillingLocation } from "@/lib/billing"
 import { rateLimit } from "@/lib/rate-limit"
 import { createOrderSchema } from "@/lib/validations"
 import { onTicketSold } from "@/lib/cached-queries"
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
         const currentUser = await prisma.user.findUnique({
             where: { id: user.id },
-            select: { emailVerifiedAt: true },
+            select: { emailVerifiedAt: true, email: true, phone: true, departamento: true, provincia: true, distrito: true },
         })
 
         if (!currentUser?.emailVerifiedAt) {
@@ -102,6 +102,13 @@ export async function POST(request: NextRequest) {
         }
 
         const rawBody = await request.json()
+        if (rawBody?.billing && typeof rawBody.billing === "object") {
+            rawBody.billing = {
+                ...rawBody.billing,
+                ...getCheckoutBillingLocation(currentUser, rawBody.billing.buyerUbigeo),
+                ...getCheckoutBillingContact(currentUser, rawBody.billing),
+            }
+        }
         const parsedBody = orderRequestSchema.safeParse(rawBody)
 
         if (!parsedBody.success) {

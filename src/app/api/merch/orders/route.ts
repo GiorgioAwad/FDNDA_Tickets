@@ -3,7 +3,8 @@ import { Prisma } from "@prisma/client"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth"
-import { buildBillingSnapshot } from "@/lib/billing"
+import { buildBillingSnapshot, getCheckoutBillingContact, getCheckoutBillingLocation } from "@/lib/billing"
+import { parseRegistrationLocation } from "@/lib/registration-location"
 import { rateLimit } from "@/lib/rate-limit"
 import { resolveMerchPickupAssignments } from "@/lib/merch-pickup"
 import { getBillingIdentityError } from "@/lib/identity-document"
@@ -32,10 +33,10 @@ const billingSchema = z.object({
     buyerDocType: z.enum(["1", "6", "4", "7"]).optional(),
     buyerDocNumber: z.string().min(1),
     buyerName: z.string().optional().nullable(),
-    buyerAddress: z.string().optional().nullable(),
-    buyerEmail: z.string().email().optional().nullable(),
-    buyerPhone: z.string().optional().nullable(),
-    buyerUbigeo: z.string().optional().nullable(),
+    buyerAddress: z.string().min(5, "Selecciona tu departamento, provincia y distrito"),
+    buyerEmail: z.string().email("Ingresa un correo válido"),
+    buyerPhone: z.string().regex(/^\d{7,15}$/, "Ingresa un celular válido de 7 a 15 dígitos"),
+    buyerUbigeo: z.string().refine((value) => parseRegistrationLocation(value) !== null, "Selecciona tu departamento, provincia y distrito"),
     buyerFirstName: z.string().optional().nullable(),
     buyerSecondName: z.string().optional().nullable(),
     buyerLastNamePaternal: z.string().optional().nullable(),
@@ -95,6 +96,17 @@ export async function POST(request: NextRequest) {
         }
 
         const rawBody = await request.json()
+        const account = await prisma.user.findUnique({
+            where: { id: user.id },
+            select: { email: true, phone: true, departamento: true, provincia: true, distrito: true },
+        })
+        if (rawBody?.billing && typeof rawBody.billing === "object") {
+            rawBody.billing = {
+                ...rawBody.billing,
+                ...getCheckoutBillingLocation(account, rawBody.billing.buyerUbigeo),
+                ...getCheckoutBillingContact(account, rawBody.billing),
+            }
+        }
         const parsed = merchOrderSchema.safeParse(rawBody)
 
         if (!parsed.success) {
