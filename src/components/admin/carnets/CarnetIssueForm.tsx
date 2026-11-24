@@ -245,7 +245,7 @@ export function CarnetIssueForm({ onIssued }: CarnetIssueFormProps = {}) {
     const handleTicketTypeChange = (id: string) => {
         setTicketTypeId(id)
         setSelectedDates([])
-        setStartDate("")
+        setStartDate(event?.membershipStartFixed?.slice(0, 10) ?? "")
         setSchedule({})
         setDateInventory([])
         resetPreview()

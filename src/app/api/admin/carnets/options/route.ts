@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
                 sold: tt.sold,
                 monthlyClassLimit: tt.monthlyClassLimit,
                 membershipDurationMonths: tt.membershipDurationMonths,
+                membershipScheduleKey: tt.membershipScheduleKey,
                 isPackage: tt.isPackage,
                 packageDaysCount: tt.packageDaysCount,
                 capacityByDate: tt.capacityByDate,

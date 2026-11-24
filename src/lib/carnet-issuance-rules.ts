@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client"
 
-import { isBlackoutMonth, getMembershipBlackoutMonths } from "@/lib/membership-config"
+import { isBlackoutMonth, getMembershipBlackoutMonths, isSummerMembership } from "@/lib/membership-config"
 import {
     getMembershipScheduleProfile,
     validateMembershipScheduleSelection,
@@ -286,9 +286,12 @@ export function validateCarnetRequest(ctx: CarnetValidationContext): CarnetValid
     const isMembership = (ticketType.monthlyClassLimit ?? 0) > 0
     const isFixedTerm = isMembership && (ticketType.membershipDurationMonths ?? 0) > 0
     const fixedStart = ticketType.event.membershipStartFixed
-    let membershipStartDate: string | null = fixedStart
-        ? toDateKey(fixedStart)
-        : (input.membershipStartDate ?? null)
+    const defaultStart = fixedStart ? toDateKey(fixedStart) : null
+    // El panel puede regularizar el inicio individual de membresías regulares.
+    // La fecha fija sigue siendo el valor por defecto y rige los planes de verano.
+    let membershipStartDate: string | null = isSummerMembership(ticketType.membershipScheduleKey) && defaultStart
+        ? defaultStart
+        : (input.membershipStartDate?.trim() || defaultStart)
 
     if (isFixedTerm && !membershipStartDate) {
         addError(`Indica la fecha de inicio para "${ticketType.name}".`)

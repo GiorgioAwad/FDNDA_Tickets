@@ -75,6 +75,52 @@ test("una membresia con horario valido produce un plan", () => {
     assert.equal(result.plan.providerOrderNumber, "PRES-panel:u1:tt_bronce:1")
 })
 
+test("el inicio elegido por administración prevalece sobre la fecha fija del evento", () => {
+    const ctx = makeCtx({
+        ticketType: { ...baseTicketType, event: { ...baseTicketType.event,
+            membershipStartFixed: new Date("2026-11-02T12:00:00Z") } },
+        input: { membershipStartDate: "2026-08-03" },
+    })
+    const result = validateCarnetRequest(ctx)
+    assert.equal(result.ok, true, errorsOf(result).join(" "))
+    if (!result.ok) return
+    assert.equal(result.plan.membershipStartDate, "2026-08-03")
+    assert.equal(result.plan.monthlyClassLimit, 12)
+    assert.deepEqual(result.plan.entitlementDates, [])
+})
+
+test("la fecha fija es el valor predeterminado si administración no indica otra fecha", () => {
+    const result = validateCarnetRequest(makeCtx({
+        ticketType: { ...baseTicketType, event: { ...baseTicketType.event,
+            membershipStartFixed: new Date("2026-11-02T12:00:00Z") } },
+        input: { membershipStartDate: null },
+    }))
+    assert.equal(result.ok, true, errorsOf(result).join(" "))
+    if (result.ok) assert.equal(result.plan.membershipStartDate, "2026-11-02")
+})
+
+test("una fecha individual inválida no se oculta con la fecha fija del evento", () => {
+    const result = validateCarnetRequest(makeCtx({
+        ticketType: { ...baseTicketType, event: { ...baseTicketType.event,
+            membershipStartFixed: new Date("2026-11-02T12:00:00Z") } },
+        input: { membershipStartDate: "2026-08-32" },
+    }))
+    assert.equal(result.ok, false)
+    assert.match(errorsOf(result).join(" "), /no es una fecha valida/)
+})
+
+test("el plan de verano conserva su fecha de inicio fija", () => {
+    const result = validateCarnetRequest(makeCtx({
+        ticketType: { ...baseTicketType, membershipScheduleKey: "VERANO_3X", membershipDurationMonths: 2,
+            event: { ...baseTicketType.event, membershipStartFixed: new Date("2027-01-04T12:00:00Z") } },
+        input: { membershipStartDate: "2026-08-03", membershipSchedule: {
+            category: "ADULTOS", frequency: "LMV", hours: { main: "06:00-07:00" },
+        } },
+    }))
+    assert.equal(result.ok, true, errorsOf(result).join(" "))
+    if (result.ok) assert.equal(result.plan.membershipStartDate, "2027-01-04")
+})
+
 test("falta el motivo", () => {
     const result = validateCarnetRequest(makeCtx({ input: { reason: "  " } }))
     assert.match(errorsOf(result).join(" "), /motivo/i)

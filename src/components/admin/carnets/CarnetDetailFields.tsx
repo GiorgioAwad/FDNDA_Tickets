@@ -10,6 +10,7 @@ import type {
     MembershipScheduleProfile,
 } from "@/lib/membership-schedule"
 import { isPoolBagTicketType } from "@/lib/pool-bag-classification"
+import { isSummerMembership } from "@/lib/membership-config"
 
 export type CarnetTicketTypeOption = {
     id: string
@@ -19,6 +20,7 @@ export type CarnetTicketTypeOption = {
     sold: number
     monthlyClassLimit: number | null
     membershipDurationMonths: number | null
+    membershipScheduleKey?: string | null
     isPackage: boolean
     packageDaysCount: number | null
     capacityByDate: boolean
@@ -67,6 +69,7 @@ export function CarnetDetailFields({
     setSelectedDates,
 }: Props) {
     const isMembership = (ticketType.monthlyClassLimit ?? 0) > 0
+    const hasFixedStart = Boolean(membershipStartFixed && isSummerMembership(ticketType.membershipScheduleKey ?? ticketType.scheduleProfile?.key))
 
     // Predicado canonico (`isPoolBagTicketType`), el mismo que aplica
     // carnet-issuance-rules.ts en el servidor: la bolsa de piscina libre no
@@ -126,9 +129,9 @@ export function CarnetDetailFields({
             {isMembership && (
                 <div className="space-y-1">
                     <label htmlFor="carnet-membership-start" className="block text-sm font-medium text-foreground">Fecha de inicio</label>
-                    {membershipStartFixed ? (
+                    {hasFixedStart ? (
                         <p className="text-sm text-muted-foreground">
-                            Fija por el evento: {membershipStartFixed.slice(0, 10)}
+                            Fija por el evento: {membershipStartFixed!.slice(0, 10)}
                         </p>
                     ) : (
                         <Input
@@ -139,6 +142,12 @@ export function CarnetDetailFields({
                             className="max-w-xs"
                             required
                         />
+                    )}
+                    {membershipStartFixed && !hasFixedStart && (
+                        <p className="text-sm text-muted-foreground">
+                            Fecha predeterminada del evento: {membershipStartFixed.slice(0, 10)}.
+                            Puedes elegir otra fecha de inicio para este carnet.
+                        </p>
                     )}
                     <p className="text-sm text-muted-foreground">
                         El carnet tendrá {ticketType.monthlyClassLimit} clases por mes desde la fecha de inicio,
