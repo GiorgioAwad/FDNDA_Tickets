@@ -591,13 +591,16 @@ model MembershipMonthlySchedule {
   @@map("membership_monthly_schedules")
 }
 
-// Congelamiento voluntario de membresía: máximo un mes calendario por ticket.
+// Congelamiento de membresía. Autoservicio: un mes; administración: varios meses.
 // startDate es el primer día del mes y endDate es exclusiva (primer día del mes
 // siguiente). Durante ese rango el QR no aplica y la vigencia se extiende un mes.
 model MembershipFreeze {
   id        String   @id @default(cuid())
   ticketId  String   @unique
   month     String
+  // Meses adicionales autorizados por administración; conserva el mes original.
+  additionalMonths String[] @default([])
+  adminHistory Json?
   startDate DateTime @db.Date
   endDate   DateTime @db.Date
   createdAt DateTime @default(now())

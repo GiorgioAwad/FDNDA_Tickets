@@ -23,6 +23,7 @@ export type TicketEntitlement = {
 
 export type MembershipFreezeRange = {
     month: string
+    additionalMonths?: readonly string[]
     startDate: Date | string
     endDate: Date | string
     createdAt?: Date | string
@@ -54,7 +55,7 @@ export type ScanTicket = {
     // Cambios de horario por mes (membresías semestral/anual). Cada fila rige
     // desde su monthIndex en adelante; el base/mes 0 es membershipSchedule.
     monthlySchedules?: { monthIndex: number; selection: unknown }[] | null
-    // Congelamiento voluntario: un mes calendario completo por membresía.
+    // Mes original y meses adicionales autorizados por administración.
     membershipFreeze?: MembershipFreezeRange | null
     event: {
         title: string
@@ -253,6 +254,12 @@ export const getMembershipFreezeRanges = (ticket: MembershipFreezeTicket): Membe
             const endStr = formatDateLikeUTC(freeze.endDate)
             if (/^\d{4}-\d{2}-\d{2}$/.test(startStr) && /^\d{4}-\d{2}-\d{2}$/.test(endStr)) {
                 ranges.push({ month: startStr.slice(0, 7), startStr, endStr })
+            }
+        }
+        for (const month of new Set(freeze.additionalMonths ?? [])) {
+            const range = getMembershipFreezeMonthRange(month)
+            if (range && !ranges.some((existing) => range.startStr < existing.endStr && range.endStr > existing.startStr)) {
+                ranges.push(range)
             }
         }
     }

@@ -86,6 +86,7 @@ const membershipTicketSelect = {
         select: {
             id: true,
             month: true,
+            additionalMonths: true,
             startDate: true,
             endDate: true,
         },
@@ -188,7 +189,7 @@ function serializeMembershipTicket(ticket: MembershipTicketRecord) {
         freeze: ticket.membershipFreeze
             ? {
                   id: ticket.membershipFreeze.id,
-                  month: ticket.membershipFreeze.month,
+                  month: [ticket.membershipFreeze.month, ...ticket.membershipFreeze.additionalMonths].join(", "),
                   startDate: dateKey(ticket.membershipFreeze.startDate),
                   endDate: dateKey(ticket.membershipFreeze.endDate),
               }

@@ -29,6 +29,7 @@ import {
     getEffectiveScheduleSelection,
     getMembershipAccessStatus,
     getMembershipScheduledFreeze,
+    getMembershipFreezeRanges,
     getMembershipAnchor,
     getEligibleMembershipFreezeMonths,
     getMembershipPeriod,
@@ -298,7 +299,7 @@ export async function GET(
                     accessStatus: access.status,
                     startStr: access.startStr,
                     expiryStr: access.expiryStr,
-                    frozenMonth: record.membershipFreeze?.month ?? null,
+                    frozenMonth: access.freeze?.month ?? null,
                     monthIndex: period?.index ?? null,
                     periodStart: period?.startStr ?? null,
                     periodEnd: period?.endStr ?? null,
@@ -333,6 +334,10 @@ export async function GET(
                               month: record.membershipFreeze.month,
                               start: formatDateUTC(record.membershipFreeze.startDate),
                               end: formatDateUTC(record.membershipFreeze.endDate),
+                              ranges: getMembershipFreezeRanges({
+                                  ...scanTicket,
+                                  event: { ...scanTicket.event, membershipFreezeStart: null, membershipFreezeEnd: null },
+                              }).map((range) => ({ month: range.month, start: range.startStr, end: range.endStr })),
                           }
                         : null,
                     availableMonths: record.membershipFreeze

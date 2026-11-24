@@ -84,7 +84,7 @@ export function CarnetDetailFields({
 
     // Un paquete elige N fechas. Sin packageDaysCount no hay N, asi que no es
     // un paquete "de verdad" para efectos del formulario.
-    const needsPackageDates = ticketType.isPackage && !!ticketType.packageDaysCount && !isBag
+    const needsPackageDates = ticketType.isPackage && !!ticketType.packageDaysCount && !isBag && !isMembership
 
     // Selector de UNA fecha: cualquier tipo con cupo por fecha que no elija
     // varias ni sea una bolsa. Corregido: antes se disparaba con "es piscina
@@ -92,7 +92,7 @@ export function CarnetDetailFields({
     // Se descarta por `needsPackageDates`/`isBag` y no por `isPackage` a secas
     // para que el caso mal configurado (es paquete, conteo de dias vacio) siga
     // pudiendo elegir su fecha: el servidor se la exige igual.
-    const showSingleDate = ticketType.usesDateCapacity && !needsPackageDates && !isBag
+    const showSingleDate = ticketType.usesDateCapacity && !needsPackageDates && !isBag && !isMembership
 
     // Con cupo por fecha, las fechas del paquete salen del inventario
     // configurado igual que en el selector de una sola fecha: un
@@ -125,20 +125,25 @@ export function CarnetDetailFields({
 
             {isMembership && (
                 <div className="space-y-1">
-                    <label className="block text-sm font-medium text-foreground">Fecha de inicio</label>
+                    <label htmlFor="carnet-membership-start" className="block text-sm font-medium text-foreground">Fecha de inicio</label>
                     {membershipStartFixed ? (
                         <p className="text-sm text-muted-foreground">
                             Fija por el evento: {membershipStartFixed.slice(0, 10)}
                         </p>
                     ) : (
                         <Input
+                            id="carnet-membership-start"
                             type="date"
                             value={startDate}
                             onChange={(event) => setStartDate(event.target.value)}
                             className="max-w-xs"
+                            required
                         />
                     )}
-                    <p className="text-xs text-muted-foreground">Enero y febrero estan bloqueados.</p>
+                    <p className="text-sm text-muted-foreground">
+                        El carnet tendrá {ticketType.monthlyClassLimit} clases por mes desde la fecha de inicio,
+                        según la frecuencia y el horario del plan. Las asistencias se contabilizan automáticamente.
+                    </p>
                 </div>
             )}
 

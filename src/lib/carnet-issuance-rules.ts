@@ -181,6 +181,8 @@ export type CarnetPlan = {
     attendeeDni: string | null
     amountPaid: number
     membershipStartDate: string | null
+    monthlyClassLimit: number | null
+    membershipFrequencyLabel: string | null
     membershipSchedule: MembershipScheduleSelection | null
     scheduleSelections: Array<{ date: string; shift: string | null }>
     /** Fechas de entitlement en formato YYYY-MM-DD, para mostrar en el preview. */
@@ -362,7 +364,7 @@ export function validateCarnetRequest(ctx: CarnetValidationContext): CarnetValid
     // alguna, el conteo de fechas del paquete es ruido derivado y se calla (ver
     // abajo): la peticion ya se rechaza por el error de verdad.
     let rejectedSelections = 0
-    for (const raw of input.scheduleSelections ?? []) {
+    for (const raw of isMembership ? [] : input.scheduleSelections ?? []) {
         const rawDate = typeof raw?.date === "string" ? raw.date.trim() : ""
         if (!isValidDateKey(rawDate)) {
             addError(
@@ -401,7 +403,7 @@ export function validateCarnetRequest(ctx: CarnetValidationContext): CarnetValid
     // Un cuerpo armado a mano puede traer fechas para una bolsa. Se descartan:
     // buildEntitlementDates devuelve [] para una bolsa, asi que reservarlas
     // cobraria cupo de dias que ningun entitlement va a usar.
-    const effectiveSelections = isBag ? [] : selections
+    const effectiveSelections = isBag || isMembership ? [] : selections
 
     const usesDateCapacity = usesTicketDateCapacity({
         eventCategory: ticketType.event.category,
@@ -432,7 +434,7 @@ export function validateCarnetRequest(ctx: CarnetValidationContext): CarnetValid
     }
 
     let skippedFullDate = false
-    if (usesDateCapacity && !isBag) {
+    if (usesDateCapacity && !isBag && !isMembership) {
         if (effectiveSelections.length === 0) {
             addError("Elige la fecha de la visita.")
         } else {
@@ -476,7 +478,22 @@ export function validateCarnetRequest(ctx: CarnetValidationContext): CarnetValid
     // el admin mando, y era exactamente el diagnostico desviado que hacia
     // buscar el problema en el lugar equivocado. La peticion igual se rechaza,
     // por el error real.
-    if (ticketType.isPackage && ticketType.packageDaysCount && !isBag && rejectedSelections === 0) {
+    //
+    // La excepcion de cupo mensual espeja la PRIMERA guarda de
+    // `buildEntitlementDates`: una membresia con `monthlyClassLimit` no
+    // materializa entitlements (cada clase crea el del dia al vuelo en el
+    // escaneo), asi que exigirle fechas pide algo que despues se descarta. No
+    // es hipotetico: las membresias BRONCE/PLATA estan guardadas con
+    // `isPackage` + `packageDaysCount` = el cupo mensual (8 o 12), y sin esta
+    // excepcion el panel las rechaza a todas pidiendo 8 o 12 fechas que ningun
+    // entitlement iba a usar. Las dos capas tienen que leer el mismo criterio.
+    if (
+        ticketType.isPackage &&
+        ticketType.packageDaysCount &&
+        !ticketType.monthlyClassLimit &&
+        !isBag &&
+        rejectedSelections === 0
+    ) {
         const unique = new Set(effectiveSelections.map((s) => s.date))
         if (unique.size < ticketType.packageDaysCount) {
             addError(
@@ -523,6 +540,8 @@ export function validateCarnetRequest(ctx: CarnetValidationContext): CarnetValid
             attendeeDni,
             amountPaid: amountPaid < 0 ? 0 : amountPaid,
             membershipStartDate,
+            monthlyClassLimit: ticketType.monthlyClassLimit,
+            membershipFrequencyLabel: membershipSchedule?.frequencyLabel ?? null,
             membershipSchedule,
             scheduleSelections: effectiveSelections,
             entitlementDates: entitlementDates.map(toDateKey),

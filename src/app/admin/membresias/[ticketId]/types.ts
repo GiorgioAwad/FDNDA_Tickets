@@ -125,6 +125,7 @@ export interface MembershipDetail {
             month: string
             start: string
             end: string
+            ranges: Array<{ month: string; start: string; end: string }>
         } | null
         availableMonths: Array<{
             month: string

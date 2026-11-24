@@ -57,6 +57,7 @@ interface TicketDetail {
             start: string
             end: string
             createdAt: string
+            ranges: Array<{ month: string; start: string; end: string }>
         } | null
         eligible: boolean
         availableMonths: {
@@ -735,12 +736,14 @@ export default function TicketDetailPage() {
                                         {ticket.membershipFreeze.applied ? (
                                             <div className="rounded-lg bg-white/70 px-3 py-2 text-xs text-sky-900">
                                                 <div className="font-semibold">
-                                                    Congelamiento registrado: {formatMonthLabel(ticket.membershipFreeze.applied.month)}
+                                                    Congelamientos registrados
                                                 </div>
-                                                <div>
-                                                    Del {formatDate(ticket.membershipFreeze.applied.start)} al{" "}
-                                                    {formatDate(previousDateKey(ticket.membershipFreeze.applied.end))}.
-                                                </div>
+                                                {(ticket.membershipFreeze.applied.ranges ?? [ticket.membershipFreeze.applied]).map((range) => (
+                                                    <div key={range.start}>
+                                                        {formatMonthLabel(range.month)}: del {formatDate(range.start)} al{" "}
+                                                        {formatDate(previousDateKey(range.end))}.
+                                                    </div>
+                                                ))}
                                             </div>
                                         ) : ticket.membershipFreeze.availableMonths.length > 0 ? (
                                             <div className="space-y-2">
@@ -832,7 +835,7 @@ export default function TicketDetailPage() {
                                         </p>
                                         {ticket.membershipFreeze?.applied && (
                                             <p className="text-sky-600">
-                                                Congelamiento: {formatMonthLabel(ticket.membershipFreeze.applied.month)}; la vigencia se extendió un mes calendario.
+                                                La vigencia incluye las extensiones por los congelamientos registrados.
                                             </p>
                                         )}
                                     </div>

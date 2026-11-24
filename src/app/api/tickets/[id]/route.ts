@@ -644,6 +644,10 @@ export async function GET(
                                     start: formatDateUTC(ticket.membershipFreeze.startDate),
                                     end: formatDateUTC(ticket.membershipFreeze.endDate),
                                     createdAt: ticket.membershipFreeze.createdAt.toISOString(),
+                                    ranges: getMembershipFreezeRanges({
+                                        ...ticket,
+                                        event: { ...ticket.event, membershipFreezeStart: null, membershipFreezeEnd: null },
+                                    }).map((range) => ({ month: range.month, start: range.startStr, end: range.endStr })),
                                 }
                               : null,
                           eligible: ticket.status === "ACTIVE" && !ticket.membershipFreeze,

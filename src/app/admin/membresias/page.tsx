@@ -605,7 +605,7 @@ export default function AdminMembershipsPage() {
                                                             <Save className="h-4 w-4" />
                                                             Guardar
                                                         </Button>
-                                                        {membership.status === "ACTIVE" && !membership.freeze ? (
+                                                        {membership.status === "ACTIVE" ? (
                                                             <Button asChild size="sm" variant="outline">
                                                                 <Link
                                                                     href={`/admin/membresias/${membership.id}#congelamiento`}

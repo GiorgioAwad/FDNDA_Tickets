@@ -43,6 +43,8 @@ type CarnetPlanResponse = {
     capacityTotal: number
     warnings: string[]
     membershipStartDate: string | null
+    monthlyClassLimit: number | null
+    membershipFrequencyLabel: string | null
     forcedGlobalCapacity: boolean
     forcedDateCapacity: boolean
 }
@@ -192,7 +194,7 @@ export function CarnetIssueForm({ onIssued }: CarnetIssueFormProps = {}) {
     // que este efecto solo necesita ocuparse de traer datos nuevos -- nunca
     // de limpiar el caso en que no aplica.
     useEffect(() => {
-        if (!ticketTypeId || !ticketType?.usesDateCapacity) return
+        if (!ticketTypeId || !ticketType?.usesDateCapacity || (ticketType.monthlyClassLimit ?? 0) > 0) return
         let cancelled = false
         // eslint-disable-next-line react-hooks/set-state-in-effect -- senaliza que la carga empezo; se apaga en el finally de la misma solicitud
         setLoadingDates(true)
@@ -218,7 +220,7 @@ export function CarnetIssueForm({ onIssued }: CarnetIssueFormProps = {}) {
         return () => {
             cancelled = true
         }
-    }, [ticketTypeId, ticketType?.usesDateCapacity])
+    }, [ticketTypeId, ticketType?.usesDateCapacity, ticketType?.monthlyClassLimit])
 
     // ── Manejadores: cada uno actualiza su campo Y invalida el preview en el
     // mismo evento (nunca via un efecto separado). Los que cambian de evento o
@@ -298,7 +300,7 @@ export function CarnetIssueForm({ onIssued }: CarnetIssueFormProps = {}) {
         amountPaid: Number(amountPaid) || 0,
         membershipStartDate: startDate || undefined,
         membershipSchedule: ticketType?.scheduleProfile ? schedule : undefined,
-        scheduleSelections: selectedDates.map((date) => ({ date })),
+        scheduleSelections: (ticketType?.monthlyClassLimit ?? 0) > 0 ? [] : selectedDates.map((date) => ({ date })),
         reason,
         sendEmail,
         forceCapacity,
@@ -593,6 +595,9 @@ export function CarnetIssueForm({ onIssued }: CarnetIssueFormProps = {}) {
                             {plan.attendeeName} — {plan.ticketTypeName} ({plan.eventTitle})
                         </p>
                         {plan.membershipStartDate && <p>Inicio de membresia: {plan.membershipStartDate}</p>}
+                        {plan.entitlementMode === "MONTHLY_CLASS" && (
+                            <p>{plan.monthlyClassLimit} clases por mes{plan.membershipFrequencyLabel ? ` · ${plan.membershipFrequencyLabel}` : ""}. Asistencias contabilizadas automáticamente.</p>
+                        )}
                         {/* entitlementDates vacio significa cosas distintas segun
                             el tipo de entrada: una bolsa de piscina reserva sus
                             visitas despues, una membresia crea el entitlement de

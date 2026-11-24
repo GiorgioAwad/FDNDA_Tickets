@@ -814,3 +814,85 @@ test("los datos de facturacion y la marca de origen llegan al plan (I-3)", () =>
         assert.deepEqual(importado.plan.auditExtra, { batch: "videna-ago-2026", rowNumber: 7 })
     }
 })
+
+test("una membresia con cupo mensual no pide fechas aunque este marcada como paquete", () => {
+    // Configuracion REAL de produccion: las membresias BRONCE/PLATA quedaron
+    // guardadas con isPackage=true y packageDaysCount = el cupo mensual (8 o
+    // 12). `buildEntitlementDates` corta antes por `monthlyClassLimit` y no
+    // materializa ninguna fecha -- el escaner crea el entitlement del dia al
+    // vuelo -- asi que exigirlas rechazaba toda emision desde el panel pidiendo
+    // 8 fechas que nadie iba a usar.
+    const bronce2x: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_bronce_2x",
+        name: "MEMBRESIA SEMESTRAL BRONCE (2 VECES X SEMANA)",
+        monthlyClassLimit: 8,
+        membershipScheduleKey: "BRONCE_2X",
+        isPackage: true,
+        packageDaysCount: 8,
+    }
+
+    const result = validateCarnetRequest(
+        makeCtx({
+            ticketType: bronce2x,
+            input: {
+                ticketTypeId: "tt_bronce_2x",
+                sourceRef: "panel:u1:tt_bronce_2x:1",
+                membershipSchedule: { category: "NINOS", frequency: "MJ", hours: { main: "16:00-17:00" } },
+                scheduleSelections: [],
+            },
+        })
+    )
+
+    assert.equal(result.ok, true, errorsOf(result).join(" "))
+    if (!result.ok) return
+    // Sin fechas pre-generadas: el cupo se controla por mes.
+    assert.deepEqual(result.plan.entitlementDates, [])
+    assert.equal(result.plan.entitlementMode, "MONTHLY_CLASS")
+})
+
+test("un paquete SIN cupo mensual sigue exigiendo sus fechas", () => {
+    // La contraparte de la excepcion de arriba: quitar el gate para todos
+    // dejaba emitir paquetes reales sin ninguna fecha.
+    const paquete: CarnetValidationContext["ticketType"] = {
+        ...baseTicketType,
+        id: "tt_pack_8",
+        name: "PAQUETE 8 DIAS",
+        monthlyClassLimit: null,
+        membershipDurationMonths: null,
+        membershipScheduleKey: null,
+        isPackage: true,
+        packageDaysCount: 8,
+    }
+
+    const result = validateCarnetRequest(
+        makeCtx({
+            ticketType: paquete,
+            input: {
+                ticketTypeId: "tt_pack_8",
+                sourceRef: "panel:u1:tt_pack_8:1",
+                membershipStartDate: null,
+                membershipSchedule: null,
+                scheduleSelections: [],
+            },
+        })
+    )
+
+    assert.equal(result.ok, false)
+    assert.match(errorsOf(result).join(" "), /requiere 8 fechas; elegiste 0/i)
+})
+
+test("una membresía con cupo por fecha usa el inicio y frecuencia sin pedir días individuales", () => {
+    const result = validateCarnetRequest(makeCtx({
+        ticketType: { ...baseTicketType, isPackage: true, packageDaysCount: 12,
+            capacityByDate: true, event: { ...baseTicketType.event, category: "EVENTO" } },
+        input: { scheduleSelections: [] },
+    }))
+    assert.equal(result.ok, true, errorsOf(result).join(" "))
+    if (!result.ok) return
+    assert.equal(result.plan.monthlyClassLimit, 12)
+    assert.ok(result.plan.membershipFrequencyLabel)
+    assert.equal(result.plan.membershipStartDate, "2026-09-01")
+    assert.deepEqual(result.plan.scheduleSelections, [])
+    assert.deepEqual(result.plan.entitlementDates, [])
+})

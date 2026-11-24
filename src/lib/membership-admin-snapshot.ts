@@ -103,7 +103,7 @@ export const membershipChangeInclude = {
         },
     },
     monthlySchedules: { select: { monthIndex: true, selection: true } },
-    membershipFreeze: { select: { month: true, startDate: true, endDate: true } },
+    membershipFreeze: { select: { month: true, additionalMonths: true, startDate: true, endDate: true } },
     // Sin `shift`: TicketDayEntitlement no tiene esa columna. El horario del
     // carnet vive en Ticket.membershipSchedule, no por entitlement.
     entitlements: { select: { date: true, status: true } },
@@ -254,7 +254,7 @@ export function toScanTicket(args: {
     membershipStartDate: Date | null
     membershipSchedule: unknown
     monthlySchedules: Array<{ monthIndex: number; selection: unknown }>
-    membershipFreeze: { month: string; startDate: Date; endDate: Date } | null
+    membershipFreeze: { month: string; additionalMonths?: string[]; startDate: Date; endDate: Date } | null
     event: {
         title: string
         startDate: Date

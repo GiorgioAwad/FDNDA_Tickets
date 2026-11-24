@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
                     membershipStartDate: true,
                     membershipSchedule: true,
                     monthlySchedules: { select: { monthIndex: true, selection: true } },
-                    membershipFreeze: { select: { month: true, startDate: true, endDate: true } },
+                    membershipFreeze: { select: { month: true, additionalMonths: true, startDate: true, endDate: true } },
                     event: {
                         select: {
                             title: true,
