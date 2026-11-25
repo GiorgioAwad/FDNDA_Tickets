@@ -12,10 +12,20 @@
  */
 export const MEMBERSHIP_BLACKOUT_MONTHS: readonly number[] = [1, 2] // enero, febrero
 
+/** Primera preventa de verano 2027 de Campo de Marte (evento de noviembre, ya vendido). */
 export const SUMMER_MEMBERSHIP_SCHEDULE_KEY = "VERANO_3X"
+/** Preventas 1-3 de verano 2027 en CDM, VIDENA y VMT ("CUPOS x Horario 2027 LIMA.xlsx"). */
+export const SUMMER_2027_3X_SCHEDULE_KEY = "VERANO_2027_3X"
+export const SUMMER_2027_2X_SCHEDULE_KEY = "VERANO_2027_2X"
+
+export const SUMMER_MEMBERSHIP_SCHEDULE_KEYS: readonly string[] = [
+    SUMMER_MEMBERSHIP_SCHEDULE_KEY,
+    SUMMER_2027_3X_SCHEDULE_KEY,
+    SUMMER_2027_2X_SCHEDULE_KEY,
+]
 
 export const isSummerMembership = (scheduleKey?: string | null): boolean =>
-    scheduleKey === SUMMER_MEMBERSHIP_SCHEDULE_KEY
+    Boolean(scheduleKey && SUMMER_MEMBERSHIP_SCHEDULE_KEYS.includes(scheduleKey))
 
 /** Summer passes use consecutive calendar months, including January and February. */
 export const getMembershipBlackoutMonths = (scheduleKey?: string | null): readonly number[] =>

@@ -26,8 +26,9 @@ test("getMembershipScheduleProfile devuelve null para sede/clave inválida", () 
 })
 
 test("getMembershipScheduleKeysForSucursal lista los planes (BRONCE, PLATA, BRONCE_2X)", () => {
-    assert.deepEqual(getMembershipScheduleKeysForSucursal("01").sort(), ["BRONCE", "BRONCE_2X", "PLATA", "VERANO_3X"])
-    assert.deepEqual(getMembershipScheduleKeysForSucursal("03").sort(), ["BRONCE", "BRONCE_2X", "PLATA"])
+    assert.deepEqual(getMembershipScheduleKeysForSucursal("01").sort(), ["BRONCE", "BRONCE_2X", "PLATA", "VERANO_2027_2X", "VERANO_2027_3X", "VERANO_3X"])
+    assert.deepEqual(getMembershipScheduleKeysForSucursal("03").sort(), ["BRONCE", "BRONCE_2X", "PLATA", "VERANO_2027_2X", "VERANO_2027_3X"])
+    assert.deepEqual(getMembershipScheduleKeysForSucursal("04").sort(), ["VERANO_2027_2X", "VERANO_2027_3X"])
     assert.deepEqual(getMembershipScheduleKeysForSucursal("99"), [])
 })
 
