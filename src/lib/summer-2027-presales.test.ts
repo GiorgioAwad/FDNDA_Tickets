@@ -10,6 +10,8 @@ const EXCEL: Record<string, Record<string, number>> = {
     "03": { "06:00": 4, "07:00": 4, "08:00": 4, "09:00": 4, "10:00": 4, "13:00": 3, "14:00": 3, "15:00": 3, "16:00": 3, "17:00": 3, "18:00": 3, "19:00": 4, "20:00": 4, "21:00": 4 },
     "04": { "06:00": 4, "07:00": 4, "08:00": 4, "09:00": 4, "10:00": 4, "13:00": 3, "14:00": 3, "15:00": 4, "16:00": 4, "17:00": 4, "18:00": 4, "19:00": 4, "20:00": 4 },
 }
+// 50 L-M-V + M-J-S limitado por el sábado (adultos 6+7am, niños 8am-2pm).
+const MAX_3X: Record<string, number> = { "01": 50 + 6 + 22, "03": 50 + 8 + 22, "04": 50 + 8 + 22 }
 const ADULT_STARTS = (sede: string) => Object.keys(EXCEL[sede]).filter(h => h < "08:00" || h >= "19:00")
 
 for (const sede of ["01", "03", "04"]) {
@@ -22,23 +24,39 @@ for (const sede of ["01", "03", "04"]) {
         assert.deepEqual(p2.categories.map(c => [c.id, c.frequencies.map(f => f.id)]), [["ADULTOS", ["MJ"]], ["NINOS", ["MJ"]]])
 
         for (const [profile, frequency] of [[p3, "LMV"], [p3, "MJS"], [p2, "MJ"]] as const) {
-            const slots = listMembershipLimitedSlots(profile).filter(s => s.frequency === frequency)
+            // M-J-S: el grupo Mar/Jue sigue el Excel; el sábado se prueba aparte.
+            const slots = listMembershipLimitedSlots(profile).filter(s => s.frequency === frequency && s.groupId !== "saturday")
             assert.deepEqual(Object.fromEntries(slots.map(s => [s.start, s.capacity])), EXCEL[sede], `${sede} ${frequency}`)
             assert.equal(slots.reduce((sum, s) => sum + s.capacity, 0), 50)
             assert.deepEqual(slots.filter(s => s.category === "ADULTOS").map(s => s.start), ADULT_STARTS(sede))
         }
-        assert.equal(maxMembershipStudents(listMembershipLimitedSlots(p3)), 100)
+        // Sábado: adultos 6-8am, niños 8am-2pm; cupo = el de esa hora (11 y 12 en VIDENA/VMT: los de CDM).
+        const saturday = listMembershipLimitedSlots(p3).filter(s => s.groupId === "saturday")
+        const satCap = (h: string) => EXCEL[sede][h] ?? EXCEL["01"][h]
+        assert.deepEqual(saturday.filter(s => s.category === "ADULTOS").map(s => `${s.start}:${s.capacity}`), ["06:00", "07:00"].map(h => `${h}:${satCap(h)}`))
+        assert.deepEqual(saturday.filter(s => s.category === "NINOS").map(s => `${s.start}:${s.capacity}`), ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00"].map(h => `${h}:${satCap(h)}`))
+        // Alumnos M-J-S = el grupo más chico (el sábado) por categoría.
+        assert.equal(maxMembershipStudents(listMembershipLimitedSlots(p3)), MAX_3X[sede])
         assert.equal(maxMembershipStudents(listMembershipLimitedSlots(p2)), 50)
     })
 }
 
-test("verano 2027: M-J-S una hora para Mar/Jue/Sáb, Mar-Jue solo martes y jueves; categoría estricta", () => {
+test("verano 2027: M-J-S una hora para Mar/Jue y otra para el sábado; Mar-Jue solo martes y jueves; categoría estricta", () => {
     const p3 = getMembershipScheduleProfile("03", SUMMER_2027_3X_SCHEDULE_KEY)!
     const p2 = getMembershipScheduleProfile("03", SUMMER_2027_2X_SCHEDULE_KEY)!
-    const mjs = validateMembershipScheduleSelection(p3, { category: "NINOS", frequency: "MJS", hours: { main: "15:00-16:00" } }, "03")
+    const mjs = validateMembershipScheduleSelection(p3, { category: "NINOS", frequency: "MJS", hours: { weekday: "15:00-16:00", saturday: "11:00-12:00" } }, "03")
     assert.ok(mjs.ok)
     assert.deepEqual(mjs.selection.sessions.map(s => s.weekday), [2, 4, 6])
-    assert.equal(matchMembershipSession(mjs.selection.sessions, 6, "15:10").ok, true)
+    assert.equal(matchMembershipSession(mjs.selection.sessions, 4, "15:10").ok, true)
+    assert.equal(matchMembershipSession(mjs.selection.sessions, 6, "11:10").ok, true)
+    assert.equal(matchMembershipSession(mjs.selection.sessions, 6, "15:10").ok, false)
+    const adult = validateMembershipScheduleSelection(p3, { category: "ADULTOS", frequency: "MJS", hours: { weekday: "20:00-21:00", saturday: "07:00-08:00" } }, "03")
+    assert.ok(adult.ok)
+    assert.equal(matchMembershipSession(adult.selection.sessions, 2, "20:05").ok, true)
+    assert.equal(matchMembershipSession(adult.selection.sessions, 6, "07:05").ok, true)
+    assert.equal(validateMembershipScheduleSelection(p3, { category: "ADULTOS", frequency: "MJS", hours: { weekday: "06:00-07:00", saturday: "19:00-20:00" } }, "03").ok, false)
+    assert.equal(validateMembershipScheduleSelection(p3, { category: "NINOS", frequency: "MJS", hours: { weekday: "15:00-16:00", saturday: "14:00-15:00" } }, "03").ok, false)
+    assert.equal(validateMembershipScheduleSelection(p3, { category: "NINOS", frequency: "MJS", hours: { weekday: "15:00-16:00" } }, "03").ok, false)
     const mj = validateMembershipScheduleSelection(p2, { category: "ADULTOS", frequency: "MJ", hours: { main: "21:00-22:00" } }, "03")
     assert.ok(mj.ok)
     assert.deepEqual(mj.selection.sessions.map(s => s.weekday), [2, 4])
@@ -50,7 +68,8 @@ test("verano 2027: M-J-S una hora para Mar/Jue/Sáb, Mar-Jue solo martes y jueve
 test("verano 2027: L-M-V y M-J-S no comparten cupo; la franja se agota en su tope", () => {
     const p3 = getMembershipScheduleProfile("01", SUMMER_2027_3X_SCHEDULE_KEY)!
     const pick = (frequency: string) => {
-        const r = validateMembershipScheduleSelection(p3, { category: "ADULTOS", frequency, hours: { main: "06:00-07:00" } }, "01")
+        const hours: Record<string, string> = frequency === "LMV" ? { main: "06:00-07:00" } : { weekday: "06:00-07:00", saturday: "06:00-07:00" }
+        const r = validateMembershipScheduleSelection(p3, { category: "ADULTOS", frequency, hours }, "01")
         if (!r.ok) throw new Error(r.error)
         return r.selection
     }

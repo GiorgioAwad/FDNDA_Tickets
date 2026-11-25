@@ -314,8 +314,12 @@ const summerAdultMjs: ScheduleFrequencyOption = {
 // Cupos por hora de inicio, por sede. El cupo es POR PLAN (cada preventa es un
 // evento con su propio TicketType e inventario) y POR FRECUENCIA: L-M-V, M-J-S y
 // Mar-Jue usan los mismos números pero no los comparten (50 alumnos cada una).
-// Adultos (+18) = 6-8am y desde las 7pm; niños (5-17) = el resto. M-J-S es una
-// sola hora para los tres días (el Excel no distingue el sábado).
+// Adultos (+18) = 6-8am y desde las 7pm; niños (5-17) = el resto.
+// M-J-S (confirmado por el usuario 2026-11-25): una hora para Mar/Jue y otra para
+// el sábado, en ambas categorías. Sábado: adultos 6-8am, niños 8am-2pm (último
+// turno 1-2pm). Cupo del sábado = el de esa hora entre semana (misma lógica que la
+// preventa vieja de CDM); VIDENA/VMT no tienen 11am-1pm entre semana, así que esas
+// dos horas del sábado toman el cupo de CDM.
 const SUMMER_2027_CAPACITY_BY_START: Record<string, Record<string, number>> = {
     // Campo de Marte: 6am-9pm.
     "01": {
@@ -335,17 +339,23 @@ const SUMMER_2027_CAPACITY_BY_START: Record<string, Record<string, number>> = {
 }
 const isSummer2027AdultHour = (start: string) => start < "08:00" || start >= "19:00"
 
+const SUMMER_2027_SATURDAY_ADULT_STARTS = ["06:00", "07:00"]
+const SUMMER_2027_SATURDAY_KIDS_STARTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00"]
+
+const summer2027Slot = (start: string, capacity: number): HourSlot => ({
+    start,
+    end: `${String(Number(start.slice(0, 2)) + 1).padStart(2, "0")}:00`,
+    capacity,
+})
+
 function summer2027Profiles(sucursalCode: string): Pick<Record<MembershipScheduleKey, MembershipScheduleProfile>, "VERANO_2027_3X" | "VERANO_2027_2X"> {
-    const hours: HourSlot[] = Object.entries(SUMMER_2027_CAPACITY_BY_START[sucursalCode])
-        .map(([start, capacity]) => ({ start, end: `${String(Number(start.slice(0, 2)) + 1).padStart(2, "0")}:00`, capacity }))
+    const caps = SUMMER_2027_CAPACITY_BY_START[sucursalCode]
+    const hours: HourSlot[] = Object.entries(caps)
+        .map(([start, capacity]) => summer2027Slot(start, capacity))
         .sort((a, b) => a.start.localeCompare(b.start))
     const adult = hours.filter(h => isSummer2027AdultHour(h.start))
     const kids = hours.filter(h => !isSummer2027AdultHour(h.start))
-    const mjsOneHour = (groupHours: HourSlot[]): ScheduleFrequencyOption => ({
-        id: "MJS",
-        label: FREQ_LABEL.MJS,
-        dayGroups: [{ id: "main", label: "Martes, Jueves y Sábado", weekdays: [2, 4, 6], hours: groupHours }],
-    })
+    const saturday = (starts: string[]) => starts.map(start => summer2027Slot(start, caps[start] ?? SUMMER_2027_CAPACITY_BY_START["01"][start]))
     const adults = (frequencies: ScheduleFrequencyOption[]): ScheduleCategoryOption => ({ id: "ADULTOS", label: "Adultos (18 años a más)", frequencies })
     const children = (frequencies: ScheduleFrequencyOption[]): ScheduleCategoryOption => ({ id: "NINOS", label: "Niños (5 a 17 años)", frequencies })
     return {
@@ -353,7 +363,10 @@ function summer2027Profiles(sucursalCode: string): Pick<Record<MembershipSchedul
             key: SUMMER_2027_3X_SCHEDULE_KEY,
             label: "Verano 2027 (3 veces por semana)",
             planMode: "CHOOSE_FREQUENCY",
-            categories: [adults([lmv(adult), mjsOneHour(adult)]), children([lmv(kids), mjsOneHour(kids)])],
+            categories: [
+                adults([lmv(adult), mjs(adult, saturday(SUMMER_2027_SATURDAY_ADULT_STARTS))]),
+                children([lmv(kids), mjs(kids, saturday(SUMMER_2027_SATURDAY_KIDS_STARTS))]),
+            ],
         },
         VERANO_2027_2X: {
             key: SUMMER_2027_2X_SCHEDULE_KEY,

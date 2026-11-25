@@ -12,6 +12,11 @@
  *
  * Dry run por defecto; --apply escribe en una transacción y verifica.
  * Uso: npx tsx scripts/create-summer-presales-2027.ts [--apply]
+ *
+ * --update: para los 9 eventos ya creados, reescribe descripción y capacidad de
+ * los planes según el catálogo actual (p. ej. tras separar la hora del sábado en
+ * M-J-S, 2026-11-25). Solo si no hay órdenes y la descripción no se editó a mano
+ * (debe coincidir con la versión anterior generada por este script).
  */
 import fs from "node:fs"
 import crypto from "node:crypto"
@@ -22,6 +27,7 @@ import { listMembershipLimitedSlots, maxMembershipStudents } from "../src/lib/me
 import { SUMMER_2027_2X_SCHEDULE_KEY, SUMMER_2027_3X_SCHEDULE_KEY } from "../src/lib/membership-config"
 
 const apply = process.argv.includes("--apply")
+const update = process.argv.includes("--update")
 const env = fs.readFileSync(path.resolve(".env.production"), "utf8")
 const connectionString = env.match(/^DATABASE_URL="?([^"\r\n]+)"?/m)?.[1]
 if (!connectionString) throw new Error("DATABASE_URL missing")
@@ -61,7 +67,8 @@ function describeRanges(hours: HourSlot[]): string {
     return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} y ${parts[parts.length - 1]}` : parts[0]
 }
 
-function buildPresale(sede: Sede, index: number) {
+/** legacy = textos de la primera versión (M-J-S con la misma hora los tres días). */
+function buildPresale(sede: Sede, index: number, legacy = false) {
     const n = index + 1
     const [price3, price2] = PRICES[sede.code][index]
     const p3 = getMembershipScheduleProfile(sede.code, SUMMER_2027_3X_SCHEDULE_KEY)
@@ -70,9 +77,17 @@ function buildPresale(sede: Sede, index: number) {
     const hoursOf = (category: string) => p3.categories.find(c => c.id === category)!.frequencies[0].dayGroups[0].hours
     const adultText = describeRanges(hoursOf("ADULTOS"))
     const kidsText = describeRanges(hoursOf("NINOS"))
+    const saturdayOf = (category: string) => p3.categories.find(c => c.id === category)!.frequencies.find(f => f.id === "MJS")!.dayGroups.find(g => g.id === "saturday")
+    const adultSat = saturdayOf("ADULTOS")
+    const kidsSat = saturdayOf("NINOS")
+    if (!legacy && (!adultSat || !kidsSat)) throw new Error(`M-J-S sin grupo de sábado en ${sede.code}`)
+    // La primera versión dejaba "p. m.." (doble punto); se conserva solo en legacy para reconocerla.
+    const sentence = (text: string) => legacy || !text.endsWith(".") ? `${text}.` : text
+    const mjsNote = (group: typeof adultSat) => legacy ? "" : ` En martes, jueves y sábado eliges una hora para martes y jueves y otra para el sábado (sábados ${describeRanges(group!.hours)}).`
     const capacity3 = maxMembershipStudents(listMembershipLimitedSlots(p3))
     const capacity2 = maxMembershipStudents(listMembershipLimitedSlots(p2))
-    if (capacity3 !== 100 || capacity2 !== 50) throw new Error(`Capacidad inesperada en ${sede.code}: ${capacity3}/${capacity2}`)
+    // 3x: 50 L-M-V + M-J-S limitado por el sábado (CDM 28, VIDENA/VMT 30).
+    if (capacity3 !== { "01": 78, "03": 80, "04": 80 }[sede.code] || capacity2 !== 50) throw new Error(`Capacidad inesperada en ${sede.code}: ${capacity3}/${capacity2}`)
 
     const title = `PREVENTA ${n} VERANO 2027 - ${sede.name.toUpperCase()}`
     const slug = `preventa-${n}-verano-2027-${sede.slugName}`
@@ -84,11 +99,13 @@ function buildPresale(sede: Sede, index: number) {
         `<li><p><strong>2 veces por semana (${money(price2)}):</strong> martes y jueves.</p></li>`,
         `<li><p><strong>Duración:</strong> una hora por clase.</p></li>`,
         `<li><p><strong>Vigencia:</strong> enero y febrero de 2027.</p></li>`,
-        `<li><p><strong>Horario fijo:</strong> elige un turno disponible y mantenlo durante ambos meses. En martes, jueves y sábado la hora es la misma los tres días.</p></li>`,
+        legacy
+            ? `<li><p><strong>Horario fijo:</strong> elige un turno disponible y mantenlo durante ambos meses. En martes, jueves y sábado la hora es la misma los tres días.</p></li>`
+            : `<li><p><strong>Horario fijo:</strong> elige un turno disponible y mantenlo durante ambos meses. En martes, jueves y sábado eliges una hora para martes y jueves y otra para el sábado.</p></li>`,
         `<li><p><strong>Cupos limitados:</strong> cada horario tiene una capacidad definida.</p></li>`,
         `</ul>`,
-        `<p>👧 <strong>Niños de 5 a 17 años:</strong> turnos de una hora ${kidsText}.</p>`,
-        `<p>🧑 <strong>Adultos de 18 años a más:</strong> turnos de una hora ${adultText}.</p>`,
+        `<p>👧 <strong>Niños de 5 a 17 años:</strong> turnos de una hora ${sentence(kidsText)}${mjsNote(kidsSat)}</p>`,
+        `<p>🧑 <strong>Adultos de 18 años a más:</strong> turnos de una hora ${sentence(adultText)}${mjsNote(adultSat)}</p>`,
         `<p>📌 <strong>Condiciones de la preventa</strong></p>`,
         `<p>La inscripción es <strong>personal e intransferible</strong> y corresponde exclusivamente al alumno registrado. La compra incluye únicamente el plan y la frecuencia elegidos, dentro de la categoría y el horario seleccionados, sujetos a disponibilidad.</p>`,
     ].join("")
@@ -120,8 +137,40 @@ function buildPresale(sede: Sede, index: number) {
     return { sede, n, title, slug, description, startDate: `${PRESALE_STARTS[index]} 12:00:00`, plans }
 }
 
+let inTransaction = false
+
+async function updateExisting(presales: ReturnType<typeof buildPresale>[]) {
+    const changes: Array<Record<string, unknown>> = []
+    for (const p of presales) {
+        const event = (await client.query(`SELECT id,slug,description FROM events WHERE slug=$1 ${apply ? "FOR UPDATE" : ""}`, [p.slug])).rows[0]
+        if (!event) throw new Error(`No existe ${p.slug}`)
+        const plans = (await client.query(`SELECT * FROM ticket_types WHERE "eventId"=$1 ORDER BY "sortOrder" ${apply ? "FOR UPDATE" : ""}`, [event.id])).rows
+        const orders = (await client.query(`SELECT count(*)::int n FROM order_items WHERE "ticketTypeId" = ANY($1)`, [plans.map(t => t.id)])).rows[0].n
+        if (orders || plans.some(t => t.sold)) throw new Error(`${p.slug} ya tiene órdenes/ventas; no se toca`)
+        if (plans.length !== 2 || p.plans.some((plan, i) => plans[i].membershipScheduleKey !== plan.key)) throw new Error(`${p.slug}: planes inesperados`)
+        const legacy = buildPresale(p.sede, p.n - 1, true)
+        const descriptionAction = event.description === p.description ? "sin cambio" : event.description === legacy.description ? "actualizar" : "EDITADA A MANO (no se toca)"
+        changes.push({ slug: p.slug, descripcion: descriptionAction, capacidad3x: `${plans[0].capacity} -> ${p.plans[0].capacity}`, capacidad2x: `${plans[1].capacity} -> ${p.plans[1].capacity}` })
+        if (apply) {
+            if (descriptionAction === "actualizar") await client.query(`UPDATE events SET description=$2,"updatedAt"=NOW() WHERE id=$1`, [event.id, p.description])
+            for (const [i, plan] of p.plans.entries()) {
+                await client.query(`UPDATE ticket_types SET capacity=$2,"updatedAt"=NOW() WHERE id=$1`, [plans[i].id, plan.capacity])
+            }
+        }
+    }
+    console.table(changes)
+    if (apply) {
+        await client.query("COMMIT")
+        inTransaction = false
+        console.log("OK: actualizado.")
+    } else {
+        await client.query("ROLLBACK")
+        inTransaction = false
+        console.log("DRY RUN --update: no se escribió nada. Repite con --apply.")
+    }
+}
+
 async function main() {
-    let inTransaction = false
     try {
         const presales = SEDES.flatMap(sede => [0, 1, 2].map(i => buildPresale(sede, i)))
         await client.connect()
@@ -131,7 +180,11 @@ async function main() {
         const template = (await client.query(`SELECT * FROM events WHERE slug=$1`, [TEMPLATE_SLUG])).rows[0]
         if (!template || template.category !== "ACADEMIA" || template.ticketLayout !== "PLANS") throw new Error("No se encontró la primera preventa de CDM como plantilla")
         const existing = (await client.query(`SELECT slug FROM events WHERE slug = ANY($1)`, [presales.map(p => p.slug)])).rows
-        if (existing.length) throw new Error(`Ya existen: ${existing.map(r => r.slug).join(", ")} (no se sobrescribe nada)`)
+        if (update) {
+            await updateExisting(presales)
+            return
+        }
+        if (existing.length) throw new Error(`Ya existen: ${existing.map(r => r.slug).join(", ")} (no se sobrescribe nada; usa --update)`)
 
         console.log(`${apply ? "APPLY" : "DRY RUN"}: ${presales.length} eventos, ${presales.length * 2} planes; plantilla ${TEMPLATE_SLUG}`)
         console.table(presales.flatMap(p => p.plans.map(plan => ({

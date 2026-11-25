@@ -7,12 +7,15 @@
  *   ... --sede videna   (campo-de-marte | videna | vmt; por defecto las 3)
  *
  * Cambio de preventa (03/12, 10/12): despublicar la anterior y publicar la siguiente.
+ * Tras --apply limpia la caché Redis del evento y del listado (sin esto el listado
+ * público sigue mostrando el estado anterior; lo mismo que hace el admin al guardar).
  * Bloquea publicar un plan sin ABIO (servilexEnabled=false: se vendería sin boleta)
  * salvo --sin-abio explícito.
  */
 import fs from "node:fs"
 import path from "node:path"
 import pg from "pg"
+import { Redis } from "@upstash/redis"
 
 const args = process.argv.slice(2)
 const apply = args.includes("--apply")
@@ -31,6 +34,25 @@ const env = fs.readFileSync(path.resolve(".env.production"), "utf8")
 const connectionString = env.match(/^DATABASE_URL="?([^"\r\n]+)"?/m)?.[1]
 if (!connectionString) throw new Error("DATABASE_URL missing")
 const client = new pg.Client({ connectionString, connectionTimeoutMillis: 15000 })
+const envValue = (key: string) => env.match(new RegExp(`^${key}="?([^"\r\n]+)"?`, "m"))?.[1]
+
+/** Mismas claves que invalidateEventCache (src/lib/cache.ts). */
+async function invalidateCache(events: Array<{ id: string; slug: string }>) {
+    const url = envValue("UPSTASH_REDIS_REST_URL")
+    const token = envValue("UPSTASH_REDIS_REST_TOKEN")
+    if (!url || !token) {
+        console.warn("Aviso: sin credenciales Upstash; la caché del listado se limpiará sola (o guarda el evento en el admin).")
+        return
+    }
+    const redis = new Redis({ url, token })
+    const listKeys = (await redis.smembers("cache:ns:events:list")) as string[]
+    const keys = [
+        ...events.flatMap(e => [`event:${e.id}`, `ticket-types:${e.id}`, `event:stats:${e.id}`, `event:slug:${e.slug}`]),
+        "events:published", ...listKeys, "cache:ns:events:list",
+    ]
+    await redis.del(...keys)
+    console.log(`Caché limpiada (${keys.length} claves).`)
+}
 
 async function main() {
     let inTransaction = false
@@ -62,6 +84,7 @@ async function main() {
             await client.query("COMMIT")
             inTransaction = false
             console.log(`OK: preventa ${preventa} ${publish ? "PUBLICADA" : "DESPUBLICADA"} en ${events.length} sede(s).`)
+            await invalidateCache(events)
         } else {
             await client.query("ROLLBACK")
             inTransaction = false
