@@ -312,7 +312,7 @@ const SUMMER_KIDS_SAT_HOURS = summerBetween("08:00", "14:00")
 // Cupos por hora de inicio, por sede. El cupo es POR PLAN (cada preventa es un
 // evento con su propio TicketType e inventario) y POR FRECUENCIA: L-M-V, M-J-S y
 // Mar-Jue usan los mismos números pero no los comparten (50 alumnos cada una).
-// Adultos (+18) = 6-8am y desde las 7pm; niños (5-17) = el resto.
+// Adultos (+18) = 6-8am y desde las 7pm; niños (6-17) = el resto.
 // M-J-S (confirmado por el usuario 2026-11-25): una hora para Mar/Jue y otra para
 // el sábado, en ambas categorías. Sábado: adultos 6-8am, niños 8am-2pm (último
 // turno 1-2pm). Cupo del sábado = el de esa hora entre semana (misma lógica que la
@@ -355,7 +355,7 @@ function summer2027Profiles(sucursalCode: string): Pick<Record<MembershipSchedul
     const kids = hours.filter(h => !isSummer2027AdultHour(h.start))
     const saturday = (starts: string[]) => starts.map(start => summer2027Slot(start, caps[start] ?? SUMMER_2027_CAPACITY_BY_START["01"][start]))
     const adults = (frequencies: ScheduleFrequencyOption[]): ScheduleCategoryOption => ({ id: "ADULTOS", label: "Adultos (18 años a más)", frequencies })
-    const children = (frequencies: ScheduleFrequencyOption[]): ScheduleCategoryOption => ({ id: "NINOS", label: "Niños (5 a 17 años)", frequencies })
+    const children = (frequencies: ScheduleFrequencyOption[]): ScheduleCategoryOption => ({ id: "NINOS", label: "Niños (6 a 17 años)", frequencies })
     return {
         VERANO_2027_3X: {
             key: SUMMER_2027_3X_SCHEDULE_KEY,

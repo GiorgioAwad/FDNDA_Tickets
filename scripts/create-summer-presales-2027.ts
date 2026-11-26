@@ -104,7 +104,7 @@ function buildPresale(sede: Sede, index: number, legacy = false) {
             : `<li><p><strong>Horario fijo:</strong> elige un turno disponible y mantenlo durante ambos meses. En martes, jueves y sábado eliges una hora para martes y jueves y otra para el sábado.</p></li>`,
         `<li><p><strong>Cupos limitados:</strong> cada horario tiene una capacidad definida.</p></li>`,
         `</ul>`,
-        `<p>👧 <strong>Niños de 5 a 17 años:</strong> turnos de una hora ${sentence(kidsText)}${mjsNote(kidsSat)}</p>`,
+        `<p>👧 <strong>Niños de 6 a 17 años:</strong> turnos de una hora ${sentence(kidsText)}${mjsNote(kidsSat)}</p>`,
         `<p>🧑 <strong>Adultos de 18 años a más:</strong> turnos de una hora ${sentence(adultText)}${mjsNote(adultSat)}</p>`,
         `<p>📌 <strong>Condiciones de la preventa</strong></p>`,
         `<p>La inscripción es <strong>personal e intransferible</strong> y corresponde exclusivamente al alumno registrado. La compra incluye únicamente el plan y la frecuencia elegidos, dentro de la categoría y el horario seleccionados, sujetos a disponibilidad.</p>`,
