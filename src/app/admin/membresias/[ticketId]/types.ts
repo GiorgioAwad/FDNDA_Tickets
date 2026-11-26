@@ -47,8 +47,9 @@ export interface DetailHistoryRow {
     id: string
     kind: "SCHEDULE" | "TRANSFER"
     reason: string
-    before: { scheduleSummary: string; ticketTypeName: string; sucursalCode: string | null }
-    after: { scheduleSummary: string; ticketTypeName: string; sucursalCode: string | null }
+    /** field = "ATTENDEE_NAME" en los cambios de nombre (scheduleSummary trae el nombre). */
+    before: { scheduleSummary: string; ticketTypeName: string; sucursalCode: string | null; field?: string }
+    after: { scheduleSummary: string; ticketTypeName: string; sucursalCode: string | null; field?: string }
     createdAt: string
     actor: { name: string | null; email: string }
 }

@@ -7,6 +7,7 @@ import { AlertCircle, ArrowLeft, CalendarClock, History, MapPin, RefreshCw } fro
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { AttendeeActions } from "./AttendeeActions"
 import { FreezeActions } from "./FreezeActions"
 import { ScheduleActions, type Plan } from "./ScheduleActions"
 import type { MembershipDetail } from "./types"
@@ -285,6 +286,8 @@ export default function MembershipDetailPage({
                 }}
             />
 
+            <AttendeeActions detail={detail} onRenamed={() => void load()} />
+
             <FreezeActions detail={detail} onFrozen={() => void load()} />
 
             {/* 4. Historial */}
@@ -304,7 +307,11 @@ export default function MembershipDetailPage({
                                 <li key={row.id} className="rounded-lg border border-slate-200 p-3">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <Badge variant="outline">
-                                            {row.kind === "SCHEDULE" ? "Horario" : "Tipo / sede"}
+                                            {row.before.field === "ATTENDEE_NAME"
+                                                ? "Nombre"
+                                                : row.kind === "SCHEDULE"
+                                                  ? "Horario"
+                                                  : "Tipo / sede"}
                                         </Badge>
                                         <span className="text-slate-500">
                                             {new Date(row.createdAt).toLocaleString("es-PE")} ·{" "}
@@ -312,9 +319,19 @@ export default function MembershipDetailPage({
                                         </span>
                                     </div>
                                     <p className="mt-2 text-slate-700">
-                                        {row.before.ticketTypeName} · {row.before.scheduleSummary}
-                                        {" → "}
-                                        {row.after.ticketTypeName} · {row.after.scheduleSummary}
+                                        {row.before.field === "ATTENDEE_NAME" ? (
+                                            <>
+                                                {row.before.scheduleSummary}
+                                                {" → "}
+                                                {row.after.scheduleSummary}
+                                            </>
+                                        ) : (
+                                            <>
+                                                {row.before.ticketTypeName} · {row.before.scheduleSummary}
+                                                {" → "}
+                                                {row.after.ticketTypeName} · {row.after.scheduleSummary}
+                                            </>
+                                        )}
                                     </p>
                                     <p className="mt-1 text-slate-500">Motivo: {row.reason}</p>
                                 </li>
