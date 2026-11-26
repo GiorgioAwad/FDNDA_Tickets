@@ -86,3 +86,20 @@ test("verano 2027 es membresía de verano: enero y febrero válidos, sin blackou
     assert.equal(isSummerMembership("BRONCE"), false)
     assert.equal(isSummerMembership(null), false)
 })
+
+test("verano 2027 → ABIO: el código sale de la hora de Mar/Jue (el sábado no lo cambia); Mar-Jue usa su propio mapa", async () => {
+    const { resolveAcademiaAbioSchedule } = await import("@/lib/abio-membership-schedule")
+    const p3 = getMembershipScheduleProfile("01", SUMMER_2027_3X_SCHEDULE_KEY)!
+    const p2 = getMembershipScheduleProfile("01", SUMMER_2027_2X_SCHEDULE_KEY)!
+    const config = (profileKey: string, codes: Record<string, string>) => ({ membershipSchedules: { profileKey, serviceStartDate: "2027-01-01", codes } })
+    const kid = validateMembershipScheduleSelection(p3, { category: "NINOS", frequency: "MJS", hours: { weekday: "15:00-16:00", saturday: "09:00-10:00" } }, "01")
+    assert.ok(kid.ok)
+    assert.deepEqual(
+        resolveAcademiaAbioSchedule({ extraConfig: config(SUMMER_2027_3X_SCHEDULE_KEY, { "NINOS:MJS:15:00-16:00": "000040" }), scheduleCode: null, selection: kid.selection, sucursalCode: "01" }),
+        { scheduleCode: "000040", serviceDate: "2027-01-01" }
+    )
+    const adult = validateMembershipScheduleSelection(p2, { category: "ADULTOS", frequency: "MJ", hours: { main: "20:00-21:00" } }, "01")
+    assert.ok(adult.ok)
+    assert.equal(resolveAcademiaAbioSchedule({ extraConfig: config(SUMMER_2027_2X_SCHEDULE_KEY, { "ADULTOS:MJ:20:00-21:00": "000149" }), scheduleCode: null, selection: adult.selection, sucursalCode: "01" }).scheduleCode, "000149")
+    assert.throws(() => resolveAcademiaAbioSchedule({ extraConfig: config(SUMMER_2027_2X_SCHEDULE_KEY, {}), scheduleCode: null, selection: adult.selection, sucursalCode: "01" }), /no tiene un código ABIO/)
+})
