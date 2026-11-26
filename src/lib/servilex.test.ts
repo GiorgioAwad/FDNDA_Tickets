@@ -88,7 +88,7 @@ test("una compra familiar conserva un horario ABIO distinto para cada alumno", (
 test("verano M-J-S: ABIO recibe el código del horario de Mar/Jue (el sábado del niño no lo cambia) y sin código falla", () => {
     const profile = getMembershipScheduleProfile("01", "VERANO_3X")!
     const kid = validateMembershipScheduleSelection(profile, { category: "NINOS", frequency: "MJS", hours: { weekday: "15:00-16:00", saturday: "10:00-11:00" } }, "01")
-    const adult = validateMembershipScheduleSelection(profile, { category: "ADULTOS", frequency: "MJS", hours: { main: "06:00-07:00" } }, "01")
+    const adult = validateMembershipScheduleSelection(profile, { category: "ADULTOS", frequency: "MJS", hours: { weekday: "06:00-07:00", saturday: "06:00-07:00" } }, "01")
     if (!kid.ok || !adult.ok) throw new Error("selección inválida")
     const extraConfig = { membershipSchedules: { ...SUMMER_ABIO_EXTRA_CONFIG.membershipSchedules, codes: {
         ...SUMMER_ABIO_EXTRA_CONFIG.membershipSchedules.codes, "NINOS:MJS:15:00-16:00": "000210", "ADULTOS:MJS:06:00-07:00": "000201",

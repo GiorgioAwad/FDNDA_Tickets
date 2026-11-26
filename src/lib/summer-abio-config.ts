@@ -36,13 +36,14 @@ export const SUMMER_ABIO_SCHEDULES = abioRowsFor("LMV").map(row => ({ ...row, sc
  * catálogo ABIO el 2026-11-19 (dry-run de add-summer-mjs-2027.ts). Donde el
  * catálogo tiene dos series para la misma franja (11:00 → 000018/000208;
  * 14:00-17:00 → 000039-42/000348-51) se usa la serie original (la más baja), igual
- * que en L-M-V. Adultos 6:00/7:00; niños = hora de Mar/Jue.
+ * que en L-M-V. Adultos y niños = hora de Mar/Jue (adultos también 19:00/20:00 desde
+ * 2026-11-26: 000370/000371, serie "Mar Jue Sab" verificada en el catálogo).
  */
 const MJS_CODES_BY_START: Record<string, string> = {
     "06:00": "000075", "07:00": "000014", "08:00": "000015", "09:00": "000016",
     "10:00": "000017", "11:00": "000018", "12:00": "000019", "13:00": "000020",
     "14:00": "000039", "15:00": "000040", "16:00": "000041", "17:00": "000042",
-    "18:00": "000076",
+    "18:00": "000076", "19:00": "000370", "20:00": "000371",
 }
 
 /** M-J-S (lo aplica add-summer-mjs-2027.ts, que re-verifica cada código contra el catálogo). */

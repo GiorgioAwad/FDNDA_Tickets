@@ -36,19 +36,25 @@ function mjs(category: "ADULTOS" | "NINOS", hours: Record<string, string>) {
     return result.selection
 }
 
-test("summer M-J-S: adults one hour 6-8am for Tue/Thu/Sat; kids Tue/Thu like L-M-V plus their own Saturday hour 8am-2pm", () => {
+test("summer M-J-S: Tue/Thu hour plus a separate Saturday hour; adults Tue/Thu 6-8am or 7-9pm and Saturday 6-8am; kids Saturday 8am-2pm", () => {
     const [adults, kids] = profile.categories.map(c => c.frequencies.find(f => f.id === "MJS")!)
-    assert.deepEqual(adults.dayGroups.map(g => [g.weekdays, g.hours.map(h => `${h.start}-${h.end}:${h.capacity}`)]), [[[2, 4, 6], ["06:00-07:00:12", "07:00-08:00:6"]]])
+    assert.deepEqual(adults.dayGroups.map(g => [g.id, g.weekdays, g.hours.map(h => `${h.start}-${h.end}:${h.capacity}`)]), [
+        ["weekday", [2, 4], ["06:00-07:00:12", "07:00-08:00:6", "19:00-20:00:6", "20:00-21:00:6"]],
+        ["saturday", [6], ["06:00-07:00:12", "07:00-08:00:6"]],
+    ])
     assert.deepEqual(kids.dayGroups.map(g => g.weekdays), [[2, 4], [6]])
     assert.deepEqual(kids.dayGroups[0].hours, profile.categories[1].frequencies[0].dayGroups[0].hours)
     assert.deepEqual(kids.dayGroups[1].hours.map(h => `${h.start}:${h.capacity}`), ["08:00:6", "09:00:6", "10:00:7", "11:00:7", "12:00:6", "13:00:8"])
 
-    const adult = mjs("ADULTOS", { main: "07:00-08:00" })
+    const adult = mjs("ADULTOS", { weekday: "20:00-21:00", saturday: "07:00-08:00" })
     assert.deepEqual(adult.sessions.map(s => s.weekday), [2, 4, 6])
+    assert.equal(matchMembershipSession(adult.sessions, 2, "20:10").ok, true)
     assert.equal(matchMembershipSession(adult.sessions, 6, "07:10").ok, true)
+    assert.equal(matchMembershipSession(adult.sessions, 6, "20:10").ok, false)
     assert.equal(matchMembershipSession(adult.sessions, 1, "07:10").ok, false)
-    assert.throws(() => mjs("ADULTOS", { main: "19:00-20:00" }), /no está disponible/)
-    assert.throws(() => mjs("ADULTOS", { main: "08:00-09:00" }), /no está disponible/)
+    assert.throws(() => mjs("ADULTOS", { weekday: "20:00-21:00", saturday: "19:00-20:00" }), /no está disponible/)
+    assert.throws(() => mjs("ADULTOS", { weekday: "08:00-09:00", saturday: "07:00-08:00" }), /no está disponible/)
+    assert.throws(() => mjs("ADULTOS", { main: "07:00-08:00" }), /Selecciona el horario/)
 
     const kid = mjs("NINOS", { weekday: "17:00-18:00", saturday: "09:00-10:00" })
     assert.equal(matchMembershipSession(kid.sessions, 4, "17:30").ok, true)
@@ -61,7 +67,7 @@ test("summer M-J-S: adults one hour 6-8am for Tue/Thu/Sat; kids Tue/Thu like L-M
 
 test("summer M-J-S has its own places per hour: a full L-M-V slot does not block M-J-S and vice versa", () => {
     const lmvFull = Array.from({ length: 12 }, () => schedule("ADULTOS", "06:00-07:00"))
-    const mjsFull = Array.from({ length: 12 }, () => mjs("ADULTOS", { main: "06:00-07:00" }))
+    const mjsFull = Array.from({ length: 12 }, () => mjs("ADULTOS", { weekday: "06:00-07:00", saturday: "06:00-07:00" }))
     assert.doesNotThrow(() => assertMembershipSlotCapacity(profile, [...lmvFull, ...mjsFull]))
     assert.throws(() => assertMembershipSlotCapacity(profile, [...lmvFull, ...mjsFull, mjsFull[0]]), /agotado/)
     // Sábado 8am: 6 cupos, aunque cada niño tenga distinta hora de Mar/Jue.
@@ -72,7 +78,7 @@ test("summer M-J-S has its own places per hour: a full L-M-V slot does not block
 
 test("plan capacity counts students: kids M-J-S are capped by the smaller of Tue/Thu (76) and Saturday (40)", () => {
     const slots = listMembershipLimitedSlots(profile)
-    assert.equal(slots.length, 15 + 2 + 11 + 6)
+    assert.equal(slots.length, 15 + 4 + 2 + 11 + 6)
     assert.equal(maxMembershipStudents(slots), 106 + 18 + 40)
     const rows = slots.map(s => ({ ...s, paid: 0, pending: 0 }))
     const kidKeys = [membershipSlotKey("NINOS", "MJS", "weekday", "15:00", "16:00"), membershipSlotKey("NINOS", "MJS", "saturday", "10:00", "11:00")]
@@ -117,7 +123,7 @@ test("admin overrides change a slot's capacity without mutating the shared catal
     // El catálogo compartido queda intacto.
     assert.throws(() => assertMembershipSlotCapacity(profile, fourteen), /agotado/)
     const slots = listMembershipLimitedSlots(profile, { [sixAm]: 14 })
-    assert.equal(slots.length, 34)
+    assert.equal(slots.length, 38)
     assert.deepEqual(slots.find(s => s.key === sixAm), {
         key: sixAm, category: "ADULTOS", categoryLabel: "Adultos (18 años a más)", frequency: "LMV",
         frequencyLabel: profile.categories[0].frequencies[0].label, groupId: "main", groupLabel: "Lunes, Miércoles y Viernes",

@@ -300,15 +300,13 @@ const summerBetween = (from: string, to: string): HourSlot[] => summerHours.filt
 // L-M-V: adultos 6-8am y 7-9pm; niños 8am-7pm.
 const SUMMER_LMV_ADULT_HOURS = summerHours.filter(h => h.start < "08:00" || h.start >= "19:00")
 const SUMMER_KIDS_WEEKDAY_HOURS = summerBetween("08:00", "19:00")
-// M-J-S: adultos 6-7 y 7-8am los tres días (una sola hora para los tres);
-// niños Mar/Jue igual que L-M-V (8am-7pm) y sábado 8am-2pm (hora propia).
-const SUMMER_MJS_ADULT_HOURS = summerBetween("06:00", "08:00")
+// M-J-S (2026-11-26, igual que las preventas 2027): una hora para Mar/Jue y otra
+// para el sábado en ambas categorías. Adultos Mar/Jue = horas de adultos de L-M-V
+// (6-8am y 7-9pm), sábado 6-8am; niños Mar/Jue 8am-7pm, sábado 8am-2pm.
+// Los carnets vendidos con el formato anterior (adultos: un grupo "main" para los
+// tres días) se migraron con scripts/migrate-summer-3x-adult-mjs.ts.
+const SUMMER_MJS_ADULT_SAT_HOURS = summerBetween("06:00", "08:00")
 const SUMMER_KIDS_SAT_HOURS = summerBetween("08:00", "14:00")
-const summerAdultMjs: ScheduleFrequencyOption = {
-    id: "MJS",
-    label: FREQ_LABEL.MJS,
-    dayGroups: [{ id: "main", label: "Martes, Jueves y Sábado", weekdays: [2, 4, 6], hours: SUMMER_MJS_ADULT_HOURS }],
-}
 
 // Preventas 1, 2 y 3 de verano 2027 en Lima ("CUPOS x Horario 2027 LIMA.xlsx").
 // Cupos por hora de inicio, por sede. El cupo es POR PLAN (cada preventa es un
@@ -386,7 +384,7 @@ export const MEMBERSHIP_SCHEDULES: Record<string, Partial<Record<MembershipSched
             label: "Verano (3 veces por semana)",
             planMode: "CHOOSE_FREQUENCY",
             categories: [
-                { id: "ADULTOS", label: "Adultos (18 años a más)", frequencies: [lmv(SUMMER_LMV_ADULT_HOURS), summerAdultMjs] },
+                { id: "ADULTOS", label: "Adultos (18 años a más)", frequencies: [lmv(SUMMER_LMV_ADULT_HOURS), mjs(SUMMER_LMV_ADULT_HOURS, SUMMER_MJS_ADULT_SAT_HOURS)] },
                 category("NINOS", [lmv(SUMMER_KIDS_WEEKDAY_HOURS), mjs(SUMMER_KIDS_WEEKDAY_HOURS, SUMMER_KIDS_SAT_HOURS)]),
             ],
         },
