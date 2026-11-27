@@ -312,7 +312,8 @@ const SUMMER_KIDS_SAT_HOURS = summerBetween("08:00", "14:00")
 // Cupos por hora de inicio, por sede. El cupo es POR PLAN (cada preventa es un
 // evento con su propio TicketType e inventario) y POR FRECUENCIA: L-M-V, M-J-S y
 // Mar-Jue usan los mismos números pero no los comparten (50 alumnos cada una).
-// Adultos (+18) = 6-8am y desde las 7pm; niños (6-17) = el resto.
+// Adultos (+18) = 6-8am y desde las 7pm (Campo de Marte: desde las 6pm, pedido
+// 2026-11-27); niños (6-17) = el resto.
 // M-J-S (confirmado por el usuario 2026-11-25): una hora para Mar/Jue y otra para
 // el sábado, en ambas categorías. Sábado: adultos 6-8am, niños 8am-2pm (último
 // turno 1-2pm). Cupo del sábado = el de esa hora entre semana (misma lógica que la
@@ -335,7 +336,10 @@ const SUMMER_2027_CAPACITY_BY_START: Record<string, Record<string, number>> = {
         "15:00": 4, "16:00": 4, "17:00": 4, "18:00": 4, "19:00": 4, "20:00": 4,
     },
 }
-const isSummer2027AdultHour = (start: string) => start < "08:00" || start >= "19:00"
+// Hora desde la que la noche es de adultos, por sede.
+const SUMMER_2027_ADULT_EVENING_FROM: Record<string, string> = { "01": "18:00", "03": "19:00", "04": "19:00" }
+const isSummer2027AdultHour = (sucursalCode: string, start: string) =>
+    start < "08:00" || start >= SUMMER_2027_ADULT_EVENING_FROM[sucursalCode]
 
 const SUMMER_2027_SATURDAY_ADULT_STARTS = ["06:00", "07:00"]
 const SUMMER_2027_SATURDAY_KIDS_STARTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00"]
@@ -351,8 +355,8 @@ function summer2027Profiles(sucursalCode: string): Pick<Record<MembershipSchedul
     const hours: HourSlot[] = Object.entries(caps)
         .map(([start, capacity]) => summer2027Slot(start, capacity))
         .sort((a, b) => a.start.localeCompare(b.start))
-    const adult = hours.filter(h => isSummer2027AdultHour(h.start))
-    const kids = hours.filter(h => !isSummer2027AdultHour(h.start))
+    const adult = hours.filter(h => isSummer2027AdultHour(sucursalCode, h.start))
+    const kids = hours.filter(h => !isSummer2027AdultHour(sucursalCode, h.start))
     const saturday = (starts: string[]) => starts.map(start => summer2027Slot(start, caps[start] ?? SUMMER_2027_CAPACITY_BY_START["01"][start]))
     const adults = (frequencies: ScheduleFrequencyOption[]): ScheduleCategoryOption => ({ id: "ADULTOS", label: "Adultos (18 años a más)", frequencies })
     const children = (frequencies: ScheduleFrequencyOption[]): ScheduleCategoryOption => ({ id: "NINOS", label: "Niños (6 a 17 años)", frequencies })

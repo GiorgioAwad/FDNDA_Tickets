@@ -12,7 +12,8 @@ const EXCEL: Record<string, Record<string, number>> = {
 }
 // 50 L-M-V + M-J-S limitado por el sábado (adultos 6+7am, niños 8am-2pm).
 const MAX_3X: Record<string, number> = { "01": 50 + 6 + 22, "03": 50 + 8 + 22, "04": 50 + 8 + 22 }
-const ADULT_STARTS = (sede: string) => Object.keys(EXCEL[sede]).filter(h => h < "08:00" || h >= "19:00")
+// CDM: 6-7pm es de adultos (2026-11-27); VIDENA/VMT: desde las 7pm.
+const ADULT_STARTS = (sede: string) => Object.keys(EXCEL[sede]).filter(h => h < "08:00" || h >= (sede === "01" ? "18:00" : "19:00"))
 
 for (const sede of ["01", "03", "04"]) {
     test(`preventas verano 2027 sede ${sede}: cupos del Excel, 50 alumnos por frecuencia, adultos 6-8am y desde 7pm`, () => {
@@ -102,4 +103,22 @@ test("verano 2027 → ABIO: el código sale de la hora de Mar/Jue (el sábado no
     assert.ok(adult.ok)
     assert.equal(resolveAcademiaAbioSchedule({ extraConfig: config(SUMMER_2027_2X_SCHEDULE_KEY, { "ADULTOS:MJ:20:00-21:00": "000149" }), scheduleCode: null, selection: adult.selection, sucursalCode: "01" }).scheduleCode, "000149")
     assert.throws(() => resolveAcademiaAbioSchedule({ extraConfig: config(SUMMER_2027_2X_SCHEDULE_KEY, {}), scheduleCode: null, selection: adult.selection, sucursalCode: "01" }), /no tiene un código ABIO/)
+})
+
+test("Campo de Marte: 6-7pm es de adultos en L-M-V, Mar/Jue de M-J-S y Mar-Jue; los niños llegan hasta las 6pm", () => {
+    const p3 = getMembershipScheduleProfile("01", SUMMER_2027_3X_SCHEDULE_KEY)!
+    const p2 = getMembershipScheduleProfile("01", SUMMER_2027_2X_SCHEDULE_KEY)!
+    const ok = (profile: typeof p3, category: string, frequency: string, hours: Record<string, string>) =>
+        validateMembershipScheduleSelection(profile, { category, frequency, hours }, "01").ok
+    assert.equal(ok(p3, "ADULTOS", "LMV", { main: "18:00-19:00" }), true)
+    assert.equal(ok(p3, "NINOS", "LMV", { main: "18:00-19:00" }), false)
+    assert.equal(ok(p3, "ADULTOS", "MJS", { weekday: "18:00-19:00", saturday: "07:00-08:00" }), true)
+    assert.equal(ok(p3, "NINOS", "MJS", { weekday: "18:00-19:00", saturday: "09:00-10:00" }), false)
+    assert.equal(ok(p2, "ADULTOS", "MJ", { main: "18:00-19:00" }), true)
+    assert.equal(ok(p2, "NINOS", "MJ", { main: "17:00-18:00" }), true)
+    // Plan sin cambio de capacidad: 50 L-M-V + M-J-S limitado por el sábado.
+    assert.equal(maxMembershipStudents(listMembershipLimitedSlots(p3)), 78)
+    // VIDENA y VMT no cambian: 6-7pm sigue siendo de niños.
+    assert.equal(ok(getMembershipScheduleProfile("03", SUMMER_2027_3X_SCHEDULE_KEY)!, "NINOS", "LMV", { main: "18:00-19:00" }), true)
+    assert.equal(ok(getMembershipScheduleProfile("04", SUMMER_2027_3X_SCHEDULE_KEY)!, "NINOS", "LMV", { main: "18:00-19:00" }), true)
 })
