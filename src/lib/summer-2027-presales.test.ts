@@ -122,3 +122,36 @@ test("Campo de Marte: 6-7pm es de adultos en L-M-V, Mar/Jue de M-J-S y Mar-Jue; 
     assert.equal(ok(getMembershipScheduleProfile("03", SUMMER_2027_3X_SCHEDULE_KEY)!, "NINOS", "LMV", { main: "18:00-19:00" }), true)
     assert.equal(ok(getMembershipScheduleProfile("04", SUMMER_2027_3X_SCHEDULE_KEY)!, "NINOS", "LMV", { main: "18:00-19:00" }), true)
 })
+
+test("franja llena: error tipado con motivo y franja, y vista previa que no cuenta dos veces al carnet que se mueve", async () => {
+    const { MembershipSlotCapacityExceededError, describeSlotCapacityErrorForAdmin } = await import("@/lib/membership-slot-capacity")
+    const { assertMembershipSlotCapacityForScheduleChange } = await import("@/lib/membership-slot-inventory")
+    const p3 = getMembershipScheduleProfile("01", SUMMER_2027_3X_SCHEDULE_KEY)!
+    const kid = (hour: string) => {
+        const r = validateMembershipScheduleSelection(p3, { category: "NINOS", frequency: "LMV", hours: { main: hour } }, "01")
+        if (!r.ok) throw new Error(r.error)
+        return r.selection
+    }
+    // 17:00 tiene 3 cupos en CDM.
+    const full = [kid("17:00-18:00"), kid("17:00-18:00"), kid("17:00-18:00")]
+    let caught: unknown
+    try { assertMembershipSlotCapacity(p3, [...full, kid("17:00-18:00")]) } catch (error) { caught = error }
+    assert.ok(caught instanceof MembershipSlotCapacityExceededError)
+    assert.equal(caught.reason, "FULL")
+    assert.match(describeSlotCapacityErrorForAdmin(caught), /17:00 a 18:00 \(Niños \(6 a 17 años\)\) está lleno: 3 de 3 cupos.*Cupos por horario/)
+
+    const rows = [
+        ...full.map((schedule, i) => ({ schedule, paid: true, ticketId: `t${i}` })),
+        { schedule: kid("16:00-17:00"), paid: true, ticketId: "moving" },
+    ]
+    const db = {
+        ticketType: {
+            findUniqueOrThrow: async () => ({ id: "tt", name: "plan", capacity: 78, sold: 4, isActive: true, membershipScheduleKey: SUMMER_2027_3X_SCHEDULE_KEY, membershipSlotCapacities: null, event: { servilexSucursalCode: "01" } }),
+        },
+        $queryRaw: async () => rows,
+    } as unknown as Parameters<typeof assertMembershipSlotCapacityForScheduleChange>[0]
+    // Mover a 17:00 (llena) falla; quedarse en su propia franja no cuenta doble.
+    await assert.rejects(assertMembershipSlotCapacityForScheduleChange(db, "tt", "moving", kid("17:00-18:00")), MembershipSlotCapacityExceededError)
+    await assert.doesNotReject(assertMembershipSlotCapacityForScheduleChange(db, "tt", "moving", kid("16:00-17:00")))
+    await assert.doesNotReject(assertMembershipSlotCapacityForScheduleChange(db, "tt", "t0", kid("17:00-18:00")))
+})

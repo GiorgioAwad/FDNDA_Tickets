@@ -167,13 +167,39 @@ export function countMembershipSlotReservations(profile: MembershipScheduleProfi
     return { occupancy, invalid }
 }
 
+/**
+ * Error de cupo por franja. Extiende Error (los llamadores que muestran
+ * `error.message` siguen igual); las rutas del panel admin lo distinguen para
+ * responder 409 con el motivo en vez de un "Error interno".
+ */
+export class MembershipSlotCapacityExceededError extends Error {
+    constructor(message: string, readonly reason: "FULL" | "INVALID", readonly slot?: { start: string; end: string; categoryLabel: string; capacity: number; reserved: number }) {
+        super(message)
+        this.name = "MembershipSlotCapacityExceededError"
+    }
+}
+
 /** Counts reserved schedules, including pending payments, against each hour's limit. */
 export function assertMembershipSlotCapacity(profile: MembershipScheduleProfile, schedules: unknown[]): void {
     const { occupancy, invalid } = countMembershipSlotReservations(profile, schedules)
-    if (invalid > 0) throw new Error("No se pudo verificar el cupo del horario de la membresía.")
+    if (invalid > 0) throw new MembershipSlotCapacityExceededError("No se pudo verificar el cupo del horario de la membresía.", "INVALID")
     for (const slot of listMembershipLimitedSlots(profile)) {
-        if ((occupancy.get(slot.key) ?? 0) > slot.capacity) {
-            throw new Error(`El horario ${slot.start} a ${slot.end} está agotado. Selecciona otro horario.`)
+        const reserved = occupancy.get(slot.key) ?? 0
+        if (reserved > slot.capacity) {
+            throw new MembershipSlotCapacityExceededError(
+                `El horario ${slot.start} a ${slot.end} está agotado. Selecciona otro horario.`,
+                "FULL",
+                { start: slot.start, end: slot.end, categoryLabel: slot.categoryLabel, capacity: slot.capacity, reserved: reserved - 1 }
+            )
         }
     }
+}
+
+/** Mensaje para el admin cuando un cambio desde el panel choca con el cupo por franja. */
+export function describeSlotCapacityErrorForAdmin(error: MembershipSlotCapacityExceededError): string {
+    if (error.reason === "INVALID") {
+        return "No se pudo verificar el cupo por horario del plan: hay horarios reservados que no coinciden con el catálogo actual. Avisa a soporte técnico."
+    }
+    const s = error.slot!
+    return `El horario ${s.start} a ${s.end} (${s.categoryLabel}) está lleno: ${s.reserved} de ${s.capacity} cupos ocupados. Elige otro horario o, si quieres autorizarlo, sube el cupo de esa franja en Membresías → Cupos por horario.`
 }

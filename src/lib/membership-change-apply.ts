@@ -7,6 +7,7 @@
  */
 import { Prisma, type MembershipChangeKind } from "@prisma/client"
 import { enforceMembershipSlotInventory } from "@/lib/membership-slot-inventory"
+import { describeSlotCapacityErrorForAdmin, MembershipSlotCapacityExceededError } from "@/lib/membership-slot-capacity"
 
 import type { MembershipChangePlan } from "@/lib/membership-transfer"
 
@@ -135,7 +136,15 @@ export async function applyMembershipChange(
     }
 
     const updatedTicket = await tx.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { ticketTypeId: true } })
-    await enforceMembershipSlotInventory(tx, updatedTicket.ticketTypeId)
+    try {
+        await enforceMembershipSlotInventory(tx, updatedTicket.ticketTypeId)
+    } catch (error) {
+        // Sin esto la ruta respondía "Error interno" (500) ante una franja llena.
+        if (error instanceof MembershipSlotCapacityExceededError) {
+            throw new MembershipChangeAbort(describeSlotCapacityErrorForAdmin(error))
+        }
+        throw error
+    }
 
     await tx.membershipAdminChange.create({
         data: {

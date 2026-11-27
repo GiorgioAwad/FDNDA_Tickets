@@ -14,6 +14,11 @@ import {
     planMembershipChange,
 } from "@/lib/membership-transfer"
 import { prisma } from "@/lib/prisma"
+import {
+    describeSlotCapacityErrorForAdmin,
+    MembershipSlotCapacityExceededError,
+} from "@/lib/membership-slot-capacity"
+import { assertMembershipSlotCapacityForScheduleChange } from "@/lib/membership-slot-inventory"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -86,6 +91,26 @@ export async function POST(
             return NextResponse.json({ success: false, blockers: plan.blockers }, { status: 409 })
         }
         if (isPreview) {
+            // Avisar ya en la vista previa si la franja elegida está llena (planes
+            // con cupo por franja, p. ej. verano), no recién al aplicar.
+            if (plan.writes.ticket.membershipSchedule) {
+                try {
+                    await assertMembershipSlotCapacityForScheduleChange(
+                        prisma,
+                        record.ticketTypeId,
+                        ticketId,
+                        plan.writes.ticket.membershipSchedule
+                    )
+                } catch (error) {
+                    if (error instanceof MembershipSlotCapacityExceededError) {
+                        return NextResponse.json(
+                            { success: false, error: describeSlotCapacityErrorForAdmin(error) },
+                            { status: 409 }
+                        )
+                    }
+                    throw error
+                }
+            }
             return NextResponse.json({ success: true, data: { plan } })
         }
 

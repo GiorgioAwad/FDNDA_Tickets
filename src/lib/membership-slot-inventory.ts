@@ -35,8 +35,8 @@ async function loadLimitedProfile(db: SlotDb, ticketTypeId: string) {
 // One snapshot for both states: a payment completing between two separate
 // reads must not count the same student as both pending and paid.
 function readReservedSchedules(db: SlotDb, ticketTypeId: string) {
-    return db.$queryRaw<Array<{ schedule: Prisma.JsonValue; paid: boolean }>>(Prisma.sql`
-        SELECT attendee->'membershipSchedule' AS schedule, false AS paid
+    return db.$queryRaw<Array<{ schedule: Prisma.JsonValue; paid: boolean; ticketId: string | null }>>(Prisma.sql`
+        SELECT attendee->'membershipSchedule' AS schedule, false AS paid, NULL::text AS "ticketId"
         FROM order_items oi JOIN orders o ON o.id = oi."orderId"
         CROSS JOIN LATERAL jsonb_array_elements(
             CASE WHEN jsonb_typeof(oi."attendeeData") = 'array'
@@ -44,7 +44,7 @@ function readReservedSchedules(db: SlotDb, ticketTypeId: string) {
         ) AS attendees(attendee)
         WHERE oi."ticketTypeId" = ${ticketTypeId} AND o.status = 'PENDING'
         UNION ALL
-        SELECT t."membershipSchedule" AS schedule, true AS paid
+        SELECT t."membershipSchedule" AS schedule, true AS paid, t.id AS "ticketId"
         FROM tickets t JOIN orders o ON o.id = t."orderId"
         WHERE t."ticketTypeId" = ${ticketTypeId} AND t.status = 'ACTIVE' AND o.status = 'PAID'
     `)
@@ -63,6 +63,24 @@ export async function enforceMembershipSlotInventory(tx: Prisma.TransactionClien
     if (!locked) return
     const rows = await readReservedSchedules(tx, ticketTypeId)
     assertMembershipSlotCapacity(locked.profile, rows.map(row => row.schedule))
+}
+
+/**
+ * Vista previa del panel admin: ¿cabe el carnet `ticketId` del plan con su horario
+ * nuevo? Mismo cálculo que `enforceMembershipSlotInventory`, sin escribir ni
+ * bloquear. Lanza MembershipSlotCapacityExceededError si no cabe.
+ */
+export async function assertMembershipSlotCapacityForScheduleChange(
+    db: SlotDb,
+    ticketTypeId: string,
+    ticketId: string,
+    newSchedule: unknown
+): Promise<void> {
+    const loaded = await loadLimitedProfile(db, ticketTypeId)
+    if (!loaded) return
+    const rows = await readReservedSchedules(db, ticketTypeId)
+    const schedules = rows.filter(row => row.ticketId !== ticketId).map(row => row.schedule as unknown)
+    assertMembershipSlotCapacity(loaded.profile, [...schedules, newSchedule])
 }
 
 export interface MembershipSlotInventoryRow {

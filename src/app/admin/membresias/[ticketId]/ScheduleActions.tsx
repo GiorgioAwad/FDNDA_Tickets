@@ -65,6 +65,10 @@ export function ScheduleActions({
     const [busy, setBusy] = useState(false)
     const [occupancy, setOccupancy] = useState<Record<string, number>>({})
     const [occupancyStatus, setOccupancyStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
+    // Planes con cupo por franja (verano): reservados (pagados + pendientes) y cupo
+    // por "tipo|categoria|frecuencia|grupo|inicio-fin". La ocupacion de arriba solo
+    // cuenta membresias vigentes HOY, que en verano (inicia en enero) siempre es 0.
+    const [slotCapacity, setSlotCapacity] = useState<Record<string, { reserved: number; capacity: number }>>({})
     const [allowOverCapacity, setAllowOverCapacity] = useState(false)
 
     // Token de secuencia: solo la respuesta de la peticion MAS RECIENTE puede
@@ -149,9 +153,35 @@ export function ScheduleActions({
         // NUEVO se siguen viendo los numeros del evento anterior (Tarea 10,
         // hallazgo menor).
         setOccupancy({})
+        setSlotCapacity({})
         setOccupancyStatus(occupancyEventId ? "loading" : "idle")
         if (!occupancyEventId) return
         let cancelled = false
+        void (async () => {
+            try {
+                const response = await fetch(
+                    `/api/admin/membership-slot-capacities?eventId=${occupancyEventId}`,
+                    { cache: "no-store" }
+                )
+                const payload = await response.json()
+                if (cancelled || !response.ok || !payload.success) return
+                const map: Record<string, { reserved: number; capacity: number }> = {}
+                for (const report of payload.data.plans as Array<{
+                    ticketTypeId: string
+                    slots: Array<{ category: string; frequency: string; groupId: string; start: string; end: string; paid: number; pending: number; capacity: number }>
+                }>) {
+                    for (const slot of report.slots) {
+                        map[`${report.ticketTypeId}|${slot.category}|${slot.frequency}|${slot.groupId}|${slot.start}-${slot.end}`] = {
+                            reserved: slot.paid + slot.pending,
+                            capacity: slot.capacity,
+                        }
+                    }
+                }
+                setSlotCapacity(map)
+            } catch {
+                // Sin cupos por franja se muestra la ocupacion normal.
+            }
+        })()
         void (async () => {
             try {
                 const response = await fetch(
@@ -521,6 +551,23 @@ export function ScheduleActions({
                                     <option value="">Selecciona…</option>
                                     {group.hours.map((hour) => {
                                         const value = `${hour.start}-${hour.end}`
+                                        const slotTypeId = mode === "transfer" ? selectedTargetType?.id : detail.ticketType.id
+                                        const slot = slotCapacity[`${slotTypeId}|${category}|${frequency}|${group.id}|${value}`]
+                                        if (slot) {
+                                            const isCurrent =
+                                                mode === "schedule" &&
+                                                detail.currentScheduleInput.category === category &&
+                                                detail.currentScheduleInput.frequency === frequency &&
+                                                detail.currentScheduleInput.hours[group.id] === value
+                                            const full = !isCurrent && slot.reserved >= slot.capacity
+                                            return (
+                                                <option key={value} value={value}>
+                                                    {hour.start} - {hour.end} · {slot.reserved}/{slot.capacity} reservados
+                                                    {full ? " · LLENO" : ""}
+                                                    {isCurrent ? " · actual" : ""}
+                                                </option>
+                                            )
+                                        }
                                         // Peor caso entre TODOS los dias del
                                         // grupo, no solo el primero: en un
                                         // grupo multi-dia (ej. PLATA L-V) solo
