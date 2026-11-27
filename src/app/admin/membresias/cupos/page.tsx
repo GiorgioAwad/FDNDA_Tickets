@@ -40,7 +40,7 @@ interface CapacityRow {
     capacity: number
     available: number | null
     soldTotal: number
-    scopeLabel: "Plan completo" | "Fecha" | "Tipo de entrada"
+    scopeLabel: "Plan completo" | "Fecha" | "Tipo de entrada" | "Franja"
     status: "ACTIVE" | "INACTIVE" | "CLOSED" | "MISSING_SCHEDULE"
 }
 

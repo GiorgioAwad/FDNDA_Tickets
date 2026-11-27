@@ -159,3 +159,23 @@ test("evento con cupo diario no presenta como disponible una fecha sin configura
     assert.equal(rows[0].status, "CLOSED")
     assert.equal(rows[0].scopeLabel, "Fecha")
 })
+
+test("planes con cupo por franja (verano) se reportan por franja: ocupados = pagados + pendientes, cupo y libres de la franja", () => {
+    const rows = buildEventCapacityReportRows({
+        event: { ...BASE_EVENT, category: "ACADEMIA" },
+        ticketTypes: [ticketType({ id: "verano", name: "VERANO 2027 · 3 VECES POR SEMANA", capacity: 78, sold: 19, monthlyClassLimit: 12, membershipDurationMonths: 2 })],
+        membershipOccupancy: EMPTY_MEMBERSHIP,
+        slotInventories: [{
+            ticketTypeId: "verano",
+            slots: [
+                { key: "ADULTOS:LMV:main:06:00:07:00", categoryLabel: "Adultos (18 años a más)", frequencyLabel: "Lunes, Miércoles y Viernes", groupLabel: "Lunes, Miércoles y Viernes", start: "06:00", end: "07:00", capacity: 3, paid: 3, pending: 0, available: 0 },
+                { key: "ADULTOS:LMV:main:07:00:08:00", categoryLabel: "Adultos (18 años a más)", frequencyLabel: "Lunes, Miércoles y Viernes", groupLabel: "Lunes, Miércoles y Viernes", start: "07:00", end: "08:00", capacity: 3, paid: 1, pending: 1, available: 1 },
+            ],
+        }],
+    })
+    assert.equal(rows.length, 2)
+    assert.deepEqual(rows.map(r => [r.scheduleLabel, r.occupied, r.capacity, r.available, r.scopeLabel, r.soldTotal]), [
+        ["6:00 a.m. - 7:00 a.m.", 3, 3, 0, "Franja", 19],
+        ["7:00 a.m. - 8:00 a.m.", 2, 3, 1, "Franja", 19],
+    ])
+})

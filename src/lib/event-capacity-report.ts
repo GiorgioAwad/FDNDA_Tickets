@@ -1,4 +1,5 @@
 import type { MembershipOccupancy } from "@/lib/membership-occupancy"
+import { formatTime12h } from "@/lib/membership-schedule"
 import { getTicketSelectableDates, usesTicketDateCapacity } from "@/lib/ticket-date-capacity"
 import { getShiftOptionsForDate, parseTicketScheduleConfig } from "@/lib/ticket-schedule"
 
@@ -16,8 +17,25 @@ export interface EventCapacityReportRow {
     capacity: number
     available: number | null
     soldTotal: number
-    scopeLabel: "Plan completo" | "Fecha" | "Tipo de entrada"
+    scopeLabel: "Plan completo" | "Fecha" | "Tipo de entrada" | "Franja"
     status: EventCapacityRowStatus
+}
+
+/** Cupo por franja de un plan (verano): mismo cálculo que el panel "Cupos por horario". */
+export interface EventCapacitySlotInventory {
+    ticketTypeId: string
+    slots: Array<{
+        key: string
+        categoryLabel: string
+        frequencyLabel: string
+        groupLabel: string
+        start: string
+        end: string
+        capacity: number
+        paid: number
+        pending: number
+        available: number
+    }>
 }
 
 export interface EventCapacityTicketType {
@@ -49,6 +67,8 @@ interface EventCapacityInput {
     }
     ticketTypes: EventCapacityTicketType[]
     membershipOccupancy: MembershipOccupancy
+    /** Planes con cupo por franja: se reportan por franja (no por plan completo). */
+    slotInventories?: EventCapacitySlotInventory[]
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -119,8 +139,34 @@ function globalScheduleLabel(input: EventCapacityInput, shifts: string[]): strin
 export function buildEventCapacityReportRows(input: EventCapacityInput): EventCapacityReportRow[] {
     const rows: EventCapacityReportRow[] = []
     const planByType = new Map(input.membershipOccupancy.planTotals.map((plan) => [plan.ticketTypeId, plan]))
+    const slotsByType = new Map((input.slotInventories ?? []).map((inventory) => [inventory.ticketTypeId, inventory]))
 
     for (const type of input.ticketTypes) {
+        // Planes con cupo por franja (verano): cada fila es una franja con su cupo,
+        // ocupados = pagados + pendientes (retienen el lugar) y libres como en el
+        // panel. La ocupación "vigente hoy" no sirve: el verano aún no empieza.
+        const slotInventory = slotsByType.get(type.id)
+        if (slotInventory && slotInventory.slots.length > 0) {
+            for (const slot of slotInventory.slots) {
+                rows.push({
+                    id: `slot:${type.id}:${slot.key}`,
+                    ticketTypeId: type.id,
+                    ticketTypeName: type.name,
+                    categoryLabel: slot.categoryLabel,
+                    frequencyLabel: slot.frequencyLabel,
+                    dateLabel: slot.groupLabel,
+                    scheduleLabel: `${formatTime12h(slot.start)} - ${formatTime12h(slot.end)}`,
+                    occupied: slot.paid + slot.pending,
+                    capacity: slot.capacity,
+                    available: slot.available,
+                    soldTotal: type.sold,
+                    scopeLabel: "Franja",
+                    status: type.isActive ? "ACTIVE" : "INACTIVE",
+                })
+            }
+            continue
+        }
+
         const isMembership = Boolean(type.monthlyClassLimit && type.membershipDurationMonths)
         const membershipRows = input.membershipOccupancy.scheduleRows.filter(
             (row) => row.ticketTypeId === type.id && row.status !== "FREE_ACCESS"

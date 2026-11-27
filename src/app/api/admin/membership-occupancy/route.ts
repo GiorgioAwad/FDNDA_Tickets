@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { buildEventCapacityReportRows } from "@/lib/event-capacity-report"
 import { toScanTicket } from "@/lib/membership-admin-snapshot"
 import { buildMembershipOccupancy, type OccupancyTicketSnapshot } from "@/lib/membership-occupancy"
+import { getMembershipSlotInventoryReport, type MembershipSlotInventoryReport } from "@/lib/membership-slot-inventory"
 import { prisma } from "@/lib/prisma"
 import { getTodayDateString } from "@/lib/qr"
 import {
@@ -208,6 +209,14 @@ export async function GET(request: NextRequest) {
             sucursalCode: event.servilexSucursalCode,
         })
 
+        const slotInventories = (
+            await Promise.all(
+                types
+                    .filter((type) => type.membershipScheduleKey)
+                    .map((type) => getMembershipSlotInventoryReport(prisma, type.id))
+            )
+        ).filter((report): report is MembershipSlotInventoryReport => report !== null)
+
         const capacityRows = buildEventCapacityReportRows({
             event: {
                 category: event.category,
@@ -217,6 +226,7 @@ export async function GET(request: NextRequest) {
             },
             ticketTypes: types,
             membershipOccupancy: occupancy,
+            slotInventories,
         })
 
         return NextResponse.json({
